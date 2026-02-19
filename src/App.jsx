@@ -852,7 +852,6 @@ function App() {
                       <td style={{ border: '1px solid black', padding: '8px' }}>
                         <input
                             type="checkbox"
-                            style={{ accentColor: 'blue' }} // Add this line
                             checked={selectedCustomerIds.includes(String(customer['Consumer No.']))}
                             onChange={() => handleCheckboxChange(customer['Consumer No.'])}
                           />
