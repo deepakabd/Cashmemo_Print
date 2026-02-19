@@ -1,6 +1,7 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import FileUpload from './FileUpload';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
@@ -305,75 +306,402 @@ function App() {
     printWindow.document.close();
     printWindow.print();
   };
-
   const handlePrintCashmemo = () => {
-    if (selectedCustomerIds.length === 0) {
-      alert('Please select at least one cashmemo to print.');
-      return;
-    }
-
-    const customersToPrint = parsedData.filter(customer =>
-      selectedCustomerIds.includes(String(customer['Consumer No.']))
-    );
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Cash Memos</title>
-          <style>
-            @page { size: A4; margin: 0; }
-            body { margin: 0; }
-          </style>
-        </head>
-        <body>
-          <div id="print-root" style="display: flex; flex-wrap: wrap; align-content: flex-start;"></div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-
-    const printRoot = printWindow.document.getElementById('print-root');
-    customersToPrint.forEach((customer, index) => {
-      const wrapperDiv = printWindow.document.createElement('div');
-      let wrapperStyles = {
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '5mm',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-      };
-
-      if (pageType === 'A4 3 Cashmemo/Page') {
-        wrapperStyles.height = '97.66mm'; // A4 height (297mm) / 3 - 2mm margin
-        if ((index + 1) % 3 !== 0) { // Add margin-bottom for all but the last cashmemo on the page
-          wrapperStyles.marginBottom = '2mm';
-        }
-        if ((index + 1) % 3 === 0) {
-          wrapperStyles.pageBreakAfter = 'always';
-        }
-      } else if (pageType === 'Lager 4 Cashmemo/Page') {
-        wrapperStyles.height = '72.75mm'; // A4 height (297mm) / 4 - 2mm margin
-        if ((index + 1) % 4 !== 0) { // Add margin-bottom for all but the last cashmemo on the page
-          wrapperStyles.marginBottom = '2mm';
-        }
-        if ((index + 1) % 4 === 0) {
-          wrapperStyles.pageBreakAfter = 'always';
-        }
+      if (selectedCustomerIds.length === 0) {
+        alert('Please select at least one cashmemo to print.');
+        return;
       }
 
-      Object.assign(wrapperDiv.style, wrapperStyles);
-      printRoot.appendChild(wrapperDiv);
-      const root = createRoot(wrapperDiv);
-      root.render(<CashMemoEnglish customer={customer} pageType={pageType} dealerDetails={sampleDealerDetails} />);
-    });
+      const customersToPrint = parsedData.filter(customer =>
+        selectedCustomerIds.includes(String(customer['Consumer No.']))
+      );
 
-    // Wait for images and other resources to load before printing
-    printWindow.onload = () => {
-      printWindow.print();
+      let allCashMemosHtml = '';
+
+      customersToPrint.forEach((customer, index) => {
+        const processedCustomer = { ...customer };
+
+        // Convert 'Order Date'
+        if (typeof processedCustomer['Order Date'] === 'number') {
+          processedCustomer['Order Date'] = excelSerialDateToJSDate(processedCustomer['Order Date']);
+        } else if (typeof processedCustomer['Order Date'] === 'string') {
+          processedCustomer['Order Date'] = new Date(processedCustomer['Order Date']);
+        }
+
+        // Convert 'Cash Memo Date'
+        if (typeof processedCustomer['Cash Memo Date'] === 'number') {
+          processedCustomer['Cash Memo Date'] = excelSerialDateToJSDate(processedCustomer['Cash Memo Date']);
+        } else if (typeof processedCustomer['Cash Memo Date'] === 'string') {
+          processedCustomer['Cash Memo Date'] = new Date(processedCustomer['Cash Memo Date']);
+        }
+
+        const cashMemoHtml = renderToString(
+          <CashMemoEnglish customer={processedCustomer} pageType={pageType} dealerDetails={sampleDealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
+        );
+
+        let wrapperStyles = `
+          width: 100%;
+          box-sizing: border-box;
+          padding: 5mm;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        `;
+
+        if (pageType === 'A4 3 Cashmemo/Page') {
+          wrapperStyles += `height: 97.66mm;`; // A4 height (297mm) / 3 - 2mm margin
+          if ((index + 1) % 3 !== 0) {
+            wrapperStyles += `margin-bottom: 2mm;`;
+          }
+          if ((index + 1) % 3 === 0) {
+            wrapperStyles += `page-break-after: always;`;
+          }
+        } else if (pageType === 'Lager 4 Cashmemo/Page') {
+          wrapperStyles += `height: 72.75mm;`; // A4 height (297mm) / 4 - 2mm margin
+          if ((index + 1) % 4 !== 0) {
+            wrapperStyles += `margin-bottom: 2mm;`;
+          }
+          if ((index + 1) % 4 === 0) {
+            wrapperStyles += `page-break-after: always;`;
+          }
+        }
+
+        allCashMemosHtml += `<div style="${wrapperStyles}">${cashMemoHtml}</div>`;
+      });
+
+      const fullHtml = `
+        <html>
+          <head>
+            <title>Cash Memos</title>
+            <style>
+              @page { size: A4; margin: 0; }
+              body { margin: 0; }
+              /* Styles from CashMemoEnglish.jsx */
+              .cash-memo-container {
+                font-family: Arial, sans-serif;
+                border: 1px solid #000;
+                padding: 5mm;
+                margin: 0 auto;
+                box-sizing: border-box;
+                background-color: white; /* Outer background white */
+                color: black; /* Default text color black */
+              }
+              .cash-memo-wrapper {
+                border: 1px solid #ccc;
+                page-break-inside: avoid; /* Prevent cash memo from breaking across pages */
+              }
+              .cash-memo-single {
+                display: flex;
+                font-family: Arial, sans-serif;
+                width: 100%;
+                box-sizing: border-box;
+                height: 100%;
+                background-color: white;
+                page-break-inside: avoid; /* Prevent cash memo content from breaking across pages */
+              }
+              .distributor-copy {
+                width: 50%;
+                border-right: 1px dashed black;
+                padding: 5px;
+                box-sizing: border-box;
+                font-size: 10px;
+                height: 100%;
+                color: black;
+              }
+              .tax-invoice {
+                width: 50%;
+                padding: 5px;
+                box-sizing: border-box;
+                font-size: 10px;
+                height: 100%;
+                color: black;
+              }
+              .distributor-header {
+                position: relative;
+                width: 100%;
+              }
+              .distributor-header-details {
+                position: absolute;
+                top: 50%;
+                right: 10px;
+                transform: translateY(-50%);
+                text-align: right;
+                color: black;
+                font-size: 8px;
+                font-weight: bold;
+              }
+              .distributor-copy-title {
+                margin: 5px 0 5px 0;
+                font-weight: bold;
+                font-size: 12px;
+                color: black;
+              }
+              .customer-details-distributor {
+                border: 1px solid black;
+                padding: 5px;
+                margin-bottom: 5px;
+                display: flex;
+                font-size: 8px;
+              }
+              .distributor-details-left {
+                flex: 1;
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 1px;
+                padding-right: 5px;
+                border-right: 1px dashed #ccc;
+              }
+              .distributor-details-right {
+                width: 150px;
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 1px;
+                padding-left: 5px;
+              }
+              .tax-invoice-header {
+                position: relative;
+                width: 100%;
+              }
+              .tax-invoice-header-details {
+                position: absolute;
+                top: 50%;
+                right: 10px;
+                transform: translateY(-50%);
+                text-align: right;
+                color: black;
+                font-size: 8px;
+                font-weight: bold;
+              }
+              .tax-invoice-title {
+                margin: 5px 0;
+                font-weight: bold;
+                font-size: 12px;
+                color: black;
+              }
+              .customer-details-tax-invoice {
+                border: 1px solid black;
+                padding: 5px;
+                margin-bottom: 5px;
+                display: flex;
+                font-size: 8px;
+              }
+              .tax-invoice-details-left {
+                flex: 1;
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 1px;
+                padding-right: 5px;
+                border-right: 1px dashed #ccc;
+              }
+              .tax-invoice-details-right {
+                width: 150px;
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 1px;
+                padding-left: 5px;
+              }
+              .delivery-details {
+                border: 1px solid black;
+                padding: 5px;
+                margin-bottom: 5px;
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 1px;
+                font-size: 8px;
+              }
+              .product-details {
+                border: 1px solid black;
+                padding: 5px;
+                margin-bottom: 5px;
+                font-size: 8px;
+              }
+              .declaration {
+                border: 1px solid black;
+                padding: 30px;
+                margin-bottom: 5px;
+                font-size: 7px;
+                color: red;
+              }
+              .signature-section {
+                margin-top: 10px;
+                border-top: 1px solid black;
+                width: 150px;
+                margin-left: auto;
+              }
+              .contact-info {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr 1fr auto;
+                gap: 0px;
+                align-items: center;
+                padding: 0px 0;
+                font-size: 7px;
+                border-bottom: 1px solid black;
+                margin-bottom: 5px;
+                background-color: rgb(0, 0, 128);
+                color: white;
+              }
+              .contact-info-strong {
+                color: white;
+                font-size: 9px;
+              }
+              .hp-pay-image-container {
+                text-align: center;
+                width: 30%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+              }
+              .hp-pay-image {
+                width: 70px;
+                margin-bottom: 5px;
+              }
+              .image-1906-container {
+                flex: 1;
+                text-align: right;
+              }
+              .image-1906 {
+                height: 15px;
+                vertical-align: middle;
+              }
+              .header-content {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin: 5px 0;
+              }
+              .distributor-header-image {
+                width: 100%;
+              }
+              .distributor-header-detail-text {
+                margin: 0;
+              }
+              .tax-invoice-header-image {
+                width: 100%;
+              }
+              .tax-invoice-header-detail-text {
+                margin: 0;
+              }
+              .declaration-text {
+                margin: 0;
+              }
+              .signature-text {
+                margin: 0;
+                font-size: 8px;
+                text-align: right;
+              }
+              .price-value {
+                text-align: right;
+              }
+              .total-amount {
+                font-weight: bold;
+              }
+              .instructions-section {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                margin-top: 5px;
+                font-size: 7px;
+              }
+              .instructions-text-container {
+                line-height: 1.2;
+                width: 70%;
+              }
+              .instructions-title {
+                margin: 0;
+                font-weight: bold;
+              }
+              .instructions-list {
+                margin: 0;
+                padding-left: 10px;
+              }
+              .header-content-flex-spacer {
+                flex: 1;
+              }
+              .header, .customer-details, .delivery-details, .product-details, .amount-details, .declaration, .contact-info {
+                margin-bottom: 5px;
+              }
+              .header div, .customer-details div, .delivery-details div, .product-details div, .amount-details div {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 2px;
+              }
+              .header span, .customer-details span, .delivery-details span, .product-details span, .amount-details span {
+                font-size: 9px;
+              }
+              .header .title {
+                font-size: 12px;
+                font-weight: bold;
+                text-align: center;
+                margin-bottom: 5px;
+              }
+              .declaration {
+                font-size: 8px;
+                font-weight: bold;
+                text-align: center;
+                margin-top: 5px;
+                color: red; /* Declaration text red */
+              }
+              .contact-info {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 2px;
+                background-color: #00008B; /* Blue background */
+                color: white; /* White text */
+                padding: 3px 5mm;
+                font-size: 8px;
+                margin-top: 5px;
+              }
+              .contact-info span {
+                font-weight: bold;
+              }
+              .section-title {
+                font-weight: bold;
+                background-color: #eee;
+                padding: 2px;
+                margin-bottom: 3px;
+                font-size: 9px;
+              }
+              .text-center {
+                text-align: center;
+              }
+              .text-right {
+                text-align: right;
+              }
+              .font-bold {
+                font-weight: bold;
+              }
+              .flex-container {
+                display: flex;
+                justify-content: space-between;
+              }
+              .flex-item {
+                width: 48%; /* Adjust as needed */
+              }
+              .address-value {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+            </style>
+          </head>
+          <body>
+            <div id="print-root" style="display: flex; flex-wrap: wrap; align-content: flex-start;">
+              ${allCashMemosHtml}
+            </div>
+          </body>
+        </html>
+      `;
+
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(fullHtml);
+      printWindow.document.close();
+
+      // Wait for images and other resources to load before printing
+      printWindow.onload = () => {
+        printWindow.print();
+            // printWindow.close(); // Keep the window open after printing
+      };
     };
-  };
 
   const handleCheckboxChange = (consumerNo) => {
     setSelectedCustomerIds(prev => {
