@@ -10,4 +10,7 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    port: 8000, // Set your desired port here
+  },
 })

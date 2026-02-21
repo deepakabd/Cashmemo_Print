@@ -19,9 +19,11 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         {/* Distributor Copy Section (Left Half) */}
         <div className="distributor-copy">
           {/* Header for Distributor Copy */}
-          <div className="distributor-header">
-              <img src="http://localhost:5174/tax.jpg" alt="Distributor Header" className="distributor-header-image" />
-              <div className="distributor-header-details">
+          <div className="distributor-header" style={{ display: 'flex' }}>
+              <div className="distributor-header-logo" style={{ flex: 1 }}>
+                <img src="/logo.jpg" alt="Distributor Header" className="distributor-header-image" style={{ width: '35%' }} />
+              </div>
+              <div className="distributor-header-details" style={{ flex: 1 }}>
                 <p className="distributor-header-detail-text">{distributorName}</p>
                 <p className="distributor-header-detail-text">GSTN : {gstn}</p>
               </div>
@@ -38,9 +40,9 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Delivery Area :</span><span>{customer['Delivery Area'] || 'N/A'}</span>
               <span>Mobile No. :</span><span>{customer['Mobile No.'] || 'N/A'}</span>
               <span>IVR Booking No. :</span><span>{customer['IVR Booking No.'] || customer['Order Ref No.'] || 'N/A'}</span>
-              <div className="product-details">
+              
                  <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {customer['HSN'] || 'N/A'} / {customer['Order Qty.'] || 'N/A'}</span>
-               </div>
+               
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span>
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
               <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
@@ -76,9 +78,11 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         {/* Tax Invoice Section (Right Half) */}
         <div className="tax-invoice">
           {/* Header Section */}
-          <div className="tax-invoice-header">
-              <img src="http://localhost:5174/tax.jpg" alt="Tax Invoice Header" className="tax-invoice-header-image" />
-              <div className="tax-invoice-header-details">
+          <div className="tax-invoice-header" style={{ display: 'flex' }}>
+              <div className="tax-invoice-header-logo" style={{ flex: 1 }}>
+                <img src="/logo.jpg" alt="Tax Invoice Header" className="tax-invoice-header-image" style={{ width: '35%' }} />
+              </div>
+              <div className="tax-invoice-header-details" style={{ flex: 1 }}>
                 <p className="tax-invoice-header-detail-text">{distributorName}</p>
                 <p className="tax-invoice-header-detail-text">{plotNo}</p>
                 <p className="tax-invoice-header-detail-text">Email : {email} | Telephone : {telephone}</p>
@@ -92,21 +96,18 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
             <div>Whatsapp Booking No. <br /><strong className="contact-info-strong">9222201122</strong></div>
             <div>Missed Call Booking No. <br /><strong className="contact-info-strong">9493602222</strong></div>
             <div>Complaint No. <br /><strong className="contact-info-strong">1800 233 3555</strong></div>
-            {/* <div style={{ textAlign: 'center' }}>
-              <span style={{ fontSize: '7px' }}>LPG Emergency</span><br />
-              <span style={{ fontSize: '7px' }}>Helpline 24x7</span>
-            </div> */}
+        
           </div>
 
-          {/* <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <img src="/printback.jpg" alt="Watermark" style={{ opacity: '0.1', width: '200px', height: 'auto' }} />
-          </div> */}
+          </div>
 
           <div className="header-content">
             <div className="header-content-flex-spacer"></div>
             <p className="tax-invoice-title">Tax Invoice</p>
             <div className="hp-gas-logo-section">
-              <img alt="1906" src="http://localhost:5174/1906.jpg" className="image-1906" />
+              <img alt="1906" src="/1906.jpg" className="image-1906" />
             </div>
           </div>
 

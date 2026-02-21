@@ -43,6 +43,7 @@ const formatDateToDDMMYYYY = (date) => {
 
 function App() {
   const [parsedData, setParsedData] = useState([]);
+  const [showCashMemoPreview, setShowCashMemoPreview] = useState(false);
   const [headers, setHeaders] = useState([]);
   const [visibleHeaders, setVisibleHeaders] = useState([]); // New state for visible headers
   const [searchTerm, setSearchTerm] = useState('');
@@ -510,7 +511,6 @@ function App() {
                 font-size: 8px;
               }
               .product-details {
-                border: 1px solid black;
                 padding: 5px;
                 margin-bottom: 5px;
                 font-size: 8px;
@@ -529,7 +529,7 @@ function App() {
                 margin-left: auto;
               }
               .contact-info {
-                display: grid;
+                display: flex;
                 grid-template-columns: 1fr 1fr 1fr 1fr auto;
                 gap: 0px;
                 align-items: center;
@@ -570,7 +570,7 @@ function App() {
                 margin: 5px 0;
               }
               .distributor-header-image {
-                width: 100%;
+                width: 35%;
               }
               .distributor-header-detail-text {
                 margin: 0;
@@ -642,9 +642,8 @@ function App() {
                 color: red; /* Declaration text red */
               }
               .contact-info {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 2px;
+               
+                gap: 120px;
                 background-color: #00008B; /* Blue background */
                 color: white; /* White text */
                 padding: 3px 5mm;
