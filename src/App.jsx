@@ -17,20 +17,56 @@ const excelSerialDateToJSDate = (serial) => {
   const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel's epoch is Dec 30, 1899
   const ms = serial * 24 * 60 * 60 * 1000;
   const date = new Date(excelEpoch.getTime() + ms);
-  return date;
+  return isNaN(date.getTime()) ? null : date; // Return null if date is invalid
 };
 
 // Helper function to format a Date object to DD-MM-YYYY
 
 
 const formatDateToDDMMYYYY = (date) => {
-  if (!date || isNaN(date.getTime())) {
+  if (!(date instanceof Date)) {
+    return '';
+  }
+  if (isNaN(date.getTime())) {
     return '';
   }
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
   const year = date.getFullYear();
   return `${day}-${month}-${year}`;
+};
+
+// Helper function to parse various date string formats
+const parseDateString = (dateString) => {
+  if (!dateString) return null;
+
+  // Try parsing as YYYY-MM-DD (standard for new Date())
+  let date = new Date(dateString);
+  if (!isNaN(date.getTime())) return date;
+
+  // Try parsing as DD-MM-YYYY
+  let parts = dateString.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (parts) {
+    date = new Date(parts[3], parts[2] - 1, parts[1]);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // Try parsing as MM/DD/YYYY
+  parts = dateString.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (parts) {
+    date = new Date(parts[3], parts[1] - 1, parts[2]);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // Try parsing as DD/MM/YYYY
+  parts = dateString.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (parts) {
+    date = new Date(parts[3], parts[2] - 1, parts[1]);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // If all attempts fail, return null
+  return null;
 };
 
 
@@ -43,7 +79,7 @@ const formatDateToDDMMYYYY = (date) => {
 
 function App() {
   const [parsedData, setParsedData] = useState([]);
-  const [showCashMemoPreview, setShowCashMemoPreview] = useState(false);
+
   const [headers, setHeaders] = useState([]);
   const [visibleHeaders, setVisibleHeaders] = useState([]); // New state for visible headers
   const [searchTerm, setSearchTerm] = useState('');
@@ -326,14 +362,18 @@ function App() {
         if (typeof processedCustomer['Order Date'] === 'number') {
           processedCustomer['Order Date'] = excelSerialDateToJSDate(processedCustomer['Order Date']);
         } else if (typeof processedCustomer['Order Date'] === 'string') {
-          processedCustomer['Order Date'] = new Date(processedCustomer['Order Date']);
+          processedCustomer['Order Date'] = parseDateString(processedCustomer['Order Date']);
+        } else {
+          processedCustomer['Order Date'] = null; // Set to null if not a number or string
         }
 
         // Convert 'Cash Memo Date'
         if (typeof processedCustomer['Cash Memo Date'] === 'number') {
           processedCustomer['Cash Memo Date'] = excelSerialDateToJSDate(processedCustomer['Cash Memo Date']);
         } else if (typeof processedCustomer['Cash Memo Date'] === 'string') {
-          processedCustomer['Cash Memo Date'] = new Date(processedCustomer['Cash Memo Date']);
+          processedCustomer['Cash Memo Date'] = parseDateString(processedCustomer['Cash Memo Date']);
+        } else {
+          processedCustomer['Cash Memo Date'] = null; // Set to null if not a number or string
         }
 
         const cashMemoHtml = renderToString(
@@ -1152,6 +1192,7 @@ function App() {
             </select>
             <button onClick={handlePrintData} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Data</button>
             <button onClick={handlePrintCashmemo} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Cashmemo</button>
+
             </div>
 
           <div className="table-container" style={{ maxHeight: '600px', overflowY: 'auto' }}>
@@ -1211,6 +1252,18 @@ function App() {
       </div>
         </div>
       )}
+
+      {filteredData.length > 0 && (
+  <div style={{ marginTop: '20px', border: '1px solid #ccc', padding: '10px' }}>
+    {/* <h2>Cash Memo Live Preview</h2>
+    <CashMemoEnglish
+      customer={filteredData[0]}
+      pageType={pageType}
+      dealerDetails={sampleDealerDetails}
+      formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+    /> */}
+  </div>
+)}
 
       {customersToPrint.length > 0 && (
         <div style={{ marginTop: '40px' }}>

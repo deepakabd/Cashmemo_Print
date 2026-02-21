@@ -99,9 +99,9 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         
           </div>
 
-          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <img src="/printback.jpg" alt="Watermark" style={{ opacity: '0.1', width: '200px', height: 'auto' }} />
-          </div>
+          {/* <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <img src="/printback.jpg" alt="Watermark" style={{ opacity: '1', width: '200px', height: 'auto' }} />
+          </div> */}
 
           <div className="header-content">
             <div className="header-content-flex-spacer"></div>

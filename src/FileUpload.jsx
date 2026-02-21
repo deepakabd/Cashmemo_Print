@@ -5,27 +5,24 @@ function FileUpload({ onFileUpload }) {
   const [uploadedSuccessfully, setUploadedSuccessfully] = useState(false);
 
   const handleFileChange = (event) => {
-    setSelectedFile(event.target.files[0]);
-    setUploadedSuccessfully(false); // Reset on new file selection
-  };
-
-  const handleUpload = () => {
-    if (selectedFile) {
-      onFileUpload(selectedFile);
+    const file = event.target.files[0];
+    if (file) {
+      setSelectedFile(file);
+      onFileUpload(file); // Automatically upload the file
       setUploadedSuccessfully(true); // Set to true after successful upload
     } else {
-      alert('Please select a file to upload.');
+      setSelectedFile(null);
+      setUploadedSuccessfully(false);
     }
   };
+
+
 
   return (
     <div>
       {!uploadedSuccessfully ? (
         <>
           <input type="file" accept=".csv, .xlsx" onChange={handleFileChange} />
-          <button onClick={handleUpload} disabled={!selectedFile} style={{ backgroundColor: 'white', color: 'black' }}>
-            Upload File
-          </button>
           {selectedFile && <p>Selected File: {selectedFile.name}</p>}
         </>
       ) : (

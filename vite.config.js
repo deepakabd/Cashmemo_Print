@@ -1,16 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import compiler from 'babel-plugin-react-compiler'
 
-// https://vite.dev/config/
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react({
       babel: {
-        plugins: [['babel-plugin-react-compiler']],
+        plugins: [compiler],
       },
     }),
   ],
   server: {
-    port: 8000, // Set your desired port here
+    port: 8000, // Set the port to 8000
   },
 })
