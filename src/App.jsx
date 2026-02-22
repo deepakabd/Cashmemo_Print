@@ -1253,17 +1253,7 @@ function App() {
         </div>
       )}
 
-      {filteredData.length > 0 && (
-  <div style={{ marginTop: '20px', border: '1px solid #ccc', padding: '10px' }}>
-    {/* <h2>Cash Memo Live Preview</h2>
-    <CashMemoEnglish
-      customer={filteredData[0]}
-      pageType={pageType}
-      dealerDetails={sampleDealerDetails}
-      formatDateToDDMMYYYY={formatDateToDDMMYYYY}
-    /> */}
-  </div>
-)}
+
 
       {customersToPrint.length > 0 && (
         <div style={{ marginTop: '40px' }}>
