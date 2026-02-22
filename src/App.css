@@ -40,3 +40,9 @@
 .read-the-docs {
   color: #888;
 }
+
+
+
+.table-container {
+  font-size: 0.8rem; /* Reduced font size for table container */
+}

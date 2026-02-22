@@ -322,7 +322,7 @@ function App() {
           text-align: left;
         }
       </style>
-      <h1>Available Data</h1>
+      <h1>List of Cash Memo</h1>
       <table>
         <thead>
           <tr>
@@ -330,13 +330,30 @@ function App() {
           </tr>
         </thead>
         <tbody>
-          ${currentTableData.map(row => `
+          ${filteredData.map(row => `
             <tr>
-              ${visibleHeaders.map(header => `<td>${row[header]}</td>`).join('')}
+              ${visibleHeaders.map(header => {
+                let displayValue = row[header];
+
+                if (header === 'Order Date' || header === 'Cash Memo Date') {
+                  let date = null;
+                  if (typeof row[header] === 'number') {
+                    date = excelSerialDateToJSDate(row[header]);
+                  } else if (typeof row[header] === 'string') {
+                    date = parseDateString(row[header]);
+                  }
+                  displayValue = formatDateToDDMMYYYY(date);
+                } else if (header === 'Online Refill Payment status') {
+                  displayValue = row[header] === 'PAID' ? 'PAID' : 'COD';
+                }
+
+                return `<td>${displayValue}</td>`;
+              }).join('')}
             </tr>
           `).join('')}
         </tbody>
       </table>
+      <p>Total Records: ${filteredData.length}</p>
     `;
     const printWindow = window.open('', '_blank');
     printWindow.document.write(printContent);
@@ -1195,7 +1212,7 @@ function App() {
 
             </div>
 
-          <div className="table-container" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+          <div className="table-container">
             <table>
             <thead>
               <tr>
@@ -1215,34 +1232,51 @@ function App() {
               </tr>
             </thead>
             <tbody>
-                  {currentTableData.map((customer, index) => (
-                    <tr key={index} style={{ border: '1px solid black' }}>
-                      <td style={{ border: '1px solid black', padding: '8px' }}>
-                        <input
-                            type="checkbox"
-                            checked={selectedCustomerIds.includes(String(customer['Consumer No.']))}
-                            onChange={() => handleCheckboxChange(customer['Consumer No.'])}
-                          />
-                      </td>
-                  {visibleHeaders.map((header, colIndex) => {
-                        return (
-                          <td key={colIndex} style={{ border: '1px solid black', padding: '8px' }}>
-                            {String(
-                                header === 'Online Refill Payment status'
-                                   ? (customer[header] === 'PAID' ? 'PAID' : 'COD')
-                                   : (header === 'IVR Booking No.' && customer[header] === undefined
-                                     ? ''
-                                     : (header === 'Order Date' || header === 'Cash Memo Date'
-                                       ? formatDateToDDMMYYYY(excelSerialDateToJSDate(customer[header]))
-                                       : customer[header]))
-                               )}
-                          </td>
-                        );
-                      })}
-                </tr>
-              ))}
+                  {currentTableData.map((customer, index) => {
+                    const isEkycStatusPending = customer['EKYC Status'] === 'Pending' || customer['EKYC Status'] === 'EKYC NOT DONE';
+                    return (
+                      <tr
+                        key={index}
+                        style={{
+                          border: '1px solid black',
+                          color: isEkycStatusPending ? 'red' : 'inherit',
+                          fontWeight: isEkycStatusPending ? 'bold' : 'normal',
+                        }}
+                      >
+                        <td style={{ border: '1px solid black', padding: '8px' }}>
+                          <input
+                              type="checkbox"
+                              checked={selectedCustomerIds.includes(String(customer['Consumer No.']))}
+                              onChange={() => handleCheckboxChange(customer['Consumer No.'])}
+                            />
+                        </td>
+                    {visibleHeaders.map((header, colIndex) => {
+                          return (
+                            <td
+                              key={colIndex}
+                              style={{
+                                border: '1px solid black',
+                                padding: '8px',
+                              }}
+                            >
+                              {String(
+                                  header === 'Online Refill Payment status'
+                                     ? (customer[header] === 'PAID' ? 'PAID' : 'COD')
+                                     : (header === 'IVR Booking No.' && customer[header] === undefined
+                                       ? ''
+                                       : (header === 'Order Date' || header === 'Cash Memo Date'
+                                         ? formatDateToDDMMYYYY(excelSerialDateToJSDate(customer[header]))
+                                         : customer[header]))
+                                 )}
+                            </td>
+                          );
+                        })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          <p>Total Records: {filteredData.length}</p>
 
         <div className="pagination">
           <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}>Previous</button>
