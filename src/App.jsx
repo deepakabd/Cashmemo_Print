@@ -6,6 +6,7 @@ import FileUpload from './FileUpload';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import CashMemoEnglish from './CashMemoEnglish';
+import RateUpdatePage from './RateUpdatePage';
 
 import './App.css';
 
@@ -78,6 +79,59 @@ const parseDateString = (dateString) => {
 
 
 function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showProfileUpdate, setShowProfileUpdate] = useState(false);
+  const [showRateUpdate, setShowRateUpdate] = useState(false);
+  const [showDataButton, setShowDataButton] = useState(false); // New state for "Show Data" button
+  const [fileUploadMessage, setFileUploadMessage] = useState(''); // New state for upload message
+  const [showParsedData, setShowParsedData] = useState(false); // New state to control visibility of parsed data
+
+  // Placeholder Component for Profile Update
+  const ProfileUpdatePlaceholder = () => (
+    <div className="placeholder-container">
+      <h2>Profile Update Section</h2>
+      <p>This is where the user profile update form will be implemented.</p>
+      <button onClick={() => setShowProfileUpdate(false)}>Close</button>
+    </div>
+  );
+
+  // Placeholder Component for Rate Update
+  // const RateUpdatePlaceholder = () => (
+  //   <div className="placeholder-container">
+  //     <h2>Rate Update Section</h2>
+  //     <p>This is where the rate update functionality will be implemented.</p>
+  //     <button onClick={() => setShowRateUpdate(false)}>Close</button>
+  //   </div>
+  // );
+
+  const handleLogin = () => {
+    setIsLoggedIn(true);
+    alert('Logged in successfully!');
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setShowUserMenu(false);
+    alert('Logged out successfully!');
+  };
+
+  const handleProfileUpdate = () => {
+    setShowProfileUpdate(true);
+    setShowRateUpdate(false); // Close Rate Update if open
+    setShowUserMenu(false);
+  };
+
+  const handleRateUpdate = () => {
+    setShowRateUpdate(true);
+    setShowProfileUpdate(false); // Close Profile Update if open
+    setShowUserMenu(false);
+  };
+
+  const handleShowData = () => {
+    setShowParsedData(true);
+  };
+
   const [parsedData, setParsedData] = useState([]);
 
   const [headers, setHeaders] = useState([]);
@@ -190,6 +244,11 @@ function App() {
               setUniqueCashMemoStatuses([...new Set(results.data.map(row => row['Cash Memo Status']).filter(Boolean))]);
               setUniqueDeliveryMen([...new Set(results.data.map(row => row['Delivery Man']).filter(Boolean))]);
               setUniqueIsRegMobileStatuses([...new Set(results.data.map(row => row['Is Reg Mobile'] ? 'Yes' : 'No').filter(Boolean))]);
+              setShowDataButton(true); // Show "Show Data" button after successful upload
+              setFileUploadMessage('File uploaded successfully!');
+              setTimeout(() => {
+                setFileUploadMessage('');
+              }, 5000); // Hide message after 5 seconds
             } else {
               setHeaders([]);
               setParsedData([]);
@@ -201,6 +260,11 @@ function App() {
               setUniqueMobileStatuses([]);
               setUniqueConsumerStatuses([]);
               setUniqueConnectionTypes([]);
+              setShowDataButton(false); // Hide button if no data
+              setFileUploadMessage('No data found in file.');
+              setTimeout(() => {
+                setFileUploadMessage('');
+              }, 5000);
             }
             setSelectedCustomerIds([]);
             setCustomersToPrint([]); // Clear customers to print on new file upload
@@ -209,6 +273,10 @@ function App() {
           error: (error) => {
             console.error('CSV पार्स करने में त्रुटि:', error);
             alert('CSV फ़ाइल को पार्स करने में त्रुटि हुई।');
+            setFileUploadMessage('Error parsing CSV file.');
+            setTimeout(() => {
+              setFileUploadMessage('');
+            }, 5000);
           }
         });
       } else if (file.name.endsWith('.xlsx')) {
@@ -246,6 +314,11 @@ function App() {
           setUniqueCashMemoStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Cash Memo Status')]).filter(Boolean))]);
           setUniqueDeliveryMen([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Delivery Man')]).filter(Boolean))]);
           setUniqueIsRegMobileStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Is Reg Mobile')] ? 'Yes' : 'No').filter(Boolean))]);
+          setShowDataButton(true); // Show "Show Data" button after successful upload
+          setFileUploadMessage('File uploaded successfully!');
+          setTimeout(() => {
+            setFileUploadMessage('');
+          }, 5000); // Hide message after 5 seconds
         } else {
           setHeaders([]);
           setParsedData([]);
@@ -257,6 +330,11 @@ function App() {
           setUniqueMobileStatuses([]);
           setUniqueConsumerStatuses([]);
           setUniqueConnectionTypes([]);
+          setShowDataButton(false); // Hide button if no data
+          setFileUploadMessage('No data found in file.');
+          setTimeout(() => {
+            setFileUploadMessage('');
+          }, 5000);
         }
         setSelectedCustomerIds([]);
         setCustomersToPrint([]); // Clear customers to print on new file upload
@@ -266,6 +344,10 @@ function App() {
     reader.onerror = (error) => {
       console.error('फ़ाइल पढ़ने में त्रुटि:', error);
       alert('फ़ाइल पढ़ने में त्रुटि हुई।');
+      setFileUploadMessage('Error reading file.');
+      setTimeout(() => {
+        setFileUploadMessage('');
+      }, 5000);
     };
 
     if (file.name.endsWith('.csv')) {
@@ -1009,7 +1091,40 @@ function App() {
 
   return (
     <>
-      <h1>Cash Memo Printer</h1>
+      <nav className="navbar">
+        <div className="navbar-left">
+          <a href="#home">Home</a>
+          <a href="#about">About</a>
+          <a href="#contact">Contact</a>
+          {isLoggedIn && <FileUpload onFileUpload={handleFileUpload} />}
+          {isLoggedIn && showDataButton && (
+            <button onClick={handleShowData} className="navbar-button">Show Data</button>
+          )}
+        </div>
+        <div className="navbar-right">
+          {isLoggedIn ? (
+            <div className="user-menu-container">
+              <div className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)}>
+                &#128100; {/* User icon */}
+              </div>
+              {showUserMenu && (
+                <div className="dropdown-menu">
+                  <button onClick={handleProfileUpdate}>Profile Update</button>
+                  <button onClick={handleRateUpdate}>Rate Update</button>
+                  <button onClick={handleLogout}>Logout</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <button onClick={handleLogin}>Login</button>
+              <a href="#register">Register</a>
+                </>)}
+        </div>
+      </nav>
+      {showProfileUpdate && <ProfileUpdatePlaceholder />}
+      {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
+      
       <style>{`
         input[type="checkbox"] {
           -webkit-appearance: checkbox;
@@ -1034,7 +1149,7 @@ function App() {
           color: #000; /* Or any color that makes it visible */
         }
       `}</style>
-      <FileUpload onFileUpload={handleFileUpload} />
+
 
       {parsedData.length > 0 && (
         <div style={{ marginTop: '20px' }}>

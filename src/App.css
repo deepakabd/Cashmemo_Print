@@ -15,7 +15,7 @@
   filter: drop-shadow(0 0 2em #646cffaa);
 }
 .logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+  filter: drop_shadow(0 0 2em #61dafbaa);
 }
 
 @keyframes logo-spin {
@@ -45,4 +45,117 @@
 
 .table-container {
   font-size: 0.8rem; /* Reduced font size for table container */
+}
+
+/* Navbar styles */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #333;
+  padding: 10px 20px;
+  color: white;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  z-index: 1000;
+}
+
+.navbar-left a, .navbar-right a, .navbar-right button {
+  color: white;
+  text-decoration: none;
+  padding: 8px 15px;
+  margin: 0 5px;
+  border-radius: 5px;
+  transition: background-color 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.navbar-left a:hover, .navbar-right a:hover, .navbar-right button:hover {
+  background-color: #555;
+}
+
+.user-menu-container {
+  position: relative;
+  display: inline-block;
+}
+
+.user-icon {
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 50%;
+  background-color: #555;
+}
+
+.user-icon:hover {
+  background-color: #777;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background-color: #444;
+  min-width: 160px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index: 1;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.dropdown-menu button {
+  color: white;
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.dropdown-menu button:hover {
+  background-color: #666;
+}
+
+.placeholder-container {
+  position: relative;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, 13%);
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+  color: black; /* Ensure text is visible on white background */
+  text-align: center;
+}
+
+.placeholder-container h2 {
+  margin-top: 0;
+  color: #333;
+}
+
+.placeholder-container button {
+  margin-top: 15px;
+  padding: 10px 20px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.placeholder-container button:hover {
+  background-color: #0056b3;
 }
