@@ -83,6 +83,11 @@ function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileUpdate, setShowProfileUpdate] = useState(false);
   const [showRateUpdate, setShowRateUpdate] = useState(false);
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [showUserProfile, setShowUserProfile] = useState(false);
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [showHomeInfo, setShowHomeInfo] = useState(false);
+  const [showAboutInfo, setShowAboutInfo] = useState(false);
   const [showDataButton, setShowDataButton] = useState(false); // New state for "Show Data" button
   const [fileUploadMessage, setFileUploadMessage] = useState(''); // New state for upload message
   const [showParsedData, setShowParsedData] = useState(false); // New state to control visibility of parsed data
@@ -158,20 +163,203 @@ function App() {
     alert('Logged out successfully!');
   };
 
+  const hideAllViews = () => {
+    setShowHomeInfo(false);
+    setShowAboutInfo(false);
+    setShowContactForm(false);
+    setShowUserProfile(false);
+    setShowRegisterForm(false);
+    setShowProfileUpdate(false);
+    setShowRateUpdate(false);
+  };
+
   const handleProfileUpdate = () => {
+    hideAllViews();
     setShowProfileUpdate(true);
-    setShowRateUpdate(false); // Close Rate Update if open
     setShowUserMenu(false);
   };
 
   const handleRateUpdate = () => {
+    hideAllViews();
     setShowRateUpdate(true);
-    setShowProfileUpdate(false); // Close Profile Update if open
+    setShowUserMenu(false);
+  };
+  const handleRegister = () => {
+    hideAllViews();
+    setShowRegisterForm(true);
+    setShowUserMenu(false);
+  };
+  const handleUserProfile = () => {
+    hideAllViews();
+    setShowUserProfile(true);
     setShowUserMenu(false);
   };
 
   const handleShowData = () => {
     setShowParsedData(prev => !prev);
+  };
+
+  const handleHomeOpen = () => {
+    hideAllViews();
+    setShowHomeInfo(true);
+    setShowUserMenu(false);
+  };
+
+  const handleAboutOpen = () => {
+    hideAllViews();
+    setShowAboutInfo(true);
+    setShowUserMenu(false);
+  };
+
+  const handleContactOpen = () => {
+    hideAllViews();
+    setShowContactForm(true);
+    setShowUserMenu(false);
+  };
+
+  const RegisterForm = ({ onClose }) => {
+    const [form, setForm] = useState({
+      package: '',
+      dealerCode: '',
+      dealerName: '',
+      mobile: '',
+      email: '',
+      pin: '',
+      confirmPin: '',
+      utr: '',
+      date: '',
+    });
+    const fixedPackages = [
+      'Demo - 1 दिन',
+      'Basic Package (500 रुपये) - 7 दिन',
+      'Premium Package (2000 रुपये) - 1 महीना',
+      'Enterprise Package (5000 रुपये) - 1 साल',
+    ];
+    const onChange = (e) => {
+      const { name, value } = e.target;
+      setForm(prev => ({ ...prev, [name]: value }));
+    };
+    const onSubmit = () => {
+      if (form.pin !== form.confirmPin) {
+        alert('PIN aur Confirm PIN match nahi kar rahe');
+        return;
+      }
+      localStorage.setItem('registrationData', JSON.stringify(form));
+      alert('Registration details saved!');
+      onClose();
+    };
+    return (
+      <div className="placeholder-container">
+        <h2 className="register-title">रजिस्टर करें</h2>
+        <div className="register-form">
+          <select name="package" value={form.package} onChange={onChange} className="form-input">
+            <option value="">पैकेज चुनें</option>
+            {fixedPackages.map((opt, i) => (
+              <option key={i} value={opt}>{opt}</option>
+            ))}
+          </select>
+          <input name="dealerCode" className="form-input" placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
+          <input name="dealerName" className="form-input" placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
+          <input name="mobile" className="form-input" placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
+          <input name="email" className="form-input" placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
+          <input name="pin" className="form-input" placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
+          <input name="confirmPin" className="form-input" placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
+          <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
+          <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
+          <div className="upi-note">UPI ID for Payment: 8002074620@ybl</div>
+        </div>
+        <div className="form-actions">
+          <button onClick={onSubmit}>रजिस्टर करें</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
+  const UserProfile = ({ onClose }) => {
+    const [data, setData] = useState(null);
+    useEffect(() => {
+      try {
+        const saved = localStorage.getItem('profileData');
+        if (saved) {
+          setData(JSON.parse(saved));
+        }
+      } catch {}
+    }, []);
+    return (
+      <div className="placeholder-container">
+        <h2>User Profile</h2>
+        {data ? (
+          <div className="profile-form">
+            <span className="profile-label">Distributor Code</span>
+            <span>{data.distributorCode || '-'}</span>
+            <span className="profile-label">Distributor Name</span>
+            <span>{data.distributorName || '-'}</span>
+            <span className="profile-label">Contact</span>
+            <span>{data.contact || '-'}</span>
+            <span className="profile-label">Email</span>
+            <span>{data.email || '-'}</span>
+            <span className="profile-label">GST</span>
+            <span>{data.gst || '-'}</span>
+            <span className="profile-label">Address</span>
+            <span>{data.address || '-'}</span>
+          </div>
+        ) : (
+          <div>No profile details found. Please update your profile.</div>
+        )}
+        <div className="form-actions">
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
+  const ContactForm = ({ onClose }) => {
+    const [text, setText] = useState('');
+    const submitFeedback = () => {
+      const key = 'feedbackData';
+      try {
+        const existing = localStorage.getItem(key);
+        const arr = existing ? JSON.parse(existing) : [];
+        arr.push({ text, date: new Date().toISOString() });
+        localStorage.setItem(key, JSON.stringify(arr));
+        alert('Feedback submitted. Thank you!');
+        onClose();
+      } catch {
+        alert('Unable to save feedback.');
+      }
+    };
+    return (
+      <div className="placeholder-container">
+        <h2>Contact</h2>
+        <div className="profile-form">
+          <span className="profile-label">Your Feedback</span>
+          <textarea className="form-textarea" rows="5" value={text} onChange={(e) => setText(e.target.value)} placeholder="अपना सुझाव/फीडबैक लिखें" />
+          <span className="profile-label">Email</span>
+          <span>deepak.youvi@gmail.com</span>
+        </div>
+        <div className="form-actions">
+          <button onClick={submitFeedback}>Submit</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
+  const HomeInfo = () => {
+    return (
+      <div className="placeholder-container">
+        <h2 className="home-info-title">This website is only for HPCL Distributor for Cashmemo Printing</h2>
+      </div>
+    );
+  };
+
+  const AboutInfo = () => {
+    return (
+      <div className="placeholder-container">
+        <h2 className="about-info-title">Under Updation</h2>
+      </div>
+    );
   };
 
   const [parsedData, setParsedData] = useState([]);
@@ -1198,9 +1386,9 @@ function App() {
     <>
       <nav className="navbar">
         <div className="navbar-left">
-          <a href="#home">Home</a>
-          <a href="#about">About</a>
-          <a href="#contact">Contact</a>
+          <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
+          <button className="navbar-button" onClick={handleAboutOpen}>About</button>
+          <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
           {isLoggedIn && !showDataButton && <FileUpload onFileUpload={handleFileUpload} />}
           {isLoggedIn && showDataButton && (
             <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
@@ -1214,6 +1402,7 @@ function App() {
               </div>
               {showUserMenu && (
                 <div className="dropdown-menu">
+                  <button onClick={handleUserProfile}>User Profile</button>
                   <button onClick={handleProfileUpdate}>Profile Update</button>
                   <button onClick={handleRateUpdate}>Rate Update</button>
                   <button onClick={handleLogout}>Logout</button>
@@ -1223,14 +1412,19 @@ function App() {
           ) : (
             <>
               <button onClick={handleLogin}>Login</button>
-              <a href="#register">Register</a>
+              <button onClick={handleRegister}>Register</button>
                 </>)}
         </div>
       </nav>
-      {(showProfileUpdate || showRateUpdate) && (
+      {(showProfileUpdate || showRateUpdate || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo) && (
         <div className="book-view">
+          {showHomeInfo && <HomeInfo />}
+          {showAboutInfo && <AboutInfo />}
           {showProfileUpdate && <ProfileUpdateForm onClose={() => setShowProfileUpdate(false)} />}
           {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
+          {showRegisterForm && <RegisterForm onClose={() => setShowRegisterForm(false)} />}
+          {showUserProfile && <UserProfile onClose={() => setShowUserProfile(false)} />}
+          {showContactForm && <ContactForm onClose={() => setShowContactForm(false)} />}
         </div>
       )}
       
