@@ -459,6 +459,14 @@
   color: #111827;
   font-weight: 700;
 }
+.invoice-table th:nth-child(2),
+.invoice-table td:nth-child(2) {
+  width: 34%;
+  min-width: 300px;
+}
+.invoice-table td:nth-child(2) .invoice-input {
+  font-size: 10px;
+}
 .invoice-table tbody tr:nth-child(even) {
   background: #f9fafb;
 }
@@ -597,8 +605,8 @@
 
 .invoice-actions button {
   margin-top: 0;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 5px 10px;
+  font-size: 10px;
   border-radius: 4px;
 }
 

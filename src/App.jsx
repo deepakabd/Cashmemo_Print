@@ -814,7 +814,6 @@ function App() {
                 <tbody>
                   <tr><td>CGST Amt</td><td>{cgstAmount.toFixed(2)}</td></tr>
                   <tr><td>SGST Amt</td><td>{sgstAmount.toFixed(2)}</td></tr>
-                  <tr><td>Freight/Packing Charges</td><td>-</td></tr>
                   <tr><td>Round Off</td><td>{roundOff.toFixed(2)}</td></tr>
                   <tr><td>Total Amount</td><td><strong>{payableTotal.toFixed(2)}</strong></td></tr>
                 </tbody>
