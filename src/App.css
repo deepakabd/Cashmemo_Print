@@ -350,15 +350,25 @@
 }
 .invoice-brand {
   display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 8px;
+  grid-template-columns: 250px 1fr;
+  gap: 12px;
   align-items: center;
 }
-.invoice-logo {
-  width: 44px;
-  height: 44px;
-  background: #2a72d8;
-  border-radius: 8px;
+
+.invoice-brand-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.invoice-logo-image {
+  width: 250px;
+  height: 82px;
+  object-fit: contain;
+}
+
+.invoice-brand-details {
+  min-width: 0;
 }
 .invoice-title {
   font-weight: 800;
@@ -377,6 +387,9 @@
   margin-top: 10px;
   border-bottom: 1px solid #dfe3eb;
   padding-bottom: 10px;
+}
+.invoice-grid .billto-section {
+  grid-column: 1 / -1;
 }
 .invoice-box,
 .section-box {
@@ -522,8 +535,22 @@
 }
 .billto-name { grid-column: 1; }
 .billto-consumerno { grid-column: 2; }
+.billto-inline-row {
+  grid-column: 1 / span 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
 .billto-address { grid-column: 1 / span 2; }
 .billto-gstin { grid-column: 1 / span 2; }
+.billto-date-row {
+  grid-column: 1 / span 2;
+  display: flex;
+  justify-content: flex-end;
+}
+.billto-date-row .billto-date {
+  width: 240px;
+}
 
 .summary-row {
   display: flex;
@@ -544,6 +571,16 @@
   font-size: 11px;
   background: #f9fafb;
 }
+
+.invoice-total-words-bar {
+  margin-top: 10px;
+  border: 1px solid #dfe3eb;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: #eef4ff;
+}
+
 .invoice-bottom {
   margin-top: 10px;
   text-align: center;

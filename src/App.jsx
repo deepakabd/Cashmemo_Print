@@ -83,6 +83,7 @@ function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileUpdate, setShowProfileUpdate] = useState(false);
   const [showRateUpdate, setShowRateUpdate] = useState(false);
+  const [showBankDetails, setShowBankDetails] = useState(false);
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
@@ -145,6 +146,57 @@ function App() {
     );
   };
 
+  const BankDetailsForm = ({ onClose }) => {
+    const defaultBankDetails = {
+      bankName: 'CENTRAL BANK OF INDIA',
+      branch: 'RUNNISAIDPUR',
+      accountNo: '3934037653',
+      ifsc: 'BKID0003397',
+    };
+    const [formData, setFormData] = useState(defaultBankDetails);
+
+    useEffect(() => {
+      const saved = localStorage.getItem('bankDetailsData');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          setFormData((prev) => ({ ...prev, ...parsed }));
+        } catch {}
+      }
+    }, []);
+
+    const handleChange = (e) => {
+      const { name, value } = e.target;
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleSave = () => {
+      localStorage.setItem('bankDetailsData', JSON.stringify(formData));
+      alert('Bank details saved successfully!');
+      onClose();
+    };
+
+    return (
+      <div className="placeholder-container">
+        <h2>Bank Details</h2>
+        <div className="profile-form">
+          <span className="profile-label">Bank Name</span>
+          <input className="form-input" name="bankName" type="text" value={formData.bankName} onChange={handleChange} />
+          <span className="profile-label">Branch</span>
+          <input className="form-input" name="branch" type="text" value={formData.branch} onChange={handleChange} />
+          <span className="profile-label">Account No</span>
+          <input className="form-input" name="accountNo" type="text" value={formData.accountNo} onChange={handleChange} />
+          <span className="profile-label">IFSC Code</span>
+          <input className="form-input" name="ifsc" type="text" value={formData.ifsc} onChange={handleChange} />
+        </div>
+        <div className="form-actions">
+          <button onClick={handleSave}>Save</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
   // Placeholder Component for Rate Update
   // const RateUpdatePlaceholder = () => (
   //   <div className="placeholder-container">
@@ -174,6 +226,7 @@ function App() {
     setShowRegisterForm(false);
     setShowProfileUpdate(false);
     setShowRateUpdate(false);
+    setShowBankDetails(false);
     setShowParsedData(false);
   };
 
@@ -186,6 +239,11 @@ function App() {
   const handleRateUpdate = () => {
     hideAllViews();
     setShowRateUpdate(true);
+    setShowUserMenu(false);
+  };
+  const handleBankDetails = () => {
+    hideAllViews();
+    setShowBankDetails(true);
     setShowUserMenu(false);
   };
   const handleRegister = () => {
@@ -418,13 +476,28 @@ function App() {
       }
     })();
 
-    const [dealer, setDealer] = useState(sampleDealerDetails);
+    const dealer = {
+      name: 'MAHADEV HP GAS GRAMIN VITRAK (41038690)',
+      address: 'ATHARI, RUNNISAIDPUR, SITAMARHI, BIHAR - 843311',
+      contact: '7070236555',
+      gstn: '10ABBFM6137E1ZU',
+    };
+    const defaultBankDetails = {
+      bankName: 'CENTRAL BANK OF INDIA',
+      branch: 'RUNNISAIDPUR',
+      accountNo: '3934037653',
+      ifsc: 'BKID0003397',
+    };
     const [invoiceRates] = useState(initialInvoiceRates);
+    const [bankDetails, setBankDetails] = useState(defaultBankDetails);
     const [invoiceRows, setInvoiceRows] = useState([
       { id: `row-${Date.now()}`, item: initialInvoiceRates[0]?.Item || '', quantity: 1 },
     ]);
     const [billToName, setBillToName] = useState('');
     const [billToConsumerNo, setBillToConsumerNo] = useState('');
+    const [billToMobileNo, setBillToMobileNo] = useState('');
+    const [billToCenterNo, setBillToCenterNo] = useState('');
+    const [billToDate, setBillToDate] = useState(new Date().toISOString().slice(0, 10));
     const [billToAddress, setBillToAddress] = useState('');
     const [billToGstin, setBillToGstin] = useState('');
     const invoicePrintRef = useRef(null);
@@ -575,48 +648,51 @@ function App() {
     };
 
     useEffect(() => {
-      try {
-        const profileStr = localStorage.getItem('profileData');
-        if (profileStr) {
-          const pd = JSON.parse(profileStr);
-          setDealer({
-            name: pd.distributorName
-              ? (pd.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
-              : sampleDealerDetails.name,
-            gstn: pd.gst || sampleDealerDetails.gstn,
-            address: { plotNo: pd.address || sampleDealerDetails.address?.plotNo || '' },
-            contact: {
-              email: pd.email || sampleDealerDetails.contact?.email || '',
-              telephone: pd.contact || sampleDealerDetails.contact?.telephone || '',
-            },
-          });
-        }
-      } catch {}
+      const saved = localStorage.getItem('bankDetailsData');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          setBankDetails((prev) => ({ ...prev, ...parsed }));
+        } catch {}
+      }
     }, []);
+
     return (
       <div className="placeholder-container">
         <div className="invoice-container" ref={invoicePrintRef}>
           <div className="invoice-tax-label">Tax Invoice</div>
           <div className="invoice-header">
             <div className="invoice-brand">
-              <div className="invoice-logo"></div>
-              <div>
+              <div className="invoice-brand-logo">
+                <img src="/logo.jpg" alt="Distributor Logo" className="invoice-logo-image" />
+              </div>
+              <div className="invoice-brand-details">
                 <div className="invoice-title">{dealer.name}</div>
-                <div className="invoice-sub">{dealer.address?.plotNo}</div>
-                <div className="invoice-sub">Contact: {dealer.contact?.telephone}</div>
+                <div className="invoice-sub">{dealer.address}</div>
+                <div className="invoice-sub">Contact: {dealer.contact}</div>
                 <div className="invoice-sub">GSTIN: {dealer.gstn}</div>
               </div>
             </div>
             
           </div>
           <div className="invoice-grid">
-            <div className="section-box">
+            <div className="section-box billto-section">
               <span className="section-label">Bill To</span>
               <div className="billto-form">
                 <input className="invoice-input billto-name" placeholder="Consumer Name" value={billToName} onChange={(e)=>setBillToName(e.target.value)} />
                 <input className="invoice-input billto-consumerno" placeholder="Consumer No (if available)" value={billToConsumerNo} onChange={(e)=>setBillToConsumerNo(e.target.value)} />
+                <div className="billto-inline-row">
+                  
+                  <input className="invoice-input billto-mobile" placeholder="Mobile No" value={billToMobileNo} onChange={(e)=>setBillToMobileNo(e.target.value)} />
+                  <input className="invoice-input billto-centerno" placeholder="Center No" value={billToCenterNo} onChange={(e)=>setBillToCenterNo(e.target.value)} />
+                  
+                  
+                </div>
                 <textarea className="invoice-textarea billto-address" placeholder="Address" value={billToAddress} onChange={(e)=>setBillToAddress(e.target.value)} />
                 <input className="invoice-input billto-gstin" placeholder="GSTIN (if available)" value={billToGstin} onChange={(e)=>setBillToGstin(e.target.value)} />
+                <div className="billto-date-row">
+                  <input className="invoice-input billto-date" type="date" value={billToDate} onChange={(e)=>setBillToDate(e.target.value)} />
+                </div>
               </div>
             </div>
           </div>
@@ -712,27 +788,26 @@ function App() {
               </table>
             </div>
           </div>
+          <div className="invoice-total-words-bar">
+            <strong>Invoice Total in Words: {payableTotalInWords}</strong>
+          </div>
           <div className="invoice-footer">
             <div className="invoice-bank">
               <div><strong>Our Bank Details</strong></div>
-              <div>Bank Name: STATE BANK OF INDIA</div>
-              <div>Branch: Delhi</div>
-              <div>Account No: 20412XXXX05</div>
-              <div>IFSC Code: SBIN0X3X0XX</div>
-              <div>UPI ID: yourupi@upi</div>
-              <div>Invoice Total in Words</div>
-              <div>{payableTotalInWords}</div>
+              <div>Bank Name: {bankDetails.bankName}</div>
+              <div>Branch: {bankDetails.branch}</div>
+              <div>Account No: {bankDetails.accountNo}</div>
+              <div>IFSC Code: {bankDetails.ifsc}</div>
             </div>
             <div className="invoice-declaration">
               <div><strong>Declaration</strong></div>
-              <div>1. Subject to Mehra jurisdiction</div>
-              <div>2. Terms & conditions are subject to our trade policy</div>
-              <div>3. Our risk & responsibility ceases after the delivery of goods.</div>
+              <div>1. Terms & conditions are subject to our trade policy</div>
+              <div>2. Our risk & responsibility ceases after the delivery of goods.</div>
               <div>E & O.E.</div>
-              <div style={{marginTop:'16px', textAlign:'right'}}>Authorised Signatory</div>
+              
             </div>
           </div>
-          <div className="invoice-bottom">Thank You For Business With Us!</div>
+          <div className="invoice-bottom">“This is computer generated invoice no signature required.”</div>
         </div>
       </div>
     );
@@ -1782,6 +1857,7 @@ function App() {
                 <div className="dropdown-menu">
                   <button onClick={handleUserProfile}>User Profile</button>
                   <button onClick={handleProfileUpdate}>Profile Update</button>
+                  <button onClick={handleBankDetails}>Bank Details</button>
                   <button onClick={handleRateUpdate}>Rate Update</button>
                   <button onClick={handleLogout}>Logout</button>
                 </div>
@@ -1794,13 +1870,14 @@ function App() {
                 </>)}
         </div>
       </nav>
-      {(showProfileUpdate || showRateUpdate || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage) && (
+      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage) && (
         <div className="book-view">
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && <InvoicePage />}
           {showProfileUpdate && <ProfileUpdateForm onClose={() => setShowProfileUpdate(false)} />}
           {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
+          {showBankDetails && <BankDetailsForm onClose={() => setShowBankDetails(false)} />}
           {showRegisterForm && <RegisterForm onClose={() => setShowRegisterForm(false)} />}
           {showUserProfile && <UserProfile onClose={() => setShowUserProfile(false)} />}
           {showContactForm && <ContactForm onClose={() => setShowContactForm(false)} />}
