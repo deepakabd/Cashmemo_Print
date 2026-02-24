@@ -211,14 +211,14 @@
 }
 
 .placeholder-container button {
-  margin-top: 15px;
-  padding: 10px 20px;
+  margin-top: 0px;
+  padding: 0px 0px;
   background-color: #007bff;
   color: white;
   border: none;
   border-radius: 5px;
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 12px;
 }
 
 .placeholder-container button:hover {
@@ -547,6 +547,13 @@
   grid-template-columns: 1.5fr 0.9fr;
   gap: 6px;
 }
+.billto-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 2px 0 2px 2px;
+}
 .billto-name { grid-column: 1; }
 .billto-consumerno {
   grid-column: 2;
@@ -567,7 +574,7 @@
   justify-content: flex-end;
 }
 .billto-date-row .billto-date {
-  width: 240px;
+  width: 170px;
 }
 
 .summary-row {
@@ -655,70 +662,74 @@
   overflow-x: auto;
   border: 1px solid #cfd4da;
   border-radius: 8px;
+  font-size: 10px;
 }
 
 .rate-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
-  table-layout: fixed;
+  min-width: 1120px;
+  table-layout: auto;
 }
 
 .rate-table thead th {
   text-align: left;
   font-weight: 700;
-  font-size: 14px;
-  padding: 8px 10px;
+  font-size: 10px;
+  padding: 6px 8px;
   border: 1px solid #cfd4da;
 }
 
-.rate-table thead th:first-child {
-  width: 60px;
-}
-
-.rate-table thead th:nth-child(3),
-.rate-table thead th:nth-child(4),
-.rate-table thead th:nth-child(5),
-.rate-table thead th:nth-child(6) {
-  width: 160px;
+.rate-table thead th:not(:nth-child(3)),
+.rate-table tbody td:not(:nth-child(3)) {
+  white-space: nowrap;
+  width: 1%;
 }
 
 .rate-table tbody td {
-  padding: 6px 10px;
+  padding: 5px 8px;
   vertical-align: middle;
-  font-size: 13px;
+  font-size: 10px;
   border: 1px solid #cfd4da;
 }
 
 .rate-table tbody td:first-child {
-  width: 60px;
   font-weight: 600;
 }
 
-.rate-table tbody td:nth-child(2) {
+.rate-table thead th:nth-child(3),
+.rate-table tbody td:nth-child(3) {
+  width: 42%;
+  min-width: 380px;
+}
+
+.rate-table thead th:nth-child(7),
+.rate-table tbody td:nth-child(7) {
+  min-width: 122px;
+}
+
+.rate-table tbody td:nth-child(3) {
   font-weight: 700;
   white-space: normal;
   word-break: break-word;
 }
 
-.rate-table tbody td:nth-child(3),
-.rate-table tbody td:nth-child(4),
-.rate-table tbody td:nth-child(5),
-.rate-table tbody td:nth-child(6) {
-  width: 160px;
-  overflow: hidden;
-}
-
 .rate-input {
   width: 100%;
-  padding: 8px 10px;
+  padding: 5px 7px;
   border: 1px solid #cfd4da;
-  border-radius: 8px;
+  border-radius: 6px;
   background: #f7f9fc;
   outline: none;
   text-align: right;
-  font-size: 13px;
+  font-size: 10px;
   box-sizing: border-box;
+}
+
+.rate-table tbody td:nth-child(1) .rate-input,
+.rate-table tbody td:nth-child(2) .rate-input,
+.rate-table tbody td:nth-child(3) .rate-input {
+  text-align: left;
 }
 
 .rate-input.read-only {
@@ -729,13 +740,13 @@
 .tax-pill {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 16px;
   background: #eef4ff;
   border: 1px solid #cfe2ff;
   color: #0b5ed7;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 10px;
   box-sizing: border-box;
   white-space: nowrap;
   overflow: hidden;
@@ -745,7 +756,14 @@
 .rate-update-actions {
   display: flex;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 12px;
+}
+
+.rate-update-actions button {
+  margin-top: 0;
+  padding: 5px 10px;
+  font-size: 10px;
+  border-radius: 4px;
 }
 
 .rate-update-actions button:first-child {
@@ -754,6 +772,19 @@
 
 .rate-update-actions button:last-child {
   background-color: #6c757d;
+}
+
+.rate-row-remove {
+  margin-top: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  background-color: #dc3545;
+}
+
+.rate-row-remove:disabled {
+  background-color: #adb5bd;
+  cursor: not-allowed;
 }
 
 @media (max-width: 900px) {

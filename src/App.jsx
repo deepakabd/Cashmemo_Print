@@ -674,7 +674,12 @@ function App() {
         const isBillToDateField = fieldEl.classList.contains('billto-date');
 
         if (isOptionalBillToField && !fieldValue) {
-          fieldEl.remove();
+          const fieldWrapper = fieldEl.closest('.billto-field');
+          if (fieldWrapper) {
+            fieldWrapper.remove();
+          } else {
+            fieldEl.remove();
+          }
           return;
         }
 
@@ -819,19 +824,37 @@ function App() {
             <div className="section-box billto-section">
               <span className="section-label">Bill To</span>
               <div className="billto-form">
-                <input className="invoice-input billto-name" placeholder="Consumer Name" value={billToName} onChange={(e)=>setBillToName(toUpperValue(e.target.value))} />
-                <input className="invoice-input billto-consumerno" placeholder="Consumer No (if available)" value={billToConsumerNo} onChange={(e)=>setBillToConsumerNo(toUpperValue(e.target.value))} />
-                <div className="billto-inline-row">
-                  
-                  <input className="invoice-input billto-mobile" placeholder="Mobile No" value={billToMobileNo} onChange={(e)=>setBillToMobileNo(toUpperValue(e.target.value))} />
-                  <input className="invoice-input billto-centerno" placeholder="Center No" value={billToCenterNo} onChange={(e)=>setBillToCenterNo(toUpperValue(e.target.value))} />
-                  
-                  
+                <div className="billto-field billto-name">
+                  <label>Consumer Name</label>
+                  <input className="invoice-input" placeholder="Consumer Name" value={billToName} onChange={(e)=>setBillToName(toUpperValue(e.target.value))} />
                 </div>
-                <textarea className="invoice-textarea billto-address" placeholder="Address" value={billToAddress} onChange={(e)=>setBillToAddress(toUpperValue(e.target.value))} />
-                <input className="invoice-input billto-gstin" placeholder="GSTIN (if available)" value={billToGstin} onChange={(e)=>setBillToGstin(toUpperValue(e.target.value))} />
+                <div className="billto-field billto-consumerno">
+                  <label>Consumer No (if available)</label>
+                  <input className="invoice-input billto-consumerno" placeholder="Consumer No (if available)" value={billToConsumerNo} onChange={(e)=>setBillToConsumerNo(toUpperValue(e.target.value))} />
+                </div>
+                <div className="billto-inline-row">
+                  <div className="billto-field">
+                    <label>Mobile No</label>
+                    <input className="invoice-input billto-mobile" placeholder="Mobile No" value={billToMobileNo} onChange={(e)=>setBillToMobileNo(toUpperValue(e.target.value))} />
+                  </div>
+                  <div className="billto-field">
+                    <label>Center No</label>
+                    <input className="invoice-input billto-centerno" placeholder="Center No" value={billToCenterNo} onChange={(e)=>setBillToCenterNo(toUpperValue(e.target.value))} />
+                  </div>
+                </div>
+                <div className="billto-field billto-address">
+                  <label>Address</label>
+                  <textarea className="invoice-textarea" placeholder="Address" value={billToAddress} onChange={(e)=>setBillToAddress(toUpperValue(e.target.value))} />
+                </div>
+                <div className="billto-field billto-gstin">
+                  <label>GSTIN (if available)</label>
+                  <input className="invoice-input billto-gstin" placeholder="GSTIN (if available)" value={billToGstin} onChange={(e)=>setBillToGstin(toUpperValue(e.target.value))} />
+                </div>
                 <div className="billto-date-row">
-                  <input className="invoice-input billto-date" type="date" value={billToDate} onChange={(e)=>setBillToDate(e.target.value)} />
+                  <div className="billto-field">
+                    <label>Date</label>
+                    <input className="invoice-input billto-date" type="date" value={billToDate} onChange={(e)=>setBillToDate(e.target.value)} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -864,7 +887,7 @@ function App() {
                         ))}
                       </select>
                     </td>
-                    <td>{row.rateData?.Code ?? '-'}</td>
+                    <td>{row.rateData?.HSNCode ?? row.rateData?.Code ?? '-'}</td>
                     <td>
                       <input
                         className="invoice-input"
