@@ -156,6 +156,21 @@
   background-color: #555;
 }
 
+.admin-nav-button {
+  border: 1px solid #8fb1ff;
+  color: #fff;
+  background: #1f4fb2 !important;
+  border-radius: 6px;
+  padding: 8px 12px !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-nav-button:hover {
+  background: #163b87 !important;
+}
+
 .navbar-welcome {
   margin-right: 10px;
   color: #fff;
@@ -321,6 +336,107 @@
   font-weight: 700;
   color: #d17a00;
 }
+
+.admin-panel {
+  max-width: 1200px;
+  width: 100%;
+}
+
+.admin-login-panel {
+  max-width: 420px;
+  width: 100%;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.admin-card {
+  border: 1px solid #cfd7e3;
+  border-radius: 8px;
+  background: #f5f9ff;
+  padding: 10px 12px;
+}
+
+.admin-stat-label {
+  font-size: 12px;
+  color: #465161;
+}
+
+.admin-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1f4fb2;
+}
+
+.admin-section {
+  margin-top: 12px;
+}
+
+.admin-section h3 {
+  margin: 6px 0 8px;
+  color: #1f4fb2;
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #cad3e0;
+  border-radius: 8px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.admin-table th,
+.admin-table td {
+  border: 1px solid #cad3e0;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.admin-table thead th {
+  background: #eaf2ff;
+  color: #0f3f9f;
+}
+
+.admin-form {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr)) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-form button {
+  padding: 8px 12px;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-actions button {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .invoice-container {
   width: 850px;
   margin: 0 auto;

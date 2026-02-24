@@ -90,10 +90,45 @@ function App() {
   const [showHomeInfo, setShowHomeInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(false);
   const [showInvoicePage, setShowInvoicePage] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showUserLogin, setShowUserLogin] = useState(false);
+  const [adminLoginId, setAdminLoginId] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [userDealerCode, setUserDealerCode] = useState('');
+  const [userPin, setUserPin] = useState('');
+  const [loggedInUser, setLoggedInUser] = useState(null);
   const [dealerWelcome, setDealerWelcome] = useState('');
   const [showDataButton, setShowDataButton] = useState(false); // New state for "Show Data" button
   const [fileUploadMessage, setFileUploadMessage] = useState(''); // New state for upload message
   const [showParsedData, setShowParsedData] = useState(false); // New state to control visibility of parsed data
+
+  const readUsersData = () => {
+    try {
+      const raw = localStorage.getItem('usersData');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeUsersData = (users) => {
+    localStorage.setItem('usersData', JSON.stringify(users));
+  };
+
+  const updateUserInStore = (userId, updater) => {
+    if (!userId) return null;
+    const users = readUsersData();
+    const idx = users.findIndex((u) => u.id === userId);
+    if (idx < 0) return null;
+    const nextUser = updater(users[idx]);
+    const nextUsers = [...users];
+    nextUsers[idx] = nextUser;
+    writeUsersData(nextUsers);
+    setLoggedInUser((prev) => (prev?.id === userId ? nextUser : prev));
+    return nextUser;
+  };
 
   const ProfileUpdateForm = ({ onClose }) => {
     const [formData, setFormData] = useState({
@@ -105,6 +140,10 @@ function App() {
       address: '',
     });
     useEffect(() => {
+      if (loggedInUser?.profileData) {
+        setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
+        return;
+      }
       const saved = localStorage.getItem('profileData');
       if (saved) {
         try {
@@ -118,6 +157,9 @@ function App() {
     };
     const handleSave = () => {
       localStorage.setItem('profileData', JSON.stringify(formData));
+      if (loggedInUser?.id) {
+        updateUserInStore(loggedInUser.id, (u) => ({ ...u, profileData: formData }));
+      }
       alert('Profile saved successfully!');
       onClose();
     };
@@ -156,6 +198,10 @@ function App() {
     const [formData, setFormData] = useState(defaultBankDetails);
 
     useEffect(() => {
+      if (loggedInUser?.bankDetailsData) {
+        setFormData((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
+        return;
+      }
       const saved = localStorage.getItem('bankDetailsData');
       if (saved) {
         try {
@@ -172,6 +218,9 @@ function App() {
 
     const handleSave = () => {
       localStorage.setItem('bankDetailsData', JSON.stringify(formData));
+      if (loggedInUser?.id) {
+        updateUserInStore(loggedInUser.id, (u) => ({ ...u, bankDetailsData: formData }));
+      }
       alert('Bank details saved successfully!');
       onClose();
     };
@@ -207,13 +256,52 @@ function App() {
   // );
 
   const handleLogin = () => {
+    hideAllViews();
+    setShowUserLogin(true);
+    setShowUserMenu(false);
+  };
+
+  const handleUserLoginSubmit = () => {
+    const dealerCode = userDealerCode.trim();
+    const pin = userPin.trim();
+    if (!dealerCode || !pin) {
+      alert('Dealer Code aur PIN required hai.');
+      return;
+    }
+
+    let users = [];
+    try {
+      const raw = localStorage.getItem('usersData');
+      const parsed = raw ? JSON.parse(raw) : [];
+      users = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      users = [];
+    }
+
+    const matchedUser = users.find((u) => {
+      const codeMatch = String(u?.dealerCode || '').trim() === dealerCode;
+      const pinMatch = String(u?.pin || '').trim() === pin;
+      const status = String(u?.status || 'active').toLowerCase();
+      return codeMatch && pinMatch && status === 'active';
+    });
+
+    if (!matchedUser) {
+      alert('Invalid Dealer Code / PIN ya account disabled hai.');
+      return;
+    }
+
+    setLoggedInUser(matchedUser);
     setIsLoggedIn(true);
+    setShowUserLogin(false);
+    setUserDealerCode('');
+    setUserPin('');
     alert('Logged in successfully!');
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
     setShowUserMenu(false);
+    setLoggedInUser(null);
     alert('Logged out successfully!');
   };
 
@@ -228,6 +316,9 @@ function App() {
     setShowRateUpdate(false);
     setShowBankDetails(false);
     setShowParsedData(false);
+    setShowAdminPanel(false);
+    setShowAdminLogin(false);
+    setShowUserLogin(false);
   };
 
   const handleProfileUpdate = () => {
@@ -269,23 +360,16 @@ function App() {
   useEffect(() => {
     if (isLoggedIn) {
       let text = '';
-      try {
-        const s = localStorage.getItem('profileData');
-        if (s) {
-          const pd = JSON.parse(s);
-          const name = pd.distributorName || '';
-          const code = pd.distributorCode || '';
-          text = name && code ? `${name} (${code})` : (name || code);
-        }
-      } catch {}
-      if (!text) {
-        text = sampleDealerDetails?.name || '';
+      const userName = loggedInUser?.dealerName || '';
+      const userCode = loggedInUser?.dealerCode || '';
+      if (userName || userCode) {
+        text = userName && userCode ? `${userName} (${userCode})` : (userName || userCode);
       }
       setDealerWelcome(text || '');
     } else {
       setDealerWelcome('');
     }
-  }, [isLoggedIn, showProfileUpdate]);
+  }, [isLoggedIn, showProfileUpdate, loggedInUser]);
 
   const handleHomeOpen = () => {
     hideAllViews();
@@ -309,6 +393,31 @@ function App() {
     hideAllViews();
     setShowContactForm(true);
     setShowUserMenu(false);
+  };
+
+  const handleAdminPanel = () => {
+    hideAllViews();
+    setShowAdminPanel(true);
+    setShowUserMenu(false);
+  };
+
+  const handleAdminLoginOpen = () => {
+    hideAllViews();
+    setShowAdminLogin(true);
+    setShowUserMenu(false);
+  };
+
+  const handleAdminLoginSubmit = () => {
+    const validId = 'admin';
+    const validPassword = 'admin@123';
+    if (adminLoginId.trim() === validId && adminPassword === validPassword) {
+      setShowAdminLogin(false);
+      setShowAdminPanel(true);
+      setAdminLoginId('');
+      setAdminPassword('');
+      return;
+    }
+    alert('Invalid Admin ID or Password');
   };
 
   const RegisterForm = ({ onClose }) => {
@@ -338,8 +447,30 @@ function App() {
         alert('PIN aur Confirm PIN match nahi kar rahe');
         return;
       }
+      const request = {
+        id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        package: form.package,
+        dealerCode: form.dealerCode,
+        dealerName: form.dealerName,
+        mobile: form.mobile,
+        email: form.email,
+        pin: form.pin,
+        utr: form.utr,
+        date: form.date,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      try {
+        const existing = localStorage.getItem('registrationRequests');
+        const arr = existing ? JSON.parse(existing) : [];
+        const next = Array.isArray(arr) ? arr : [];
+        next.push(request);
+        localStorage.setItem('registrationRequests', JSON.stringify(next));
+      } catch {
+        localStorage.setItem('registrationRequests', JSON.stringify([request]));
+      }
       localStorage.setItem('registrationData', JSON.stringify(form));
-      alert('Registration details saved!');
+      alert('Registration request submitted!');
       onClose();
     };
     return (
@@ -440,6 +571,284 @@ function App() {
     );
   };
 
+  const AdminPanel = ({ onClose }) => {
+    const [requests, setRequests] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [feedback, setFeedback] = useState([]);
+    const [newUser, setNewUser] = useState({
+      dealerCode: '',
+      dealerName: '',
+      mobile: '',
+      email: '',
+      pin: '',
+      role: 'operator',
+    });
+
+    const loadData = () => {
+      try {
+        const reqRaw = localStorage.getItem('registrationRequests');
+        const reqList = reqRaw ? JSON.parse(reqRaw) : [];
+        const normalizedReq = Array.isArray(reqList) ? reqList : [];
+
+        if (normalizedReq.length === 0) {
+          const legacy = localStorage.getItem('registrationData');
+          if (legacy) {
+            try {
+              const one = JSON.parse(legacy);
+              if (one && typeof one === 'object') {
+                normalizedReq.push({
+                  id: `legacy-${Date.now()}`,
+                  package: one.package || '',
+                  dealerCode: one.dealerCode || '',
+                  dealerName: one.dealerName || '',
+                  mobile: one.mobile || '',
+                  email: one.email || '',
+                  pin: one.pin || '',
+                  utr: one.utr || '',
+                  date: one.date || '',
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            } catch {}
+          }
+        }
+        setRequests(normalizedReq);
+
+        const usersRaw = localStorage.getItem('usersData');
+        const userList = usersRaw ? JSON.parse(usersRaw) : [];
+        setUsers(Array.isArray(userList) ? userList : []);
+
+        const fbRaw = localStorage.getItem('feedbackData');
+        const fbList = fbRaw ? JSON.parse(fbRaw) : [];
+        setFeedback(Array.isArray(fbList) ? fbList : []);
+      } catch {
+        setRequests([]);
+        setUsers([]);
+        setFeedback([]);
+      }
+    };
+
+    useEffect(() => {
+      loadData();
+    }, []);
+
+    const saveRequests = (next) => {
+      setRequests(next);
+      localStorage.setItem('registrationRequests', JSON.stringify(next));
+    };
+
+    const saveUsers = (next) => {
+      setUsers(next);
+      localStorage.setItem('usersData', JSON.stringify(next));
+    };
+
+    const approveRequest = (id) => {
+      const req = requests.find((r) => r.id === id);
+      if (!req) return;
+      const now = new Date().toISOString();
+      const userRecord = {
+        id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        dealerCode: req.dealerCode || '',
+        dealerName: req.dealerName || '',
+        mobile: req.mobile || '',
+        email: req.email || '',
+        pin: req.pin || '',
+        role: 'operator',
+        status: 'active',
+        createdAt: req.createdAt || now,
+        approvedAt: now,
+      };
+
+      const existingIdx = users.findIndex(
+        (u) => String(u.dealerCode || '').trim() !== '' &&
+          String(u.dealerCode || '').trim() === String(userRecord.dealerCode || '').trim()
+      );
+      let nextUsers = [...users];
+      if (existingIdx >= 0) {
+        nextUsers[existingIdx] = { ...nextUsers[existingIdx], ...userRecord, id: nextUsers[existingIdx].id };
+      } else {
+        nextUsers = [...nextUsers, userRecord];
+      }
+      saveUsers(nextUsers);
+
+      const nextReq = requests.map((r) => (r.id === id ? { ...r, status: 'approved', approvedAt: now } : r));
+      saveRequests(nextReq);
+    };
+
+    const rejectRequest = (id) => {
+      const nextReq = requests.map((r) => (r.id === id ? { ...r, status: 'rejected' } : r));
+      saveRequests(nextReq);
+    };
+
+    const deleteRequest = (id) => {
+      saveRequests(requests.filter((r) => r.id !== id));
+    };
+
+    const addManualUser = () => {
+      if (!newUser.dealerCode || !newUser.dealerName || !newUser.pin) {
+        alert('Dealer code, dealer name and PIN required.');
+        return;
+      }
+      const record = {
+        id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        dealerCode: newUser.dealerCode.trim(),
+        dealerName: newUser.dealerName.trim(),
+        mobile: newUser.mobile.trim(),
+        email: newUser.email.trim(),
+        pin: newUser.pin.trim(),
+        role: newUser.role,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString(),
+      };
+      saveUsers([...users, record]);
+      setNewUser({ dealerCode: '', dealerName: '', mobile: '', email: '', pin: '', role: 'operator' });
+    };
+
+    const toggleUserStatus = (id) => {
+      const next = users.map((u) => {
+        if (u.id !== id) return u;
+        return { ...u, status: u.status === 'active' ? 'disabled' : 'active' };
+      });
+      saveUsers(next);
+    };
+
+    const deleteUser = (id) => {
+      saveUsers(users.filter((u) => u.id !== id));
+    };
+
+    const pendingCount = requests.filter((r) => r.status === 'pending').length;
+    const activeUsers = users.filter((u) => u.status === 'active').length;
+
+    return (
+      <div className="placeholder-container admin-panel">
+        <h2>Admin Panel</h2>
+        <div className="admin-grid">
+          <div className="admin-card">
+            <div className="admin-stat-label">Pending Requests</div>
+            <div className="admin-stat-value">{pendingCount}</div>
+          </div>
+          <div className="admin-card">
+            <div className="admin-stat-label">Active Users</div>
+            <div className="admin-stat-value">{activeUsers}</div>
+          </div>
+          <div className="admin-card">
+            <div className="admin-stat-label">Feedback Entries</div>
+            <div className="admin-stat-value">{feedback.length}</div>
+          </div>
+        </div>
+
+        <div className="admin-section">
+          <h3>Pending Registration Requests</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Dealer Code</th>
+                  <th>Dealer Name</th>
+                  <th>Mobile</th>
+                  <th>Email</th>
+                  <th>Package</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.length === 0 ? (
+                  <tr>
+                    <td colSpan="7">No requests found.</td>
+                  </tr>
+                ) : (
+                  requests.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.dealerCode || '-'}</td>
+                      <td>{r.dealerName || '-'}</td>
+                      <td>{r.mobile || '-'}</td>
+                      <td>{r.email || '-'}</td>
+                      <td>{r.package || '-'}</td>
+                      <td>{r.status || 'pending'}</td>
+                      <td>
+                        <div className="admin-actions">
+                          <button onClick={() => approveRequest(r.id)} disabled={r.status === 'approved'}>Approve</button>
+                          <button onClick={() => rejectRequest(r.id)} disabled={r.status === 'rejected'}>Reject</button>
+                          <button onClick={() => deleteRequest(r.id)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="admin-section">
+          <h3>Create User (Manual)</h3>
+          <div className="admin-form">
+            <input className="form-input" placeholder="Dealer Code" value={newUser.dealerCode} onChange={(e) => setNewUser((p) => ({ ...p, dealerCode: e.target.value }))} />
+            <input className="form-input" placeholder="Dealer Name" value={newUser.dealerName} onChange={(e) => setNewUser((p) => ({ ...p, dealerName: e.target.value }))} />
+            <input className="form-input" placeholder="Mobile" value={newUser.mobile} onChange={(e) => setNewUser((p) => ({ ...p, mobile: e.target.value }))} />
+            <input className="form-input" placeholder="Email" type="email" value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} />
+            <input className="form-input" placeholder="PIN" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
+            <select className="form-input" value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
+              <option value="operator">Operator</option>
+              <option value="viewer">Viewer</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button onClick={addManualUser}>Create User</button>
+          </div>
+        </div>
+
+        <div className="admin-section">
+          <h3>Users</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Dealer Code</th>
+                  <th>Dealer Name</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan="5">No users found.</td>
+                  </tr>
+                ) : (
+                  users.map((u) => (
+                    <tr key={u.id}>
+                      <td>{u.dealerCode || '-'}</td>
+                      <td>{u.dealerName || '-'}</td>
+                      <td>{u.role || 'operator'}</td>
+                      <td>{u.status || 'active'}</td>
+                      <td>
+                        <div className="admin-actions">
+                          <button onClick={() => toggleUserStatus(u.id)}>
+                            {u.status === 'active' ? 'Disable' : 'Enable'}
+                          </button>
+                          <button onClick={() => deleteUser(u.id)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="form-actions">
+          <button onClick={loadData}>Refresh</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
   const HomeInfo = () => {
     return (
       <div className="placeholder-container">
@@ -458,8 +867,11 @@ function App() {
   const InvoicePage = () => {
     const initialInvoiceRates = (() => {
       try {
-        const savedRates = localStorage.getItem('ratesData');
-        const parsedRates = savedRates ? JSON.parse(savedRates) : [];
+        const userRates = Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null;
+        const parsedRates = userRates || (() => {
+          const savedRates = localStorage.getItem('ratesData');
+          return savedRates ? JSON.parse(savedRates) : [];
+        })();
         if (!Array.isArray(parsedRates)) return [];
         return parsedRates
           .map((rate) => ({
@@ -894,6 +1306,10 @@ function App() {
     };
 
     useEffect(() => {
+      if (loggedInUser?.bankDetailsData) {
+        setBankDetails((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
+        return;
+      }
       const saved = localStorage.getItem('bankDetailsData');
       if (saved) {
         try {
@@ -1473,10 +1889,13 @@ function App() {
         }
 
         try {
-          const savedRates = localStorage.getItem('ratesData');
-          if (savedRates) {
-            const rates = JSON.parse(savedRates);
-            if (Array.isArray(rates) && rates.length > 0) {
+          const rates = Array.isArray(loggedInUser?.ratesData)
+            ? loggedInUser.ratesData
+            : (() => {
+              const savedRates = localStorage.getItem('ratesData');
+              return savedRates ? JSON.parse(savedRates) : [];
+            })();
+          if (Array.isArray(rates) && rates.length > 0) {
               const productText = String(processedCustomer['Consumer Package'] || '').toLowerCase();
               const match = rates.find(r => {
                 const itemText = String(r.Item || '').toLowerCase();
@@ -1496,7 +1915,6 @@ function App() {
                 processedCustomer['SGST (2.50%) (₹)'] = sgstAmt;
                 processedCustomer['Total Amount (₹)'] = rsp;
               }
-            }
           }
         } catch {}
 
@@ -2123,49 +2541,113 @@ function App() {
   };
 
   const availableHeadersToAdd = headers.filter(header => !visibleHeaders.includes(header));
+  const hideUserNavbar = showAdminPanel;
 
   return (
     <>
-      <nav className="navbar">
-        <div className="navbar-left">
-          <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
-          <button className="navbar-button" onClick={handleAboutOpen}>About</button>
-          <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>
-          <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
-          {isLoggedIn && !showDataButton && <FileUpload onFileUpload={handleFileUpload} />}
-          {isLoggedIn && showDataButton && (
-            <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
-          )}
-        </div>
-        <div className="navbar-right">
-          {isLoggedIn ? (
-            <div className="user-menu-container">
-              <span className="navbar-welcome">Welcome, {dealerWelcome}</span>
-              <div className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)}>
-                &#128100; {/* User icon */}
-              </div>
-              {showUserMenu && (
-                <div className="dropdown-menu">
-                  <button onClick={handleUserProfile}>User Profile</button>
-                  <button onClick={handleProfileUpdate}>Profile Update</button>
-                  <button onClick={handleBankDetails}>Bank Details</button>
-                  <button onClick={handleRateUpdate}>Rate Update</button>
-                  <button onClick={handleLogout}>Logout</button>
+      {!hideUserNavbar && (
+        <nav className="navbar">
+          <div className="navbar-left">
+            <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
+            <button className="navbar-button" onClick={handleAboutOpen}>About</button>
+            <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>
+            <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
+            {isLoggedIn && !showDataButton && <FileUpload onFileUpload={handleFileUpload} />}
+            {isLoggedIn && showDataButton && (
+              <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
+            )}
+          </div>
+          <div className="navbar-right">
+            {isLoggedIn ? (
+              <div className="user-menu-container">
+                <span className="navbar-welcome">Welcome, {dealerWelcome}</span>
+                <div className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)}>
+                  &#128100; {/* User icon */}
                 </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <button onClick={handleLogin}>Login</button>
-              <button onClick={handleRegister}>Register</button>
-                </>)}
-        </div>
-      </nav>
-      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage) && (
+                {showUserMenu && (
+                  <div className="dropdown-menu">
+                    <button onClick={handleUserProfile}>User Profile</button>
+                    <button onClick={handleProfileUpdate}>Profile Update</button>
+                    <button onClick={handleBankDetails}>Bank Details</button>
+                    <button onClick={handleRateUpdate}>Rate Update</button>
+                    <button onClick={handleLogout}>Logout</button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <button onClick={handleLogin}>Login</button>
+                <button onClick={handleRegister}>Register</button>
+              </>
+            )}
+            {!isLoggedIn && (
+              <button className="admin-nav-button" onClick={handleAdminLoginOpen}>
+                <span aria-hidden="true">&#128274;</span> Admin
+              </button>
+            )}
+          </div>
+        </nav>
+      )}
+      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showAdminPanel || showAdminLogin || showUserLogin) && (
         <div className="book-view">
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && <InvoicePage />}
+          {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
+          {showAdminLogin && (
+            <div className="placeholder-container admin-login-panel">
+              <h2>Admin Login</h2>
+              <div className="register-form">
+                <input
+                  className="form-input"
+                  placeholder="Admin ID"
+                  value={adminLoginId}
+                  onChange={(e) => setAdminLoginId(e.target.value)}
+                />
+                <input
+                  className="form-input"
+                  type="password"
+                  placeholder="Password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAdminLoginSubmit();
+                  }}
+                />
+              </div>
+              <div className="form-actions">
+                <button onClick={handleAdminLoginSubmit}>Login</button>
+                <button onClick={() => setShowAdminLogin(false)}>Close</button>
+              </div>
+            </div>
+          )}
+          {showUserLogin && (
+            <div className="placeholder-container admin-login-panel">
+              <h2>User Login</h2>
+              <div className="register-form">
+                <input
+                  className="form-input"
+                  placeholder="Dealer Code"
+                  value={userDealerCode}
+                  onChange={(e) => setUserDealerCode(e.target.value)}
+                />
+                <input
+                  className="form-input"
+                  type="password"
+                  placeholder="PIN"
+                  value={userPin}
+                  onChange={(e) => setUserPin(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleUserLoginSubmit();
+                  }}
+                />
+              </div>
+              <div className="form-actions">
+                <button onClick={handleUserLoginSubmit}>Login</button>
+                <button onClick={() => setShowUserLogin(false)}>Close</button>
+              </div>
+            </div>
+          )}
           {showProfileUpdate && <ProfileUpdateForm onClose={() => setShowProfileUpdate(false)} />}
           {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
           {showBankDetails && <BankDetailsForm onClose={() => setShowBankDetails(false)} />}
