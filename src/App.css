@@ -162,6 +162,35 @@
   font-weight: 600;
 }
 
+.filters-container select,
+.filters-container input[type="date"] {
+  font-size: 9px !important;
+  padding: 6px !important;
+  min-width: 180px;
+}
+
+.filters-container button {
+  font-size: 8px;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+}
+
+.table-controls select,
+.table-controls input[type="text"] {
+  font-size: 9px;
+  padding: 6px 8px;
+  min-width: 140px;
+}
+
+.table-controls {
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+}
+
+.table-controls .action-button {
+  font-size: 9px !important;
+  padding: 6px 10px !important;
+}
 .placeholder-container {
   position: relative;
   top: 50%;

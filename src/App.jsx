@@ -1491,7 +1491,7 @@ function App() {
 
 
           {/* New Filter UI */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px', padding: '15px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#f9f9f9' }}>
+          <div className="filters-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px', padding: '15px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#f9f9f9' }}>
             {/* eKYC Filter */}
             <select value={eKycFilter} onChange={(e) => setEKycFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
               <option value="All">All eKYC</option>
@@ -1634,8 +1634,8 @@ function App() {
             <button onClick={handleResetFilters} style={{ padding: '8px 15px', borderRadius: '4px', border: 'none', backgroundColor: '#6c757d', color: 'white', cursor: 'pointer' }}>Reset Filters</button>
           </div>
 
-          <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-            <input type="text" placeholder="Search within data..." value={searchTerm} onChange={handleSearchChange} style={{ padding: '8px', width: '300px' }} />
+          <div className="table-controls" style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: '10px' }}>
+            <input type="text" placeholder="Search within data..." value={searchTerm} onChange={handleSearchChange} style={{ padding: '8px', width: '240px' }} />
 
             <label htmlFor="addColumnSelect">Add Column:</label>
             <select id="addColumnSelect" onChange={(e) => addColumn(e.target.value)} value="">
@@ -1654,8 +1654,8 @@ function App() {
               <option value="A4 3 Cashmemo/Page">A4 3 Cashmemo/Page</option>
               <option value="Lager 4 Cashmemo/Page">Lager 4 Cashmemo/Page</option>
             </select>
-            <button onClick={handlePrintData} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Data</button>
-            <button onClick={handlePrintCashmemo} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Cashmemo</button>
+            <button className="action-button" onClick={handlePrintData} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Data</button>
+            <button className="action-button" onClick={handlePrintCashmemo} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Cashmemo</button>
 
             </div>
 
