@@ -5,11 +5,11 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
     return <p>Please select a customer to generate Cash Memo.</p>;
   }
 
-  const distributorName = dealerDetails?.name || 'RAJE BHAWANISHANKAR ENTERPRISES (41012240)';
-  const gstn = dealerDetails?.gstn || '27AEXPB6427K1ZZ';
-  const plotNo = dealerDetails?.address?.plotNo || 'PLOT NO-3, SECTOR-6, CBD BELAPUR, MAHARASHTRA-400614';
-  const email = dealerDetails?.contact?.email || 'raje.thane@hpgas.hpcl.co.in';
-  const telephone = dealerDetails?.contact?.telephone || '022-27571972, 27573871';
+  const distributorName = dealerDetails?.name || '';
+  const gstn = dealerDetails?.gstn || '';
+  const plotNo = dealerDetails?.address?.plotNo || '';
+  const email = dealerDetails?.contact?.email || '';
+  const telephone = dealerDetails?.contact?.telephone || '';
 
   const isOnlinePaid = String(customer['Online Refill Payment status'] || '').toLowerCase().includes('paid');
   const ekycNotDone = String(customer['EKYC Status'] || '').toLowerCase().includes('not done');
