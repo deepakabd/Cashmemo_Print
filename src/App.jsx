@@ -116,21 +116,21 @@ function App() {
     return (
       <div className="placeholder-container">
         <h2>Profile Update</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
-          <span>Distributor Code</span>
-          <input name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
-          <span>Distributor Name</span>
-          <input name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} />
-          <span>Contact</span>
-          <input name="contact" type="text" value={formData.contact} onChange={handleChange} />
-          <span>Email</span>
-          <input name="email" type="email" value={formData.email} onChange={handleChange} />
-          <span>GST</span>
-          <input name="gst" type="text" value={formData.gst} onChange={handleChange} />
-          <span>Address</span>
-          <textarea name="address" rows="3" value={formData.address} onChange={handleChange} />
+        <div className="profile-form">
+          <span className="profile-label">Distributor Code</span>
+          <input className="form-input" name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
+          <span className="profile-label">Distributor Name</span>
+          <input className="form-input" name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} />
+          <span className="profile-label">Contact</span>
+          <input className="form-input" name="contact" type="text" value={formData.contact} onChange={handleChange} />
+          <span className="profile-label">Email</span>
+          <input className="form-input" name="email" type="email" value={formData.email} onChange={handleChange} />
+          <span className="profile-label">GST</span>
+          <input className="form-input" name="gst" type="text" value={formData.gst} onChange={handleChange} />
+          <span className="profile-label">Address</span>
+          <textarea className="form-textarea" name="address" rows="3" value={formData.address} onChange={handleChange} />
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="form-actions">
           <button onClick={handleSave}>Save</button>
           <button onClick={onClose}>Close</button>
         </div>
@@ -522,6 +522,34 @@ function App() {
         } else {
           processedCustomer['Cash Memo Date'] = null; // Set to null if not a number or string
         }
+
+        try {
+          const savedRates = localStorage.getItem('ratesData');
+          if (savedRates) {
+            const rates = JSON.parse(savedRates);
+            if (Array.isArray(rates) && rates.length > 0) {
+              const productText = String(processedCustomer['Consumer Package'] || '').toLowerCase();
+              const match = rates.find(r => {
+                const itemText = String(r.Item || '').toLowerCase();
+                return productText.includes(itemText) || itemText.includes(productText);
+              });
+              if (match) {
+                const basic = parseFloat(match.BasicPrice) || 0;
+                const sgstPct = parseFloat(match.SGST) || 0;
+                const cgstPct = parseFloat(match.CGST) || 0;
+                const cgstAmt = parseFloat((basic * cgstPct / 100).toFixed(2));
+                const sgstAmt = parseFloat((basic * sgstPct / 100).toFixed(2));
+                const rsp = parseFloat(match.RSP) || 0;
+                processedCustomer['Base Price (₹)'] = basic;
+                processedCustomer['Delivery Charges (₹)'] = processedCustomer['Delivery Charges (₹)'] || 0;
+                processedCustomer['Cash & Carry Rebate (₹)'] = processedCustomer['Cash & Carry Rebate (₹)'] || 0;
+                processedCustomer['CGST (2.50%) (₹)'] = cgstAmt;
+                processedCustomer['SGST (2.50%) (₹)'] = sgstAmt;
+                processedCustomer['Total Amount (₹)'] = rsp;
+              }
+            }
+          }
+        } catch {}
 
         const cashMemoHtml = renderToString(
           <CashMemoEnglish customer={processedCustomer} pageType={pageType} dealerDetails={sampleDealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />

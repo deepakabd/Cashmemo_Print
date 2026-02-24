@@ -11,6 +11,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
   const email = dealerDetails?.contact?.email || 'raje.thane@hpgas.hpcl.co.in';
   const telephone = dealerDetails?.contact?.telephone || '022-27571972, 27573871';
 
+  const isOnlinePaid = String(customer['Online Refill Payment status'] || '').toLowerCase().includes('paid');
+
   return (
     <div className="cash-memo-wrapper">
       {/* Single Cash Memo Container */}
@@ -61,6 +63,12 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>CGST (2.50%)(₹) :</span><span className="price-value">{parseFloat(customer['CGST (2.50%) (₹)'] || 0).toFixed(2)}</span>
               <span>SGST (2.50%)(₹) :</span><span className="price-value">{parseFloat(customer['SGST (2.50%) (₹)'] || 0).toFixed(2)}</span>
               <span>Total Amount(₹) :</span><span className="price-value total-amount">{parseFloat(customer['Total Amount (₹)'] || 0).toFixed(2)}</span>
+              {isOnlinePaid && (
+                <>
+                  <span>Payable Amount :</span>
+                  <span className="price-value">Zero - Online Paid (₹ 0.00)</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -138,6 +146,12 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>CGST (2.50%)(₹) :</span><span className="price-value">{parseFloat(customer['CGST (2.50%) (₹)'] || 0).toFixed(2)}</span>
               <span>SGST (2.50%)(₹) :</span><span className="price-value">{parseFloat(customer['SGST (2.50%) (₹)'] || 0).toFixed(2)}</span>
               <span>Total Amount(₹) :</span><span className="price-value total-amount">{parseFloat(customer['Total Amount (₹)'] || 0).toFixed(2)}</span>
+              {isOnlinePaid && (
+                <>
+                  <span>Payable Amount :</span>
+                  <span className="price-value">Zero - Online Paid (₹ 0.00)</span>
+                </>
+              )}
             </div>
           </div>
 

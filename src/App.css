@@ -200,6 +200,54 @@
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
+.profile-form {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  column-gap: 12px;
+  row-gap: 10px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.profile-label {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #cfd4da;
+  border-radius: 8px;
+  background: #f7f9fc;
+  outline: none;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.form-input {
+  text-align: left;
+}
+
+.form-textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.form-actions button:first-child {
+  background-color: #0d6efd;
+}
+
+.form-actions button:last-child {
+  background-color: #6c757d;
+}
 .rate-table-container {
   margin-top: 10px;
 }
