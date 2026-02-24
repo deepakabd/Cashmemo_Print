@@ -398,11 +398,182 @@ function App() {
     );
   };
   const InvoicePage = () => {
+    const initialInvoiceRates = (() => {
+      try {
+        const savedRates = localStorage.getItem('ratesData');
+        const parsedRates = savedRates ? JSON.parse(savedRates) : [];
+        if (!Array.isArray(parsedRates)) return [];
+        return parsedRates
+          .map((rate) => ({
+            Code: rate?.Code ?? '',
+            Item: String(rate?.Item ?? '').trim(),
+            BasicPrice: parseFloat(rate?.BasicPrice) || 0,
+            SGST: parseFloat(rate?.SGST) || 0,
+            CGST: parseFloat(rate?.CGST) || 0,
+            RSP: parseFloat(rate?.RSP) || 0,
+          }))
+          .filter((rate) => rate.Item);
+      } catch {
+        return [];
+      }
+    })();
+
     const [dealer, setDealer] = useState(sampleDealerDetails);
+    const [invoiceRates] = useState(initialInvoiceRates);
+    const [invoiceRows, setInvoiceRows] = useState([
+      { id: `row-${Date.now()}`, item: initialInvoiceRates[0]?.Item || '', quantity: 1 },
+    ]);
     const [billToName, setBillToName] = useState('');
     const [billToConsumerNo, setBillToConsumerNo] = useState('');
     const [billToAddress, setBillToAddress] = useState('');
     const [billToGstin, setBillToGstin] = useState('');
+    const invoicePrintRef = useRef(null);
+
+    const buildInvoiceRow = () => ({
+      id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      item: invoiceRates[0]?.Item || '',
+      quantity: 1,
+    });
+
+    const itemRateMap = useMemo(
+      () => new Map(invoiceRates.map((rate) => [rate.Item, rate])),
+      [invoiceRates]
+    );
+
+    const lineItems = invoiceRows.map((row) => {
+      const rate = itemRateMap.get(row.item) || null;
+      const qty = Math.max(0, parseFloat(row.quantity) || 0);
+      const taxable = (rate?.BasicPrice || 0) * qty;
+      const sgstPct = rate?.SGST || 0;
+      const cgstPct = rate?.CGST || 0;
+      const sgst = taxable * sgstPct / 100;
+      const cgst = taxable * cgstPct / 100;
+      const gst = sgst + cgst;
+      const total = (rate?.RSP || 0) * qty;
+
+      return {
+        id: row.id,
+        item: row.item,
+        quantity: qty,
+        rateData: rate,
+        taxable,
+        sgstPct,
+        cgstPct,
+        gstPercent: sgstPct + cgstPct,
+        sgst,
+        cgst,
+        gst,
+        total,
+      };
+    });
+
+    const taxableAmount = lineItems.reduce((sum, row) => sum + row.taxable, 0);
+    const sgstAmount = lineItems.reduce((sum, row) => sum + row.sgst, 0);
+    const cgstAmount = lineItems.reduce((sum, row) => sum + row.cgst, 0);
+    const gstAmount = sgstAmount + cgstAmount;
+    const lineTotal = lineItems.reduce((sum, row) => sum + row.total, 0);
+    const roundOff = Math.round(lineTotal) - lineTotal;
+    const payableTotal = lineTotal + roundOff;
+    const numberToWords = (num) => {
+      const ones = [
+        '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+        'Seventeen', 'Eighteen', 'Nineteen',
+      ];
+      const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+      const belowThousand = (n) => {
+        if (n === 0) return '';
+        if (n < 20) return ones[n];
+        if (n < 100) return `${tens[Math.floor(n / 10)]}${n % 10 ? ` ${ones[n % 10]}` : ''}`;
+        return `${ones[Math.floor(n / 100)]} Hundred${n % 100 ? ` ${belowThousand(n % 100)}` : ''}`;
+      };
+
+      if (num === 0) return 'Zero';
+      const parts = [];
+      const crore = Math.floor(num / 10000000);
+      const lakh = Math.floor((num % 10000000) / 100000);
+      const thousand = Math.floor((num % 100000) / 1000);
+      const hundred = num % 1000;
+
+      if (crore) parts.push(`${belowThousand(crore)} Crore`);
+      if (lakh) parts.push(`${belowThousand(lakh)} Lakh`);
+      if (thousand) parts.push(`${belowThousand(thousand)} Thousand`);
+      if (hundred) parts.push(belowThousand(hundred));
+      return parts.join(' ').trim();
+    };
+
+    const rupees = Math.floor(Math.abs(payableTotal));
+    const paise = Math.round((Math.abs(payableTotal) - rupees) * 100);
+    const payableTotalInWords = `Rupees ${numberToWords(rupees)}${paise ? ` and ${numberToWords(paise)} Paise` : ''} Only`;
+
+    const handleAddProduct = () => {
+      setInvoiceRows((prev) => [...prev, buildInvoiceRow()]);
+    };
+
+    const handleRemoveProduct = (rowId) => {
+      setInvoiceRows((prev) => {
+        if (prev.length <= 1) return prev;
+        return prev.filter((row) => row.id !== rowId);
+      });
+    };
+
+    const handleRowItemChange = (rowId, item) => {
+      setInvoiceRows((prev) =>
+        prev.map((row) => (row.id === rowId ? { ...row, item } : row))
+      );
+    };
+
+    const handleRowQuantityChange = (rowId, quantity) => {
+      setInvoiceRows((prev) =>
+        prev.map((row) => (row.id === rowId ? { ...row, quantity } : row))
+      );
+    };
+
+    const handlePrintInvoice = () => {
+      if (!invoicePrintRef.current) return;
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Unable to open print window. Please allow pop-ups.');
+        return;
+      }
+      const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map((node) => node.outerHTML)
+        .join('');
+      const printOnlyStyles = `
+        <style>
+          .invoice-actions,
+          .invoice-row-remove {
+            display: none !important;
+          }
+          .invoice-table th:last-child,
+          .invoice-table td:last-child {
+            display: none !important;
+          }
+        </style>
+      `;
+      const html = `
+        <html>
+          <head>
+            <title>Invoice</title>
+            ${styles}
+            ${printOnlyStyles}
+          </head>
+          <body>
+            <div class="book-view">
+              ${invoicePrintRef.current.outerHTML}
+            </div>
+          </body>
+        </html>
+      `;
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 300);
+    };
+
     useEffect(() => {
       try {
         const profileStr = localStorage.getItem('profileData');
@@ -424,7 +595,7 @@ function App() {
     }, []);
     return (
       <div className="placeholder-container">
-        <div className="invoice-container">
+        <div className="invoice-container" ref={invoicePrintRef}>
           <div className="invoice-tax-label">Tax Invoice</div>
           <div className="invoice-header">
             <div className="invoice-brand">
@@ -461,27 +632,70 @@ function App() {
                 <th>GST %</th>
                 <th>GST Amt</th>
                 <th>Total</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td>1</td><td>Best Ball Pen</td><td>1495</td><td>12 Pc</td><td>270.00</td><td>270.00</td><td>12%</td><td>24.00</td><td>294.00</td></tr>
-              <tr><td>2</td><td>Executive Diary</td><td>1296</td><td>12 Pc</td><td>400.00</td><td>4800.00</td><td>12%</td><td>576.00</td><td>5376.00</td></tr>
-              <tr><td>3</td><td>Leather Portfolio Folder</td><td>1258</td><td>10 Pc</td><td>800.00</td><td>8000.00</td><td>12%</td><td>960.00</td><td>8960.00</td></tr>
-              <tr><td>4</td><td>Wireless Mouse</td><td>8471</td><td>12 Pc</td><td>220.00</td><td>2640.00</td><td>12%</td><td>316.80</td><td>2956.80</td></tr>
-              <tr><td>5</td><td>A4 Document File</td><td>4820</td><td>12 Pc</td><td>120.00</td><td>1440.00</td><td>12%</td><td>172.80</td><td>1612.80</td></tr>
-              <tr><td>6</td><td>Power Bank 10000mAh</td><td>1236</td><td>12 Pc</td><td>990.00</td><td>11880.00</td><td>12%</td><td>1425.60</td><td>13305.60</td></tr>
-              <tr><td>7</td><td>USB Flash Drive</td><td>1236</td><td>12 Pc</td><td>199.00</td><td>2388.00</td><td>12%</td><td>286.56</td><td>2674.56</td></tr>
-              <tr><td>8</td><td>Bluetooth Keyboard</td><td>2536</td><td>4 Box</td><td>900.00</td><td>3600.00</td><td>12%</td><td>432.00</td><td>4032.00</td></tr>
+              {invoiceRates.length > 0 ? (
+                lineItems.map((row, index) => (
+                  <tr key={row.id}>
+                    <td>{index + 1}</td>
+                    <td>
+                      <select className="invoice-input" value={row.item} onChange={(e) => handleRowItemChange(row.id, e.target.value)}>
+                        {invoiceRates.map((rate) => (
+                          <option key={`${rate.Code}-${rate.Item}`} value={rate.Item}>{rate.Item}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>{row.rateData?.Code ?? '-'}</td>
+                    <td>
+                      <input
+                        className="invoice-input"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={row.quantity}
+                        onChange={(e) => handleRowQuantityChange(row.id, e.target.value)}
+                      />
+                    </td>
+                    <td>{(row.rateData?.RSP || 0).toFixed(2)}</td>
+                    <td>{row.taxable.toFixed(2)}</td>
+                    <td>{row.gstPercent.toFixed(2)}%</td>
+                    <td>{row.gst.toFixed(2)}</td>
+                    <td>{row.total.toFixed(2)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="invoice-row-remove"
+                        onClick={() => handleRemoveProduct(row.id)}
+                        disabled={invoiceRows.length <= 1}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="10" style={{ textAlign: 'center' }}>
+                    No rate data found. Please update rates from the Rate Update section.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+          <div className="invoice-actions">
+            <button type="button" onClick={handleAddProduct}>Add Product</button>
+            <button type="button" onClick={handlePrintInvoice}>Print Invoice</button>
+          </div>
           <div className="invoice-summary">
             <div className="summary-box">
               <div className="summary-header">SUMMARY</div>
               <table className="summary-table">
                 <tbody>
-                  <tr><td>Sub-Total</td><td>32989.00</td></tr>
-                  <tr><td>GST</td><td>5127.84</td></tr>
-                  <tr><td>Total</td><td>38025.84</td></tr>
+                  <tr><td>Sub-Total</td><td>{taxableAmount.toFixed(2)}</td></tr>
+                  <tr><td>GST</td><td>{gstAmount.toFixed(2)}</td></tr>
+                  <tr><td>Total</td><td>{lineTotal.toFixed(2)}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -489,11 +703,11 @@ function App() {
               <div className="summary-header">AMOUNT</div>
               <table className="summary-table">
                 <tbody>
-                  <tr><td>CGST Amt</td><td>2563.92</td></tr>
-                  <tr><td>SGST Amt</td><td>2563.92</td></tr>
+                  <tr><td>CGST Amt</td><td>{cgstAmount.toFixed(2)}</td></tr>
+                  <tr><td>SGST Amt</td><td>{sgstAmount.toFixed(2)}</td></tr>
                   <tr><td>Freight/Packing Charges</td><td>-</td></tr>
-                  <tr><td>Round Off</td><td>0.16</td></tr>
-                  <tr><td>Total Amount</td><td><strong>38026.00</strong></td></tr>
+                  <tr><td>Round Off</td><td>{roundOff.toFixed(2)}</td></tr>
+                  <tr><td>Total Amount</td><td><strong>{payableTotal.toFixed(2)}</strong></td></tr>
                 </tbody>
               </table>
             </div>
@@ -507,7 +721,7 @@ function App() {
               <div>IFSC Code: SBIN0X3X0XX</div>
               <div>UPI ID: yourupi@upi</div>
               <div>Invoice Total in Words</div>
-              <div>Rupees ThirtyEight Thousand TwentySix Only</div>
+              <div>{payableTotalInWords}</div>
             </div>
             <div className="invoice-declaration">
               <div><strong>Declaration</strong></div>
