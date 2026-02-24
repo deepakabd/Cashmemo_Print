@@ -88,6 +88,7 @@ function App() {
   const [showContactForm, setShowContactForm] = useState(false);
   const [showHomeInfo, setShowHomeInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(false);
+  const [dealerWelcome, setDealerWelcome] = useState('');
   const [showDataButton, setShowDataButton] = useState(false); // New state for "Show Data" button
   const [fileUploadMessage, setFileUploadMessage] = useState(''); // New state for upload message
   const [showParsedData, setShowParsedData] = useState(false); // New state to control visibility of parsed data
@@ -204,6 +205,27 @@ function App() {
       setShowParsedData(false);
     }
   };
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      let text = '';
+      try {
+        const s = localStorage.getItem('profileData');
+        if (s) {
+          const pd = JSON.parse(s);
+          const name = pd.distributorName || '';
+          const code = pd.distributorCode || '';
+          text = name && code ? `${name} (${code})` : (name || code);
+        }
+      } catch {}
+      if (!text) {
+        text = sampleDealerDetails?.name || '';
+      }
+      setDealerWelcome(text || '');
+    } else {
+      setDealerWelcome('');
+    }
+  }, [isLoggedIn, showProfileUpdate]);
 
   const handleHomeOpen = () => {
     hideAllViews();
@@ -1403,6 +1425,7 @@ function App() {
         <div className="navbar-right">
           {isLoggedIn ? (
             <div className="user-menu-container">
+              <span className="navbar-welcome">Welcome, {dealerWelcome}</span>
               <div className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)}>
                 &#128100; {/* User icon */}
               </div>
