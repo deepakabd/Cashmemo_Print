@@ -350,3 +350,16 @@
 .rate-update-actions button:last-child {
   background-color: #6c757d;
 }
+
+.status-alert {
+  color: #d32f2f;
+  font-weight: 700;
+}
+
+.status-paid {
+  font-weight: 700;
+}
+
+.payable-bold {
+  font-weight: 700;
+}

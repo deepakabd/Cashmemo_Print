@@ -12,6 +12,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
   const telephone = dealerDetails?.contact?.telephone || '022-27571972, 27573871';
 
   const isOnlinePaid = String(customer['Online Refill Payment status'] || '').toLowerCase().includes('paid');
+  const ekycNotDone = String(customer['EKYC Status'] || '').toLowerCase().includes('not done');
 
   return (
     <div className="cash-memo-wrapper">
@@ -51,8 +52,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Cash Memo No / Date :</span><span>{customer['Cash Memo No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
               <span>Cash Memo Status :</span><span>{customer['Cash Memo Status'] || 'N/A'}</span>
               <span>Delivery Man :</span><span>{customer['Delivery Man'] || 'N/A'}</span>
-              <span>EKYC Status :</span><span>{customer['EKYC Status'] || 'N/A'}</span>
-              <span>Online Refill Payment status :</span><span>{customer['Online Refill Payment status'] || 'Pay on Delivery / Cash'}</span>
+              <span>EKYC Status :</span><span className={ekycNotDone ? 'status-alert' : ''}>{customer['EKYC Status'] || 'N/A'}</span>
+              <span>Online Refill Payment status :</span><span className={isOnlinePaid ? 'status-paid' : ''}>{customer['Online Refill Payment status'] || 'Pay on Delivery / Cash'}</span>
             </div>
 
             {/* Right Column of Distributor Copy Details (Prices) */}
@@ -65,8 +66,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Total Amount(₹) :</span><span className="price-value total-amount">{parseFloat(customer['Total Amount (₹)'] || 0).toFixed(2)}</span>
               {isOnlinePaid && (
                 <>
-                  <span>Payable Amount :</span>
-                  <span className="price-value">Zero - Online Paid (₹ 0.00)</span>
+                  <span className="font-bold">Payable Amount :</span>
+                  <span className="price-value payable-bold">Zero - Online Paid (₹ 0.00)</span>
                 </>
               )}
             </div>
@@ -134,8 +135,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
               <span>Cash Memo No / Date :</span><span>{customer['Cash Memo No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
               <span>Delivery Man :</span><span>{customer['Delivery Man'] || 'N/A'}</span>
-              <span>EKYC Status :</span><span>{customer['EKYC Status'] || 'N/A'}</span>
-              <span>Online Refill Payment status :</span><span>{customer['Online Refill Payment status'] || 'Pay on Delivery/ Cash'}</span>
+              <span>EKYC Status :</span><span className={ekycNotDone ? 'status-alert' : ''}>{customer['EKYC Status'] || 'N/A'}</span>
+              <span>Online Refill Payment status :</span><span className={isOnlinePaid ? 'status-paid' : ''}>{customer['Online Refill Payment status'] || 'Pay on Delivery/ Cash'}</span>
             </div>
 
             {/* Right Column of Tax Invoice Details (Prices) */}
@@ -148,8 +149,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Total Amount(₹) :</span><span className="price-value total-amount">{parseFloat(customer['Total Amount (₹)'] || 0).toFixed(2)}</span>
               {isOnlinePaid && (
                 <>
-                  <span>Payable Amount :</span>
-                  <span className="price-value">Zero - Online Paid (₹ 0.00)</span>
+                  <span className="font-bold">Payable Amount :</span>
+                  <span className="price-value payable-bold">Zero - Online Paid (₹ 0.00)</span>
                 </>
               )}
             </div>

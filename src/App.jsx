@@ -502,6 +502,25 @@ function App() {
 
       let allCashMemosHtml = '';
 
+      let dealerDetails = sampleDealerDetails;
+      try {
+        const profileStr = localStorage.getItem('profileData');
+        if (profileStr) {
+          const pd = JSON.parse(profileStr);
+          dealerDetails = {
+            name: pd.distributorName
+              ? (pd.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
+              : sampleDealerDetails.name,
+            gstn: pd.gst || sampleDealerDetails.gstn,
+            address: { plotNo: pd.address || sampleDealerDetails.address?.plotNo || '' },
+            contact: {
+              email: pd.email || sampleDealerDetails.contact?.email || '',
+              telephone: pd.contact || sampleDealerDetails.contact?.telephone || '',
+            },
+          };
+        }
+      } catch {}
+
       customersToPrint.forEach((customer, index) => {
         const processedCustomer = { ...customer };
 
@@ -552,7 +571,7 @@ function App() {
         } catch {}
 
         const cashMemoHtml = renderToString(
-          <CashMemoEnglish customer={processedCustomer} pageType={pageType} dealerDetails={sampleDealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
+          <CashMemoEnglish customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
         );
 
         let wrapperStyles = `
@@ -808,6 +827,16 @@ function App() {
                 text-align: right;
               }
               .total-amount {
+                font-weight: bold;
+              }
+              .status-alert {
+                color: #d32f2f;
+                font-weight: bold;
+              }
+              .status-paid {
+                font-weight: bold;
+              }
+              .payable-bold {
                 font-weight: bold;
               }
               .instructions-section {
