@@ -491,7 +491,7 @@ function App() {
     const [invoiceRates] = useState(initialInvoiceRates);
     const [bankDetails, setBankDetails] = useState(defaultBankDetails);
     const [invoiceRows, setInvoiceRows] = useState([
-      { id: `row-${Date.now()}`, item: initialInvoiceRates[0]?.Item || '', quantity: 1 },
+      { id: `row-${Date.now()}`, item: initialInvoiceRates[0]?.Item || '', quantity: 1, customRate: '' },
     ]);
     const [billToName, setBillToName] = useState('');
     const [billToConsumerNo, setBillToConsumerNo] = useState('');
@@ -506,7 +506,13 @@ function App() {
       id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       item: invoiceRates[0]?.Item || '',
       quantity: 1,
+      customRate: '',
     });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selectedDate = billToDate ? new Date(`${billToDate}T00:00:00`) : null;
+    const isPastInvoiceDate = !!selectedDate && !isNaN(selectedDate.getTime()) && selectedDate < today;
 
     const itemRateMap = useMemo(
       () => new Map(invoiceRates.map((rate) => [rate.Item, rate])),
@@ -516,13 +522,20 @@ function App() {
     const lineItems = invoiceRows.map((row) => {
       const rate = itemRateMap.get(row.item) || null;
       const qty = Math.max(0, parseFloat(row.quantity) || 0);
-      const taxable = (rate?.BasicPrice || 0) * qty;
       const sgstPct = rate?.SGST || 0;
       const cgstPct = rate?.CGST || 0;
+      const fetchedRate = parseFloat(rate?.RSP) || 0;
+      const customRateNum = parseFloat(row.customRate);
+      const unitRate = isPastInvoiceDate && row.customRate !== '' && !isNaN(customRateNum)
+        ? customRateNum
+        : fetchedRate;
+      const gstFactor = 1 + (sgstPct / 100) + (cgstPct / 100);
+      const unitTaxable = gstFactor > 0 ? (unitRate / gstFactor) : unitRate;
+      const taxable = unitTaxable * qty;
       const sgst = taxable * sgstPct / 100;
       const cgst = taxable * cgstPct / 100;
       const gst = sgst + cgst;
-      const total = (rate?.RSP || 0) * qty;
+      const total = unitRate * qty;
 
       return {
         id: row.id,
@@ -536,6 +549,7 @@ function App() {
         sgst,
         cgst,
         gst,
+        unitRate,
         total,
       };
     });
@@ -593,13 +607,19 @@ function App() {
 
     const handleRowItemChange = (rowId, item) => {
       setInvoiceRows((prev) =>
-        prev.map((row) => (row.id === rowId ? { ...row, item } : row))
+        prev.map((row) => (row.id === rowId ? { ...row, item, customRate: '' } : row))
       );
     };
 
     const handleRowQuantityChange = (rowId, quantity) => {
       setInvoiceRows((prev) =>
         prev.map((row) => (row.id === rowId ? { ...row, quantity } : row))
+      );
+    };
+
+    const handleRowRateChange = (rowId, customRate) => {
+      setInvoiceRows((prev) =>
+        prev.map((row) => (row.id === rowId ? { ...row, customRate } : row))
       );
     };
 
@@ -734,7 +754,20 @@ function App() {
                         onChange={(e) => handleRowQuantityChange(row.id, e.target.value)}
                       />
                     </td>
-                    <td>{(row.rateData?.RSP || 0).toFixed(2)}</td>
+                    <td>
+                      {isPastInvoiceDate ? (
+                        <input
+                          className="invoice-input"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={row.customRate === '' ? (row.rateData?.RSP || 0) : row.customRate}
+                          onChange={(e) => handleRowRateChange(row.id, e.target.value)}
+                        />
+                      ) : (
+                        row.unitRate.toFixed(2)
+                      )}
+                    </td>
                     <td>{row.taxable.toFixed(2)}</td>
                     <td>{row.gstPercent.toFixed(2)}%</td>
                     <td>{row.gst.toFixed(2)}</td>
