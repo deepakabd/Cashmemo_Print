@@ -325,19 +325,25 @@
   width: 850px;
   margin: 0 auto;
   background: #fff;
-  border: 1px solid #dfe3eb;
+  border: 2px solid #7a8699;
   border-radius: 6px;
   padding: 12px;
   box-sizing: border-box;
   color: #000;
   font-size: 12px;
 }
+
+@media print {
+  .invoice-container {
+    border: 2px solid #5f6b7c !important;
+  }
+}
 .invoice-header {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 10px;
-  border-bottom: 2px solid #dfe3eb;
+  border-bottom: 2px solid #9aa6b8;
   padding: 8px 8px 10px 8px;
   background: #eaf4ff;
 }
@@ -378,14 +384,14 @@
 }
 .invoice-sub {
   font-size: 12px;
-  color: #374151;
+  color: #000;
 }
 .invoice-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 10px;
-  border-bottom: 1px solid #dfe3eb;
+  border-bottom: 1px solid #a5b0c0;
   padding-bottom: 10px;
 }
 .invoice-grid .billto-section {
@@ -393,7 +399,7 @@
 }
 .invoice-box,
 .section-box {
-  border: 1px solid #e5e7eb;
+  border: 1px solid #aeb8c7;
   border-radius: 4px;
   padding: 8px;
   background: #f9fbff;
@@ -404,7 +410,7 @@
   top: -10px;
   left: 8px;
   background: #eaf4ff;
-  border: 1px solid #dfe3eb;
+  border: 1px solid #aeb8c7;
   border-radius: 4px;
   padding: 2px 6px;
   font-size: 11px;
@@ -450,7 +456,7 @@
 }
 .invoice-table th,
 .invoice-table td {
-  border: 1px solid #dfe3eb;
+  border: 1px solid #9ea9ba;
   padding: 6px 8px;
   text-align: left;
 }
@@ -488,14 +494,14 @@
   margin-top: 10px;
 }
 .summary-box {
-  border: 1px solid #e5e7eb;
+  border: 1px solid #aeb8c7;
   border-radius: 4px;
   padding: 8px;
   background: #f9fbff;
 }
 .summary-header {
   background: #eaf4ff;
-  border: 1px solid #dfe3eb;
+  border: 1px solid #aeb8c7;
   font-weight: 700;
   padding: 6px 8px;
   margin-bottom: 6px;
@@ -506,7 +512,7 @@
   border-collapse: collapse;
 }
 .summary-table td {
-  border: 1px solid #dfe3eb;
+  border: 1px solid #a5b0c0;
   padding: 6px 8px;
 }
 .summary-table td:first-child {
@@ -538,11 +544,15 @@
 
 .billto-form {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.5fr 0.9fr;
   gap: 6px;
 }
 .billto-name { grid-column: 1; }
-.billto-consumerno { grid-column: 2; }
+.billto-consumerno {
+  grid-column: 2;
+  max-width: 260px;
+  justify-self: end;
+}
 .billto-inline-row {
   grid-column: 1 / span 2;
   display: grid;
@@ -573,7 +583,7 @@
 }
 .invoice-declaration,
 .invoice-bank {
-  border: 1px solid #e5e7eb;
+  border: 1px solid #aeb8c7;
   border-radius: 4px;
   padding: 8px;
   font-size: 11px;
@@ -610,12 +620,20 @@
   border-radius: 4px;
 }
 
-.invoice-actions button:first-child {
+.invoice-actions .btn-add-product {
   background-color: #0d6efd;
 }
 
-.invoice-actions button:last-child {
+.invoice-actions .btn-print-invoice {
   background-color: #6c757d;
+}
+
+.invoice-actions .btn-clear-invoice {
+  background-color: #fd7e14;
+}
+
+.invoice-actions .btn-reset-invoice {
+  background-color: #dc3545;
 }
 
 .invoice-table .invoice-row-remove {

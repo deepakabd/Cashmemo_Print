@@ -491,7 +491,7 @@ function App() {
     const [invoiceRates] = useState(initialInvoiceRates);
     const [bankDetails, setBankDetails] = useState(defaultBankDetails);
     const [invoiceRows, setInvoiceRows] = useState([
-      { id: `row-${Date.now()}`, item: initialInvoiceRates[0]?.Item || '', quantity: 1, customRate: '' },
+      { id: `row-${Date.now()}`, item: '', quantity: 1, customRate: '' },
     ]);
     const [billToName, setBillToName] = useState('');
     const [billToConsumerNo, setBillToConsumerNo] = useState('');
@@ -501,10 +501,11 @@ function App() {
     const [billToAddress, setBillToAddress] = useState('');
     const [billToGstin, setBillToGstin] = useState('');
     const invoicePrintRef = useRef(null);
+    const toUpperValue = (value) => (value || '').toUpperCase();
 
     const buildInvoiceRow = () => ({
       id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      item: invoiceRates[0]?.Item || '',
+      item: '',
       quantity: 1,
       customRate: '',
     });
@@ -598,6 +599,13 @@ function App() {
       setInvoiceRows((prev) => [...prev, buildInvoiceRow()]);
     };
 
+    const buildEmptyProductRow = () => ({
+      id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      item: '',
+      quantity: 1,
+      customRate: '',
+    });
+
     const handleRemoveProduct = (rowId) => {
       setInvoiceRows((prev) => {
         if (prev.length <= 1) return prev;
@@ -623,6 +631,22 @@ function App() {
       );
     };
 
+    const handleClearInvoice = () => {
+      setBillToDate('');
+      setInvoiceRows([buildEmptyProductRow()]);
+    };
+
+    const handleResetInvoice = () => {
+      setBillToName('');
+      setBillToConsumerNo('');
+      setBillToMobileNo('');
+      setBillToCenterNo('');
+      setBillToAddress('');
+      setBillToGstin('');
+      setBillToDate('');
+      setInvoiceRows([buildEmptyProductRow()]);
+    };
+
     const handlePrintInvoice = () => {
       if (!invoicePrintRef.current) return;
       const printWindow = window.open('', '_blank');
@@ -630,11 +654,75 @@ function App() {
         alert('Unable to open print window. Please allow pop-ups.');
         return;
       }
+      const liveSelectTexts = Array.from(invoicePrintRef.current.querySelectorAll('select')).map((selectEl) => {
+        return selectEl.options?.[selectEl.selectedIndex]?.text || selectEl.value || '';
+      });
+      const printClone = invoicePrintRef.current.cloneNode(true);
+      printClone.querySelectorAll('select').forEach((selectEl, index) => {
+        const selectedText = liveSelectTexts[index] || '';
+        const valueNode = document.createElement('span');
+        valueNode.className = 'print-select-value';
+        valueNode.textContent = selectedText;
+        selectEl.replaceWith(valueNode);
+      });
+      printClone.querySelectorAll('input, textarea').forEach((fieldEl) => {
+        const fieldValue = (fieldEl.value || '').trim();
+        const isOptionalBillToField =
+          fieldEl.classList.contains('billto-consumerno') ||
+          fieldEl.classList.contains('billto-centerno') ||
+          fieldEl.classList.contains('billto-gstin');
+        const isBillToDateField = fieldEl.classList.contains('billto-date');
+
+        if (isOptionalBillToField && !fieldValue) {
+          fieldEl.remove();
+          return;
+        }
+
+        const valueNode = document.createElement('span');
+        if (isBillToDateField) {
+          const dt = fieldValue ? new Date(`${fieldValue}T00:00:00`) : null;
+          const formattedDate = dt && !isNaN(dt.getTime())
+            ? `${String(dt.getDate()).padStart(2, '0')}-${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][dt.getMonth()]}-${dt.getFullYear()}`
+            : '';
+          valueNode.className = `${fieldEl.className} print-field-value print-date-value`;
+          valueNode.textContent = formattedDate ? `Date: - ${formattedDate}` : 'Date: -';
+        } else {
+          valueNode.className = fieldEl.tagName === 'TEXTAREA'
+            ? `${fieldEl.className} print-field-value print-field-textarea`
+            : `${fieldEl.className} print-field-value`;
+          valueNode.textContent = fieldValue;
+        }
+        fieldEl.replaceWith(valueNode);
+      });
+      const printConsumerNo = printClone.querySelector('.billto-consumerno.print-field-value');
+      const printDateValue = printClone.querySelector('.billto-date.print-date-value');
+      if (printConsumerNo && printDateValue) {
+        const dateStrong = document.createElement('strong');
+        dateStrong.className = 'print-date-inline';
+        dateStrong.textContent = printDateValue.textContent;
+        printConsumerNo.classList.add('print-consumerno-with-date');
+        printConsumerNo.appendChild(dateStrong);
+        const dateRow = printDateValue.closest('.billto-date-row');
+        if (dateRow) {
+          dateRow.remove();
+        }
+      }
       const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
         .map((node) => node.outerHTML)
         .join('');
       const printOnlyStyles = `
         <style>
+          @page {
+            margin: 6mm;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .book-view {
+            margin-top: 0 !important;
+            padding: 0 !important;
+          }
           .invoice-actions,
           .invoice-row-remove {
             display: none !important;
@@ -642,6 +730,38 @@ function App() {
           .invoice-table th:last-child,
           .invoice-table td:last-child {
             display: none !important;
+          }
+          .print-select-value {
+            display: inline-block;
+            width: 100%;
+            box-sizing: border-box;
+            padding: 6px 8px;
+            font-size: 11px;
+            line-height: 1.3;
+            word-break: break-word;
+          }
+          .print-field-value {
+            display: inline-block;
+            width: 100%;
+            box-sizing: border-box;
+            padding: 6px 8px;
+            font-size: 11px;
+            line-height: 1.3;
+            word-break: break-word;
+            white-space: pre-wrap;
+          }
+          .print-field-textarea {
+            min-height: 54px;
+          }
+          .print-consumerno-with-date {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+          }
+          .print-date-inline {
+            font-weight: 700;
+            white-space: nowrap;
           }
         </style>
       `;
@@ -654,7 +774,7 @@ function App() {
           </head>
           <body>
             <div class="book-view">
-              ${invoicePrintRef.current.outerHTML}
+              ${printClone.outerHTML}
             </div>
           </body>
         </html>
@@ -699,17 +819,17 @@ function App() {
             <div className="section-box billto-section">
               <span className="section-label">Bill To</span>
               <div className="billto-form">
-                <input className="invoice-input billto-name" placeholder="Consumer Name" value={billToName} onChange={(e)=>setBillToName(e.target.value)} />
-                <input className="invoice-input billto-consumerno" placeholder="Consumer No (if available)" value={billToConsumerNo} onChange={(e)=>setBillToConsumerNo(e.target.value)} />
+                <input className="invoice-input billto-name" placeholder="Consumer Name" value={billToName} onChange={(e)=>setBillToName(toUpperValue(e.target.value))} />
+                <input className="invoice-input billto-consumerno" placeholder="Consumer No (if available)" value={billToConsumerNo} onChange={(e)=>setBillToConsumerNo(toUpperValue(e.target.value))} />
                 <div className="billto-inline-row">
                   
-                  <input className="invoice-input billto-mobile" placeholder="Mobile No" value={billToMobileNo} onChange={(e)=>setBillToMobileNo(e.target.value)} />
-                  <input className="invoice-input billto-centerno" placeholder="Center No" value={billToCenterNo} onChange={(e)=>setBillToCenterNo(e.target.value)} />
+                  <input className="invoice-input billto-mobile" placeholder="Mobile No" value={billToMobileNo} onChange={(e)=>setBillToMobileNo(toUpperValue(e.target.value))} />
+                  <input className="invoice-input billto-centerno" placeholder="Center No" value={billToCenterNo} onChange={(e)=>setBillToCenterNo(toUpperValue(e.target.value))} />
                   
                   
                 </div>
-                <textarea className="invoice-textarea billto-address" placeholder="Address" value={billToAddress} onChange={(e)=>setBillToAddress(e.target.value)} />
-                <input className="invoice-input billto-gstin" placeholder="GSTIN (if available)" value={billToGstin} onChange={(e)=>setBillToGstin(e.target.value)} />
+                <textarea className="invoice-textarea billto-address" placeholder="Address" value={billToAddress} onChange={(e)=>setBillToAddress(toUpperValue(e.target.value))} />
+                <input className="invoice-input billto-gstin" placeholder="GSTIN (if available)" value={billToGstin} onChange={(e)=>setBillToGstin(toUpperValue(e.target.value))} />
                 <div className="billto-date-row">
                   <input className="invoice-input billto-date" type="date" value={billToDate} onChange={(e)=>setBillToDate(e.target.value)} />
                 </div>
@@ -738,6 +858,7 @@ function App() {
                     <td>{index + 1}</td>
                     <td>
                       <select className="invoice-input" value={row.item} onChange={(e) => handleRowItemChange(row.id, e.target.value)}>
+                        <option value="">Select Product</option>
                         {invoiceRates.map((rate) => (
                           <option key={`${rate.Code}-${rate.Item}`} value={rate.Item}>{rate.Item}</option>
                         ))}
@@ -761,7 +882,7 @@ function App() {
                           type="number"
                           step="0.01"
                           min="0"
-                          value={row.customRate === '' ? (row.rateData?.RSP || 0) : row.customRate}
+                          value={row.customRate === '' ? (row.rateData?.RSP ?? '') : row.customRate}
                           onChange={(e) => handleRowRateChange(row.id, e.target.value)}
                         />
                       ) : (
@@ -794,8 +915,10 @@ function App() {
             </tbody>
           </table>
           <div className="invoice-actions">
-            <button type="button" onClick={handleAddProduct}>Add Product</button>
-            <button type="button" onClick={handlePrintInvoice}>Print Invoice</button>
+            <button type="button" className="btn-add-product" onClick={handleAddProduct}>Add Product</button>
+            <button type="button" className="btn-print-invoice" onClick={handlePrintInvoice}>Print Invoice</button>
+            <button type="button" className="btn-clear-invoice" onClick={handleClearInvoice}>Clear</button>
+            <button type="button" className="btn-reset-invoice" onClick={handleResetInvoice}>Reset</button>
           </div>
           <div className="invoice-summary">
             <div className="summary-box">
