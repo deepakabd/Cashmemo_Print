@@ -491,7 +491,7 @@ function App() {
     const [invoiceRates] = useState(initialInvoiceRates);
     const [bankDetails, setBankDetails] = useState(defaultBankDetails);
     const [invoiceRows, setInvoiceRows] = useState([
-      { id: `row-${Date.now()}`, item: '', quantity: 1, customRate: '' },
+      { id: `row-${Date.now()}`, item: '', quantity: 1, customRate: '', discount: '' },
     ]);
     const [billToName, setBillToName] = useState('');
     const [billToConsumerNo, setBillToConsumerNo] = useState('');
@@ -508,6 +508,7 @@ function App() {
       item: '',
       quantity: 1,
       customRate: '',
+      discount: '',
     });
 
     const today = new Date();
@@ -530,13 +531,16 @@ function App() {
       const unitRate = isPastInvoiceDate && row.customRate !== '' && !isNaN(customRateNum)
         ? customRateNum
         : fetchedRate;
+      const grossTotal = unitRate * qty;
+      const discountInput = parseFloat(row.discount);
+      const discount = Number.isFinite(discountInput) ? Math.min(Math.max(discountInput, 0), grossTotal) : 0;
+      const discountedTotal = Math.max(0, grossTotal - discount);
       const gstFactor = 1 + (sgstPct / 100) + (cgstPct / 100);
-      const unitTaxable = gstFactor > 0 ? (unitRate / gstFactor) : unitRate;
-      const taxable = unitTaxable * qty;
+      const taxable = gstFactor > 0 ? (discountedTotal / gstFactor) : discountedTotal;
       const sgst = taxable * sgstPct / 100;
       const cgst = taxable * cgstPct / 100;
       const gst = sgst + cgst;
-      const total = unitRate * qty;
+      const total = discountedTotal;
 
       return {
         id: row.id,
@@ -551,6 +555,7 @@ function App() {
         cgst,
         gst,
         unitRate,
+        discount,
         total,
       };
     });
@@ -604,6 +609,7 @@ function App() {
       item: '',
       quantity: 1,
       customRate: '',
+      discount: '',
     });
 
     const handleRemoveProduct = (rowId) => {
@@ -628,6 +634,12 @@ function App() {
     const handleRowRateChange = (rowId, customRate) => {
       setInvoiceRows((prev) =>
         prev.map((row) => (row.id === rowId ? { ...row, customRate } : row))
+      );
+    };
+
+    const handleRowDiscountChange = (rowId, discount) => {
+      setInvoiceRows((prev) =>
+        prev.map((row) => (row.id === rowId ? { ...row, discount } : row))
       );
     };
 
@@ -737,6 +749,84 @@ function App() {
           .book-view {
             margin-top: 20px !important;
             padding: 0 !important;
+          }
+          .invoice-container {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+          .invoice-tax-label {
+            font-size: 12px !important;
+            margin-bottom: 4px !important;
+          }
+          .invoice-header {
+            padding: 6px 6px 8px 6px !important;
+            gap: 8px !important;
+          }
+          .invoice-brand {
+            grid-template-columns: 180px 1fr !important;
+            gap: 8px !important;
+          }
+          .invoice-logo-image {
+            width: 180px !important;
+            height: 60px !important;
+          }
+          .invoice-title {
+            font-size: 14px !important;
+            line-height: 1.2 !important;
+            letter-spacing: 0 !important;
+          }
+          .invoice-sub {
+            font-size: 10px !important;
+            line-height: 1.25 !important;
+          }
+          .invoice-table {
+            width: 100% !important;
+            table-layout: fixed !important;
+          }
+          .invoice-table th,
+          .invoice-table td {
+            padding: 4px 5px !important;
+            word-break: break-word !important;
+            white-space: normal !important;
+          }
+          .invoice-table thead th {
+            font-size: 10px !important;
+            line-height: 1.15 !important;
+          }
+          .invoice-table tbody td {
+            font-size: 9px !important;
+          }
+          .invoice-table th:nth-child(2),
+          .invoice-table td:nth-child(2) {
+            width: 34% !important;
+            min-width: 0 !important;
+          }
+          .invoice-table th:nth-child(1),
+          .invoice-table td:nth-child(1) {
+            width: 4% !important;
+          }
+          .invoice-table th:nth-child(3),
+          .invoice-table td:nth-child(3) {
+            width: 6% !important;
+          }
+          .invoice-table th:nth-child(4),
+          .invoice-table td:nth-child(4) {
+            width: 9% !important;
+          }
+          .invoice-table th:nth-child(5),
+          .invoice-table td:nth-child(5),
+          .invoice-table th:nth-child(6),
+          .invoice-table td:nth-child(6),
+          .invoice-table th:nth-child(7),
+          .invoice-table td:nth-child(7),
+          .invoice-table th:nth-child(8),
+          .invoice-table td:nth-child(8),
+          .invoice-table th:nth-child(9),
+          .invoice-table td:nth-child(9),
+          .invoice-table th:nth-child(10),
+          .invoice-table td:nth-child(10) {
+            width: 7% !important;
           }
           .invoice-actions,
           .invoice-row-remove {
@@ -878,6 +968,7 @@ function App() {
                 <th>HSN</th>
                 <th>Quantity</th>
                 <th>Rate</th>
+                <th>Discount</th>
                 <th>Taxable</th>
                 <th>GST %</th>
                 <th>GST Amt</th>
@@ -923,6 +1014,17 @@ function App() {
                         row.unitRate.toFixed(2)
                       )}
                     </td>
+                    <td>
+                      <input
+                        className="invoice-input"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={row.discount || ''}
+                        onChange={(e) => handleRowDiscountChange(row.id, e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </td>
                     <td>{row.taxable.toFixed(2)}</td>
                     <td>{row.gstPercent.toFixed(2)}%</td>
                     <td>{row.gst.toFixed(2)}</td>
@@ -941,7 +1043,7 @@ function App() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: 'center' }}>
+                  <td colSpan="11" style={{ textAlign: 'center' }}>
                     No rate data found. Please update rates from the Rate Update section.
                   </td>
                 </tr>

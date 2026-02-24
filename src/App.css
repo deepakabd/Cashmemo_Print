@@ -457,7 +457,7 @@
 .invoice-table th,
 .invoice-table td {
   border: 1px solid #9ea9ba;
-  padding: 6px 8px;
+  padding: 6px 7px;
   text-align: left;
 }
 .invoice-table thead th {
@@ -477,14 +477,14 @@
   background: #f9fafb;
 }
 /* GST column highlight */
-.invoice-table thead th:nth-child(7),
 .invoice-table thead th:nth-child(8),
-.invoice-table thead th:nth-child(9) {
+.invoice-table thead th:nth-child(9),
+.invoice-table thead th:nth-child(10) {
   background: #eaf4ff;
 }
-.invoice-table tbody td:nth-child(7),
 .invoice-table tbody td:nth-child(8),
-.invoice-table tbody td:nth-child(9) {
+.invoice-table tbody td:nth-child(9),
+.invoice-table tbody td:nth-child(10) {
   background: #f6fbff;
 }
 .invoice-summary {
