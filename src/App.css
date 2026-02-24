@@ -290,7 +290,6 @@
 .form-actions button:last-child {
   background-color: #6c757d;
 }
-.rate-table-container {
 .register-title {
   text-align: center;
   color: #0d6efd;
@@ -493,7 +492,6 @@
   background: #f7fafc;
   width: 60%;
 }
-.summary-row {
 .invoice-input {
   width: 100%;
   padding: 6px 8px;
@@ -504,7 +502,6 @@
   box-sizing: border-box;
   margin: 2px 0;
 }
-.summary-row {
 .invoice-textarea {
   width: 100%;
   min-height: 60px;
@@ -523,11 +520,11 @@
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
-.summary-row {
 .billto-name { grid-column: 1; }
 .billto-consumerno { grid-column: 2; }
 .billto-address { grid-column: 1 / span 2; }
 .billto-gstin { grid-column: 1 / span 2; }
+
 .summary-row {
   display: flex;
   justify-content: space-between;
@@ -556,12 +553,16 @@
 }
 .rate-table-container {
   margin-top: 10px;
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #cfd4da;
+  border-radius: 8px;
 }
 
 .rate-table {
   width: 100%;
   border-collapse: collapse;
-  border: 1px solid #cfd4da;
+  min-width: 980px;
   table-layout: fixed;
 }
 
@@ -655,6 +656,18 @@
 
 .rate-update-actions button:last-child {
   background-color: #6c757d;
+}
+
+@media (max-width: 900px) {
+  .rate-input {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  .tax-pill {
+    font-size: 11px;
+    padding: 5px 8px;
+  }
 }
 
 .status-alert {
