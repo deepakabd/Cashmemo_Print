@@ -171,6 +171,7 @@ function App() {
     setShowRegisterForm(false);
     setShowProfileUpdate(false);
     setShowRateUpdate(false);
+    setShowParsedData(false);
   };
 
   const handleProfileUpdate = () => {
@@ -196,7 +197,12 @@ function App() {
   };
 
   const handleShowData = () => {
-    setShowParsedData(prev => !prev);
+    if (!showParsedData) {
+      hideAllViews();
+      setShowParsedData(true);
+    } else {
+      setShowParsedData(false);
+    }
   };
 
   const handleHomeOpen = () => {
