@@ -88,6 +88,7 @@ function App() {
   const [showContactForm, setShowContactForm] = useState(false);
   const [showHomeInfo, setShowHomeInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(false);
+  const [showInvoicePage, setShowInvoicePage] = useState(false);
   const [dealerWelcome, setDealerWelcome] = useState('');
   const [showDataButton, setShowDataButton] = useState(false); // New state for "Show Data" button
   const [fileUploadMessage, setFileUploadMessage] = useState(''); // New state for upload message
@@ -167,6 +168,7 @@ function App() {
   const hideAllViews = () => {
     setShowHomeInfo(false);
     setShowAboutInfo(false);
+    setShowInvoicePage(false);
     setShowContactForm(false);
     setShowUserProfile(false);
     setShowRegisterForm(false);
@@ -236,6 +238,12 @@ function App() {
   const handleAboutOpen = () => {
     hideAllViews();
     setShowAboutInfo(true);
+    setShowUserMenu(false);
+  };
+
+  const handleInvoiceOpen = () => {
+    hideAllViews();
+    setShowInvoicePage(true);
     setShowUserMenu(false);
   };
 
@@ -386,6 +394,132 @@ function App() {
     return (
       <div className="placeholder-container">
         <h2 className="about-info-title">Under Updation</h2>
+      </div>
+    );
+  };
+  const InvoicePage = () => {
+    const [dealer, setDealer] = useState(sampleDealerDetails);
+    const [billToName, setBillToName] = useState('');
+    const [billToConsumerNo, setBillToConsumerNo] = useState('');
+    const [billToAddress, setBillToAddress] = useState('');
+    const [billToGstin, setBillToGstin] = useState('');
+    useEffect(() => {
+      try {
+        const profileStr = localStorage.getItem('profileData');
+        if (profileStr) {
+          const pd = JSON.parse(profileStr);
+          setDealer({
+            name: pd.distributorName
+              ? (pd.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
+              : sampleDealerDetails.name,
+            gstn: pd.gst || sampleDealerDetails.gstn,
+            address: { plotNo: pd.address || sampleDealerDetails.address?.plotNo || '' },
+            contact: {
+              email: pd.email || sampleDealerDetails.contact?.email || '',
+              telephone: pd.contact || sampleDealerDetails.contact?.telephone || '',
+            },
+          });
+        }
+      } catch {}
+    }, []);
+    return (
+      <div className="placeholder-container">
+        <div className="invoice-container">
+          <div className="invoice-tax-label">Tax Invoice</div>
+          <div className="invoice-header">
+            <div className="invoice-brand">
+              <div className="invoice-logo"></div>
+              <div>
+                <div className="invoice-title">{dealer.name}</div>
+                <div className="invoice-sub">{dealer.address?.plotNo}</div>
+                <div className="invoice-sub">Contact: {dealer.contact?.telephone}</div>
+                <div className="invoice-sub">GSTIN: {dealer.gstn}</div>
+              </div>
+            </div>
+            
+          </div>
+          <div className="invoice-grid">
+            <div className="section-box">
+              <span className="section-label">Bill To</span>
+              <div className="billto-form">
+                <input className="invoice-input billto-name" placeholder="Consumer Name" value={billToName} onChange={(e)=>setBillToName(e.target.value)} />
+                <input className="invoice-input billto-consumerno" placeholder="Consumer No (if available)" value={billToConsumerNo} onChange={(e)=>setBillToConsumerNo(e.target.value)} />
+                <textarea className="invoice-textarea billto-address" placeholder="Address" value={billToAddress} onChange={(e)=>setBillToAddress(e.target.value)} />
+                <input className="invoice-input billto-gstin" placeholder="GSTIN (if available)" value={billToGstin} onChange={(e)=>setBillToGstin(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <table className="invoice-table">
+            <thead>
+              <tr>
+                <th>Sr</th>
+                <th>Goods & Service Description</th>
+                <th>HSN</th>
+                <th>Quantity</th>
+                <th>Rate</th>
+                <th>Taxable</th>
+                <th>GST %</th>
+                <th>GST Amt</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>Best Ball Pen</td><td>1495</td><td>12 Pc</td><td>270.00</td><td>270.00</td><td>12%</td><td>24.00</td><td>294.00</td></tr>
+              <tr><td>2</td><td>Executive Diary</td><td>1296</td><td>12 Pc</td><td>400.00</td><td>4800.00</td><td>12%</td><td>576.00</td><td>5376.00</td></tr>
+              <tr><td>3</td><td>Leather Portfolio Folder</td><td>1258</td><td>10 Pc</td><td>800.00</td><td>8000.00</td><td>12%</td><td>960.00</td><td>8960.00</td></tr>
+              <tr><td>4</td><td>Wireless Mouse</td><td>8471</td><td>12 Pc</td><td>220.00</td><td>2640.00</td><td>12%</td><td>316.80</td><td>2956.80</td></tr>
+              <tr><td>5</td><td>A4 Document File</td><td>4820</td><td>12 Pc</td><td>120.00</td><td>1440.00</td><td>12%</td><td>172.80</td><td>1612.80</td></tr>
+              <tr><td>6</td><td>Power Bank 10000mAh</td><td>1236</td><td>12 Pc</td><td>990.00</td><td>11880.00</td><td>12%</td><td>1425.60</td><td>13305.60</td></tr>
+              <tr><td>7</td><td>USB Flash Drive</td><td>1236</td><td>12 Pc</td><td>199.00</td><td>2388.00</td><td>12%</td><td>286.56</td><td>2674.56</td></tr>
+              <tr><td>8</td><td>Bluetooth Keyboard</td><td>2536</td><td>4 Box</td><td>900.00</td><td>3600.00</td><td>12%</td><td>432.00</td><td>4032.00</td></tr>
+            </tbody>
+          </table>
+          <div className="invoice-summary">
+            <div className="summary-box">
+              <div className="summary-header">SUMMARY</div>
+              <table className="summary-table">
+                <tbody>
+                  <tr><td>Sub-Total</td><td>32989.00</td></tr>
+                  <tr><td>GST</td><td>5127.84</td></tr>
+                  <tr><td>Total</td><td>38025.84</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="summary-box">
+              <div className="summary-header">AMOUNT</div>
+              <table className="summary-table">
+                <tbody>
+                  <tr><td>CGST Amt</td><td>2563.92</td></tr>
+                  <tr><td>SGST Amt</td><td>2563.92</td></tr>
+                  <tr><td>Freight/Packing Charges</td><td>-</td></tr>
+                  <tr><td>Round Off</td><td>0.16</td></tr>
+                  <tr><td>Total Amount</td><td><strong>38026.00</strong></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="invoice-footer">
+            <div className="invoice-bank">
+              <div><strong>Our Bank Details</strong></div>
+              <div>Bank Name: STATE BANK OF INDIA</div>
+              <div>Branch: Delhi</div>
+              <div>Account No: 20412XXXX05</div>
+              <div>IFSC Code: SBIN0X3X0XX</div>
+              <div>UPI ID: yourupi@upi</div>
+              <div>Invoice Total in Words</div>
+              <div>Rupees ThirtyEight Thousand TwentySix Only</div>
+            </div>
+            <div className="invoice-declaration">
+              <div><strong>Declaration</strong></div>
+              <div>1. Subject to Mehra jurisdiction</div>
+              <div>2. Terms & conditions are subject to our trade policy</div>
+              <div>3. Our risk & responsibility ceases after the delivery of goods.</div>
+              <div>E & O.E.</div>
+              <div style={{marginTop:'16px', textAlign:'right'}}>Authorised Signatory</div>
+            </div>
+          </div>
+          <div className="invoice-bottom">Thank You For Business With Us!</div>
+        </div>
       </div>
     );
   };
@@ -1416,6 +1550,7 @@ function App() {
         <div className="navbar-left">
           <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
           <button className="navbar-button" onClick={handleAboutOpen}>About</button>
+          <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>
           <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
           {isLoggedIn && !showDataButton && <FileUpload onFileUpload={handleFileUpload} />}
           {isLoggedIn && showDataButton && (
@@ -1445,10 +1580,11 @@ function App() {
                 </>)}
         </div>
       </nav>
-      {(showProfileUpdate || showRateUpdate || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo) && (
+      {(showProfileUpdate || showRateUpdate || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage) && (
         <div className="book-view">
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
+          {showInvoicePage && <InvoicePage />}
           {showProfileUpdate && <ProfileUpdateForm onClose={() => setShowProfileUpdate(false)} />}
           {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
           {showRegisterForm && <RegisterForm onClose={() => setShowRegisterForm(false)} />}
