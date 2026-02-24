@@ -57,7 +57,7 @@ function RateUpdatePage({ onClose }) {
     <div className="placeholder-container">
       <h2>Rate Update</h2>
       <div className="rate-table-container">
-        <table>
+        <table className="rate-table">
           <thead>
             <tr>
               <th>Code</th>
@@ -74,20 +74,20 @@ function RateUpdatePage({ onClose }) {
                 <td>{rate.Code}</td>
                 <td>{rate.Item}</td>
                 <td>
-                  <input type="number" value={rate.BasicPrice} readOnly />
+                  <input className="rate-input read-only" type="number" value={rate.BasicPrice} readOnly />
                 </td>
                 <td>
-                  <span>
+                  <span className="tax-pill">
                     {rate.SGST}% (₹{(rate.BasicPrice * rate.SGST / 100).toFixed(2)})
                   </span>
                 </td>
                 <td>
-                  <span>
+                  <span className="tax-pill">
                     {rate.CGST}% (₹{(rate.BasicPrice * rate.CGST / 100).toFixed(2)})
                   </span>
                 </td>
                 <td>
-                  <input type="number" step="0.01" value={rate.RSP ?? ''} onChange={(e) => handleRSPChange(index, e.target.value)} />
+                  <input className="rate-input" type="number" step="0.01" value={rate.RSP ?? ''} onChange={(e) => handleRSPChange(index, e.target.value)} />
                 </td>
               </tr>
             ))}

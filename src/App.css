@@ -193,9 +193,112 @@
 .book-view .placeholder-container {
   position: static;
   transform: none;
-  max-width: 900px;
+  max-width: 1200px;
   width: 100%;
   text-align: left;
   border: 1px solid #ddd;
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.rate-table-container {
+  margin-top: 10px;
+}
+
+.rate-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #cfd4da;
+  table-layout: fixed;
+}
+
+.rate-table thead th {
+  text-align: left;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid #cfd4da;
+}
+
+.rate-table thead th:first-child {
+  width: 60px;
+}
+
+.rate-table thead th:nth-child(3),
+.rate-table thead th:nth-child(4),
+.rate-table thead th:nth-child(5),
+.rate-table thead th:nth-child(6) {
+  width: 160px;
+}
+
+.rate-table tbody td {
+  padding: 6px 10px;
+  vertical-align: middle;
+  font-size: 13px;
+  border: 1px solid #cfd4da;
+}
+
+.rate-table tbody td:first-child {
+  width: 60px;
+  font-weight: 600;
+}
+
+.rate-table tbody td:nth-child(2) {
+  font-weight: 700;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.rate-table tbody td:nth-child(3),
+.rate-table tbody td:nth-child(4),
+.rate-table tbody td:nth-child(5),
+.rate-table tbody td:nth-child(6) {
+  width: 160px;
+  overflow: hidden;
+}
+
+.rate-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #cfd4da;
+  border-radius: 8px;
+  background: #f7f9fc;
+  outline: none;
+  text-align: right;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.rate-input.read-only {
+  background: #eceff3;
+  color: #495057;
+}
+
+.tax-pill {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 16px;
+  background: #eef4ff;
+  border: 1px solid #cfe2ff;
+  color: #0b5ed7;
+  font-weight: 600;
+  font-size: 12px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rate-update-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.rate-update-actions button:first-child {
+  background-color: #0d6efd;
+}
+
+.rate-update-actions button:last-child {
+  background-color: #6c757d;
 }
