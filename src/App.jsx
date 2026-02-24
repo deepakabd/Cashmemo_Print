@@ -723,9 +723,19 @@ function App() {
           html, body {
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+          }
+          body {
+            display: block !important;
+            place-items: initial !important;
+            align-items: initial !important;
+            justify-content: initial !important;
+            overflow: auto !important;
           }
           .book-view {
-            margin-top: 0 !important;
+            margin-top: 20px !important;
             padding: 0 !important;
           }
           .invoice-actions,
@@ -788,6 +798,7 @@ function App() {
       printWindow.document.close();
       printWindow.focus();
       setTimeout(() => {
+        printWindow.scrollTo(0, 0);
         printWindow.print();
       }, 300);
     };
