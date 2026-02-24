@@ -87,14 +87,56 @@ function App() {
   const [fileUploadMessage, setFileUploadMessage] = useState(''); // New state for upload message
   const [showParsedData, setShowParsedData] = useState(false); // New state to control visibility of parsed data
 
-  // Placeholder Component for Profile Update
-  const ProfileUpdatePlaceholder = () => (
-    <div className="placeholder-container">
-      <h2>Profile Update Section</h2>
-      <p>This is where the user profile update form will be implemented.</p>
-      <button onClick={() => setShowProfileUpdate(false)}>Close</button>
-    </div>
-  );
+  const ProfileUpdateForm = ({ onClose }) => {
+    const [formData, setFormData] = useState({
+      distributorCode: '',
+      distributorName: '',
+      contact: '',
+      email: '',
+      gst: '',
+      address: '',
+    });
+    useEffect(() => {
+      const saved = localStorage.getItem('profileData');
+      if (saved) {
+        try {
+          setFormData(JSON.parse(saved));
+        } catch {}
+      }
+    }, []);
+    const handleChange = (e) => {
+      const { name, value } = e.target;
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    };
+    const handleSave = () => {
+      localStorage.setItem('profileData', JSON.stringify(formData));
+      alert('Profile saved successfully!');
+      onClose();
+    };
+    return (
+      <div className="placeholder-container">
+        <h2>Profile Update</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+          <span>Distributor Code</span>
+          <input name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
+          <span>Distributor Name</span>
+          <input name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} />
+          <span>Contact</span>
+          <input name="contact" type="text" value={formData.contact} onChange={handleChange} />
+          <span>Email</span>
+          <input name="email" type="email" value={formData.email} onChange={handleChange} />
+          <span>GST</span>
+          <input name="gst" type="text" value={formData.gst} onChange={handleChange} />
+          <span>Address</span>
+          <textarea name="address" rows="3" value={formData.address} onChange={handleChange} />
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={handleSave}>Save</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
 
   // Placeholder Component for Rate Update
   // const RateUpdatePlaceholder = () => (
@@ -129,7 +171,7 @@ function App() {
   };
 
   const handleShowData = () => {
-    setShowParsedData(true);
+    setShowParsedData(prev => !prev);
   };
 
   const [parsedData, setParsedData] = useState([]);
@@ -244,7 +286,8 @@ function App() {
               setUniqueCashMemoStatuses([...new Set(results.data.map(row => row['Cash Memo Status']).filter(Boolean))]);
               setUniqueDeliveryMen([...new Set(results.data.map(row => row['Delivery Man']).filter(Boolean))]);
               setUniqueIsRegMobileStatuses([...new Set(results.data.map(row => row['Is Reg Mobile'] ? 'Yes' : 'No').filter(Boolean))]);
-              setShowDataButton(true); // Show "Show Data" button after successful upload
+              setShowDataButton(true);
+              setShowParsedData(false);
               setFileUploadMessage('File uploaded successfully!');
               setTimeout(() => {
                 setFileUploadMessage('');
@@ -260,7 +303,8 @@ function App() {
               setUniqueMobileStatuses([]);
               setUniqueConsumerStatuses([]);
               setUniqueConnectionTypes([]);
-              setShowDataButton(false); // Hide button if no data
+              setShowDataButton(false);
+              setShowParsedData(false);
               setFileUploadMessage('No data found in file.');
               setTimeout(() => {
                 setFileUploadMessage('');
@@ -277,6 +321,7 @@ function App() {
             setTimeout(() => {
               setFileUploadMessage('');
             }, 5000);
+            setShowParsedData(false);
           }
         });
       } else if (file.name.endsWith('.xlsx')) {
@@ -314,7 +359,8 @@ function App() {
           setUniqueCashMemoStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Cash Memo Status')]).filter(Boolean))]);
           setUniqueDeliveryMen([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Delivery Man')]).filter(Boolean))]);
           setUniqueIsRegMobileStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Is Reg Mobile')] ? 'Yes' : 'No').filter(Boolean))]);
-          setShowDataButton(true); // Show "Show Data" button after successful upload
+          setShowDataButton(true);
+          setShowParsedData(false);
           setFileUploadMessage('File uploaded successfully!');
           setTimeout(() => {
             setFileUploadMessage('');
@@ -330,7 +376,8 @@ function App() {
           setUniqueMobileStatuses([]);
           setUniqueConsumerStatuses([]);
           setUniqueConnectionTypes([]);
-          setShowDataButton(false); // Hide button if no data
+          setShowDataButton(false);
+          setShowParsedData(false);
           setFileUploadMessage('No data found in file.');
           setTimeout(() => {
             setFileUploadMessage('');
@@ -348,6 +395,7 @@ function App() {
       setTimeout(() => {
         setFileUploadMessage('');
       }, 5000);
+      setShowParsedData(false);
     };
 
     if (file.name.endsWith('.csv')) {
@@ -1096,9 +1144,9 @@ function App() {
           <a href="#home">Home</a>
           <a href="#about">About</a>
           <a href="#contact">Contact</a>
-          {isLoggedIn && <FileUpload onFileUpload={handleFileUpload} />}
+          {isLoggedIn && !showDataButton && <FileUpload onFileUpload={handleFileUpload} />}
           {isLoggedIn && showDataButton && (
-            <button onClick={handleShowData} className="navbar-button">Show Data</button>
+            <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
           )}
         </div>
         <div className="navbar-right">
@@ -1122,8 +1170,12 @@ function App() {
                 </>)}
         </div>
       </nav>
-      {showProfileUpdate && <ProfileUpdatePlaceholder />}
-      {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
+      {(showProfileUpdate || showRateUpdate) && (
+        <div className="book-view">
+          {showProfileUpdate && <ProfileUpdateForm onClose={() => setShowProfileUpdate(false)} />}
+          {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
+        </div>
+      )}
       
       <style>{`
         input[type="checkbox"] {
@@ -1151,7 +1203,7 @@ function App() {
       `}</style>
 
 
-      {parsedData.length > 0 && (
+      {parsedData.length > 0 && showParsedData && (
         <div style={{ marginTop: '20px' }}>
 
 

@@ -19,13 +19,35 @@ const initialRates = [
 function RateUpdatePage({ onClose }) {
   const [rates, setRates] = useState(initialRates);
 
-  const handleRateChange = (index, field, value) => {
+  useEffect(() => {
+    const saved = localStorage.getItem('ratesData');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRates(parsed);
+        }
+      } catch {}
+    }
+  }, []);
+
+  const handleRSPChange = (index, value) => {
     const newRates = [...rates];
-    newRates[index][field] = parseFloat(value) || 0;
+    newRates[index].RSP = value === '' ? '' : value;
+    const rspNum = parseFloat(value);
+    if (!isNaN(rspNum)) {
+      const sgst = parseFloat(newRates[index].SGST) || 0;
+      const cgst = parseFloat(newRates[index].CGST) || 0;
+      const factor = 1 + sgst / 100 + cgst / 100;
+      newRates[index].BasicPrice = factor > 0 ? parseFloat((rspNum / factor).toFixed(2)) : 0;
+    } else {
+      newRates[index].BasicPrice = 0;
+    }
     setRates(newRates);
   };
 
   const handleSave = () => {
+    localStorage.setItem('ratesData', JSON.stringify(rates));
     alert('Rates saved successfully!');
     console.log('Updated Rates:', rates);
     onClose(); // Close the page after saving
@@ -52,32 +74,20 @@ function RateUpdatePage({ onClose }) {
                 <td>{rate.Code}</td>
                 <td>{rate.Item}</td>
                 <td>
-                  <input
-                    type="number"
-                    value={rate.BasicPrice}
-                    onChange={(e) => handleRateChange(index, 'BasicPrice', e.target.value)}
-                  />
+                  <input type="number" value={rate.BasicPrice} readOnly />
                 </td>
                 <td>
-                  <input
-                    type="number"
-                    value={rate.SGST}
-                    onChange={(e) => handleRateChange(index, 'SGST', e.target.value)}
-                  />
+                  <span>
+                    {rate.SGST}% (₹{(rate.BasicPrice * rate.SGST / 100).toFixed(2)})
+                  </span>
                 </td>
                 <td>
-                  <input
-                    type="number"
-                    value={rate.CGST}
-                    onChange={(e) => handleRateChange(index, 'CGST', e.target.value)}
-                  />
+                  <span>
+                    {rate.CGST}% (₹{(rate.BasicPrice * rate.CGST / 100).toFixed(2)})
+                  </span>
                 </td>
                 <td>
-                  <input
-                    type="number"
-                    value={rate.RSP}
-                    onChange={(e) => handleRateChange(index, 'RSP', e.target.value)}
-                  />
+                  <input type="number" step="0.01" value={rate.RSP ?? ''} onChange={(e) => handleRSPChange(index, e.target.value)} />
                 </td>
               </tr>
             ))}
