@@ -349,6 +349,22 @@
   width: 100%;
 }
 
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-header h2 {
+  margin: 0;
+}
+
+.admin-logout-btn {
+  background: #b91c1c !important;
+  color: #fff !important;
+}
+
 .admin-login-panel {
   max-width: 420px;
   width: 100%;

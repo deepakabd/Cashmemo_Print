@@ -118,6 +118,15 @@ const formatDisplayDate = (value) => {
   return date.toLocaleDateString();
 };
 
+const getRemainingDays = (validTill) => {
+  if (!validTill) return null;
+  const end = new Date(validTill);
+  if (Number.isNaN(end.getTime())) return null;
+  const now = new Date();
+  const diffMs = end.getTime() - now.getTime();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+};
+
 const normalizePendingTypeLabel = (type) => {
   const raw = String(type || '').toLowerCase().trim();
   if (raw === 'profile' || raw === 'profiledata') return 'profile';
@@ -623,6 +632,17 @@ function App() {
     setShowUserMenu(false);
   };
 
+  const handleAdminLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch {}
+    hideAllViews();
+    setShowAboutInfo(true);
+    setAdminLoginId('');
+    setAdminPassword('');
+    alert('Admin logged out successfully!');
+  };
+
   const handleAdminLoginSubmit = async () => {
     const loginId = adminLoginId.trim().toLowerCase();
     const password = adminPassword.trim();
@@ -876,7 +896,7 @@ function App() {
     );
   };
 
-  const AdminPanel = ({ onClose }) => {
+  const AdminPanel = ({ onClose, onAdminLogout }) => {
     const [requests, setRequests] = useState([]);
     const [users, setUsers] = useState([]);
     const [feedback, setFeedback] = useState([]);
@@ -911,6 +931,8 @@ function App() {
       mobile: '',
       email: '',
       package: '',
+      validFrom: '',
+      validTill: '',
       pin: '',
       role: 'operator',
       status: 'active',
@@ -1054,6 +1076,20 @@ function App() {
     const writeUsersLocal = (nextUsers) => {
       setUsers(nextUsers);
       localStorage.setItem('usersData', JSON.stringify(nextUsers));
+    };
+
+    const toDateInputValue = (value) => {
+      if (!value) return '';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+      return d.toISOString().slice(0, 10);
+    };
+
+    const toIsoDate = (value) => {
+      if (!value) return '';
+      if (String(value).includes('T')) return value;
+      const d = new Date(`${value}T00:00:00`);
+      return Number.isNaN(d.getTime()) ? value : d.toISOString();
     };
 
     const setRegistrationOverride = (id, status) => {
@@ -1254,6 +1290,8 @@ function App() {
         mobile: u.mobile || '',
         email: u.email || '',
         package: u.package || '',
+        validFrom: toDateInputValue(u.validFrom),
+        validTill: toDateInputValue(u.validTill),
         pin: u.pin || '',
         role: u.role || 'operator',
         status: u.status || 'active',
@@ -1282,7 +1320,10 @@ function App() {
         return;
       }
       try {
-        const validity = computeValidityDates(editUser.package);
+        const fallbackValidity = computeValidityDates(editUser.package);
+        const validFromIso = toIsoDate(editUser.validFrom) || fallbackValidity.validFrom;
+        const validTillIso = toIsoDate(editUser.validTill) || fallbackValidity.validTill;
+        const diffDays = Math.max(0, Math.ceil((new Date(validTillIso).getTime() - new Date(validFromIso).getTime()) / (1000 * 60 * 60 * 24)));
         if (!targetUser.id) {
           throw new Error('LOCAL_ONLY_USER');
         }
@@ -1292,9 +1333,9 @@ function App() {
           mobile: editUser.mobile.trim(),
           email: editUser.email.trim(),
           package: editUser.package,
-          packageDays: validity.packageDays,
-          validFrom: validity.validFrom,
-          validTill: validity.validTill,
+          packageDays: Number.isFinite(diffDays) ? diffDays : fallbackValidity.packageDays,
+          validFrom: validFromIso,
+          validTill: validTillIso,
           pin: editUser.pin.trim(),
           role: editUser.role,
           status: editUser.status,
@@ -1305,7 +1346,10 @@ function App() {
         setEditingUserId('');
         await loadData();
       } catch {
-        const validity = computeValidityDates(editUser.package);
+        const fallbackValidity = computeValidityDates(editUser.package);
+        const validFromIso = toIsoDate(editUser.validFrom) || fallbackValidity.validFrom;
+        const validTillIso = toIsoDate(editUser.validTill) || fallbackValidity.validTill;
+        const diffDays = Math.max(0, Math.ceil((new Date(validTillIso).getTime() - new Date(validFromIso).getTime()) / (1000 * 60 * 60 * 24)));
         const nextUsers = users.map((u) => (
           isSameUserByToken(u, editingUserId)
             ? {
@@ -1315,9 +1359,9 @@ function App() {
               mobile: editUser.mobile.trim(),
               email: editUser.email.trim(),
               package: editUser.package,
-              packageDays: validity.packageDays,
-              validFrom: validity.validFrom,
-              validTill: validity.validTill,
+              packageDays: Number.isFinite(diffDays) ? diffDays : fallbackValidity.packageDays,
+              validFrom: validFromIso,
+              validTill: validTillIso,
               pin: editUser.pin.trim(),
               role: editUser.role,
               status: editUser.status,
@@ -1537,7 +1581,10 @@ function App() {
 
     return (
       <div className="placeholder-container admin-panel">
-        <h2>Admin Panel</h2>
+        <div className="admin-header">
+          <h2>Admin Panel</h2>
+          <button className="admin-logout-btn" onClick={onAdminLogout}>Log Out</button>
+        </div>
         <div className="admin-grid">
           <div className="admin-card">
             <div className="admin-stat-label">Pending Registration Request</div>
@@ -1643,6 +1690,7 @@ function App() {
                   <th>Mobile</th>
                   <th>Email</th>
                   <th>Package</th>
+                  <th>Validity</th>
                   <th>Pin</th>
                   <th>Profile Updated</th>
                   <th>Bank Updated</th>
@@ -1653,7 +1701,7 @@ function App() {
               <tbody>
                 {(activeAdminTab === 'active-user' ? activeUsersList : users).length === 0 ? (
                   <tr>
-                    <td colSpan="10">No users found.</td>
+                    <td colSpan="11">No users found.</td>
                   </tr>
                 ) : (
                   (activeAdminTab === 'active-user' ? activeUsersList : users).map((u, idx) => (
@@ -1663,6 +1711,10 @@ function App() {
                       <td>{u.mobile || '-'}</td>
                       <td>{u.email || '-'}</td>
                       <td>{u.package || '-'}</td>
+                      <td>
+                        {formatDisplayDate(u.validTill)}
+                        {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
+                      </td>
                       <td>{u.pin || '-'}</td>
                       <td>{u.profileData ? <button onClick={() => openDetailView(u, 'profile')}>View</button> : '-'}</td>
                       <td>{u.bankDetailsData ? <button onClick={() => openDetailView(u, 'bank')}>View</button> : '-'}</td>
@@ -1699,6 +1751,8 @@ function App() {
                   <option key={pkg} value={pkg}>{pkg}</option>
                 ))}
               </select>
+              <input className="form-input" type="date" value={editUser.validFrom} onChange={(e) => setEditUser((p) => ({ ...p, validFrom: e.target.value }))} />
+              <input className="form-input" type="date" value={editUser.validTill} onChange={(e) => setEditUser((p) => ({ ...p, validTill: e.target.value }))} />
               <input className="form-input" placeholder="PIN" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
               <select className="form-input" value={editUser.role} onChange={(e) => setEditUser((p) => ({ ...p, role: e.target.value }))}>
                 <option value="operator">Operator</option>
@@ -3622,7 +3676,7 @@ function App() {
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && <InvoicePage />}
-          {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
+          {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
             <div className="placeholder-container admin-login-panel">
               <h2>Admin Login</h2>
