@@ -887,7 +887,7 @@ function App() {
           <textarea className="form-textarea" rows="5" value={text} onChange={(e) => setText(e.target.value)} placeholder="अपना सुझाव/फीडबैक लिखें" />
           <span className="profile-label">Email</span>
           <span>deepak.youvi@gmail.com</span>
-          <span>WhatsApp - 8789358400</span>
+          
         </div>
         <div className="form-actions">
           <button onClick={submitFeedback}>Submit</button>
