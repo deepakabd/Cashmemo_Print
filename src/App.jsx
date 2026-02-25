@@ -8,7 +8,7 @@ import Papa from 'papaparse';
 import CashMemoEnglish from './CashMemoEnglish';
 import RateUpdatePage from './RateUpdatePage';
 import { db } from './firebase';
-import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 
 import './App.css';
 
@@ -810,31 +810,46 @@ function App() {
         return;
       }
       const key = 'feedbackData';
+      const feedbackEntry = {
+        clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        userId: loggedInUser.id,
+        dealerCode: loggedInUser.dealerCode || '',
+        dealerName: loggedInUser.dealerName || '',
+        email: loggedInUser.email || '',
+        text: text.trim(),
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      let anySaved = false;
       try {
         await addDoc(collection(db, 'feedback'), {
-          userId: loggedInUser.id,
-          dealerCode: loggedInUser.dealerCode || '',
-          dealerName: loggedInUser.dealerName || '',
-          email: loggedInUser.email || '',
-          text: text.trim(),
-          read: false,
+          ...feedbackEntry,
           createdAt: serverTimestamp(),
         });
+        anySaved = true;
+      } catch {}
+      try {
+        const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
+        updateUserInStore(
+          resolvedId,
+          (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
+          loggedInUser.dealerCode
+        );
+        anySaved = true;
+      } catch {}
+      try {
         const existing = localStorage.getItem(key);
         const arr = existing ? JSON.parse(existing) : [];
-        arr.push({
-          userId: loggedInUser.id,
-          dealerCode: loggedInUser.dealerCode || '',
-          dealerName: loggedInUser.dealerName || '',
-          email: loggedInUser.email || '',
-          text: text.trim(),
-          read: false,
-          date: new Date().toISOString(),
-        });
-        localStorage.setItem(key, JSON.stringify(arr));
+        const next = Array.isArray(arr) ? arr : [];
+        next.push({ ...feedbackEntry, source: 'local' });
+        localStorage.setItem(key, JSON.stringify(next));
+        anySaved = true;
+      } catch {}
+
+      if (anySaved) {
         alert('Feedback submitted. Thank you!');
         onClose();
-      } catch {
+      } else {
         alert('Unable to save feedback.');
       }
     };
@@ -865,6 +880,15 @@ function App() {
     const [viewApproval, setViewApproval] = useState(null);
     const [detailView, setDetailView] = useState(null);
     const [hiddenApprovalIds, setHiddenApprovalIds] = useState([]);
+    const [registrationStatusOverrides, setRegistrationStatusOverrides] = useState(() => {
+      try {
+        const raw = localStorage.getItem('registrationStatusOverrides');
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    });
     const [newUser, setNewUser] = useState({
       dealerCode: '',
       dealerName: '',
@@ -958,13 +982,43 @@ function App() {
           firebaseFeedback = Array.isArray(fbList) ? fbList : [];
         }
 
-        setRequests(firebaseRequests);
+        const reqWithOverrides = firebaseRequests.map((r) => {
+          const overriddenStatus = registrationStatusOverrides[r.id];
+          return overriddenStatus ? { ...r, status: overriddenStatus } : r;
+        });
+
+        const userFeedback = firebaseUsers.flatMap((u) => {
+          const list = Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : [];
+          return list.map((entry, idx) => ({
+            ...entry,
+            id: entry?.id || `userfb-${u.id}-${entry?.clientFeedbackId || idx}`,
+            source: 'userDoc',
+            userId: u.id,
+            dealerCode: entry?.dealerCode || u.dealerCode || '',
+            dealerName: entry?.dealerName || u.dealerName || '',
+            email: entry?.email || u.email || '',
+            createdAt: entry?.createdAt || '',
+          }));
+        });
+
+        const mergedFeedbackMap = new Map();
+        [...firebaseFeedback.map((f) => ({ ...f, source: f.source || 'collection' })), ...userFeedback].forEach((f, idx) => {
+          const key = f.clientFeedbackId
+            ? `${f.userId || f.dealerCode || 'x'}-${f.clientFeedbackId}`
+            : `${f.id || 'fb'}-${idx}`;
+          if (!mergedFeedbackMap.has(key)) {
+            mergedFeedbackMap.set(key, f);
+          }
+        });
+        const mergedFeedback = Array.from(mergedFeedbackMap.values());
+
+        setRequests(reqWithOverrides);
         setUsers(firebaseUsers);
         setUpdateApprovals(firebaseApprovals);
-        setFeedback(firebaseFeedback);
-        localStorage.setItem('registrationRequests', JSON.stringify(firebaseRequests));
+        setFeedback(mergedFeedback);
+        localStorage.setItem('registrationRequests', JSON.stringify(reqWithOverrides));
         localStorage.setItem('usersData', JSON.stringify(firebaseUsers));
-        localStorage.setItem('feedbackData', JSON.stringify(firebaseFeedback));
+        localStorage.setItem('feedbackData', JSON.stringify(mergedFeedback));
       } catch {
         try {
           const reqRaw = localStorage.getItem('registrationRequests');
@@ -973,7 +1027,12 @@ function App() {
           const userList = usersRaw ? JSON.parse(usersRaw) : [];
           const fbRaw = localStorage.getItem('feedbackData');
           const fbList = fbRaw ? JSON.parse(fbRaw) : [];
-          setRequests(Array.isArray(reqList) ? reqList : []);
+          const reqArray = Array.isArray(reqList) ? reqList : [];
+          const reqWithOverrides = reqArray.map((r) => {
+            const overriddenStatus = registrationStatusOverrides[r.id];
+            return overriddenStatus ? { ...r, status: overriddenStatus } : r;
+          });
+          setRequests(reqWithOverrides);
           setUsers(Array.isArray(userList) ? userList : []);
           setFeedback(Array.isArray(fbList) ? fbList : []);
           setUpdateApprovals([]);
@@ -989,6 +1048,14 @@ function App() {
     const writeUsersLocal = (nextUsers) => {
       setUsers(nextUsers);
       localStorage.setItem('usersData', JSON.stringify(nextUsers));
+    };
+
+    const setRegistrationOverride = (id, status) => {
+      setRegistrationStatusOverrides((prev) => {
+        const next = { ...(prev || {}), [id]: status };
+        localStorage.setItem('registrationStatusOverrides', JSON.stringify(next));
+        return next;
+      });
     };
 
     const resolveEditToken = (user) => {
@@ -1011,6 +1078,7 @@ function App() {
       const req = requests.find((r) => r.id === id);
       if (!req) return;
       try {
+        setRegistrationOverride(id, 'approved');
         const validity = computeValidityDates(req.package || '');
         const requestId = String(id || '');
         const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
@@ -1079,6 +1147,7 @@ function App() {
 
     const rejectRequest = async (id) => {
       try {
+        setRegistrationOverride(id, 'rejected');
         const requestId = String(id || '');
         const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
         if (!isLocalOnlyRequest) {
@@ -1403,6 +1472,46 @@ function App() {
       }
     };
 
+    const deleteFeedbackItem = async (item) => {
+      const targetUser = users.find((u) => u.id === item?.userId || String(u?.dealerCode || '').trim() === String(item?.dealerCode || '').trim());
+      try {
+        if (item?.source !== 'userDoc' && item?.id && !String(item.id).startsWith('userfb-')) {
+          try {
+            await deleteDoc(doc(db, 'feedback', item.id));
+          } catch {}
+        }
+
+        if (targetUser?.id) {
+          const existingEntries = Array.isArray(targetUser.feedbackEntries) ? targetUser.feedbackEntries : [];
+          const filteredEntries = existingEntries.filter((entry) => {
+            if (item?.clientFeedbackId) {
+              return entry?.clientFeedbackId !== item.clientFeedbackId;
+            }
+            return String(entry?.text || '') !== String(item?.text || '') || String(entry?.createdAt || '') !== String(item?.createdAt || '');
+          });
+          try {
+            await updateDoc(doc(db, 'users', targetUser.id), {
+              feedbackEntries: filteredEntries,
+              updatedAt: serverTimestamp(),
+            });
+          } catch {}
+          const nextUsers = users.map((u) => (u.id === targetUser.id ? { ...u, feedbackEntries: filteredEntries } : u));
+          writeUsersLocal(nextUsers);
+        }
+
+        const nextFeedback = feedback.filter((f) => {
+          if (item?.clientFeedbackId && f?.clientFeedbackId) {
+            return f.clientFeedbackId !== item.clientFeedbackId;
+          }
+          return f.id !== item.id;
+        });
+        setFeedback(nextFeedback);
+        localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
+      } catch {
+        alert('Unable to delete feedback.');
+      }
+    };
+
     const openDetailView = (user, type) => {
       if (type === 'profile') {
         setDetailView({ title: `Profile - ${user?.dealerCode || ''}`, data: user?.profileData || {} });
@@ -1549,9 +1658,9 @@ function App() {
                       <td>{u.email || '-'}</td>
                       <td>{u.package || '-'}</td>
                       <td>{u.pin || '-'}</td>
-                      <td><button onClick={() => openDetailView(u, 'profile')} disabled={!u.profileData}>View</button></td>
-                      <td><button onClick={() => openDetailView(u, 'bank')} disabled={!u.bankDetailsData}>View</button></td>
-                      <td><button onClick={() => openDetailView(u, 'rates')} disabled={!Array.isArray(u.ratesData) || u.ratesData.length === 0}>View</button></td>
+                      <td>{u.profileData ? <button onClick={() => openDetailView(u, 'profile')}>View</button> : '-'}</td>
+                      <td>{u.bankDetailsData ? <button onClick={() => openDetailView(u, 'bank')}>View</button> : '-'}</td>
+                      <td>{Array.isArray(u.ratesData) && u.ratesData.length > 0 ? <button onClick={() => openDetailView(u, 'rates')}>View</button> : '-'}</td>
                       <td>
                         <div className="admin-actions">
                           <button onClick={() => startEditUser(u)}>Edit</button>
@@ -1690,9 +1799,14 @@ function App() {
                         <td className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</td>
                         <td>{formatDisplayDate(f.createdAt || f.date)}</td>
                         <td>
-                          <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)}>
-                            {f.read ? 'Mark Unread' : 'Mark Read'}
-                          </button>
+                          <div className="admin-actions">
+                            <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)}>
+                              {f.read ? 'Mark Unread' : 'Mark Read'}
+                            </button>
+                            <button className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)}>
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

@@ -446,6 +446,10 @@
   background: #b91c1c !important;
 }
 
+.feedback-delete-btn {
+  background: #374151 !important;
+}
+
 .admin-table-wrap {
   overflow-x: auto;
   border: 1px solid #cad3e0;
