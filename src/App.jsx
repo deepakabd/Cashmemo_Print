@@ -512,9 +512,11 @@ function App() {
   };
 
   const handleLogout = () => {
+    hideAllViews();
     setIsLoggedIn(false);
     setShowUserMenu(false);
     setLoggedInUser(null);
+    setShowAboutInfo(true);
     alert('Logged out successfully!');
   };
 
@@ -900,17 +902,26 @@ function App() {
 
     const loadData = async () => {
       try {
-        const reqSnap = await getDocs(collection(db, 'registrationRequests'));
-        const firebaseRequests = reqSnap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
-          approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
-        }));
-
-        const userSnap = await getDocs(collection(db, 'users'));
-        const firebaseUsers = userSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        let firebaseRequests = [];
+        let firebaseUsers = [];
         let firebaseApprovals = [];
+        let firebaseFeedback = [];
+
+        try {
+          const reqSnap = await getDocs(collection(db, 'registrationRequests'));
+          firebaseRequests = reqSnap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+            createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
+            approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
+          }));
+        } catch {}
+
+        try {
+          const userSnap = await getDocs(collection(db, 'users'));
+          firebaseUsers = userSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        } catch {}
+
         try {
           const approvalSnap = await getDocs(collection(db, 'updateApprovals'));
           firebaseApprovals = approvalSnap.docs.map((d) => ({
@@ -920,15 +931,32 @@ function App() {
             approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
             rejectedAt: d.data()?.rejectedAt?.toDate?.()?.toISOString?.() || d.data()?.rejectedAt || '',
           }));
-        } catch {
-          firebaseApprovals = [];
+        } catch {}
+
+        try {
+          const feedbackSnap = await getDocs(collection(db, 'feedback'));
+          firebaseFeedback = feedbackSnap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+            createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
+          }));
+        } catch {}
+
+        if (firebaseRequests.length === 0) {
+          const reqRaw = localStorage.getItem('registrationRequests');
+          const reqList = reqRaw ? JSON.parse(reqRaw) : [];
+          firebaseRequests = Array.isArray(reqList) ? reqList : [];
         }
-        const feedbackSnap = await getDocs(collection(db, 'feedback'));
-        const firebaseFeedback = feedbackSnap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
-        }));
+        if (firebaseUsers.length === 0) {
+          const usersRaw = localStorage.getItem('usersData');
+          const userList = usersRaw ? JSON.parse(usersRaw) : [];
+          firebaseUsers = Array.isArray(userList) ? userList : [];
+        }
+        if (firebaseFeedback.length === 0) {
+          const fbRaw = localStorage.getItem('feedbackData');
+          const fbList = fbRaw ? JSON.parse(fbRaw) : [];
+          firebaseFeedback = Array.isArray(fbList) ? fbList : [];
+        }
 
         setRequests(firebaseRequests);
         setUsers(firebaseUsers);
@@ -1740,6 +1768,7 @@ function App() {
         return parsedRates
           .map((rate) => ({
             Code: rate?.Code ?? '',
+            HSNCode: String(rate?.HSNCode ?? '27111900').trim() || '27111900',
             Item: String(rate?.Item ?? '').trim(),
             BasicPrice: parseFloat(rate?.BasicPrice) || 0,
             SGST: parseFloat(rate?.SGST) || 0,
@@ -1764,10 +1793,10 @@ function App() {
       gstn: invoiceProfileData.gst || '-',
     };
     const defaultBankDetails = {
-      bankName: 'CENTRAL BANK OF INDIA',
-      branch: 'RUNNISAIDPUR',
-      accountNo: '3934037653',
-      ifsc: 'BKID0003397',
+      bankName: '',
+      branch: '',
+      accountNo: '',
+      ifsc: '',
     };
     const [invoiceRates] = useState(initialInvoiceRates);
     const [bankDetails, setBankDetails] = useState(defaultBankDetails);
@@ -2177,16 +2206,10 @@ function App() {
     useEffect(() => {
       if (loggedInUser?.bankDetailsData) {
         setBankDetails((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
-        return;
+      } else {
+        setBankDetails(defaultBankDetails);
       }
-      const saved = localStorage.getItem('bankDetailsData');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setBankDetails((prev) => ({ ...prev, ...parsed }));
-        } catch {}
-      }
-    }, []);
+    }, [loggedInUser?.bankDetailsData]);
 
     return (
       <div className="placeholder-container">
@@ -3431,7 +3454,7 @@ function App() {
           <div className="navbar-left">
             <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
             <button className="navbar-button" onClick={handleAboutOpen}>About</button>
-            <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>
+            {isLoggedIn && <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>}
             <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
             {isLoggedIn && !showDataButton && <FileUpload onFileUpload={handleFileUpload} />}
             {isLoggedIn && showDataButton && (
