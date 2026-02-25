@@ -7,7 +7,8 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import CashMemoEnglish from './CashMemoEnglish';
 import RateUpdatePage from './RateUpdatePage';
-import { db } from './firebase';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth, db } from './firebase';
 import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 
 import './App.css';
@@ -622,17 +623,22 @@ function App() {
     setShowUserMenu(false);
   };
 
-  const handleAdminLoginSubmit = () => {
-    const validId = 'admin';
-    const validPassword = 'admin@123';
-    if (adminLoginId.trim() === validId && adminPassword === validPassword) {
+  const handleAdminLoginSubmit = async () => {
+    const loginId = adminLoginId.trim().toLowerCase();
+    const password = adminPassword.trim();
+    if (!loginId || !password) {
+      alert('Admin Email and Password required.');
+      return;
+    }
+    try {
+      await signInWithEmailAndPassword(auth, loginId, password);
       setShowAdminLogin(false);
       setShowAdminPanel(true);
       setAdminLoginId('');
       setAdminPassword('');
-      return;
+    } catch {
+      alert('Admin login failed. Check Firebase Authentication credentials.');
     }
-    alert('Invalid Admin ID or Password');
   };
 
   const RegisterForm = ({ onClose }) => {
@@ -3623,7 +3629,7 @@ function App() {
               <div className="register-form">
                 <input
                   className="form-input"
-                  placeholder="Admin ID"
+                  placeholder="Admin Email"
                   value={adminLoginId}
                   onChange={(e) => setAdminLoginId(e.target.value)}
                 />
