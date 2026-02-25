@@ -860,7 +860,7 @@ function App() {
           <span className="profile-label">Your Feedback</span>
           <textarea className="form-textarea" rows="5" value={text} onChange={(e) => setText(e.target.value)} placeholder="अपना सुझाव/फीडबैक लिखें" />
           <span className="profile-label">Email</span>
-          <span>{loggedInUser?.email || '-'}</span>
+          <span>deepak.youvi@gmail.com</span>
         </div>
         <div className="form-actions">
           <button onClick={submitFeedback}>Submit</button>
