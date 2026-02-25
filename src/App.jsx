@@ -7,6 +7,8 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import CashMemoEnglish from './CashMemoEnglish';
 import RateUpdatePage from './RateUpdatePage';
+import { db } from './firebase';
+import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 
 import './App.css';
 
@@ -70,6 +72,59 @@ const parseDateString = (dateString) => {
   return null;
 };
 
+const PACKAGE_OPTIONS = [
+  'Demo Package - 1 Day',
+  'Basic Package - 7 Days',
+  'Premium Package - 30 Days',
+  'Enterprise Package - 365 Days',
+];
+
+const getPackageValidityDays = (packageName = '') => {
+  const normalized = String(packageName || '').toLowerCase();
+  if (normalized.includes('demo')) return 1;
+  if (normalized.includes('basic')) return 7;
+  if (normalized.includes('premium')) return 30;
+  if (normalized.includes('enterprise')) return 365;
+  return 0;
+};
+
+const computeValidityDates = (packageName = '', baseDate = new Date()) => {
+  const days = getPackageValidityDays(packageName);
+  const validFrom = new Date(baseDate);
+  const validTill = new Date(baseDate);
+  if (days > 0) {
+    validTill.setDate(validTill.getDate() + days);
+  }
+  return {
+    packageDays: days,
+    validFrom: validFrom.toISOString(),
+    validTill: validTill.toISOString(),
+  };
+};
+
+const isUserExpired = (user) => {
+  const validTillRaw = user?.validTill;
+  if (!validTillRaw) return false;
+  const validTillDate = new Date(validTillRaw);
+  if (Number.isNaN(validTillDate.getTime())) return false;
+  return new Date().getTime() > validTillDate.getTime();
+};
+
+const formatDisplayDate = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString();
+};
+
+const normalizePendingTypeLabel = (type) => {
+  const raw = String(type || '').toLowerCase().trim();
+  if (raw === 'profile' || raw === 'profiledata') return 'profile';
+  if (raw === 'bank' || raw === 'bankdetails' || raw === 'bankdetailsdata') return 'bank';
+  if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
+  return raw;
+};
+
 
 
 
@@ -117,17 +172,120 @@ function App() {
     localStorage.setItem('usersData', JSON.stringify(users));
   };
 
-  const updateUserInStore = (userId, updater) => {
-    if (!userId) return null;
+  const updateUserInStore = (userId, updater, dealerCode = '') => {
+    if (!userId && !dealerCode) return null;
     const users = readUsersData();
-    const idx = users.findIndex((u) => u.id === userId);
+    let idx = users.findIndex((u) => u.id === userId);
+    if (idx < 0 && dealerCode) {
+      idx = users.findIndex((u) => String(u?.dealerCode || '').trim() === String(dealerCode).trim());
+    }
     if (idx < 0) return null;
     const nextUser = updater(users[idx]);
     const nextUsers = [...users];
     nextUsers[idx] = nextUser;
     writeUsersData(nextUsers);
-    setLoggedInUser((prev) => (prev?.id === userId ? nextUser : prev));
+    setLoggedInUser((prev) => {
+      if (!prev) return prev;
+      if (prev?.id === userId) return nextUser;
+      if (dealerCode && String(prev?.dealerCode || '').trim() === String(dealerCode).trim()) return nextUser;
+      return prev;
+    });
     return nextUser;
+  };
+
+  const updateUserInFirebase = async (userId, patch, dealerCode = '') => {
+    const payload = { ...patch, updatedAt: serverTimestamp() };
+
+    if (userId) {
+      try {
+        await updateDoc(doc(db, 'users', userId), payload);
+        return userId;
+      } catch {}
+    }
+
+    if (dealerCode) {
+      const snap = await getDocs(query(collection(db, 'users'), where('dealerCode', '==', String(dealerCode).trim())));
+      if (!snap.empty) {
+        const resolvedId = snap.docs[0].id;
+        await updateDoc(doc(db, 'users', resolvedId), payload);
+        return resolvedId;
+      }
+    }
+
+    throw new Error('USER_DOC_NOT_FOUND');
+  };
+
+  const submitUpdateApprovalRequest = async ({ type, payload, localKey, successMessage }) => {
+    if (!loggedInUser?.id) {
+      alert('Please login first.');
+      return false;
+    }
+    if (localKey) {
+      localStorage.setItem(localKey, JSON.stringify(payload));
+    }
+    try {
+      const nextApprovalStatus = { ...(loggedInUser.approvalStatus || {}), [type]: 'pending' };
+      let approvalSaved = false;
+
+      try {
+        const approvalsSnap = await getDocs(query(collection(db, 'updateApprovals'), where('userId', '==', loggedInUser.id)));
+        const existingPending = approvalsSnap.docs.find((d) => d.data()?.type === type && d.data()?.status === 'pending');
+        if (existingPending) {
+          await updateDoc(doc(db, 'updateApprovals', existingPending.id), {
+            payload,
+            dealerCode: loggedInUser.dealerCode || '',
+            dealerName: loggedInUser.dealerName || '',
+            status: 'pending',
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, 'updateApprovals'), {
+            userId: loggedInUser.id,
+            dealerCode: loggedInUser.dealerCode || '',
+            dealerName: loggedInUser.dealerName || '',
+            type,
+            payload,
+            status: 'pending',
+            requestedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        approvalSaved = true;
+      } catch {}
+
+      const pendingUpdatePatch = {
+        approvalStatus: nextApprovalStatus,
+        [`pendingUpdates.${type}`]: {
+          status: 'pending',
+          payload,
+          requestedAt: new Date().toISOString(),
+        },
+        lastApprovalStorage: approvalSaved ? 'collection' : 'userDoc',
+      };
+      const resolvedId = await updateUserInFirebase(loggedInUser.id, pendingUpdatePatch, loggedInUser.dealerCode);
+      updateUserInStore(
+        resolvedId,
+        (u) => ({
+          ...u,
+          approvalStatus: nextApprovalStatus,
+          pendingUpdates: {
+            ...(u.pendingUpdates || {}),
+            [type]: {
+              status: 'pending',
+              payload,
+              requestedAt: new Date().toISOString(),
+            },
+          },
+          id: resolvedId,
+        }),
+        loggedInUser.dealerCode
+      );
+      alert(successMessage || 'Your request is pending with admin for approval.');
+      return true;
+    } catch {
+      alert('Request submit failed. Check Firebase permissions.');
+      return false;
+    }
   };
 
   const ProfileUpdateForm = ({ onClose }) => {
@@ -142,26 +300,22 @@ function App() {
     useEffect(() => {
       if (loggedInUser?.profileData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
-        return;
       }
-      const saved = localStorage.getItem('profileData');
-      if (saved) {
-        try {
-          setFormData(JSON.parse(saved));
-        } catch {}
-      }
-    }, []);
+    }, [loggedInUser?.profileData]);
     const handleChange = (e) => {
       const { name, value } = e.target;
       setFormData((prev) => ({ ...prev, [name]: value }));
     };
-    const handleSave = () => {
-      localStorage.setItem('profileData', JSON.stringify(formData));
-      if (loggedInUser?.id) {
-        updateUserInStore(loggedInUser.id, (u) => ({ ...u, profileData: formData }));
+    const handleSave = async () => {
+      const ok = await submitUpdateApprovalRequest({
+        type: 'profile',
+        payload: formData,
+        localKey: 'profileData',
+        successMessage: 'Profile update request submitted. Your request is pending with admin for approval.',
+      });
+      if (ok) {
+        onClose();
       }
-      alert('Profile saved successfully!');
-      onClose();
     };
     return (
       <div className="placeholder-container">
@@ -190,39 +344,34 @@ function App() {
 
   const BankDetailsForm = ({ onClose }) => {
     const defaultBankDetails = {
-      bankName: 'CENTRAL BANK OF INDIA',
-      branch: 'RUNNISAIDPUR',
-      accountNo: '3934037653',
-      ifsc: 'BKID0003397',
+      bankName: '',
+      branch: '',
+      accountNo: '',
+      ifsc: '',
     };
     const [formData, setFormData] = useState(defaultBankDetails);
 
     useEffect(() => {
       if (loggedInUser?.bankDetailsData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
-        return;
       }
-      const saved = localStorage.getItem('bankDetailsData');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setFormData((prev) => ({ ...prev, ...parsed }));
-        } catch {}
-      }
-    }, []);
+    }, [loggedInUser?.bankDetailsData]);
 
     const handleChange = (e) => {
       const { name, value } = e.target;
       setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleSave = () => {
-      localStorage.setItem('bankDetailsData', JSON.stringify(formData));
-      if (loggedInUser?.id) {
-        updateUserInStore(loggedInUser.id, (u) => ({ ...u, bankDetailsData: formData }));
+    const handleSave = async () => {
+      const ok = await submitUpdateApprovalRequest({
+        type: 'bank',
+        payload: formData,
+        localKey: 'bankDetailsData',
+        successMessage: 'Bank details update request submitted. Your request is pending with admin for approval.',
+      });
+      if (ok) {
+        onClose();
       }
-      alert('Bank details saved successfully!');
-      onClose();
     };
 
     return (
@@ -261,7 +410,7 @@ function App() {
     setShowUserMenu(false);
   };
 
-  const handleUserLoginSubmit = () => {
+  const handleUserLoginSubmit = async () => {
     const dealerCode = userDealerCode.trim();
     const pin = userPin.trim();
     if (!dealerCode || !pin) {
@@ -269,28 +418,92 @@ function App() {
       return;
     }
 
-    let users = [];
+    let firestoreUser = null;
     try {
-      const raw = localStorage.getItem('usersData');
-      const parsed = raw ? JSON.parse(raw) : [];
-      users = Array.isArray(parsed) ? parsed : [];
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('dealerCode', '==', dealerCode));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const docData = snap.docs[0].data();
+        const status = String(docData?.status || 'active').toLowerCase();
+        if (String(docData?.pin || '') === pin) {
+          firestoreUser = {
+            id: snap.docs[0].id,
+            dealerCode: docData.dealerCode || dealerCode,
+            dealerName: docData.dealerName || '',
+            mobile: docData.mobile || '',
+            email: docData.email || '',
+            package: docData.package || '',
+            packageDays: docData.packageDays || 0,
+            validFrom: docData.validFrom || '',
+            validTill: docData.validTill || '',
+            pin: docData.pin || '',
+            role: docData.role || 'operator',
+            status: docData.status || 'active',
+            approvalStatus: docData.approvalStatus || {},
+            pendingUpdates: docData.pendingUpdates || {},
+            profileData: docData.profileData || null,
+            bankDetailsData: docData.bankDetailsData || null,
+            ratesData: Array.isArray(docData.ratesData) ? docData.ratesData : [],
+          };
+          if (status !== 'active') {
+            firestoreUser.status = status;
+          }
+        }
+      }
     } catch {
-      users = [];
+      alert('Firebase login check failed. Please try again.');
+      return;
     }
 
-    const matchedUser = users.find((u) => {
-      const codeMatch = String(u?.dealerCode || '').trim() === dealerCode;
-      const pinMatch = String(u?.pin || '').trim() === pin;
-      const status = String(u?.status || 'active').toLowerCase();
-      return codeMatch && pinMatch && status === 'active';
-    });
-
-    if (!matchedUser) {
+    if (!firestoreUser) {
       alert('Invalid Dealer Code / PIN ya account disabled hai.');
       return;
     }
 
-    setLoggedInUser(matchedUser);
+    if (firestoreUser.status === 'pending') {
+      alert('Your registration is pending with admin approval.');
+      return;
+    }
+
+    if (firestoreUser.status === 'disabled') {
+      alert('Your account is disabled. Please contact admin.');
+      return;
+    }
+
+    if (firestoreUser.status === 'expired') {
+      alert(`Your package expired on ${formatDisplayDate(firestoreUser.validTill)}. Kindly renew or contact admin.`);
+      return;
+    }
+
+    if (isUserExpired(firestoreUser)) {
+      try {
+        await updateDoc(doc(db, 'users', firestoreUser.id), {
+          status: 'expired',
+          updatedAt: serverTimestamp(),
+        });
+      } catch {}
+      alert(`Your demo/account package expired on ${formatDisplayDate(firestoreUser.validTill)}. Kindly renew or contact admin.`);
+      return;
+    }
+
+    let users = readUsersData();
+    const existingIdx = users.findIndex((u) => String(u?.dealerCode || '').trim() === dealerCode);
+    const localUser = existingIdx >= 0
+      ? { ...users[existingIdx], ...firestoreUser, id: firestoreUser.id }
+      : {
+        ...firestoreUser,
+        id: firestoreUser.id,
+        createdAt: new Date().toISOString(),
+      };
+    if (existingIdx >= 0) {
+      users[existingIdx] = localUser;
+    } else {
+      users = [...users, localUser];
+    }
+    writeUsersData(users);
+
+    setLoggedInUser(localUser);
     setIsLoggedIn(true);
     setShowUserLogin(false);
     setUserDealerCode('');
@@ -432,19 +645,18 @@ function App() {
       utr: '',
       date: '',
     });
-    const fixedPackages = [
-      'Demo - 1 दिन',
-      'Basic Package (500 रुपये) - 7 दिन',
-      'Premium Package (2000 रुपये) - 1 महीना',
-      'Enterprise Package (5000 रुपये) - 1 साल',
-    ];
+    const fixedPackages = PACKAGE_OPTIONS;
     const onChange = (e) => {
       const { name, value } = e.target;
       setForm(prev => ({ ...prev, [name]: value }));
     };
-    const onSubmit = () => {
+    const onSubmit = async () => {
       if (form.pin !== form.confirmPin) {
         alert('PIN aur Confirm PIN match nahi kar rahe');
+        return;
+      }
+      if (!form.package) {
+        alert('Please select a package.');
         return;
       }
       const request = {
@@ -460,14 +672,60 @@ function App() {
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
+      let requestRef = null;
+      try {
+        requestRef = await addDoc(collection(db, 'registrationRequests'), {
+          ...request,
+          createdAt: serverTimestamp(),
+        });
+
+        const usersRef = collection(db, 'users');
+        const existingQuery = query(usersRef, where('dealerCode', '==', form.dealerCode.trim()));
+        const existing = await getDocs(existingQuery);
+        const validity = computeValidityDates(form.package);
+        if (existing.empty) {
+          await addDoc(usersRef, {
+            dealerCode: form.dealerCode.trim(),
+            dealerName: form.dealerName.trim(),
+            mobile: form.mobile.trim(),
+            email: form.email.trim(),
+            pin: form.pin.trim(),
+            package: form.package,
+            packageDays: validity.packageDays,
+            validFrom: validity.validFrom,
+            validTill: validity.validTill,
+            role: 'operator',
+            status: 'pending',
+            createdAt: serverTimestamp(),
+          });
+        } else {
+          await updateDoc(existing.docs[0].ref, {
+            dealerName: form.dealerName.trim(),
+            mobile: form.mobile.trim(),
+            email: form.email.trim(),
+            pin: form.pin.trim(),
+            package: form.package,
+            packageDays: validity.packageDays,
+            validFrom: validity.validFrom,
+            validTill: validity.validTill,
+            role: 'operator',
+            status: 'pending',
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } catch {
+        alert('Registration save to Firebase failed. Check Firebase config.');
+        return;
+      }
+      const requestToStore = { ...request, id: requestRef.id };
       try {
         const existing = localStorage.getItem('registrationRequests');
         const arr = existing ? JSON.parse(existing) : [];
         const next = Array.isArray(arr) ? arr : [];
-        next.push(request);
+        next.push(requestToStore);
         localStorage.setItem('registrationRequests', JSON.stringify(next));
       } catch {
-        localStorage.setItem('registrationRequests', JSON.stringify([request]));
+        localStorage.setItem('registrationRequests', JSON.stringify([requestToStore]));
       }
       localStorage.setItem('registrationData', JSON.stringify(form));
       alert('Registration request submitted!');
@@ -504,13 +762,12 @@ function App() {
   const UserProfile = ({ onClose }) => {
     const [data, setData] = useState(null);
     useEffect(() => {
-      try {
-        const saved = localStorage.getItem('profileData');
-        if (saved) {
-          setData(JSON.parse(saved));
-        }
-      } catch {}
-    }, []);
+      if (loggedInUser?.profileData) {
+        setData(loggedInUser.profileData);
+      } else {
+        setData(null);
+      }
+    }, [loggedInUser?.profileData]);
     return (
       <div className="placeholder-container">
         <h2>User Profile</h2>
@@ -541,12 +798,37 @@ function App() {
 
   const ContactForm = ({ onClose }) => {
     const [text, setText] = useState('');
-    const submitFeedback = () => {
+    const submitFeedback = async () => {
+      if (!loggedInUser?.id) {
+        alert('Please login to submit feedback.');
+        return;
+      }
+      if (!text.trim()) {
+        alert('Please write feedback first.');
+        return;
+      }
       const key = 'feedbackData';
       try {
+        await addDoc(collection(db, 'feedback'), {
+          userId: loggedInUser.id,
+          dealerCode: loggedInUser.dealerCode || '',
+          dealerName: loggedInUser.dealerName || '',
+          email: loggedInUser.email || '',
+          text: text.trim(),
+          read: false,
+          createdAt: serverTimestamp(),
+        });
         const existing = localStorage.getItem(key);
         const arr = existing ? JSON.parse(existing) : [];
-        arr.push({ text, date: new Date().toISOString() });
+        arr.push({
+          userId: loggedInUser.id,
+          dealerCode: loggedInUser.dealerCode || '',
+          dealerName: loggedInUser.dealerName || '',
+          email: loggedInUser.email || '',
+          text: text.trim(),
+          read: false,
+          date: new Date().toISOString(),
+        });
         localStorage.setItem(key, JSON.stringify(arr));
         alert('Feedback submitted. Thank you!');
         onClose();
@@ -561,7 +843,7 @@ function App() {
           <span className="profile-label">Your Feedback</span>
           <textarea className="form-textarea" rows="5" value={text} onChange={(e) => setText(e.target.value)} placeholder="अपना सुझाव/फीडबैक लिखें" />
           <span className="profile-label">Email</span>
-          <span>deepak.youvi@gmail.com</span>
+          <span>{loggedInUser?.email || '-'}</span>
         </div>
         <div className="form-actions">
           <button onClick={submitFeedback}>Submit</button>
@@ -575,170 +857,569 @@ function App() {
     const [requests, setRequests] = useState([]);
     const [users, setUsers] = useState([]);
     const [feedback, setFeedback] = useState([]);
+    const [updateApprovals, setUpdateApprovals] = useState([]);
+    const [activeAdminTab, setActiveAdminTab] = useState('pending-registration');
+    const [viewRequest, setViewRequest] = useState(null);
+    const [viewApproval, setViewApproval] = useState(null);
+    const [detailView, setDetailView] = useState(null);
+    const [hiddenApprovalIds, setHiddenApprovalIds] = useState([]);
     const [newUser, setNewUser] = useState({
       dealerCode: '',
       dealerName: '',
       mobile: '',
       email: '',
+      package: '',
       pin: '',
       role: 'operator',
     });
+    const [editingUserId, setEditingUserId] = useState('');
+    const [editUser, setEditUser] = useState({
+      dealerCode: '',
+      dealerName: '',
+      mobile: '',
+      email: '',
+      package: '',
+      pin: '',
+      role: 'operator',
+      status: 'active',
+      profileData: {
+        distributorCode: '',
+        distributorName: '',
+        contact: '',
+        email: '',
+        gst: '',
+        address: '',
+      },
+      bankDetailsData: {
+        bankName: '',
+        branch: '',
+        accountNo: '',
+        ifsc: '',
+      },
+    });
 
-    const loadData = () => {
+    const loadData = async () => {
       try {
-        const reqRaw = localStorage.getItem('registrationRequests');
-        const reqList = reqRaw ? JSON.parse(reqRaw) : [];
-        const normalizedReq = Array.isArray(reqList) ? reqList : [];
+        const reqSnap = await getDocs(collection(db, 'registrationRequests'));
+        const firebaseRequests = reqSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
+          approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
+        }));
 
-        if (normalizedReq.length === 0) {
-          const legacy = localStorage.getItem('registrationData');
-          if (legacy) {
-            try {
-              const one = JSON.parse(legacy);
-              if (one && typeof one === 'object') {
-                normalizedReq.push({
-                  id: `legacy-${Date.now()}`,
-                  package: one.package || '',
-                  dealerCode: one.dealerCode || '',
-                  dealerName: one.dealerName || '',
-                  mobile: one.mobile || '',
-                  email: one.email || '',
-                  pin: one.pin || '',
-                  utr: one.utr || '',
-                  date: one.date || '',
-                  status: 'pending',
-                  createdAt: new Date().toISOString(),
-                });
-              }
-            } catch {}
-          }
+        const userSnap = await getDocs(collection(db, 'users'));
+        const firebaseUsers = userSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        let firebaseApprovals = [];
+        try {
+          const approvalSnap = await getDocs(collection(db, 'updateApprovals'));
+          firebaseApprovals = approvalSnap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+            requestedAt: d.data()?.requestedAt?.toDate?.()?.toISOString?.() || d.data()?.requestedAt || '',
+            approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
+            rejectedAt: d.data()?.rejectedAt?.toDate?.()?.toISOString?.() || d.data()?.rejectedAt || '',
+          }));
+        } catch {
+          firebaseApprovals = [];
         }
-        setRequests(normalizedReq);
+        const feedbackSnap = await getDocs(collection(db, 'feedback'));
+        const firebaseFeedback = feedbackSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
+        }));
 
-        const usersRaw = localStorage.getItem('usersData');
-        const userList = usersRaw ? JSON.parse(usersRaw) : [];
-        setUsers(Array.isArray(userList) ? userList : []);
-
-        const fbRaw = localStorage.getItem('feedbackData');
-        const fbList = fbRaw ? JSON.parse(fbRaw) : [];
-        setFeedback(Array.isArray(fbList) ? fbList : []);
+        setRequests(firebaseRequests);
+        setUsers(firebaseUsers);
+        setUpdateApprovals(firebaseApprovals);
+        setFeedback(firebaseFeedback);
+        localStorage.setItem('registrationRequests', JSON.stringify(firebaseRequests));
+        localStorage.setItem('usersData', JSON.stringify(firebaseUsers));
+        localStorage.setItem('feedbackData', JSON.stringify(firebaseFeedback));
       } catch {
-        setRequests([]);
-        setUsers([]);
-        setFeedback([]);
+        try {
+          const reqRaw = localStorage.getItem('registrationRequests');
+          const reqList = reqRaw ? JSON.parse(reqRaw) : [];
+          const usersRaw = localStorage.getItem('usersData');
+          const userList = usersRaw ? JSON.parse(usersRaw) : [];
+          const fbRaw = localStorage.getItem('feedbackData');
+          const fbList = fbRaw ? JSON.parse(fbRaw) : [];
+          setRequests(Array.isArray(reqList) ? reqList : []);
+          setUsers(Array.isArray(userList) ? userList : []);
+          setFeedback(Array.isArray(fbList) ? fbList : []);
+          setUpdateApprovals([]);
+        } catch {
+          setRequests([]);
+          setUsers([]);
+          setFeedback([]);
+          setUpdateApprovals([]);
+        }
       }
+    };
+
+    const writeUsersLocal = (nextUsers) => {
+      setUsers(nextUsers);
+      localStorage.setItem('usersData', JSON.stringify(nextUsers));
+    };
+
+    const resolveEditToken = (user) => {
+      const dealerCode = String(user?.dealerCode || '').trim();
+      return user?.id || (dealerCode ? `dc:${dealerCode}` : '');
+    };
+
+    const isSameUserByToken = (user, token) => {
+      if (!token) return false;
+      if (user?.id && token === user.id) return true;
+      const dealerCode = String(user?.dealerCode || '').trim();
+      return dealerCode && token === `dc:${dealerCode}`;
     };
 
     useEffect(() => {
       loadData();
     }, []);
 
-    const saveRequests = (next) => {
-      setRequests(next);
-      localStorage.setItem('registrationRequests', JSON.stringify(next));
-    };
-
-    const saveUsers = (next) => {
-      setUsers(next);
-      localStorage.setItem('usersData', JSON.stringify(next));
-    };
-
-    const approveRequest = (id) => {
+    const approveRequest = async (id) => {
       const req = requests.find((r) => r.id === id);
       if (!req) return;
-      const now = new Date().toISOString();
-      const userRecord = {
-        id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        dealerCode: req.dealerCode || '',
-        dealerName: req.dealerName || '',
-        mobile: req.mobile || '',
-        email: req.email || '',
-        pin: req.pin || '',
-        role: 'operator',
-        status: 'active',
-        createdAt: req.createdAt || now,
-        approvedAt: now,
-      };
-
-      const existingIdx = users.findIndex(
-        (u) => String(u.dealerCode || '').trim() !== '' &&
-          String(u.dealerCode || '').trim() === String(userRecord.dealerCode || '').trim()
-      );
-      let nextUsers = [...users];
-      if (existingIdx >= 0) {
-        nextUsers[existingIdx] = { ...nextUsers[existingIdx], ...userRecord, id: nextUsers[existingIdx].id };
-      } else {
-        nextUsers = [...nextUsers, userRecord];
+      try {
+        const validity = computeValidityDates(req.package || '');
+        const requestId = String(id || '');
+        const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
+        let requestStatusUpdated = false;
+        const existingUser = users.find((u) => String(u?.dealerCode || '').trim() === String(req?.dealerCode || '').trim());
+        if (existingUser?.id) {
+          await updateDoc(doc(db, 'users', existingUser.id), {
+            dealerCode: req.dealerCode || '',
+            dealerName: req.dealerName || '',
+            mobile: req.mobile || '',
+            email: req.email || '',
+            package: req.package || '',
+            packageDays: validity.packageDays,
+            validFrom: validity.validFrom,
+            validTill: validity.validTill,
+            pin: req.pin || '',
+            status: 'active',
+            role: existingUser.role || 'operator',
+            approvedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, 'users'), {
+            dealerCode: req.dealerCode || '',
+            dealerName: req.dealerName || '',
+            mobile: req.mobile || '',
+            email: req.email || '',
+            package: req.package || '',
+            packageDays: validity.packageDays,
+            validFrom: validity.validFrom,
+            validTill: validity.validTill,
+            pin: req.pin || '',
+            role: 'operator',
+            status: 'active',
+            approvalStatus: {},
+            createdAt: serverTimestamp(),
+            approvedAt: serverTimestamp(),
+          });
+        }
+        if (!isLocalOnlyRequest) {
+          try {
+            await updateDoc(doc(db, 'registrationRequests', id), {
+              status: 'approved',
+              approvedAt: serverTimestamp(),
+            });
+            requestStatusUpdated = true;
+          } catch {
+            // If request document update is blocked by rules, keep user activation successful.
+          }
+          const nextLocal = requests.map((r) => (r.id === id ? { ...r, status: 'approved', approvedAt: new Date().toISOString() } : r));
+          setRequests(nextLocal);
+          localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
+        } else {
+          const nextLocal = requests.filter((r) => r.id !== id);
+          setRequests(nextLocal);
+          localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
+        }
+        await loadData();
+        if (!isLocalOnlyRequest && !requestStatusUpdated) {
+          setRequests((prev) => prev.filter((r) => r.id !== id));
+        }
+      } catch {
+        alert('Approve failed. Firestore rules/permission check karo.');
       }
-      saveUsers(nextUsers);
-
-      const nextReq = requests.map((r) => (r.id === id ? { ...r, status: 'approved', approvedAt: now } : r));
-      saveRequests(nextReq);
     };
 
-    const rejectRequest = (id) => {
-      const nextReq = requests.map((r) => (r.id === id ? { ...r, status: 'rejected' } : r));
-      saveRequests(nextReq);
+    const rejectRequest = async (id) => {
+      try {
+        const requestId = String(id || '');
+        const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
+        if (!isLocalOnlyRequest) {
+          await updateDoc(doc(db, 'registrationRequests', id), {
+            status: 'rejected',
+            rejectedAt: serverTimestamp(),
+          });
+        } else {
+          const nextLocal = requests.map((r) => (r.id === id ? { ...r, status: 'rejected' } : r));
+          setRequests(nextLocal);
+          localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
+        }
+        await loadData();
+      } catch {
+        alert('Reject failed. Check Firestore rules.');
+      }
     };
 
-    const deleteRequest = (id) => {
-      saveRequests(requests.filter((r) => r.id !== id));
-    };
-
-    const addManualUser = () => {
-      if (!newUser.dealerCode || !newUser.dealerName || !newUser.pin) {
-        alert('Dealer code, dealer name and PIN required.');
+    const addManualUser = async () => {
+      if (!newUser.dealerCode || !newUser.dealerName || !newUser.pin || !newUser.package) {
+        alert('Dealer code, dealer name, package and PIN required.');
         return;
       }
-      const record = {
-        id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        dealerCode: newUser.dealerCode.trim(),
-        dealerName: newUser.dealerName.trim(),
-        mobile: newUser.mobile.trim(),
-        email: newUser.email.trim(),
-        pin: newUser.pin.trim(),
-        role: newUser.role,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        approvedAt: new Date().toISOString(),
-      };
-      saveUsers([...users, record]);
-      setNewUser({ dealerCode: '', dealerName: '', mobile: '', email: '', pin: '', role: 'operator' });
+      try {
+        const validity = computeValidityDates(newUser.package);
+        await addDoc(collection(db, 'users'), {
+          dealerCode: newUser.dealerCode.trim(),
+          dealerName: newUser.dealerName.trim(),
+          mobile: newUser.mobile.trim(),
+          email: newUser.email.trim(),
+          package: newUser.package,
+          packageDays: validity.packageDays,
+          validFrom: validity.validFrom,
+          validTill: validity.validTill,
+          pin: newUser.pin.trim(),
+          role: newUser.role,
+          status: 'active',
+          approvalStatus: {},
+          createdAt: serverTimestamp(),
+          approvedAt: serverTimestamp(),
+        });
+        setNewUser({ dealerCode: '', dealerName: '', mobile: '', email: '', package: '', pin: '', role: 'operator' });
+        await loadData();
+      } catch {
+        alert('Create user failed.');
+      }
     };
 
-    const toggleUserStatus = (id) => {
-      const next = users.map((u) => {
-        if (u.id !== id) return u;
-        return { ...u, status: u.status === 'active' ? 'disabled' : 'active' };
+    const toggleUserStatus = async (userOrId) => {
+      const target = typeof userOrId === 'object'
+        ? userOrId
+        : users.find((u) => u.id === userOrId);
+      if (!target) return;
+      const nextStatus = target.status === 'active' ? 'disabled' : 'active';
+      try {
+        if (target.id) {
+          await updateDoc(doc(db, 'users', target.id), {
+            status: nextStatus,
+            updatedAt: serverTimestamp(),
+          });
+          await loadData();
+          return;
+        }
+        throw new Error('LOCAL_ONLY_USER');
+      } catch {
+        const token = resolveEditToken(target);
+        const nextUsers = users.map((u) => (isSameUserByToken(u, token) ? { ...u, status: nextStatus } : u));
+        writeUsersLocal(nextUsers);
+        alert('Status updated locally.');
+      }
+    };
+
+    const deleteUser = async (userOrId) => {
+      const target = typeof userOrId === 'object'
+        ? userOrId
+        : users.find((u) => u.id === userOrId);
+      if (!target) return;
+      try {
+        if (target.id) {
+          await deleteDoc(doc(db, 'users', target.id));
+          await loadData();
+          return;
+        }
+        throw new Error('LOCAL_ONLY_USER');
+      } catch {
+        const token = resolveEditToken(target);
+        const nextUsers = users.filter((u) => !isSameUserByToken(u, token));
+        writeUsersLocal(nextUsers);
+        alert('User deleted locally.');
+      }
+    };
+
+    const startEditUser = (u) => {
+      setEditingUserId(resolveEditToken(u));
+      setEditUser({
+        dealerCode: u.dealerCode || '',
+        dealerName: u.dealerName || '',
+        mobile: u.mobile || '',
+        email: u.email || '',
+        package: u.package || '',
+        pin: u.pin || '',
+        role: u.role || 'operator',
+        status: u.status || 'active',
+        profileData: {
+          distributorCode: u.profileData?.distributorCode || '',
+          distributorName: u.profileData?.distributorName || '',
+          contact: u.profileData?.contact || '',
+          email: u.profileData?.email || '',
+          gst: u.profileData?.gst || '',
+          address: u.profileData?.address || '',
+        },
+        bankDetailsData: {
+          bankName: u.bankDetailsData?.bankName || '',
+          branch: u.bankDetailsData?.branch || '',
+          accountNo: u.bankDetailsData?.accountNo || '',
+          ifsc: u.bankDetailsData?.ifsc || '',
+        },
       });
-      saveUsers(next);
     };
 
-    const deleteUser = (id) => {
-      saveUsers(users.filter((u) => u.id !== id));
+    const saveEditedUser = async () => {
+      if (!editingUserId) return;
+      const targetUser = users.find((u) => isSameUserByToken(u, editingUserId));
+      if (!targetUser) {
+        alert('User not found.');
+        return;
+      }
+      try {
+        const validity = computeValidityDates(editUser.package);
+        if (!targetUser.id) {
+          throw new Error('LOCAL_ONLY_USER');
+        }
+        await updateDoc(doc(db, 'users', targetUser.id), {
+          dealerCode: editUser.dealerCode.trim(),
+          dealerName: editUser.dealerName.trim(),
+          mobile: editUser.mobile.trim(),
+          email: editUser.email.trim(),
+          package: editUser.package,
+          packageDays: validity.packageDays,
+          validFrom: validity.validFrom,
+          validTill: validity.validTill,
+          pin: editUser.pin.trim(),
+          role: editUser.role,
+          status: editUser.status,
+          profileData: { ...editUser.profileData },
+          bankDetailsData: { ...editUser.bankDetailsData },
+          updatedAt: serverTimestamp(),
+        });
+        setEditingUserId('');
+        await loadData();
+      } catch {
+        const validity = computeValidityDates(editUser.package);
+        const nextUsers = users.map((u) => (
+          isSameUserByToken(u, editingUserId)
+            ? {
+              ...u,
+              dealerCode: editUser.dealerCode.trim(),
+              dealerName: editUser.dealerName.trim(),
+              mobile: editUser.mobile.trim(),
+              email: editUser.email.trim(),
+              package: editUser.package,
+              packageDays: validity.packageDays,
+              validFrom: validity.validFrom,
+              validTill: validity.validTill,
+              pin: editUser.pin.trim(),
+              role: editUser.role,
+              status: editUser.status,
+              profileData: { ...editUser.profileData },
+              bankDetailsData: { ...editUser.bankDetailsData },
+            }
+            : u
+        ));
+        writeUsersLocal(nextUsers);
+        setEditingUserId('');
+        alert('User updated locally. Firebase permission denied.');
+      }
     };
 
-    const pendingCount = requests.filter((r) => r.status === 'pending').length;
+    const normalizeApprovalType = (type) => {
+      const raw = String(type || '').toLowerCase().trim();
+      if (raw === 'profile' || raw === 'profiledata') return 'profile';
+      if (raw === 'bank' || raw === 'bankdetails' || raw === 'bankdetailsdata') return 'bank';
+      if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
+      return raw;
+    };
+
+    const pendingApprovalRequests = updateApprovals.filter((r) => (r.status || 'pending') === 'pending');
+    const fallbackPendingApprovals = users.flatMap((u) => {
+      const pendingUpdates = u?.pendingUpdates || {};
+      return Object.entries(pendingUpdates)
+        .filter(([, v]) => (v?.status || 'pending') === 'pending')
+        .map(([type, value]) => ({
+          id: `userdoc-${u.id}-${type}`,
+          source: 'userDoc',
+          userId: u.id,
+          dealerCode: u.dealerCode || '',
+          dealerName: u.dealerName || '',
+          type,
+          status: value?.status || 'pending',
+          payload: value?.payload ?? null,
+          requestedAt: value?.requestedAt || '',
+        }));
+    });
+    const collectionPendingApprovals = pendingApprovalRequests.filter((approval) => {
+      const approvalType = normalizeApprovalType(approval.type);
+      const user = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
+      const pendingStatus = user?.pendingUpdates?.[approvalType]?.status;
+      if (!pendingStatus) return true;
+      return pendingStatus === 'pending';
+    });
+    const combinedPendingApprovals = [...collectionPendingApprovals, ...fallbackPendingApprovals]
+      .filter((approval) => !hiddenApprovalIds.includes(approval.id));
+
+    const approveUpdateRequest = async (approval) => {
+      if (!approval?.id) return;
+      const approvalType = normalizeApprovalType(approval.type);
+      const fieldByType = {
+        profile: 'profileData',
+        bank: 'bankDetailsData',
+        rates: 'ratesData',
+      };
+      const targetField = fieldByType[approvalType];
+      if (!targetField) {
+        alert(`Unsupported approval type: ${approval.type || 'unknown'}`);
+        return;
+      }
+      try {
+        const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
+        if (!targetUser?.id) {
+          alert('User not found for approval.');
+          return;
+        }
+        const nextStatus = { ...(targetUser.approvalStatus || {}), [approvalType]: 'approved' };
+        if (approvalType === 'rates') {
+          nextStatus.rate = 'approved';
+          nextStatus.ratesData = 'approved';
+        }
+        if (approvalType === 'profile') {
+          nextStatus.profileData = 'approved';
+        }
+        if (approvalType === 'bank') {
+          nextStatus.bankDetailsData = 'approved';
+        }
+        await updateDoc(doc(db, 'users', targetUser.id), {
+          [targetField]: approval.payload,
+          approvalStatus: nextStatus,
+          [`pendingUpdates.${approvalType}.status`]: 'approved',
+          [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
+          updatedAt: serverTimestamp(),
+        });
+        if (approval.source !== 'userDoc') {
+          try {
+            await updateDoc(doc(db, 'updateApprovals', approval.id), {
+              status: 'approved',
+              approvedAt: serverTimestamp(),
+            });
+          } catch {}
+        }
+        setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
+        await loadData();
+        alert('Request approved successfully.');
+      } catch {
+        alert('Approval failed.');
+      }
+    };
+
+    const rejectUpdateRequest = async (approval) => {
+      if (!approval?.id) return;
+      const approvalType = normalizeApprovalType(approval.type);
+      try {
+        const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
+        if (targetUser?.id) {
+          const nextStatus = { ...(targetUser.approvalStatus || {}), [approvalType]: 'rejected' };
+          if (approvalType === 'rates') {
+            nextStatus.rate = 'rejected';
+            nextStatus.ratesData = 'rejected';
+          }
+          if (approvalType === 'profile') {
+            nextStatus.profileData = 'rejected';
+          }
+          if (approvalType === 'bank') {
+            nextStatus.bankDetailsData = 'rejected';
+          }
+          await updateDoc(doc(db, 'users', targetUser.id), {
+            approvalStatus: nextStatus,
+            [`pendingUpdates.${approvalType}.status`]: 'rejected',
+            [`pendingUpdates.${approvalType}.rejectedAt`]: new Date().toISOString(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        if (approval.source !== 'userDoc') {
+          try {
+            await updateDoc(doc(db, 'updateApprovals', approval.id), {
+              status: 'rejected',
+              rejectedAt: serverTimestamp(),
+            });
+          } catch {}
+        }
+        setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
+        await loadData();
+      } catch {
+        alert('Reject failed.');
+      }
+    };
+
+    const toggleFeedbackRead = async (item) => {
+      const nextRead = !Boolean(item?.read);
+      try {
+        if (item?.id) {
+          try {
+            await updateDoc(doc(db, 'feedback', item.id), {
+              read: nextRead,
+              updatedAt: serverTimestamp(),
+            });
+          } catch {}
+        }
+        const nextFeedback = feedback.map((f) => (f.id === item.id ? { ...f, read: nextRead } : f));
+        setFeedback(nextFeedback);
+        localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
+      } catch {
+        alert('Unable to update feedback status.');
+      }
+    };
+
+    const openDetailView = (user, type) => {
+      if (type === 'profile') {
+        setDetailView({ title: `Profile - ${user?.dealerCode || ''}`, data: user?.profileData || {} });
+        return;
+      }
+      if (type === 'bank') {
+        setDetailView({ title: `Bank - ${user?.dealerCode || ''}`, data: user?.bankDetailsData || {} });
+        return;
+      }
+      setDetailView({ title: `Rates - ${user?.dealerCode || ''}`, data: user?.ratesData || [] });
+    };
+
+    const pendingRegistrationRequests = requests.filter((r) => (r.status || 'pending') === 'pending');
+    const pendingCount = pendingRegistrationRequests.length;
     const activeUsers = users.filter((u) => u.status === 'active').length;
+    const activeUsersList = users.filter((u) => u.status === 'active');
 
     return (
       <div className="placeholder-container admin-panel">
         <h2>Admin Panel</h2>
         <div className="admin-grid">
           <div className="admin-card">
-            <div className="admin-stat-label">Pending Requests</div>
+            <div className="admin-stat-label">Pending Registration Request</div>
             <div className="admin-stat-value">{pendingCount}</div>
           </div>
           <div className="admin-card">
-            <div className="admin-stat-label">Active Users</div>
+            <div className="admin-stat-label">Active User</div>
             <div className="admin-stat-value">{activeUsers}</div>
           </div>
           <div className="admin-card">
-            <div className="admin-stat-label">Feedback Entries</div>
-            <div className="admin-stat-value">{feedback.length}</div>
+            <div className="admin-stat-label">Total User</div>
+            <div className="admin-stat-value">{users.length}</div>
           </div>
         </div>
 
+        <div className="admin-tab-row">
+          <button className={activeAdminTab === 'create-user' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('create-user')}>Create User Manually</button>
+          <button className={activeAdminTab === 'active-user' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('active-user')}>Active User</button>
+          <button className={activeAdminTab === 'total-user' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('total-user')}>Total User</button>
+          <button className={activeAdminTab === 'pending-registration' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('pending-registration')}>Pending Registration Request</button>
+          <button className={activeAdminTab === 'approval' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('approval')}>Approval</button>
+          <button className={activeAdminTab === 'feedback' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('feedback')}>Feedback</button>
+        </div>
+
+        {activeAdminTab === 'pending-registration' && (
         <div className="admin-section">
           <h3>Pending Registration Requests</h3>
           <div className="admin-table-wrap">
@@ -750,29 +1431,27 @@ function App() {
                   <th>Mobile</th>
                   <th>Email</th>
                   <th>Package</th>
-                  <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {requests.length === 0 ? (
+                {pendingRegistrationRequests.length === 0 ? (
                   <tr>
-                    <td colSpan="7">No requests found.</td>
+                    <td colSpan="6">No requests found.</td>
                   </tr>
                 ) : (
-                  requests.map((r) => (
+                  pendingRegistrationRequests.map((r) => (
                     <tr key={r.id}>
                       <td>{r.dealerCode || '-'}</td>
                       <td>{r.dealerName || '-'}</td>
                       <td>{r.mobile || '-'}</td>
                       <td>{r.email || '-'}</td>
                       <td>{r.package || '-'}</td>
-                      <td>{r.status || 'pending'}</td>
                       <td>
                         <div className="admin-actions">
-                          <button onClick={() => approveRequest(r.id)} disabled={r.status === 'approved'}>Approve</button>
-                          <button onClick={() => rejectRequest(r.id)} disabled={r.status === 'rejected'}>Reject</button>
-                          <button onClick={() => deleteRequest(r.id)}>Delete</button>
+                          <button onClick={() => setViewRequest(r)}>View</button>
+                          <button onClick={() => approveRequest(r.id)}>Approve</button>
+                          <button onClick={() => rejectRequest(r.id)}>Reject</button>
                         </div>
                       </td>
                     </tr>
@@ -782,7 +1461,9 @@ function App() {
             </table>
           </div>
         </div>
+        )}
 
+        {activeAdminTab === 'create-user' && (
         <div className="admin-section">
           <h3>Create User (Manual)</h3>
           <div className="admin-form">
@@ -790,6 +1471,12 @@ function App() {
             <input className="form-input" placeholder="Dealer Name" value={newUser.dealerName} onChange={(e) => setNewUser((p) => ({ ...p, dealerName: e.target.value }))} />
             <input className="form-input" placeholder="Mobile" value={newUser.mobile} onChange={(e) => setNewUser((p) => ({ ...p, mobile: e.target.value }))} />
             <input className="form-input" placeholder="Email" type="email" value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} />
+            <select className="form-input" value={newUser.package} onChange={(e) => setNewUser((p) => ({ ...p, package: e.target.value }))}>
+              <option value="">Select Package</option>
+              {PACKAGE_OPTIONS.map((pkg) => (
+                <option key={pkg} value={pkg}>{pkg}</option>
+              ))}
+            </select>
             <input className="form-input" placeholder="PIN" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
             <select className="form-input" value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
               <option value="operator">Operator</option>
@@ -799,38 +1486,51 @@ function App() {
             <button onClick={addManualUser}>Create User</button>
           </div>
         </div>
+        )}
 
+        {(activeAdminTab === 'active-user' || activeAdminTab === 'total-user') && (
         <div className="admin-section">
-          <h3>Users</h3>
+          <h3>{activeAdminTab === 'active-user' ? 'Active User' : 'Total User'}</h3>
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>
-                  <th>Dealer Code</th>
-                  <th>Dealer Name</th>
-                  <th>Role</th>
-                  <th>Status</th>
+                  <th>Code</th>
+                  <th>Name</th>
+                  <th>Mobile</th>
+                  <th>Email</th>
+                  <th>Package</th>
+                  <th>Pin</th>
+                  <th>Profile Updated</th>
+                  <th>Bank Updated</th>
+                  <th>Rate Updated</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {users.length === 0 ? (
+                {(activeAdminTab === 'active-user' ? activeUsersList : users).length === 0 ? (
                   <tr>
-                    <td colSpan="5">No users found.</td>
+                    <td colSpan="10">No users found.</td>
                   </tr>
                 ) : (
-                  users.map((u) => (
-                    <tr key={u.id}>
+                  (activeAdminTab === 'active-user' ? activeUsersList : users).map((u, idx) => (
+                    <tr key={u.id || `${u.dealerCode || 'user'}-${idx}`}>
                       <td>{u.dealerCode || '-'}</td>
                       <td>{u.dealerName || '-'}</td>
-                      <td>{u.role || 'operator'}</td>
-                      <td>{u.status || 'active'}</td>
+                      <td>{u.mobile || '-'}</td>
+                      <td>{u.email || '-'}</td>
+                      <td>{u.package || '-'}</td>
+                      <td>{u.pin || '-'}</td>
+                      <td><button onClick={() => openDetailView(u, 'profile')} disabled={!u.profileData}>View</button></td>
+                      <td><button onClick={() => openDetailView(u, 'bank')} disabled={!u.bankDetailsData}>View</button></td>
+                      <td><button onClick={() => openDetailView(u, 'rates')} disabled={!Array.isArray(u.ratesData) || u.ratesData.length === 0}>View</button></td>
                       <td>
                         <div className="admin-actions">
-                          <button onClick={() => toggleUserStatus(u.id)}>
+                          <button onClick={() => startEditUser(u)}>Edit</button>
+                          <button onClick={() => toggleUserStatus(u)}>
                             {u.status === 'active' ? 'Disable' : 'Enable'}
                           </button>
-                          <button onClick={() => deleteUser(u.id)}>Delete</button>
+                          <button onClick={() => deleteUser(u)}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -840,6 +1540,170 @@ function App() {
             </table>
           </div>
         </div>
+        )}
+
+        {editingUserId && (
+          <div className="admin-section">
+            <h3>Edit User Details</h3>
+            <div className="admin-edit-grid">
+              <input className="form-input" placeholder="Dealer Code" value={editUser.dealerCode} onChange={(e) => setEditUser((p) => ({ ...p, dealerCode: e.target.value }))} />
+              <input className="form-input" placeholder="Dealer Name" value={editUser.dealerName} onChange={(e) => setEditUser((p) => ({ ...p, dealerName: e.target.value }))} />
+              <input className="form-input" placeholder="Mobile" value={editUser.mobile} onChange={(e) => setEditUser((p) => ({ ...p, mobile: e.target.value }))} />
+              <input className="form-input" placeholder="Email" value={editUser.email} onChange={(e) => setEditUser((p) => ({ ...p, email: e.target.value }))} />
+              <select className="form-input" value={editUser.package} onChange={(e) => setEditUser((p) => ({ ...p, package: e.target.value }))}>
+                <option value="">Select Package</option>
+                {PACKAGE_OPTIONS.map((pkg) => (
+                  <option key={pkg} value={pkg}>{pkg}</option>
+                ))}
+              </select>
+              <input className="form-input" placeholder="PIN" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
+              <select className="form-input" value={editUser.role} onChange={(e) => setEditUser((p) => ({ ...p, role: e.target.value }))}>
+                <option value="operator">Operator</option>
+                <option value="viewer">Viewer</option>
+                <option value="admin">Admin</option>
+              </select>
+              <select className="form-input" value={editUser.status} onChange={(e) => setEditUser((p) => ({ ...p, status: e.target.value }))}>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+                <option value="expired">Expired</option>
+              </select>
+            </div>
+            <div className="admin-edit-grid admin-edit-grid-profile">
+              <input className="form-input" placeholder="Profile Distributor Code" value={editUser.profileData.distributorCode} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, distributorCode: e.target.value } }))} />
+              <input className="form-input" placeholder="Profile Distributor Name" value={editUser.profileData.distributorName} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, distributorName: e.target.value } }))} />
+              <input className="form-input" placeholder="Profile Contact" value={editUser.profileData.contact} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, contact: e.target.value } }))} />
+              <input className="form-input" placeholder="Profile Email" value={editUser.profileData.email} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, email: e.target.value } }))} />
+              <input className="form-input" placeholder="Profile GST" value={editUser.profileData.gst} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, gst: e.target.value } }))} />
+              <input className="form-input" placeholder="Profile Address" value={editUser.profileData.address} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, address: e.target.value } }))} />
+            </div>
+            <div className="admin-edit-grid admin-edit-grid-bank">
+              <input className="form-input" placeholder="Bank Name" value={editUser.bankDetailsData.bankName} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, bankName: e.target.value } }))} />
+              <input className="form-input" placeholder="Branch" value={editUser.bankDetailsData.branch} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, branch: e.target.value } }))} />
+              <input className="form-input" placeholder="Account No" value={editUser.bankDetailsData.accountNo} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, accountNo: e.target.value } }))} />
+              <input className="form-input" placeholder="IFSC" value={editUser.bankDetailsData.ifsc} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, ifsc: e.target.value } }))} />
+            </div>
+            <div className="form-actions">
+              <button onClick={saveEditedUser}>Save User Changes</button>
+              <button onClick={() => setEditingUserId('')}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {activeAdminTab === 'approval' && (
+          <div className="admin-section">
+            <h3>Approval</h3>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {combinedPendingApprovals.length === 0 ? (
+                    <tr>
+                      <td colSpan="5">No pending approval requests.</td>
+                    </tr>
+                  ) : (
+                    combinedPendingApprovals.map((a) => (
+                      <tr key={a.id}>
+                        <td>{a.dealerCode || '-'}</td>
+                        <td>{a.dealerName || '-'}</td>
+                        <td>{a.type || '-'}</td>
+                        <td>{formatDisplayDate(a.requestedAt)}</td>
+                        <td>
+                          <div className="admin-actions">
+                            <button onClick={() => setViewApproval(a)}>View</button>
+                            <button onClick={() => approveUpdateRequest(a)}>Approve</button>
+                            <button onClick={() => rejectUpdateRequest(a)}>Reject</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeAdminTab === 'feedback' && (
+          <div className="admin-section">
+            <h3>Feedback</h3>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Feedback</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feedback.length === 0 ? (
+                    <tr>
+                      <td colSpan="7">No feedback found.</td>
+                    </tr>
+                  ) : (
+                    feedback.map((f, index) => (
+                      <tr key={f.id || index}>
+                        <td>{f.dealerCode || '-'}</td>
+                        <td>{f.dealerName || '-'}</td>
+                        <td>{f.email || '-'}</td>
+                        <td>{f.text || '-'}</td>
+                        <td className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</td>
+                        <td>{formatDisplayDate(f.createdAt || f.date)}</td>
+                        <td>
+                          <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)}>
+                            {f.read ? 'Mark Unread' : 'Mark Read'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {viewRequest && (
+          <div className="admin-section admin-book">
+            <h3>Request Details</h3>
+            <pre>{JSON.stringify(viewRequest, null, 2)}</pre>
+            <div className="form-actions">
+              <button onClick={() => setViewRequest(null)}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {viewApproval && (
+          <div className="admin-section admin-book">
+            <h3>Approval Details</h3>
+            <pre>{JSON.stringify(viewApproval.payload || {}, null, 2)}</pre>
+            <div className="form-actions">
+              <button onClick={() => setViewApproval(null)}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {detailView && (
+          <div className="admin-section admin-book">
+            <h3>{detailView.title}</h3>
+            <pre>{JSON.stringify(detailView.data || {}, null, 2)}</pre>
+            <div className="form-actions">
+              <button onClick={() => setDetailView(null)}>Close</button>
+            </div>
+          </div>
+        )}
 
         <div className="form-actions">
           <button onClick={loadData}>Refresh</button>
@@ -888,11 +1752,16 @@ function App() {
       }
     })();
 
+    const invoiceProfileData = loggedInUser?.profileData || {};
     const dealer = {
-      name: 'MAHADEV HP GAS GRAMIN VITRAK (41038690)',
-      address: 'ATHARI, RUNNISAIDPUR, SITAMARHI, BIHAR - 843311',
-      contact: '7070236555',
-      gstn: '10ABBFM6137E1ZU',
+      name: invoiceProfileData.distributorName
+        ? (invoiceProfileData.distributorCode
+          ? `${invoiceProfileData.distributorName} (${invoiceProfileData.distributorCode})`
+          : invoiceProfileData.distributorName)
+        : '-',
+      address: invoiceProfileData.address || '-',
+      contact: invoiceProfileData.contact || '-',
+      gstn: invoiceProfileData.gst || '-',
     };
     const defaultBankDetails = {
       bankName: 'CENTRAL BANK OF INDIA',
@@ -1848,24 +2717,18 @@ function App() {
 
       let allCashMemosHtml = '';
 
-      let dealerDetails = sampleDealerDetails;
-      try {
-        const profileStr = localStorage.getItem('profileData');
-        if (profileStr) {
-          const pd = JSON.parse(profileStr);
-          dealerDetails = {
-            name: pd.distributorName
-              ? (pd.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
-              : sampleDealerDetails.name,
-            gstn: pd.gst || sampleDealerDetails.gstn,
-            address: { plotNo: pd.address || sampleDealerDetails.address?.plotNo || '' },
-            contact: {
-              email: pd.email || sampleDealerDetails.contact?.email || '',
-              telephone: pd.contact || sampleDealerDetails.contact?.telephone || '',
-            },
-          };
-        }
-      } catch {}
+      const pd = loggedInUser?.profileData || null;
+      const dealerDetails = {
+        name: pd?.distributorName
+          ? (pd?.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
+          : '-',
+        gstn: pd?.gst || '-',
+        address: { plotNo: pd?.address || '-' },
+        contact: {
+          email: pd?.email || '-',
+          telephone: pd?.contact || '-',
+        },
+      };
 
       customersToPrint.forEach((customer, index) => {
         const processedCustomer = { ...customer };
@@ -2540,8 +3403,26 @@ function App() {
     setVisibleHeaders(prev => prev.filter(h => h !== header));
   };
 
+  const handleSaveRatesForUser = async (rates) => {
+    if (!loggedInUser?.id) return;
+    const normalizedRates = Array.isArray(rates) ? rates : [];
+    await submitUpdateApprovalRequest({
+      type: 'rates',
+      payload: normalizedRates,
+      localKey: 'ratesData',
+      successMessage: 'Rate update request submitted. Your request is pending with admin for approval.',
+    });
+  };
+
   const availableHeadersToAdd = headers.filter(header => !visibleHeaders.includes(header));
   const hideUserNavbar = showAdminPanel;
+  const pendingTypesFromUpdates = Object.entries(loggedInUser?.pendingUpdates || {})
+    .filter(([, value]) => String(value?.status || '').toLowerCase() === 'pending')
+    .map(([type]) => normalizePendingTypeLabel(type));
+  const pendingTypesFromStatus = Object.entries(loggedInUser?.approvalStatus || {})
+    .filter(([, status]) => status === 'pending')
+    .map(([type]) => normalizePendingTypeLabel(type));
+  const pendingUserApprovalTypes = Array.from(new Set([...pendingTypesFromUpdates, ...pendingTypesFromStatus]));
 
   return (
     <>
@@ -2561,6 +3442,11 @@ function App() {
             {isLoggedIn ? (
               <div className="user-menu-container">
                 <span className="navbar-welcome">Welcome, {dealerWelcome}</span>
+                {pendingUserApprovalTypes.length > 0 && (
+                  <span className="navbar-pending-msg">
+                    Your {pendingUserApprovalTypes.join(', ')} request is pending with admin for approval.
+                  </span>
+                )}
                 <div className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)}>
                   &#128100; {/* User icon */}
                 </div>
@@ -2649,7 +3535,13 @@ function App() {
             </div>
           )}
           {showProfileUpdate && <ProfileUpdateForm onClose={() => setShowProfileUpdate(false)} />}
-          {showRateUpdate && <RateUpdatePage onClose={() => setShowRateUpdate(false)} />}
+          {showRateUpdate && (
+            <RateUpdatePage
+              onClose={() => setShowRateUpdate(false)}
+              initialRatesData={Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null}
+              onSaveRates={handleSaveRatesForUser}
+            />
+          )}
           {showBankDetails && <BankDetailsForm onClose={() => setShowBankDetails(false)} />}
           {showRegisterForm && <RegisterForm onClose={() => setShowRegisterForm(false)} />}
           {showUserProfile && <UserProfile onClose={() => setShowUserProfile(false)} />}
@@ -2961,4 +3853,5 @@ function App() {
 }
 
 export default App;
+
 

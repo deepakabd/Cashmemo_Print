@@ -16,10 +16,14 @@ const initialRates = [
   { Code: 43, HSNCode: 43, Item: '47.5KG FILLED HP GAS FLAME PLUS', BasicPrice: 4290.25, SGST: 9, CGST: 9, RSP: 5062.5 },
 ];
 
-function RateUpdatePage({ onClose }) {
+function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates }) {
   const [rates, setRates] = useState(initialRates);
 
   useEffect(() => {
+    if (Array.isArray(initialRatesData) && initialRatesData.length > 0) {
+      setRates(initialRatesData.map((row) => ({ ...row, HSNCode: row.HSNCode ?? '' })));
+      return;
+    }
     const saved = localStorage.getItem('ratesData');
     if (saved) {
       try {
@@ -29,7 +33,7 @@ function RateUpdatePage({ onClose }) {
         }
       } catch {}
     }
-  }, []);
+  }, [initialRatesData]);
 
   const recalculateBasicPrice = (row) => {
     const rspNum = parseFloat(row.RSP);
@@ -63,9 +67,12 @@ function RateUpdatePage({ onClose }) {
     ]);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     localStorage.setItem('ratesData', JSON.stringify(rates));
-    alert('Rates saved successfully!');
+    if (typeof onSaveRates === 'function') {
+      await onSaveRates(rates);
+    }
+    alert('Rates request submitted successfully.');
     onClose();
   };
 
