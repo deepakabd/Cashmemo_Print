@@ -5,6 +5,16 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
     return <p>Please select a customer to generate Cash Memo.</p>;
   }
 
+  const pickFirstValue = (obj, keys, fallback = 'N/A') => {
+    for (const key of keys) {
+      const value = obj?.[key];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return value;
+      }
+    }
+    return fallback;
+  };
+
   const distributorName = dealerDetails?.name || '';
   const gstn = dealerDetails?.gstn || '';
   const plotNo = dealerDetails?.address?.plotNo || '';
@@ -44,12 +54,12 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Mobile No. :</span><span>{customer['Mobile No.'] || 'N/A'}</span>
               <span>IVR Booking No. :</span><span>{customer['IVR Booking No.'] || customer['Order Ref No.'] || 'N/A'}</span>
               
-                 <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {customer['HSN'] || 'N/A'} / {customer['Order Qty.'] || 'N/A'}</span>
+                 <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {pickFirstValue(customer, ['HSN', 'HSN Code', 'HSNCode'], '27111900')} / {customer['Order Qty.'] || 'N/A'}</span>
                
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span>
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
-              <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
-              <span>Cash Memo No / Date :</span><span>{customer['Cash Memo No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
+              <span>Order No. / Order Date :</span><span>{pickFirstValue(customer, ['Order No.'])} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
+              <span>Cash Memo No / Date :</span><span>{pickFirstValue(customer, ['Cash Memo', 'Cash Memo No.'])} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
               <span>Cash Memo Status :</span><span>{customer['Cash Memo Status'] || 'N/A'}</span>
               <span>Delivery Man :</span><span>{customer['Delivery Man'] || 'N/A'}</span>
               <span>EKYC Status :</span><span className={ekycNotDone ? 'status-alert' : ''}>{customer['EKYC Status'] || 'N/A'}</span>
@@ -129,11 +139,11 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Delivery Area :</span><span>{customer['Delivery Area'] || 'N/A'}</span>
               <span>Mobile No. :</span><span>{customer['Mobile No.'] || 'N/A'}</span>
               <span>IVR Booking No. :</span><span>{customer['IVR Booking No.'] || customer['Order Ref No.'] || 'N/A'}</span>
-              <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {customer['HSN'] || 'N/A'} / {customer['Order Qty.'] || 'N/A'}</span>
+              <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {pickFirstValue(customer, ['HSN', 'HSN Code', 'HSNCode'], '27111900')} / {customer['Order Qty.'] || 'N/A'}</span>
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span>
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
-              <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
-              <span>Cash Memo No / Date :</span><span>{customer['Cash Memo No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
+              <span>Order No. / Order Date :</span><span>{pickFirstValue(customer, ['Order No.'])} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
+              <span>Cash Memo No / Date :</span><span>{pickFirstValue(customer, ['Cash Memo', 'Cash Memo No.'])} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
               <span>Delivery Man :</span><span>{customer['Delivery Man'] || 'N/A'}</span>
               <span>EKYC Status :</span><span className={ekycNotDone ? 'status-alert' : ''}>{customer['EKYC Status'] || 'N/A'}</span>
               <span>Online Refill Payment status :</span><span className={isOnlinePaid ? 'status-paid' : ''}>{customer['Online Refill Payment status'] || 'Pay on Delivery/ Cash'}</span>

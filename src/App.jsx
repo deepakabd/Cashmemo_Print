@@ -3164,6 +3164,21 @@ function App() {
       customersToPrint.forEach((customer, index) => {
         const processedCustomer = { ...customer };
 
+        const pickFirstValue = (obj, keys) => {
+          for (const key of keys) {
+            const value = obj?.[key];
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+              return value;
+            }
+          }
+          return '';
+        };
+
+        // Normalize common keys for print template compatibility
+        processedCustomer['Order No.'] = pickFirstValue(processedCustomer, ['Order No.']);
+        processedCustomer['Cash Memo No.'] = pickFirstValue(processedCustomer, ['Cash Memo']);
+        processedCustomer['HSN'] = '27111900';
+
         // Convert 'Order Date'
         if (typeof processedCustomer['Order Date'] === 'number') {
           processedCustomer['Order Date'] = excelSerialDateToJSDate(processedCustomer['Order Date']);
@@ -3174,10 +3189,11 @@ function App() {
         }
 
         // Convert 'Cash Memo Date'
-        if (typeof processedCustomer['Cash Memo Date'] === 'number') {
-          processedCustomer['Cash Memo Date'] = excelSerialDateToJSDate(processedCustomer['Cash Memo Date']);
-        } else if (typeof processedCustomer['Cash Memo Date'] === 'string') {
-          processedCustomer['Cash Memo Date'] = parseDateString(processedCustomer['Cash Memo Date']);
+        const cashMemoDateRaw = pickFirstValue(processedCustomer, ['Cash Memo Date', 'Cash Memo Dt', 'CashMemo Date', 'CashMemoDate']);
+        if (typeof cashMemoDateRaw === 'number') {
+          processedCustomer['Cash Memo Date'] = excelSerialDateToJSDate(cashMemoDateRaw);
+        } else if (typeof cashMemoDateRaw === 'string') {
+          processedCustomer['Cash Memo Date'] = parseDateString(cashMemoDateRaw);
         } else {
           processedCustomer['Cash Memo Date'] = null; // Set to null if not a number or string
         }
