@@ -58,8 +58,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
                
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span>
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
-              <span>Order No. / Order Date :</span><span>{pickFirstValue(customer, ['Order No.'])} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
-              <span>Cash Memo No / Date :</span><span>{pickFirstValue(customer, ['Cash Memo', 'Cash Memo No.'])} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
+              <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
+              <span>Cash Memo No / Date :</span><span>{customer['Cash Memo No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
               <span>Cash Memo Status :</span><span>{customer['Cash Memo Status'] || 'N/A'}</span>
               <span>Delivery Man :</span><span>{customer['Delivery Man'] || 'N/A'}</span>
               <span>EKYC Status :</span><span className={ekycNotDone ? 'status-alert' : ''}>{customer['EKYC Status'] || 'N/A'}</span>
@@ -118,9 +118,9 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         
           </div>
 
-          {/* <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <img src="/printback.jpg" alt="Watermark" style={{ opacity: '1', width: '200px', height: 'auto' }} />
-          </div> */}
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: -1 }}>
+            <img src="/printback.jpg" alt="Watermark" style={{ opacity: '0.1', width: '200px', height: 'auto' }} />
+          </div>
 
           <div className="header-content">
             <div className="header-content-flex-spacer"></div>
@@ -142,8 +142,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {pickFirstValue(customer, ['HSN', 'HSN Code', 'HSNCode'], '27111900')} / {customer['Order Qty.'] || 'N/A'}</span>
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span>
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
-              <span>Order No. / Order Date :</span><span>{pickFirstValue(customer, ['Order No.'])} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
-              <span>Cash Memo No / Date :</span><span>{pickFirstValue(customer, ['Cash Memo', 'Cash Memo No.'])} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
+              <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
+              <span>Cash Memo No / Date :</span><span>{customer['Cash Memo No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Cash Memo Date'])}</span>
               <span>Delivery Man :</span><span>{customer['Delivery Man'] || 'N/A'}</span>
               <span>EKYC Status :</span><span className={ekycNotDone ? 'status-alert' : ''}>{customer['EKYC Status'] || 'N/A'}</span>
               <span>Online Refill Payment status :</span><span className={isOnlinePaid ? 'status-paid' : ''}>{customer['Online Refill Payment status'] || 'Pay on Delivery/ Cash'}</span>
