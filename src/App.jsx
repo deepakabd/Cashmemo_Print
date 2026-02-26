@@ -152,8 +152,7 @@ function App() {
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
-  const [showHomeInfo, setShowHomeInfo] = useState(false);
-  const [showAboutInfo, setShowAboutInfo] = useState(false);
+  const [showAboutInfo, setShowAboutInfo] = useState(true);
   const [showInvoicePage, setShowInvoicePage] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -531,7 +530,6 @@ function App() {
   };
 
   const hideAllViews = () => {
-    setShowHomeInfo(false);
     setShowAboutInfo(false);
     setShowInvoicePage(false);
     setShowContactForm(false);
@@ -595,12 +593,6 @@ function App() {
       setDealerWelcome('');
     }
   }, [isLoggedIn, showProfileUpdate, loggedInUser]);
-
-  const handleHomeOpen = () => {
-    hideAllViews();
-    setShowHomeInfo(true);
-    setShowUserMenu(false);
-  };
 
   const handleAboutOpen = () => {
     hideAllViews();
@@ -1916,18 +1908,106 @@ function App() {
     );
   };
 
-  const HomeInfo = () => {
-    return (
-      <div className="placeholder-container">
-        <h2 className="home-info-title">This website is only for HPCL Distributor for Cashmemo Printing</h2>
-      </div>
-    );
-  };
-
   const AboutInfo = () => {
     return (
-      <div className="placeholder-container">
-        <h2 className="about-info-title">Under Updation</h2>
+      <div className="placeholder-container about-summary">
+        <h2 className="about-info-title">📊 डैशबोर्ड (System Summary)</h2>
+        <p>
+          यह सिस्टम HPCL LPG डिस्ट्रीब्यूटर वर्कफ़्लो के लिए बनाया गया एक React + Firebase आधारित,
+          एक्शन-ओरिएंटेड Cashmemo + User/Admin Operations प्लेटफ़ॉर्म है।
+        </p>
+        <p>
+          इसमें डेटा अपलोड, फ़िल्टरिंग, प्रिंटिंग, टैक्स इनवॉइस जनरेशन, रजिस्ट्रेशन अप्रूवल,
+          प्रोफाइल/बैंक/रेट मैनेजमेंट जैसी सभी प्रक्रियाएँ एक ही एप्लिकेशन में इंटीग्रेटेड हैं।
+        </p>
+
+        <div className="about-summary-grid">
+          <section className="about-summary-card">
+            <h3>1️⃣ मुख्य उद्देश्य (Core Purpose)</h3>
+            <ul>
+              <li>LPG उपभोक्ता/ऑर्डर डेटा अपलोड करके एक actionable टेबल व्यू उपलब्ध कराना</li>
+              <li>eKYC पेंडिंग मामलों को हाइलाइट करना</li>
+              <li>Bulk Cashmemo प्रिंट और Tax Invoice जनरेट करना</li>
+              <li>डीलर ऑपरेशन्स को Admin Approval Workflow के माध्यम से नियंत्रित करना</li>
+            </ul>
+          </section>
+
+          <section className="about-summary-card">
+            <h3>2️⃣ सुरक्षा एवं एक्सेस कंट्रोल (Security & Access Control)</h3>
+            <ul>
+              <li>User Login: डीलर कोड + PIN</li>
+              <li>Admin Login: Firebase Auth (Email/Password)</li>
+              <li>Account Status Check: Pending / Active / Disabled / Expired स्थिति के अनुसार एक्सेस नियंत्रण</li>
+              <li>Package Validity Logic: Demo / Basic / Premium / Enterprise पैकेज के अनुसार वैधता अवधि और Expiry हैंडलिंग</li>
+            </ul>
+          </section>
+
+          <section className="about-summary-card">
+            <h3>3️⃣ डेटा प्रबंधन एवं आर्किटेक्चर (Data Handling & Architecture)</h3>
+            <ul>
+              <li>Primary Source: Firebase Firestore (Users, Registration Requests, Update Approvals, Feedback आदि)</li>
+              <li>Fallback System: Firebase असफल होने पर LocalStorage बैकअप</li>
+              <li>Upload Support: CSV + XLSX (Papaparse, XLSX library)</li>
+              <li>Date Handling: Excel Serial Dates एवं String Formats का Normalization</li>
+            </ul>
+          </section>
+
+          <section className="about-summary-card">
+            <h3>4️⃣ MIS एवं रिपोर्टिंग इंजन (MIS & Reporting Engine)</h3>
+            <ul>
+              <li>Multi-filter Table: eKYC, Area, Nature, Consumer Type, Order Status / Source / Type, Cashmemo Status, Delivery Man, Mobile Registration Status, Date Range</li>
+              <li>Global Search</li>
+              <li>Sorting & Pagination</li>
+              <li>Dynamic Columns Add/Remove</li>
+              <li>Total Record Count</li>
+              <li>Printable Table Report</li>
+              <li>Pending eKYC Rows के लिए Red/Bold Visual Alert</li>
+            </ul>
+          </section>
+
+          <section className="about-summary-card">
+            <h3>5️⃣ Admin गवर्नेंस सिस्टम (Admin Governance System)</h3>
+            <ul>
+              <li>Pending Registration Approval / Rejection</li>
+              <li>Manual User Creation + Package Validity सेट करना</li>
+              <li>Active / Total Users Management (Edit, Enable/Disable, Delete)</li>
+              <li>Profile / Bank / Rates Change Approval Queue</li>
+              <li>Feedback Read/Unread Toggle + Delete</li>
+              <li>User Detail Inspection (Profile/Bank/Rates JSON View)</li>
+            </ul>
+          </section>
+
+          <section className="about-summary-card">
+            <h3>6️⃣ Consumer एवं फील्ड ऑपरेशन्स (Consumer & Field Operations)</h3>
+            <ul>
+              <li>Consumer-wise Row Selection for Cashmemo Print</li>
+              <li>Page Layout Modes: A4 - 3 Cashmemo per Page, Large - 4 Cashmemo per Page</li>
+              <li>User Rates से Auto-rate Mapping</li>
+              <li>Online Paid vs COD Cashmemo Rendering</li>
+            </ul>
+          </section>
+
+          <section className="about-summary-card">
+            <h3>7️⃣ प्रोडक्टिविटी टूल्स (Productivity Tools)</h3>
+            <ul>
+              <li>Rate Update Module</li>
+              <li>GST आधारित Basic Price Recalculation</li>
+              <li>Invoice Module: Line Items, GST Split, Round-off Calculation, Amount in Words</li>
+              <li>Print-Optimized Invoice Rendering (Input/Select से Printable Text Transformation)</li>
+              <li>Invoice Footer में Bank Details + Declaration</li>
+            </ul>
+          </section>
+
+          <section className="about-summary-card">
+            <h3>8️⃣ UI/UX लेयर (UI/UX Layer)</h3>
+            <ul>
+              <li>Fixed Navbar + Role-based Actions</li>
+              <li>Book-view Style Modal Sections</li>
+              <li>Admin Dashboard Cards / Tabs / Table Layout</li>
+              <li>Responsive Design (Admin, Rates, Invoice Sections के लिए)</li>
+            </ul>
+          </section>
+        </div>
       </div>
     );
   };
@@ -3627,7 +3707,6 @@ function App() {
       {!hideUserNavbar && (
         <nav className="navbar">
           <div className="navbar-left">
-            <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
             <button className="navbar-button" onClick={handleAboutOpen}>About</button>
             {isLoggedIn && <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>}
             <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
@@ -3672,9 +3751,8 @@ function App() {
           </div>
         </nav>
       )}
-      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showAdminPanel || showAdminLogin || showUserLogin) && (
+      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showAboutInfo || showInvoicePage || showAdminPanel || showAdminLogin || showUserLogin) && (
         <div className="book-view">
-          {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && <InvoicePage />}
           {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} onAdminLogout={handleAdminLogout} />}
