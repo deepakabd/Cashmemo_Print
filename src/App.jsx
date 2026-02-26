@@ -1,4 +1,4 @@
-﻿﻿
+﻿﻿﻿﻿
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
@@ -3222,7 +3222,7 @@ function App() {
 
         // Normalize common keys for print template compatibility
         processedCustomer['Order No.'] = pickFirstValue(processedCustomer, ['Order No.']);
-        processedCustomer['Cash Memo No.'] = pickFirstValue(processedCustomer, ['Cash Memo']);
+        processedCustomer['Cash Memo No.'] = pickFirstValue(processedCustomer, ['Cash Memo No.', 'CashMemoNo', 'Cash Memo']);
         processedCustomer['HSN'] = '27111900';
 
         // Convert 'Order Date'
@@ -3370,7 +3370,7 @@ function App() {
                 font-weight: bold;
               }
               .distributor-copy-title {
-                margin: 5px 0 5px 0;
+                margin: 5px 0 5px 150px;
                 font-weight: bold;
                 font-size: 12px;
                 color: black;
@@ -3412,7 +3412,7 @@ function App() {
                 font-weight: bold;
               }
               .tax-invoice-title {
-                margin: 5px 0;
+                margin: 5px 60px;
                 font-weight: bold;
                 font-size: 12px;
                 color: black;
@@ -3591,12 +3591,12 @@ function App() {
               }
               .contact-info {
                
-                gap: 120px;
+                gap: 30px;
                 background-color: #00008B; /* Blue background */
                 color: white; /* White text */
                 padding: 3px 5mm;
-                font-size: 8px;
-                margin-top: 5px;
+                font-size: 6px;
+                margin-top: 3px;
               }
               .contact-info span {
                 font-weight: bold;
