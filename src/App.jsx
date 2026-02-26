@@ -42,31 +42,33 @@ const formatDateToDDMMYYYY = (date) => {
 
 // Helper function to parse various date string formats
 const parseDateString = (dateString) => {
-  if (!dateString) return null;
+  if (!dateString || typeof dateString !== 'string') {
+    return null;
+  }
 
-  // Try parsing as YYYY-MM-DD (standard for new Date())
-  let date = new Date(dateString);
-  if (!isNaN(date.getTime())) return date;
+  const trimmedDateString = dateString.trim();
+  if (trimmedDateString === '') {
+    return null;
+  }
 
-  // Try parsing as DD-MM-YYYY
-  let parts = dateString.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  // Attempt 1: DD-MM-YYYY HH:mm:ss (or just DD-MM-YYYY)
+  let parts = trimmedDateString.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:[ T](\d{1,2}):(\d{1,2}):(\d{1,2}))?$/);
   if (parts) {
-    date = new Date(parts[3], parts[2] - 1, parts[1]);
+    const date = new Date(parts[3], parts[2] - 1, parts[1], parts[4] || 0, parts[5] || 0, parts[6] || 0);
     if (!isNaN(date.getTime())) return date;
   }
 
-  // Try parsing as MM/DD/YYYY
-  parts = dateString.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  // Attempt 2: DD/MM/YYYY HH:mm:ss (or just DD/MM/YYYY)
+  parts = trimmedDateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{1,2}):(\d{1,2}))?$/);
   if (parts) {
-    date = new Date(parts[3], parts[1] - 1, parts[2]);
+    const date = new Date(parts[3], parts[2] - 1, parts[1], parts[4] || 0, parts[5] || 0, parts[6] || 0);
     if (!isNaN(date.getTime())) return date;
   }
 
-  // Try parsing as DD/MM/YYYY
-  parts = dateString.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (parts) {
-    date = new Date(parts[3], parts[2] - 1, parts[1]);
-    if (!isNaN(date.getTime())) return date;
+  // Attempt 3: Let new Date() try to parse it. This handles ISO (YYYY-MM-DD) and American (MM/DD/YYYY).
+  const date = new Date(trimmedDateString);
+  if (!isNaN(date.getTime())) {
+    return date;
   }
 
   // If all attempts fail, return null
@@ -136,31 +138,31 @@ const normalizePendingTypeLabel = (type) => {
 };
 
 const headerMapping = {
-  UniqueConsumerId: 'UniqueConsumerId',
-  ConsumerNo: 'Consumer No.',
-  ConsumerName: 'Consumer Name',
-  Naturecode_Desc: 'Consumer Nature',
-  Packagecode_Desc: 'Consumer Package',
-  ConsumerType: 'Consumer Type',
-  OrderNo: 'Order No.',
-  OrderStatus: 'Order Status',
-  OrderDate: 'Order Date',
-  OrderSource: 'Order Source',
-  OrderType: 'Order Type',
-  CashMemoNo: 'Cash Memo No.',
-  CashMemoStatus: 'Cash Memo Status',
-  CashMemoDate: 'Cash Memo Date',
-  OrderQuantity: 'Order Qty.',
-  ConsumedSubsidyQty: 'Consumed Subsidy Qty',
-  AreaName: 'Delivery Area',
-  DeliveryMan: 'Delivery Man',
-  RefillPaymentStatus: 'Online Refill Payment status',
-  IVRSBookingNumber: 'IVR Booking No.',
-  MobileNo: 'Mobile No.',
-  BookingDoneThroughRegistereMobile: 'Is Reg Mobile',
-  ConsumerAddress: 'Address',
-  IsRefillPort: 'IsRefillPort',
-  EkycStatus: 'EKYC Status',
+  uniqueconsumerid: 'UniqueConsumerId',
+  consumerno: 'Consumer No.',
+  consumername: 'Consumer Name',
+  naturecode_desc: 'Consumer Nature',
+  packagecode_desc: 'Consumer Package',
+  consumertype: 'Consumer Type',
+  orderno: 'Order No.',
+  orderstatus: 'Order Status',
+  orderdate: 'Order Date',
+  ordersource: 'Order Source',
+  ordertype: 'Order Type',
+  cashmemono: 'Cash Memo No.',
+  cashmemostatus: 'Cash Memo Status',
+  cashmemodate: 'Cash Memo Date',
+  orderquantity: 'Order Qty.',
+  consumedsubsidyqty: 'Consumed Subsidy Qty',
+  areaname: 'Delivery Area',
+  deliveryman: 'Delivery Man',
+  refillpaymentstatus: 'Online Refill Payment status',
+  ivrsbookingnumber: 'IVR Booking No.',
+  mobileno: 'Mobile No.',
+  bookingdonethroughregisteremobile: 'Is Reg Mobile',
+  consumeraddress: 'Address',
+  isrefillport: 'IsRefillPort',
+  ekycstatus: 'EKYC Status',
 };
 
 const normalizeData = (data) => {
@@ -168,7 +170,8 @@ const normalizeData = (data) => {
     const newRow = {};
     for (const key in row) {
       if (Object.prototype.hasOwnProperty.call(row, key)) {
-        const newKey = headerMapping[key.trim()] || key.trim();
+        const cleanedKey = key.trim().replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+        const newKey = headerMapping[cleanedKey] || key.trim();
         newRow[newKey] = row[key];
       }
     }
