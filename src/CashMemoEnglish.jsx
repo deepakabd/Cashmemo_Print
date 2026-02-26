@@ -1,4 +1,6 @@
 import React from 'react';
+// Import CSS for print styles
+import './CashMemoPrint.css';
 
 const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
   if (!customer) {
@@ -32,11 +34,11 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         {/* Distributor Copy Section (Left Half) */}
         <div className="distributor-copy">
           {/* Header for Distributor Copy */}
-          <div className="distributor-header" style={{ display: 'flex' }}>
-              <div className="distributor-header-logo" style={{ flex: 1 }}>
-                <img src="/logo.jpg" alt="Distributor Header" className="distributor-header-image" style={{ width: '35%' }} />
+          <div className="distributor-header">
+              <div className="distributor-header-logo">
+                <img src="/logo.jpg" alt="Distributor Header" className="distributor-header-image" />
               </div>
-              <div className="distributor-header-details" style={{ flex: 1 }}>
+              <div className="distributor-header-details">
                 <p className="distributor-header-detail-text">{distributorName}</p>
                 <p className="distributor-header-detail-text">GSTN : {gstn}</p>
               </div>
@@ -97,11 +99,11 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         {/* Tax Invoice Section (Right Half) */}
         <div className="tax-invoice">
           {/* Header Section */}
-          <div className="tax-invoice-header" style={{ display: 'flex' }}>
-              <div className="tax-invoice-header-logo" style={{ flex: 1 }}>
-                <img src="/logo.jpg" alt="Tax Invoice Header" className="tax-invoice-header-image" style={{ width: '35%' }} />
+          <div className="tax-invoice-header">
+              <div className="tax-invoice-header-logo">
+                <img src="/logo.jpg" alt="Tax Invoice Header" className="tax-invoice-header-image" />
               </div>
-              <div className="tax-invoice-header-details" style={{ flex: 1 }}>
+              <div className="tax-invoice-header-details">
                 <p className="tax-invoice-header-detail-text">{distributorName}</p>
                 <p className="tax-invoice-header-detail-text">{plotNo}</p>
                 <p className="tax-invoice-header-detail-text">Email : {email} | Telephone : {telephone}</p>
@@ -118,8 +120,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         
           </div>
 
-          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: -1 }}>
-            <img src="/printback.jpg" alt="Watermark" style={{ opacity: '0.1', width: '200px', height: 'auto' }} />
+          <div className="watermark-container">
+            <img src="/printback.jpg" alt="Watermark" className="watermark-image" />
           </div>
 
           <div className="header-content">

@@ -3292,7 +3292,7 @@ function App() {
           if ((index + 1) % 3 !== 0) {
             wrapperStyles += `margin-bottom: 2mm;`;
           }
-          if ((index + 1) % 3 === 0) {
+          if ((index + 1) % 3 === 0 && (index + 1) < customersToPrint.length) {
             wrapperStyles += `page-break-after: always;`;
           }
         } else if (pageType === 'Lager 4 Cashmemo/Page') {
@@ -3300,7 +3300,7 @@ function App() {
           if ((index + 1) % 4 !== 0) {
             wrapperStyles += `margin-bottom: 2mm;`;
           }
-          if ((index + 1) % 4 === 0) {
+          if ((index + 1) % 4 === 0 && (index + 1) < customersToPrint.length) {
             wrapperStyles += `page-break-after: always;`;
           }
         }
@@ -3338,6 +3338,15 @@ function App() {
                 background-color: white;
                 page-break-inside: avoid; /* Prevent cash memo content from breaking across pages */
               }
+              .tax-invoice {
+                width: 50%;
+                padding: 5px;
+                box-sizing: border-box;
+                font-size: 10px;
+                height: 100%;
+                color: black;
+                position: relative; /* For watermark positioning */
+              }
               .distributor-copy {
                 width: 50%;
                 border-right: 1px dashed black;
@@ -3346,14 +3355,7 @@ function App() {
                 font-size: 10px;
                 height: 100%;
                 color: black;
-              }
-              .tax-invoice {
-                width: 50%;
-                padding: 5px;
-                box-sizing: border-box;
-                font-size: 10px;
-                height: 100%;
-                color: black;
+                position: relative; /* For watermark positioning */
               }
               .distributor-header {
                 position: relative;
@@ -3368,12 +3370,6 @@ function App() {
                 color: black;
                 font-size: 8px;
                 font-weight: bold;
-              }
-              .distributor-copy-title {
-                margin: 5px 0 5px 150px;
-                font-weight: bold;
-                font-size: 12px;
-                color: black;
               }
               .customer-details-distributor {
                 border: 1px solid black;
@@ -3397,22 +3393,8 @@ function App() {
                 gap: 1px;
                 padding-left: 5px;
               }
-              .tax-invoice-header {
-                position: relative;
-                width: 100%;
-              }
-              .tax-invoice-header-details {
-                position: absolute;
-                top: 50%;
-                right: 10px;
-                transform: translateY(-50%);
-                text-align: right;
-                color: black;
-                font-size: 8px;
-                font-weight: bold;
-              }
               .tax-invoice-title {
-                margin: 5px 60px;
+                margin: 5px 195px;
                 font-weight: bold;
                 font-size: 12px;
                 color: black;
@@ -3505,6 +3487,30 @@ function App() {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
+                margin-bottom: 5px;
+              }
+              .distributor-header, .tax-invoice-header {
+                display: flex;
+                align-items: center;
+                margin-bottom: 5px;
+              }
+              .distributor-header-logo, .tax-invoice-header-logo {
+                flex: 1;
+              }
+              .distributor-header-image, .tax-invoice-header-image {
+                width: 35%;
+              }
+              .distributor-header-details, .tax-invoice-header-details {
+                flex: 1;
+                text-align: right;
+                font-size: 8px;
+                font-weight: bold;
+              }
+              .distributor-copy-title {
+                text-align: center;
+                font-weight: bold;
+                font-size: 12px;
+                color: black;
                 margin: 5px 0;
               }
               .distributor-header-image {
@@ -3512,12 +3518,14 @@ function App() {
               }
               .distributor-header-detail-text {
                 margin: 0;
+                font-size: 9px;
               }
               .tax-invoice-header-image {
                 width: 100%;
               }
               .tax-invoice-header-detail-text {
                 margin: 0;
+                font-size: 9px;
               }
               .declaration-text {
                 margin: 0;
@@ -3591,7 +3599,7 @@ function App() {
               }
               .contact-info {
                
-                gap: 30px;
+                gap: 90px;
                 background-color: #00008B; /* Blue background */
                 color: white; /* White text */
                 padding: 3px 5mm;
@@ -3628,6 +3636,21 @@ function App() {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+              }
+              .watermark-container {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: -1;
+              }
+              .watermark-image {
+                opacity: 0.1;
+                width: 200px;
+                height: auto;
               }
             </style>
           </head>
@@ -4240,8 +4263,8 @@ function App() {
             {/* Page Type Dropdown */}
             <label htmlFor="pageTypeSelect">Page Type:</label>
             <select id="pageTypeSelect" onChange={(e) => setPageType(e.target.value)} value={pageType}>
-              <option value="A4 3 Cashmemo/Page">A4 3 Cashmemo/Page</option>
-              <option value="Lager 4 Cashmemo/Page">Lager 4 Cashmemo/Page</option>
+              <option value="3 Cashmemo/Page">3 Cashmemo/Page</option>
+              <option value="4 Cashmemo/Page">4 Cashmemo/Page</option>
             </select>
             <button className="action-button" onClick={handlePrintData} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Data</button>
             <button className="action-button" onClick={handlePrintCashmemo} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Cashmemo</button>

@@ -1,0 +1,232 @@
+/* CashMemoPrint.css */
+
+/* Ensure the content fits within an A4 page */
+@media print {
+  body {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    width: 210mm; /* A4 width */
+    height: 297mm; /* A4 height */
+    overflow: hidden;
+  }
+
+  .cashmemo-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    page-break-inside: avoid;
+  }
+
+  .cashmemo-section {
+    width: 48%; /* Adjust width to fit two sections side by side */
+    padding: 10px;
+    box-sizing: border-box;
+    border: 1px solid black;
+    background: white;
+  }
+
+  .cashmemo-section h1, .cashmemo-section h2, .cashmemo-section h3 {
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+  }
+
+  .cashmemo-section table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .cashmemo-section table th,
+  .cashmemo-section table td {
+    border: 1px solid black;
+    padding: 5px;
+    text-align: left;
+    font-size: 12px;
+  }
+
+  .no-print {
+    display: none;
+  }
+}
+
+/* Integrating styles from App.css to ensure print preview matches the original layout */
+
+@media print {
+  .invoice-container {
+    border: 2px solid #5f6b7c !important;
+    width: 210mm; /* A4 width */
+    height: 297mm; /* A4 height */
+    margin: 0 auto;
+    padding: 20mm;
+    box-sizing: border-box;
+    background: white;
+  }
+
+  .invoice-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 2px solid #9aa6b8;
+    padding: 8px 8px 10px 8px;
+    background: #eaf4ff;
+  }
+
+  .invoice-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+    border-bottom: 1px solid #a5b0c0;
+    padding-bottom: 10px;
+  }
+
+  .invoice-box,
+  .section-box {
+    border: 1px solid #aeb8c7;
+    border-radius: 4px;
+    padding: 8px;
+    background: #f9fbff;
+    position: relative;
+  }
+
+  .section-label {
+    position: absolute;
+    top: -10px;
+    left: 8px;
+    background: #eaf4ff;
+    border: 1px solid #aeb8c7;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    color: #1f4fb2;
+  }
+
+  .invoice-meta {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+    border-bottom: 1px solid #dfe3eb;
+    padding-bottom: 10px;
+  }
+
+  .meta-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    padding: 6px 8px;
+    background: #f7fafc;
+  }
+}
+
+/* Ensuring consistent styles for Distributor Copy and Tax Invoice sections */
+
+@media print {
+  .cash-memo-wrapper {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 10mm;
+    box-sizing: border-box;
+    page-break-inside: avoid;
+  }
+
+  .cash-memo-single {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  .distributor-copy, .tax-invoice {
+    width: calc(50% - 10mm); /* Adjusted to fit within A4 width */
+    padding: 5mm;
+    box-sizing: border-box;
+    border: 1px solid black;
+    background: white;
+  }
+
+  .distributor-header, .tax-invoice-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid black;
+    padding-bottom: 5mm;
+  }
+
+  .distributor-header-logo img, .tax-invoice-header-logo img {
+    width: 80px;
+    height: auto;
+  }
+
+  .distributor-header-details, .tax-invoice-header-details {
+    text-align: left;
+    font-size: 10px;
+  }
+
+  .customer-details-distributor, .customer-details-tax-invoice {
+    display: flex;
+    flex-direction: column;
+    gap: 3mm;
+    font-size: 10px;
+  }
+
+  .distributor-details-left, .tax-invoice-details-left {
+    width: 50%;
+    float: left;
+  }
+
+  .distributor-details-right, .tax-invoice-details-right {
+    width: 50%;
+    float: right;
+    text-align: right;
+  }
+
+  .price-value {
+    font-weight: bold;
+  }
+
+  .total-amount {
+    font-size: 12px;
+    color: red;
+  }
+
+  /* Adjusting layout for multiple cash memos with dynamic gaps and page type */
+  .cash-memo-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 10mm;
+    box-sizing: border-box;
+    page-break-inside: avoid;
+  }
+
+  .cash-memo-single {
+    width: calc(100% / var(--cashmemo-per-page) - 10mm); /* Dynamic width based on page type */
+    margin-bottom: 10mm; /* Gap between cash memos */
+    padding: 5mm;
+    box-sizing: border-box;
+    border: 1px solid black;
+    background: white;
+    page-break-inside: avoid;
+  }
+}
