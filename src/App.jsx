@@ -1,4 +1,4 @@
-﻿﻿﻿﻿
+﻿﻿﻿
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
@@ -3655,7 +3655,7 @@ function App() {
             </style>
           </head>
           <body>
-            <div id="print-root" style="display: flex; flex-wrap: wrap; align-content: flex-start;">
+            <div id="print-root" style="display: flex; flex-wrap: wrap; align-content: flex-start; margin-top: 20mm">
               ${allCashMemosHtml}
             </div>
           </body>
