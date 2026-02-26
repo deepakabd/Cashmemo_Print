@@ -152,6 +152,7 @@ function App() {
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
+  const [showHomeInfo, setShowHomeInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(true);
   const [showInvoicePage, setShowInvoicePage] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -530,6 +531,7 @@ function App() {
   };
 
   const hideAllViews = () => {
+    setShowHomeInfo(false);
     setShowAboutInfo(false);
     setShowInvoicePage(false);
     setShowContactForm(false);
@@ -593,6 +595,12 @@ function App() {
       setDealerWelcome('');
     }
   }, [isLoggedIn, showProfileUpdate, loggedInUser]);
+
+  const handleHomeOpen = () => {
+    hideAllViews();
+    setShowHomeInfo(true);
+    setShowUserMenu(false);
+  };
 
   const handleAboutOpen = () => {
     hideAllViews();
@@ -1954,6 +1962,91 @@ function App() {
         <div className="form-actions">
           <button onClick={loadData}>Refresh</button>
           <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
+  const HomeInfo = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayOrders = parsedData.filter((row) => {
+      const raw = row?.['Order Date'];
+      if (!raw) return false;
+      const dt = typeof raw === 'number' ? excelSerialDateToJSDate(raw) : parseDateString(raw) || new Date(raw);
+      if (!dt || Number.isNaN(dt.getTime())) return false;
+      dt.setHours(0, 0, 0, 0);
+      return dt.getTime() === today.getTime();
+    }).length;
+
+    const pendingEkycCount = parsedData.filter((row) => {
+      const status = String(row?.['EKYC Status'] || '').toLowerCase().trim();
+      return status === 'pending' || status === 'ekyc not done';
+    }).length;
+
+    const activePackageStatus = loggedInUser?.package
+      ? `${loggedInUser.package} (Valid till: ${formatDisplayDate(loggedInUser.validTill)})`
+      : 'N/A';
+
+    return (
+      <div className="placeholder-container home-dashboard">
+        <h2 className="home-info-title">🏠 होम (Home Dashboard)</h2>
+
+        <div className="home-important-note">
+          <h3>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
+          <p>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
+          <p><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS → Order Fulfillment → Pending Booking</p>
+          <p>डाउनलोड की गई फ़ाइल को इस पोर्टल के Top Navbar में Upload करें, फिर “Show Data” पर क्लिक करके डेटा प्रदर्शित करें।</p>
+          <p><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा। <br />तथा <br />लॉगिन के बाद प्रोफाइल सेक्शन में अपना "प्रोफाइल अपडेट" करें</strong></p>
+        </div>
+
+        <div className="home-section">
+          <h3>स्वागत संदेश</h3>
+          <p>HPCL LPG Distributor Dashboard में आपका स्वागत है।</p>
+          <p>यह प्लेटफ़ॉर्म आपके दैनिक कार्यों को सरल, तेज़ और व्यवस्थित बनाने के लिए डिज़ाइन किया गया है।</p>
+          <p>यहाँ से आप उपभोक्ता डेटा प्रबंधित कर सकते हैं, Cashmemo प्रिंट कर सकते हैं, Tax Invoice बना सकते हैं और eKYC स्थिति की निगरानी कर सकते हैं।</p>
+        </div>
+
+        <div className="home-section">
+          </div>
+
+        <div className="home-section">
+          <h3>⚠️ महत्वपूर्ण अलर्ट</h3>
+          <ul>
+            <li>🔴 eKYC Pending उपभोक्ता को प्राथमिकता दें</li>
+            <li>🟡 Expiry के निकट पैकेज की सूचना</li>
+            <li>🟢 Approved Registration Updates</li>
+          </ul>
+        </div>
+
+        <div className="home-section">
+          <h3>🚀 त्वरित कार्य (Quick Actions)</h3>
+          <ul>
+            <li>📂 CSV/XLSX डेटा अपलोड करें</li>
+            <li>🧾 Bulk Cashmemo प्रिंट करें</li>
+            <li>🧮 Tax Invoice जनरेट करें</li>
+            <li>📈 MIS रिपोर्ट देखें</li>
+            <li>⚙️ रेट/प्रोफाइल अपडेट अनुरोध भेजें</li>
+          </ul>
+        </div>
+
+        <div className="home-section">
+          <h3>🔐 सिस्टम सुरक्षा</h3>
+          <ul>
+            <li>आपका लॉगिन: Dealer Code आधारित</li>
+            <li>सभी परिवर्तन Admin Approval के अधीन</li>
+            <li>डेटा सुरक्षित रूप से Firebase पर संग्रहीत</li>
+          </ul>
+        </div>
+
+        <div className="home-section">
+          <h3>📌 सुझाव</h3>
+          <p>बेहतर परिणाम के लिए:</p>
+          <ul>
+            <li>नियमित रूप से डेटा अपडेट करें</li>
+            <li>eKYC Pending मामलों की समीक्षा करें</li>
+            <li>प्रिंट से पहले चयनित रिकॉर्ड सत्यापित करें</li>
+          </ul>
         </div>
       </div>
     );
@@ -3758,6 +3851,7 @@ function App() {
       {!hideUserNavbar && (
         <nav className="navbar">
           <div className="navbar-left">
+            <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
             <button className="navbar-button" onClick={handleAboutOpen}>About</button>
             {isLoggedIn && <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>}
             <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
@@ -3802,8 +3896,9 @@ function App() {
           </div>
         </nav>
       )}
-      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showAboutInfo || showInvoicePage || showAdminPanel || showAdminLogin || showUserLogin) && (
+      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showAdminPanel || showAdminLogin || showUserLogin) && (
         <div className="book-view">
+          {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && <InvoicePage />}
           {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} onAdminLogout={handleAdminLogout} />}

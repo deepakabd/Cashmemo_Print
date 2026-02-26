@@ -337,6 +337,60 @@
   color: #0b5ed7;
 }
 
+.home-dashboard {
+  text-align: left;
+}
+
+.home-important-note {
+  border: 1px solid #f7c948;
+  background: #fff7db;
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 10px;
+}
+
+.home-important-note h3 {
+  margin: 0 0 8px;
+  color: #8a5a00;
+  font-size: 16px;
+}
+
+.home-important-note p {
+  margin: 6px 0;
+  color: #4b3a06;
+  line-height: 1.5;
+}
+
+.home-dashboard .home-section {
+  border: 1px solid #d7e2ef;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.home-dashboard .home-section h3 {
+  margin: 0 0 8px;
+  color: #0f3f9f;
+  font-size: 16px;
+}
+
+.home-dashboard .home-section p {
+  margin: 6px 0;
+  line-height: 1.5;
+  color: #1f2937;
+}
+
+.home-dashboard .home-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.home-dashboard .home-section li {
+  margin-bottom: 6px;
+  line-height: 1.45;
+}
+
 .about-info-title {
   text-align: center;
   font-size: 18px;
