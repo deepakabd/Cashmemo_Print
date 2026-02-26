@@ -3745,7 +3745,7 @@ function App() {
             )}
             {!isLoggedIn && (
               <button className="admin-nav-button" onClick={handleAdminLoginOpen}>
-                <span aria-hidden="true">&#128274;</span> Admin
+                <span aria-hidden="true">&#128274;</span> 
               </button>
             )}
           </div>
