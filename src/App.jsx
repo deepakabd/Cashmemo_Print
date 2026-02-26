@@ -2874,14 +2874,14 @@ function App() {
 
   // Sample Dealer Details (to be updated by user registration later)
   const sampleDealerDetails = {
-    name: 'RAJE BHAWANISHANKAR ENTERPRISES (41012240)',
-    gstn: '27AEXPB6427K1ZZ',
+    name: '',
+    gstn: '',
     address: {
-      plotNo: 'PLOT NO-3, SECTOR-6, CBD BELAPUR, MAHARASHTRA-400614',
+      plotNo: '',
     },
     contact: {
-      email: 'raje.thane@hpgas.hpcl.co.in',
-      telephone: '022-27571972, 27573871',
+      email: '',
+      telephone: '',
     },
   };
 
