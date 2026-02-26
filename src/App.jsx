@@ -1,4 +1,4 @@
-﻿
+﻿﻿
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
@@ -135,6 +135,46 @@ const normalizePendingTypeLabel = (type) => {
   return raw;
 };
 
+const headerMapping = {
+  UniqueConsumerId: 'UniqueConsumerId',
+  ConsumerNo: 'Consumer No.',
+  ConsumerName: 'Consumer Name',
+  Naturecode_Desc: 'Consumer Nature',
+  Packagecode_Desc: 'Consumer Package',
+  ConsumerType: 'Consumer Type',
+  OrderNo: 'Order No.',
+  OrderStatus: 'Order Status',
+  OrderDate: 'Order Date',
+  OrderSource: 'Order Source',
+  OrderType: 'Order Type',
+  CashMemoNo: 'Cash Memo No.',
+  CashMemoStatus: 'Cash Memo Status',
+  CashMemoDate: 'Cash Memo Date',
+  OrderQuantity: 'Order Qty.',
+  ConsumedSubsidyQty: 'Consumed Subsidy Qty',
+  AreaName: 'Delivery Area',
+  DeliveryMan: 'Delivery Man',
+  RefillPaymentStatus: 'Online Refill Payment status',
+  IVRSBookingNumber: 'IVR Booking No.',
+  MobileNo: 'Mobile No.',
+  BookingDoneThroughRegistereMobile: 'Is Reg Mobile',
+  ConsumerAddress: 'Address',
+  IsRefillPort: 'IsRefillPort',
+  EkycStatus: 'EKYC Status',
+};
+
+const normalizeData = (data) => {
+  return data.map(row => {
+    const newRow = {};
+    for (const key in row) {
+      if (Object.prototype.hasOwnProperty.call(row, key)) {
+        const newKey = headerMapping[key.trim()] || key.trim();
+        newRow[newKey] = row[key];
+      }
+    }
+    return newRow;
+  });
+};
 
 
 
@@ -2909,29 +2949,30 @@ function App() {
         Papa.parse(data, {
           header: true,
           complete: (results) => {
-            if (results.data.length > 0) {
-              const allHeaders = Object.keys(results.data[0]);
+            let rawData = results.data;
+            if (rawData.length > 0) {
+              const normalizedData = normalizeData(rawData);
+              const allHeaders = Object.keys(normalizedData[0]);
               setHeaders(allHeaders);
-              setParsedData(results.data);
+              setParsedData(normalizedData);
               setVisibleHeaders(defaultVisibleHeaders.filter(header => allHeaders.includes(header))); // Set default visible headers
 
               // Extract unique values for filters
-              setUniqueEkycStatuses([...new Set(results.data.map(row => row['EKYC Status']).filter(Boolean))]);
-              setUniqueAreas([...new Set(results.data.map(row => row['Delivery Area']).filter(Boolean))]);
-              setUniqueNatures([...new Set(results.data.map(row => row['Consumer Nature']).filter(Boolean))]);
-              setUniqueMobileStatuses([...new Set(results.data.map(row => row['Mobile No.'] ? 'Available' : 'Not Available').filter(Boolean))]); // Example for Mobile Status
-              setUniqueConsumerStatuses([...new Set(results.data.map(row => row['Consumer Type']).filter(Boolean))]);
-              setUniqueConnectionTypes([...new Set(results.data.map(row => row['Consumer Package']).filter(Boolean))]);
-              setUniqueOnlineRefillPaymentStatuses([...new Set(results.data.map(row => row['Online Refill Payment status']).filter(Boolean))]);
-
+              setUniqueEkycStatuses([...new Set(normalizedData.map(row => row['EKYC Status']).filter(Boolean))]);
+              setUniqueAreas([...new Set(normalizedData.map(row => row['Delivery Area']).filter(Boolean))]);
+              setUniqueNatures([...new Set(normalizedData.map(row => row['Consumer Nature']).filter(Boolean))]);
+              setUniqueMobileStatuses([...new Set(normalizedData.map(row => row['Mobile No.'] ? 'Available' : 'Not Available').filter(Boolean))]);
+              setUniqueConsumerStatuses([...new Set(normalizedData.map(row => row['Consumer Type']).filter(Boolean))]);
+              setUniqueConnectionTypes([...new Set(normalizedData.map(row => row['Consumer Package']).filter(Boolean))]);
+              setUniqueOnlineRefillPaymentStatuses([...new Set(normalizedData.map(row => row['Online Refill Payment status']).filter(Boolean))]);
 
               // New unique options for filters
-              setUniqueOrderStatuses([...new Set(results.data.map(row => row['Order Status']).filter(Boolean))]);
-              setUniqueOrderSources([...new Set(results.data.map(row => row['Order Source']).filter(Boolean))]);
-              setUniqueOrderTypes([...new Set(results.data.map(row => row['Order Type']).filter(Boolean))]);
-              setUniqueCashMemoStatuses([...new Set(results.data.map(row => row['Cash Memo Status']).filter(Boolean))]);
-              setUniqueDeliveryMen([...new Set(results.data.map(row => row['Delivery Man']).filter(Boolean))]);
-              setUniqueIsRegMobileStatuses([...new Set(results.data.map(row => row['Is Reg Mobile'] ? 'Yes' : 'No').filter(Boolean))]);
+              setUniqueOrderStatuses([...new Set(normalizedData.map(row => row['Order Status']).filter(Boolean))]);
+              setUniqueOrderSources([...new Set(normalizedData.map(row => row['Order Source']).filter(Boolean))]);
+              setUniqueOrderTypes([...new Set(normalizedData.map(row => row['Order Type']).filter(Boolean))]);
+              setUniqueCashMemoStatuses([...new Set(normalizedData.map(row => row['Cash Memo Status']).filter(Boolean))]);
+              setUniqueDeliveryMen([...new Set(normalizedData.map(row => row['Delivery Man']).filter(Boolean))]);
+              setUniqueIsRegMobileStatuses([...new Set(normalizedData.map(row => row['Is Reg Mobile'] ? 'Yes' : 'No').filter(Boolean))]);
               setShowDataButton(true);
               setShowParsedData(false);
               setFileUploadMessage('File uploaded successfully!');
@@ -2974,37 +3015,31 @@ function App() {
         const workbook = XLSX.read(data, { type: 'binary' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        const json = XLSX.utils.sheet_to_json(worksheet);
 
         if (json.length > 0) {
-          const allHeaders = json[0];
+          const normalizedData = normalizeData(json);
+          const allHeaders = Object.keys(normalizedData[0]);
           setHeaders(allHeaders);
-          setParsedData(json.slice(1).map(row => {
-            const rowObject = {};
-            json[0].forEach((header, index) => {
-              rowObject[header] = row[index];
-            });
-            return rowObject;
-          }));
+          setParsedData(normalizedData);
           setVisibleHeaders(defaultVisibleHeaders.filter(header => allHeaders.includes(header))); // Set default visible headers
 
           // Extract unique values for filters
-          setUniqueEkycStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('EKYC Status')]).filter(Boolean))]);
-          setUniqueAreas([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Delivery Area')]).filter(Boolean))]);
-          setUniqueNatures([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Consumer Nature')]).filter(Boolean))]);
-          setUniqueMobileStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Mobile No.')] ? 'Available' : 'Not Available').filter(Boolean))]);
-          setUniqueConsumerStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Consumer Type')]).filter(Boolean))]);
-          setUniqueConnectionTypes([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Consumer Package')]).filter(Boolean))]);
-          setUniqueOnlineRefillPaymentStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Online Refill Payment status')]).filter(Boolean))]);
-
+          setUniqueEkycStatuses([...new Set(normalizedData.map(row => row['EKYC Status']).filter(Boolean))]);
+          setUniqueAreas([...new Set(normalizedData.map(row => row['Delivery Area']).filter(Boolean))]);
+          setUniqueNatures([...new Set(normalizedData.map(row => row['Consumer Nature']).filter(Boolean))]);
+          setUniqueMobileStatuses([...new Set(normalizedData.map(row => row['Mobile No.'] ? 'Available' : 'Not Available').filter(Boolean))]);
+          setUniqueConsumerStatuses([...new Set(normalizedData.map(row => row['Consumer Type']).filter(Boolean))]);
+          setUniqueConnectionTypes([...new Set(normalizedData.map(row => row['Consumer Package']).filter(Boolean))]);
+          setUniqueOnlineRefillPaymentStatuses([...new Set(normalizedData.map(row => row['Online Refill Payment status']).filter(Boolean))]);
 
           // New unique options for filters
-          setUniqueOrderStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Order Status')]).filter(Boolean))]);
-          setUniqueOrderSources([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Order Source')]).filter(Boolean))]);
-          setUniqueOrderTypes([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Order Type')]).filter(Boolean))]);
-          setUniqueCashMemoStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Cash Memo Status')]).filter(Boolean))]);
-          setUniqueDeliveryMen([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Delivery Man')]).filter(Boolean))]);
-          setUniqueIsRegMobileStatuses([...new Set(json.slice(1).map(row => row[allHeaders.indexOf('Is Reg Mobile')] ? 'Yes' : 'No').filter(Boolean))]);
+          setUniqueOrderStatuses([...new Set(normalizedData.map(row => row['Order Status']).filter(Boolean))]);
+          setUniqueOrderSources([...new Set(normalizedData.map(row => row['Order Source']).filter(Boolean))]);
+          setUniqueOrderTypes([...new Set(normalizedData.map(row => row['Order Type']).filter(Boolean))]);
+          setUniqueCashMemoStatuses([...new Set(normalizedData.map(row => row['Cash Memo Status']).filter(Boolean))]);
+          setUniqueDeliveryMen([...new Set(normalizedData.map(row => row['Delivery Man']).filter(Boolean))]);
+          setUniqueIsRegMobileStatuses([...new Set(normalizedData.map(row => row['Is Reg Mobile'] ? 'Yes' : 'No').filter(Boolean))]);
           setShowDataButton(true);
           setShowParsedData(false);
           setFileUploadMessage('File uploaded successfully!');
@@ -3696,12 +3731,10 @@ function App() {
       tempFilteredData = tempFilteredData.filter(row => {
         const rowDate = row['Order Date'];
         if (!rowDate) return false; // Skip if date is not available
+        // Convert Excel serial date or parse date string
+        const convertedRowDate = typeof rowDate === 'number' ? excelSerialDateToJSDate(rowDate) : parseDateString(rowDate);
 
-        // Convert Excel serial date to JS Date object if it's a number, otherwise try to parse directly
-        const convertedRowDate = typeof rowDate === 'number' ? excelSerialDateToJSDate(rowDate) : new Date(rowDate);
-
-        if (!convertedRowDate || isNaN(convertedRowDate.getTime())) return false; // Skip if conversion failed
-
+        if (!convertedRowDate || isNaN(convertedRowDate.getTime())) return false;
         const orderDate = convertedRowDate;
         const start = new Date(orderDateStart);
         const end = new Date(orderDateEnd);
@@ -3720,12 +3753,10 @@ function App() {
       tempFilteredData = tempFilteredData.filter(row => {
         const rowDate = row['Cash Memo Date'];
         if (!rowDate) return false; // Skip if date is not available
+        // Convert Excel serial date or parse date string
+        const convertedRowDate = typeof rowDate === 'number' ? excelSerialDateToJSDate(rowDate) : parseDateString(rowDate);
 
-        // Convert Excel serial date to JS Date object if it's a number, otherwise try to parse directly
-        const convertedRowDate = typeof rowDate === 'number' ? excelSerialDateToJSDate(rowDate) : new Date(rowDate);
-
-        if (!convertedRowDate || isNaN(convertedRowDate.getTime())) return false; // Skip if conversion failed
-
+        if (!convertedRowDate || isNaN(convertedRowDate.getTime())) return false;
         const cashMemoDate = convertedRowDate;
         const start = new Date(cashMemoDateStart);
         const end = new Date(cashMemoDateEnd);
@@ -4247,12 +4278,14 @@ function App() {
                             >
                               {String(
                                   header === 'Online Refill Payment status'
-                                     ? (customer[header] === 'PAID' ? 'PAID' : 'COD')
-                                     : (header === 'IVR Booking No.' && customer[header] === undefined
-                                       ? ''
-                                       : (header === 'Order Date' || header === 'Cash Memo Date'
-                                         ? formatDateToDDMMYYYY(excelSerialDateToJSDate(customer[header]))
-                                         : customer[header]))
+                                    ? (customer[header] === 'PAID' ? 'PAID' : 'COD')
+                                    : (header === 'Order Date' || header === 'Cash Memo Date'
+                                      ? formatDateToDDMMYYYY(
+                                          typeof customer[header] === 'number'
+                                            ? excelSerialDateToJSDate(customer[header])
+                                            : parseDateString(customer[header])
+                                        )
+                                      : (customer[header] === undefined || customer[header] === null ? '' : customer[header]))
                                  )}
                             </td>
                           );
@@ -4300,8 +4333,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
