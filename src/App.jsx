@@ -817,24 +817,42 @@ function App() {
   };
 
   const ContactForm = ({ onClose }) => {
-    const [text, setText] = useState('');
+    const [form, setForm] = useState({
+      name: '',
+      mobile: '',
+      email: '',
+      feedback: '',
+    });
+
+    useEffect(() => {
+      setForm((prev) => ({
+        ...prev,
+        name: loggedInUser?.dealerName || '',
+        mobile: loggedInUser?.mobile || '',
+        email: loggedInUser?.email || '',
+      }));
+    }, [loggedInUser]);
+
+    const handleChange = (e) => {
+      const { name, value } = e.target;
+      setForm((prev) => ({ ...prev, [name]: value }));
+    };
+
     const submitFeedback = async () => {
-      if (!loggedInUser?.id) {
-        alert('Please login to submit feedback.');
-        return;
-      }
-      if (!text.trim()) {
-        alert('Please write feedback first.');
+      if (!form.name.trim() || !form.mobile.trim() || !form.email.trim() || !form.feedback.trim()) {
+        alert('Name, Mobile, Email and Feedback are required.');
         return;
       }
       const key = 'feedbackData';
       const feedbackEntry = {
         clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        userId: loggedInUser.id,
-        dealerCode: loggedInUser.dealerCode || '',
-        dealerName: loggedInUser.dealerName || '',
-        email: loggedInUser.email || '',
-        text: text.trim(),
+        userId: loggedInUser?.id || '',
+        name: form.name.trim(),
+        mobile: form.mobile.trim(),
+        dealerCode: loggedInUser?.dealerCode || '',
+        dealerName: loggedInUser?.dealerName || form.name.trim(),
+        email: form.email.trim(),
+        text: form.feedback.trim(),
         read: false,
         createdAt: new Date().toISOString(),
       };
@@ -846,15 +864,17 @@ function App() {
         });
         anySaved = true;
       } catch {}
-      try {
-        const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
-        updateUserInStore(
-          resolvedId,
-          (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
-          loggedInUser.dealerCode
-        );
-        anySaved = true;
-      } catch {}
+      if (loggedInUser?.id) {
+        try {
+          const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
+          updateUserInStore(
+            resolvedId,
+            (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
+            loggedInUser.dealerCode
+          );
+          anySaved = true;
+        } catch {}
+      }
       try {
         const existing = localStorage.getItem(key);
         const arr = existing ? JSON.parse(existing) : [];
@@ -875,11 +895,42 @@ function App() {
       <div className="placeholder-container">
         <h2>Contact</h2>
         <div className="profile-form">
-          <span className="profile-label">Your Feedback</span>
-          <textarea className="form-textarea" rows="5" value={text} onChange={(e) => setText(e.target.value)} placeholder="अपना सुझाव/फीडबैक लिखें" />
+          <span className="profile-label">Name</span>
+          <input
+            className="form-input"
+            name="name"
+            type="text"
+            value={form.name}
+            onChange={handleChange}
+            placeholder="Enter your name"
+          />
+          <span className="profile-label">Mobile</span>
+          <input
+            className="form-input"
+            name="mobile"
+            type="text"
+            value={form.mobile}
+            onChange={handleChange}
+            placeholder="Enter mobile number"
+          />
           <span className="profile-label">Email</span>
-          <span>deepak.youvi@gmail.com</span>
-          
+          <input
+            className="form-input"
+            name="email"
+            type="email"
+            value={form.email}
+            onChange={handleChange}
+            placeholder="Enter email"
+          />
+          <span className="profile-label">Feedback</span>
+          <textarea
+            className="form-textarea"
+            name="feedback"
+            rows="5"
+            value={form.feedback}
+            onChange={handleChange}
+            placeholder="Kindly provide your feedback here"
+          />
         </div>
         <div className="form-actions">
           <button onClick={submitFeedback}>Submit</button>
@@ -4129,5 +4180,6 @@ function App() {
 }
 
 export default App;
+
 
 
