@@ -184,6 +184,14 @@ const normalizeData = (data) => {
 
 
 function App() {
+  const fileInputRef = useRef(null);
+
+  const handleReUploadClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileUpdate, setShowProfileUpdate] = useState(false);
@@ -3904,6 +3912,7 @@ function App() {
 
   return (
     <>
+      {isLoggedIn && <FileUpload onFileUpload={handleFileUpload} ref={fileInputRef} />}
       {!hideUserNavbar && (
         <nav className="navbar">
           <div className="navbar-left">
@@ -3911,9 +3920,16 @@ function App() {
             <button className="navbar-button" onClick={handleAboutOpen}>About</button>
             {isLoggedIn && <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>}
             <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
-            {isLoggedIn && !showDataButton && <FileUpload onFileUpload={handleFileUpload} />}
+            {isLoggedIn && !showDataButton && (
+              <button className="navbar-button" onClick={handleReUploadClick}>
+                Upload Data
+              </button>
+            )}
             {isLoggedIn && showDataButton && (
-              <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
+              <>
+                <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
+                <button onClick={handleReUploadClick} className="navbar-button">Re-Upload</button>
+              </>
             )}
           </div>
           <div className="navbar-right">
