@@ -516,6 +516,7 @@ function App() {
     setLoggedInUser(localUser);
     setIsLoggedIn(true);
     setShowUserLogin(false);
+    setShowAboutInfo(true);
     setUserDealerCode('');
     setUserPin('');
     alert('Logged in successfully!');
