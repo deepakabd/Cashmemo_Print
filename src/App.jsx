@@ -1,4 +1,4 @@
-﻿﻿﻿
+﻿﻿
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
@@ -2045,6 +2045,7 @@ function App() {
         <h2 className="home-info-title">🏠 होम (Home Dashboard)</h2>
 
         <div className="home-important-note">
+          <h2>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>
           <h3>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
           <p>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
           <p><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS -&gt; Order Fulfillment -&gt; Pending Booking</p>
@@ -2109,6 +2110,7 @@ function App() {
       <div className="placeholder-container about-summary">
         <h2 className="about-info-title">📊 डैशबोर्ड (System Summary)</h2>
         <div className="home-important-note">
+          <h2>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>
           <h3>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
           <p>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
           <p><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS -&gt; Order Fulfillment -&gt; Pending Booking</p>
