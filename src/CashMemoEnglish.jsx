@@ -149,6 +149,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Delivery Man :</span><span>{customer['Delivery Man'] || 'N/A'}</span>
               <span>EKYC Status :</span><span className={ekycNotDone ? 'status-alert' : ''}>{customer['EKYC Status'] || 'N/A'}</span>
               <span>Online Refill Payment status :</span><span className={isOnlinePaid ? 'status-paid' : ''}>{customer['Online Refill Payment status'] || 'Pay on Delivery/ Cash'}</span>
+              <span className="instructions-title">For {distributorName}............</span>
             </div>
 
             {/* Right Column of Tax Invoice Details (Prices) */}
@@ -172,7 +173,6 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
           {/* Instructions/QR Code Section */}
           <div className="instructions-section">
             <div className="instructions-text-container">
-              <p className="instructions-title">For RAJE BHAWANISHANKAR ENTERPRISES</p>
               <ul className="instructions-list">
                 <li>Insist deliverymen for Pre Delivery checks of LPG Cylinder at time of delivery</li>
                 <li>Get your LPG Installation inspected once in 5 years</li>
