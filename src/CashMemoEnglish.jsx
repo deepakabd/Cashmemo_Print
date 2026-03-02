@@ -3,6 +3,44 @@ import React from 'react';
 import './CashMemoPrint.css';
 
 const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
+  const printStyles = `
+    @media print {
+      .cash-memo-wrapper {
+        border: none;
+        padding: 0;
+        margin: 0;
+      }
+      .cash-memo-single {
+        font-size: 8px;
+        line-height: 1.2;
+        height: 100%;
+        page-break-inside: avoid;
+      }
+      .distributor-copy, .tax-invoice {
+        padding: 2px;
+        font-size: 8px;
+      }
+      .distributor-header-details, .tax-invoice-header-details {
+        font-size: 7px;
+      }
+      .customer-details-distributor, .customer-details-tax-invoice {
+        font-size: 7px;
+        gap: 0;
+        margin-bottom: 2px;
+      }
+      .distributor-details-left, .tax-invoice-details-left,
+      .distributor-details-right, .tax-invoice-details-right {
+        gap: 0;
+        padding: 1px;
+      }
+      .declaration { padding: 2px; margin-bottom: 2px; min-height: 30px; }
+      .declaration-text { font-size: 6px; }
+      .contact-info { font-size: 6px; padding: 1px 0; margin-bottom: 2px; gap: 5px; }
+      .instructions-section { font-size: 6px; margin-top: 2px; }
+      .instructions-list { padding-left: 10px; margin: 0; }
+    }
+  `;
+
   if (!customer) {
     return <p>Please select a customer to generate Cash Memo.</p>;
   }
@@ -17,6 +55,16 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
     return fallback;
   };
 
+  const lineItems = (Array.isArray(customer.lineItems) && customer.lineItems.length > 0)
+    ? customer.lineItems
+    : [
+        {
+          productName: customer['Consumer Package'] || 'N/A',
+          hsn: pickFirstValue(customer, ['HSN', 'HSN Code', 'HSNCode'], '27111900'),
+          qty: customer['Order Qty.'] || 1,
+        },
+      ];
+
   const distributorName = dealerDetails?.name || '';
   const gstn = dealerDetails?.gstn || '';
   const plotNo = dealerDetails?.address?.plotNo || '';
@@ -27,6 +75,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
   const ekycNotDone = String(customer['EKYC Status'] || '').toLowerCase().includes('not done');
 
   return (
+    <>
+    <style>{printStyles}</style>
     <div className="cash-memo-wrapper">
       {/* Single Cash Memo Container */}
       <div className="cash-memo-single">
@@ -55,9 +105,18 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Delivery Area :</span><span>{customer['Delivery Area'] || 'N/A'}</span>
               <span>Mobile No. :</span><span>{customer['Mobile No.'] || 'N/A'}</span>
               <span>IVR Booking No. :</span><span>{customer['IVR Booking No.'] || customer['Order Ref No.'] || 'N/A'}</span>
-              
-                 <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {pickFirstValue(customer, ['HSN', 'HSN Code', 'HSNCode'], '27111900')} / {customer['Order Qty.'] || 'N/A'}</span>
-               
+              <div style={{ gridColumn: '1 / -1' }}>
+                <table style={{ width: '100%', fontSize: '7px', borderCollapse: 'collapse', marginTop: '2px' }}>
+                  <thead>
+                    <tr style={{ border: '1px solid black' }}><th style={{ border: '1px solid black', padding: '1px 2px' }}>Product</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>HSN</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>Qty</th></tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.map((item, index) => (
+                      <tr key={index}><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.productName}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.hsn}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.qty}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span> 
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
               <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
@@ -141,7 +200,18 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Delivery Area :</span><span>{customer['Delivery Area'] || 'N/A'}</span>
               <span>Mobile No. :</span><span>{customer['Mobile No.'] || 'N/A'}</span>
               <span>IVR Booking No. :</span><span>{customer['IVR Booking No.'] || customer['Order Ref No.'] || 'N/A'}</span>
-              <span>Product / HSN / Qty :</span><span>{customer['Consumer Package'] || 'N/A'} / {pickFirstValue(customer, ['HSN', 'HSN Code', 'HSNCode'], '27111900')} / {customer['Order Qty.'] || 'N/A'}</span>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <table style={{ width: '100%', fontSize: '7px', borderCollapse: 'collapse', marginTop: '2px' }}>
+                  <thead>
+                    <tr style={{ border: '1px solid black' }}><th style={{ border: '1px solid black', padding: '1px 2px' }}>Product</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>HSN</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>Qty</th></tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.map((item, index) => (
+                      <tr key={index}><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.productName}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.hsn}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.qty}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span>
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
               <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
@@ -187,6 +257,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 

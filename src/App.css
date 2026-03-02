@@ -788,6 +788,7 @@
   width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
+  font-size: 10px;
 }
 .invoice-table th,
 .invoice-table td {
@@ -896,7 +897,7 @@
   justify-self: end;
 }
 .billto-inline-row {
-  grid-column: 1 / span 2;
+  grid-column: 1 / span 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
