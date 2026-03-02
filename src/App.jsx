@@ -1,5 +1,4 @@
-﻿﻿
-import { useState, useEffect, useMemo, useRef } from 'react';
+﻿import { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import FileUpload from './FileUpload';
@@ -1771,7 +1770,7 @@ function App() {
                 <option key={pkg} value={pkg}>{pkg}</option>
               ))}
             </select>
-            <input className="form-input" placeholder="PIN" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
+            <input className="form-input" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
             <select className="form-input" value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
               <option value="operator">Operator</option>
               <option value="viewer">Viewer</option>
@@ -2132,7 +2131,7 @@ function App() {
             <h3>1️⃣ मुख्य उद्देश्य (Core Purpose)</h3>
             <ul>
               <li>LPG उपभोक्ता/ऑर्डर डेटा अपलोड करके एक actionable टेबल व्यू उपलब्ध कराना</li>
-              <li>eKYC पेंडिंग मामलों को हाइलाइट करना</li>
+              <li>eKYC Pending मामलों को हाइलाइट करना</li>
               <li>Bulk Cashmemo प्रिंट और Tax Invoice जनरेट करना</li>
               <li>डीलर ऑपरेशन्स को Admin Approval Workflow के माध्यम से नियंत्रित करना</li>
             </ul>
@@ -2922,8 +2921,6 @@ function App() {
   const [cashMemoStatusFilter, setCashMemoStatusFilter] = useState('All');
   const [deliveryManFilter, setDeliveryManFilter] = useState('All');
   const [isRegMobileFilter, setIsRegMobileFilter] = useState('All');
-
-  // Unique options for filters
   const [uniqueEkycStatuses, setUniqueEkycStatuses] = useState([]);
   const [uniqueAreas, setUniqueAreas] = useState([]);
   const [uniqueNatures, setUniqueNatures] = useState([]);
@@ -2954,157 +2951,65 @@ function App() {
   ];
 
   const handleFileUpload = (file) => {
-    const reader = new FileReader();
+    if (!file) return;
 
-    reader.onload = (e) => {
-      const data = e.target.result;
-      if (file.name.endsWith('.csv')) {
-        Papa.parse(data, {
-          header: true,
-          complete: (results) => {
-            let rawData = results.data;
-            if (rawData.length > 0) {
-              const normalizedData = normalizeData(rawData);
-              const allHeaders = Object.keys(normalizedData[0]);
-              setHeaders(allHeaders);
-              setParsedData(normalizedData);
-              setVisibleHeaders(defaultVisibleHeaders.filter(header => allHeaders.includes(header))); // Set default visible headers
+    const processAndSetData = (data) => {
+      const normalizedData = normalizeData(data);
+      setParsedData(normalizedData);
 
-              // Extract unique values for filters
-              setUniqueEkycStatuses([...new Set(normalizedData.map(row => row['EKYC Status']).filter(Boolean))]);
-              setUniqueAreas([...new Set(normalizedData.map(row => row['Delivery Area']).filter(Boolean))]);
-              setUniqueNatures([...new Set(normalizedData.map(row => row['Consumer Nature']).filter(Boolean))]);
-              setUniqueMobileStatuses([...new Set(normalizedData.map(row => row['Mobile No.'] ? 'Available' : 'Not Available').filter(Boolean))]);
-              setUniqueConsumerStatuses([...new Set(normalizedData.map(row => row['Consumer Type']).filter(Boolean))]);
-              setUniqueConnectionTypes([...new Set(normalizedData.map(row => row['Consumer Package']).filter(Boolean))]);
-              setUniqueOnlineRefillPaymentStatuses([...new Set(normalizedData.map(row => row['Online Refill Payment status']).filter(Boolean))]);
-
-              // New unique options for filters
-              setUniqueOrderStatuses([...new Set(normalizedData.map(row => row['Order Status']).filter(Boolean))]);
-              setUniqueOrderSources([...new Set(normalizedData.map(row => row['Order Source']).filter(Boolean))]);
-              setUniqueOrderTypes([...new Set(normalizedData.map(row => row['Order Type']).filter(Boolean))]);
-              setUniqueCashMemoStatuses([...new Set(normalizedData.map(row => row['Cash Memo Status']).filter(Boolean))]);
-              setUniqueDeliveryMen([...new Set(normalizedData.map(row => row['Delivery Man']).filter(Boolean))]);
-              setUniqueIsRegMobileStatuses([...new Set(normalizedData.map(row => row['Is Reg Mobile'] ? 'Yes' : 'No').filter(Boolean))]);
-              setShowDataButton(true);
-              setShowParsedData(false);
-              setFileUploadMessage('File uploaded successfully!');
-              setTimeout(() => {
-                setFileUploadMessage('');
-              }, 5000); // Hide message after 5 seconds
-            } else {
-              setHeaders([]);
-              setParsedData([]);
-              setVisibleHeaders([]);
-              // Clear unique options as well
-              setUniqueEkycStatuses([]);
-              setUniqueAreas([]);
-              setUniqueNatures([]);
-              setUniqueMobileStatuses([]);
-              setUniqueConsumerStatuses([]);
-              setUniqueConnectionTypes([]);
-              setShowDataButton(false);
-              setShowParsedData(false);
-              setFileUploadMessage('No data found in file.');
-              setTimeout(() => {
-                setFileUploadMessage('');
-              }, 5000);
-            }
-            setSelectedCustomerIds([]);
-            setCustomersToPrint([]); // Clear customers to print on new file upload
-            setSelectedCustomerIds([]); // Clear selected customer IDs on new file upload
-          },
-          error: (error) => {
-            console.error('CSV पार्स करने में त्रुटि:', error);
-            alert('CSV फ़ाइल को पार्स करने में त्रुटि हुई।');
-            setFileUploadMessage('Error parsing CSV file.');
-            setTimeout(() => {
-              setFileUploadMessage('');
-            }, 5000);
-            setShowParsedData(false);
-          }
-        });
-      } else if (file.name.endsWith('.xlsx')) {
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet);
-
-        if (json.length > 0) {
-          const normalizedData = normalizeData(json);
-          const allHeaders = Object.keys(normalizedData[0]);
-          setHeaders(allHeaders);
-          setParsedData(normalizedData);
-          setVisibleHeaders(defaultVisibleHeaders.filter(header => allHeaders.includes(header))); // Set default visible headers
-
-          // Extract unique values for filters
-          setUniqueEkycStatuses([...new Set(normalizedData.map(row => row['EKYC Status']).filter(Boolean))]);
-          setUniqueAreas([...new Set(normalizedData.map(row => row['Delivery Area']).filter(Boolean))]);
-          setUniqueNatures([...new Set(normalizedData.map(row => row['Consumer Nature']).filter(Boolean))]);
-          setUniqueMobileStatuses([...new Set(normalizedData.map(row => row['Mobile No.'] ? 'Available' : 'Not Available').filter(Boolean))]);
-          setUniqueConsumerStatuses([...new Set(normalizedData.map(row => row['Consumer Type']).filter(Boolean))]);
-          setUniqueConnectionTypes([...new Set(normalizedData.map(row => row['Consumer Package']).filter(Boolean))]);
-          setUniqueOnlineRefillPaymentStatuses([...new Set(normalizedData.map(row => row['Online Refill Payment status']).filter(Boolean))]);
-
-          // New unique options for filters
-          setUniqueOrderStatuses([...new Set(normalizedData.map(row => row['Order Status']).filter(Boolean))]);
-          setUniqueOrderSources([...new Set(normalizedData.map(row => row['Order Source']).filter(Boolean))]);
-          setUniqueOrderTypes([...new Set(normalizedData.map(row => row['Order Type']).filter(Boolean))]);
-          setUniqueCashMemoStatuses([...new Set(normalizedData.map(row => row['Cash Memo Status']).filter(Boolean))]);
-          setUniqueDeliveryMen([...new Set(normalizedData.map(row => row['Delivery Man']).filter(Boolean))]);
-          setUniqueIsRegMobileStatuses([...new Set(normalizedData.map(row => row['Is Reg Mobile'] ? 'Yes' : 'No').filter(Boolean))]);
-          setShowDataButton(true);
-          setShowParsedData(false);
-          setFileUploadMessage('File uploaded successfully!');
-          setTimeout(() => {
-            setFileUploadMessage('');
-          }, 5000); // Hide message after 5 seconds
-        } else {
-          setHeaders([]);
-          setParsedData([]);
-          setVisibleHeaders([]);
-          // Clear unique options as well
-          setUniqueEkycStatuses([]);
-          setUniqueAreas([]);
-          setUniqueNatures([]);
-          setUniqueMobileStatuses([]);
-          setUniqueConsumerStatuses([]);
-          setUniqueConnectionTypes([]);
-          setShowDataButton(false);
-          setShowParsedData(false);
-          setFileUploadMessage('No data found in file.');
-          setTimeout(() => {
-            setFileUploadMessage('');
-          }, 5000);
-        }
-        setSelectedCustomerIds([]);
-        setCustomersToPrint([]); // Clear customers to print on new file upload
+      if (normalizedData.length > 0) {
+        const firstRow = normalizedData[0];
+        const headers = Object.keys(firstRow);
+        setHeaders(headers);
+        setVisibleHeaders(defaultVisibleHeaders);
+        setUniqueEkycStatuses([...new Set(normalizedData.map(row => row['EKYC Status']).filter(Boolean))]);
+        setUniqueAreas([...new Set(normalizedData.map(row => row['Delivery Area']).filter(Boolean))]);
+        setUniqueNatures([...new Set(normalizedData.map(row => row['Consumer Nature']).filter(Boolean))]);
+        setUniqueMobileStatuses([...new Set(['Available', 'Not Available'])]);
+        setUniqueConsumerStatuses([...new Set(normalizedData.map(row => row['Consumer Type']).filter(Boolean))]);
+        setUniqueConnectionTypes([...new Set(normalizedData.map(row => row['Consumer Package']).filter(Boolean))]);
+        setUniqueOnlineRefillPaymentStatuses([...new Set(normalizedData.map(row => row['Online Refill Payment status']).filter(Boolean))]);
+        setUniqueOrderStatuses([...new Set(normalizedData.map(row => row['Order Status']).filter(Boolean))]);
+        setUniqueOrderSources([...new Set(normalizedData.map(row => row['Order Source']).filter(Boolean))]);
+        setUniqueOrderTypes([...new Set(normalizedData.map(row => row['Order Type']).filter(Boolean))]);
+        setUniqueCashMemoStatuses([...new Set(normalizedData.map(row => row['Cash Memo Status']).filter(Boolean))]);
+        setUniqueDeliveryMen([...new Set(normalizedData.map(row => row['Delivery Man']).filter(Boolean))]);
+        setUniqueIsRegMobileStatuses([...new Set(['Yes', 'No'])]);
       }
-    };
 
-    reader.onerror = (error) => {
-      console.error('फ़ाइल पढ़ने में त्रुटि:', error);
-      alert('फ़ाइल पढ़ने में त्रुटि हुई।');
-      setFileUploadMessage('Error reading file.');
-      setTimeout(() => {
-        setFileUploadMessage('');
-      }, 5000);
-      setShowParsedData(false);
+      setShowDataButton(true);
+      hideAllViews();
+      setShowParsedData(true);
+      setFileUploadMessage('File uploaded successfully!');
+      setTimeout(() => setFileUploadMessage(''), 5000);
     };
 
     if (file.name.endsWith('.csv')) {
-      reader.readAsText(file);
+      Papa.parse(file, {
+        header: true,
+        complete: (result) => processAndSetData(result.data),
+        error: (error) => {
+          console.error('Error parsing CSV file:', error);
+          alert('Error parsing CSV file. Please try again.');
+        },
+      });
     } else if (file.name.endsWith('.xlsx')) {
-      reader.readAsBinaryString(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+        processAndSetData(json);
+      };
+      reader.readAsArrayBuffer(file);
     }
   };
 
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
   };
-
-
-
 
   const handleResetFilters = () => {
     setSearchTerm('');
