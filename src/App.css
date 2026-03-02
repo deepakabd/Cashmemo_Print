@@ -347,6 +347,7 @@
   border-radius: 10px;
   padding: 12px;
   margin-top: 10px;
+  font-size: 12px;
 }
 
 .home-important-note h3 {
@@ -368,6 +369,17 @@
   padding: 12px;
   margin-top: 12px;
 }
+
+.home-layout {
+  display: flex;
+  padding: 1px;
+  gap: 5px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  text-align: left;
+  font-size: 12px;
+}
+
 
 .home-dashboard .home-section h3 {
   margin: 0 0 8px;
@@ -406,6 +418,9 @@
   margin: 8px 0;
   color: #1f2937;
   line-height: 1.55;
+  font-size: 12px;
+ 
+ 
 }
 
 .about-summary-grid {
@@ -413,6 +428,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(260px, 1fr));
   gap: 12px;
+  font-size: 12px;
 }
 
 .about-summary-card {

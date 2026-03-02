@@ -2059,9 +2059,7 @@ function App() {
           <p>यहाँ से आप उपभोक्ता डेटा प्रबंधित कर सकते हैं, Cashmemo प्रिंट कर सकते हैं, Tax Invoice बना सकते हैं और eKYC स्थिति की निगरानी कर सकते हैं।</p>
         </div>
 
-        <div className="home-section">
-          
-        </div>
+       <div className='home-layout'>
 
         <div className="home-section">
           <h3>⚠️ महत्वपूर्ण अलर्ट</h3>
@@ -2101,6 +2099,7 @@ function App() {
             <li>प्रिंट से पहले चयनित रिकॉर्ड सत्यापित करें</li>
           </ul>
         </div>
+      </div>
       </div>
     );
   };
