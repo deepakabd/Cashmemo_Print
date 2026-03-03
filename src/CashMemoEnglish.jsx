@@ -104,19 +104,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Address:</span><span className="address-value">{customer['Address'] || 'N/A'}</span>
               <span>Delivery Area :</span><span>{customer['Delivery Area'] || 'N/A'}</span>
               <span>Mobile No. :</span><span>{customer['Mobile No.'] || 'N/A'}</span>
-              <span>IVR Booking No. :</span><span>{customer['IVR Booking No.'] || customer['Order Ref No.'] || 'N/A'}</span>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <table style={{ width: '100%', fontSize: '7px', borderCollapse: 'collapse', marginTop: '2px' }}>
-                  <thead>
-                    <tr style={{ border: '1px solid black' }}><th style={{ border: '1px solid black', padding: '1px 2px' }}>Product</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>HSN</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>Qty</th></tr>
-                  </thead>
-                  <tbody>
-                    {lineItems.map((item, index) => (
-                      <tr key={index}><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.productName}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.hsn}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.qty}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <span>IVR Booking No. :</span><span>{pickFirstValue(customer, ['IVR Booking No.', 'Order Ref No.'])}</span>
+              <span>ProductCode/HSN/Qty:</span><span>{lineItems[0]?.productName || 'N/A'}/{lineItems[0]?.hsn || 'N/A'}/{lineItems[0]?.qty || 'N/A'}</span>
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span> 
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
               <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
@@ -199,19 +188,9 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
               <span>Address:</span><span className="address-value">{customer['Address'] || 'N/A'}</span>
               <span>Delivery Area :</span><span>{customer['Delivery Area'] || 'N/A'}</span>
               <span>Mobile No. :</span><span>{customer['Mobile No.'] || 'N/A'}</span>
-              <span>IVR Booking No. :</span><span>{customer['IVR Booking No.'] || customer['Order Ref No.'] || 'N/A'}</span>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <table style={{ width: '100%', fontSize: '7px', borderCollapse: 'collapse', marginTop: '2px' }}>
-                  <thead>
-                    <tr style={{ border: '1px solid black' }}><th style={{ border: '1px solid black', padding: '1px 2px' }}>Product</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>HSN</th><th style={{ border: '1px solid black', padding: '1px 2px' }}>Qty</th></tr>
-                  </thead>
-                  <tbody>
-                    {lineItems.map((item, index) => (
-                      <tr key={index}><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.productName}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.hsn}</td><td style={{ border: '1px solid black', padding: '1px 2px' }}>{item.qty}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <span>IVR Booking No. :</span><span>{pickFirstValue(customer, ['IVR Booking No.', 'Order Ref No.'])}</span>
+              <span>ProductCode/HSN/Qty:</span><span>{lineItems[0]?.productName || 'N/A'}/{lineItems[0]?.hsn || 'N/A'}/{lineItems[0]?.qty || 'N/A'}</span>
+
               <span>Order Source :</span><span>{customer['Order Source'] || 'N/A'}</span>
               <span>Order Status :</span><span>{customer['Order Status'] || 'N/A'}</span>
               <span>Order No. / Order Date :</span><span>{customer['Order No.'] || 'N/A'} / {formatDateToDDMMYYYY(customer['Order Date'])}</span>
