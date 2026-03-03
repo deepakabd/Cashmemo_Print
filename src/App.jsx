@@ -3300,9 +3300,9 @@ function App() {
                 padding-left: 5px;
               }
               .tax-invoice-title {
-                margin: 5px 195px;
+                margin: 0px 130px;
                 font-weight: bold;
-                font-size: 12px;
+                font-size: 9px;
                 color: black;
               }
               .customer-details-tax-invoice {

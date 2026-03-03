@@ -174,12 +174,9 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY }) => {
 
           <div className="header-content">
             <div className="header-content-flex-spacer"></div>
-            <p className="tax-invoice-title">Customer Copy</p>
-            <div className="header-content-flex-spacer"></div>
             <p className="tax-invoice-title">Tax Invoice</p>
             <div className="header-content-flex-spacer">
-              <p className="tax-invoice-title">LPG Emergency Helpline 1906</p>
-              {/* <img alt="1906" src="/1906.jpg" className="image-1906" /> */}
+              <img alt="1906" src="/1906.jpg" className="image-1906" /> 
             </div>
           </div>
 
