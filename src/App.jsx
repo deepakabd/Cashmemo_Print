@@ -3539,7 +3539,6 @@ function App() {
                 width: 48%; /* Adjust as needed */
               }
               .address-value {
-                white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
               }
