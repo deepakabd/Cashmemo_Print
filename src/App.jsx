@@ -3245,7 +3245,7 @@ function App() {
                 page-break-inside: avoid; /* Prevent cash memo content from breaking across pages */
               }
               .tax-invoice {
-                width: 50%;
+                width: 58%;
                 padding: 5px;
                 box-sizing: border-box;
                 font-size: 10px;
@@ -3254,7 +3254,7 @@ function App() {
                 position: relative; /* For watermark positioning */
               }
               .distributor-copy {
-                width: 50%;
+                width: 42%;
                 border-right: 1px dashed black;
                 padding: 5px;
                 box-sizing: border-box;
@@ -3355,7 +3355,7 @@ function App() {
                 margin-left: auto;
               }
               .contact-info {
-                display: flex;
+                display: grid;
                 grid-template-columns: 1fr 1fr 1fr 1fr auto;
                 gap: 0px;
                 align-items: center;
@@ -3371,11 +3371,11 @@ function App() {
                 font-size: 9px;
               }
               .hp-pay-image-container {
-                text-align: center;
-                width: 30%;
-                display: flex;
+                text-align: end;
+                width: 16%;
+                display: grid;
                 flex-direction: column;
-                align-items: center;
+                align-items: end;
               }
               .hp-pay-image {
                 width: 70px;
@@ -3407,15 +3407,15 @@ function App() {
                 width: 35%;
               }
               .distributor-header-details, .tax-invoice-header-details {
-                flex: 1;
-                text-align: right;
+                flex: 2;
+                text-align: end;
                 font-size: 8px;
                 font-weight: bold;
               }
               .distributor-copy-title {
-                text-align: center;
+                text-align: justify;
+                font-size: 9px;
                 font-weight: bold;
-                font-size: 12px;
                 color: black;
                 margin: 5px 0;
               }
@@ -3463,10 +3463,12 @@ function App() {
                 align-items: flex-end;
                 margin-top: 5px;
                 font-size: 7px;
+                border: 1px solid black;
+                
               }
               .instructions-text-container {
-                line-height: 1.2;
-                width: 70%;
+                line-height: 1.5;
+                width: 109%;
               }
               .instructions-title {
                 margin: 0;
@@ -3497,9 +3499,9 @@ function App() {
                 margin-bottom: 5px;
               }
               .declaration {
-                font-size: 8px;
+                font-size: 10px;
                 font-weight: bold;
-                text-align: center;
+                text-align: justify;
                 margin-top: 5px;
                 color: red; /* Declaration text red */
               }
