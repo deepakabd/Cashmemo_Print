@@ -2940,6 +2940,33 @@ function App() {
       ? `${loggedInUser.package} (Valid till: ${formatDisplayDate(loggedInUser.validTill)})`
       : 'N/A';
 
+    const homeQuickActions = [
+      'CSV / XLSX Pending Booking डेटा अपलोड करें',
+      'रिपोर्ट और फ़िल्टर से रिकॉर्ड जांचें',
+      'Cashmemo और Tax Invoice प्रिंट करें',
+      'Profile / Bank / Rate update request भेजें',
+    ];
+
+    const homeTodayFocus = [
+      `आज की bookings: ${todayOrders}`,
+      `eKYC pending records: ${pendingEkycCount}`,
+      'Pending SV और long pending bookings को प्राथमिकता दें',
+      'Online paid bookings और selected rows verify करें',
+    ];
+
+    const homeSupportPoints = [
+      'Data mismatch होने पर fresh file दोबारा upload करें',
+      'Print से पहले selected rows एक बार verify करें',
+      'Profile, bank और rate changes admin approval के बाद लागू होंगे',
+    ];
+
+    const homeAccountDetails = [
+      { label: 'Dealer Code', value: loggedInUser?.dealerCode || 'N/A' },
+      { label: 'Dealer Name', value: loggedInUser?.dealerName || 'N/A' },
+      { label: 'Active Package', value: activePackageStatus },
+      { label: 'Account Status', value: loggedInUser?.status || 'N/A' },
+    ];
+
     return (
       <div className="placeholder-container home-dashboard">
         <h2 className="home-info-title">🏠 होम (Home Dashboard)</h2>
@@ -2956,55 +2983,124 @@ function App() {
         <div className="home-section">
           <h3>स्वागत संदेश</h3>
           <p>HPCL LPG Distributor Dashboard में आपका स्वागत है।</p>
-          <p>यह प्लेटफ़ॉर्म आपके दैनिक कार्यों को सरल, तेज़ और व्यवस्थित बनाने के लिए डिज़ाइन किया गया है।</p>
-          <p>यहाँ से आप उपभोक्ता डेटा प्रबंधित कर सकते हैं, Cashmemo प्रिंट कर सकते हैं, Tax Invoice बना सकते हैं और eKYC स्थिति की निगरानी कर सकते हैं।</p>
+          <p>यहाँ से आप डेटा अपलोड, फ़िल्टर, रिपोर्ट, Cashmemo Print, Tax Invoice और update requests एक ही जगह से manage कर सकते हैं।</p>
+          <p>यह सेक्शन आपके daily workflow को आसान, तेज़ और ज्यादा व्यवस्थित रखने के लिए तैयार किया गया है।</p>
         </div>
 
-       <div className='home-layout'>
+        <div className="home-hero-grid">
+          <div className="home-section home-highlight-card">
+            <h3>काम करने का आसान क्रम</h3>
+            <ol className="home-steps-list">
+              <li>cDCMS से Pending Booking डेटा download करके upload करें</li>
+              <li>Filters और report cards से records verify करें</li>
+              <li>Cashmemo / Invoice generate और print करें</li>
+              <li>ज़रूरत होने पर profile, bank या rate update request भेजें</li>
+            </ol>
+          </div>
 
-        <div className="home-section">
-          <h3>⚠️ महत्वपूर्ण अलर्ट</h3>
-          <ul>
-            <li>🔴 eKYC Pending उपभोक्ता को प्राथमिकता दें</li>
-            <li>🟡 Expiry के निकट पैकेज की सूचना</li>
-            <li>🟢 Approved Registration Updates</li>
-          </ul>
+          <div className="home-section home-highlight-card">
+            <h3>अकाउंट की झलक</h3>
+            <div className="home-account-grid">
+              {homeAccountDetails.map((item) => (
+                <div key={item.label} className="home-account-item">
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="home-section">
-          <h3>🚀 त्वरित कार्य (Quick Actions)</h3>
-          <ul>
-            <li>📂 CSV/XLSX डेटा अपलोड करें</li>
-            <li>🧾 Bulk Cashmemo प्रिंट करें</li>
-            <li>🧮 Tax Invoice जनरेट करें</li>
-            <li>📈 MIS रिपोर्ट देखें</li>
-            <li>⚙️ रेट/प्रोफाइल अपडेट अनुरोध भेजें</li>
-          </ul>
-        </div>
+        <div className="home-layout">
+          <div className="home-section">
+            <h3>त्वरित कार्य</h3>
+            <ul>
+              {homeQuickActions.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
 
-        <div className="home-section">
-          <h3>🔐 सिस्टम सुरक्षा</h3>
-          <ul>
-            <li>आपका लॉगिन: Dealer Code आधारित</li>
-            <li>सभी परिवर्तन Admin Approval के अधीन</li>
-            <li>डेटा सुरक्षित रूप से Firebase पर संग्रहीत</li>
-          </ul>
-        </div>
+          <div className="home-section">
+            <h3>आज का फोकस</h3>
+            <ul>
+              {homeTodayFocus.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
 
-        <div className="home-section">
-          <h3>📌 सुझाव</h3>
-          <p>बेहतर परिणाम के लिए:</p>
-          <ul>
-            <li>नियमित रूप से डेटा अपडेट करें</li>
-            <li>eKYC Pending मामलों की समीक्षा करें</li>
-            <li>प्रिंट से पहले चयनित रिकॉर्ड सत्यापित करें</li>
-          </ul>
+          <div className="home-section">
+            <h3>सहायता और सुझाव</h3>
+            <ul>
+              {homeSupportPoints.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
         </div>
-      </div>
       </div>
     );
   };
   const AboutInfo = () => {
+    const summaryCards = [
+      {
+        title: 'मुख्य मॉड्यूल',
+        items: [
+          'Data Upload और Parsing Engine',
+          'Report, Filter और Search System',
+          'Cashmemo Printing और Tax Invoice Module',
+          'Profile / Bank / Rate Update Requests',
+          'Admin Approval और User Management Panel',
+        ],
+      },
+      {
+        title: 'डेटा और अपलोड सिस्टम',
+        items: [
+          'CSV और XLSX upload support',
+          'Excel date और mixed format normalization',
+          'Dynamic column handling और visible column control',
+          'Firebase primary storage के साथ local fallback backup',
+        ],
+      },
+      {
+        title: 'रिपोर्ट और ऑपरेशन कंट्रोल',
+        items: [
+          'Pending booking analysis और clickable report cards',
+          'eKYC, area, order type, status और date range filters',
+          'Cascading filters जो available data के हिसाब से options दिखाते हैं',
+          'Printable table view और record-level verification flow',
+        ],
+      },
+      {
+        title: 'Cashmemo और Invoice सुविधाएँ',
+        items: [
+          'Bulk cashmemo print और multiple layout modes',
+          'Online paid और regular booking handling',
+          'GST invoice generation, round-off और amount in words',
+          'Print-friendly invoice rendering और declaration section',
+        ],
+      },
+      {
+        title: 'Admin कंट्रोल और गवर्नेंस',
+        items: [
+          'Pending registration approval / rejection workflow',
+          'User creation, package control और account status management',
+          'Profile / Bank / Rates approval queue',
+          'Feedback handling, audit trail, recycle bin और CSV export tools',
+        ],
+      },
+      {
+        title: 'सुरक्षा और प्रोडक्टिविटी',
+        items: [
+          'Dealer Code + PIN based user login',
+          'Package validity, pending, active, disabled और expired access control',
+          'Saved views, bulk actions, quick summaries और expiry alerts',
+          'Daily distributor operations को fast और structured रखने वाला workflow',
+        ],
+      },
+    ];
+
     return (
       <div className="placeholder-container about-summary">
         <h2 className="about-info-title">📊 डैशबोर्ड (System Summary)</h2>
@@ -3017,101 +3113,25 @@ function App() {
           <p><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</strong></p>
         </div>
         <p>
-          यह सिस्टम HPCL LPG डिस्ट्रीब्यूटर वर्कफ़्लो के लिए बनाया गया एक React + Firebase आधारित,
-          एक्शन-ओरिएंटेड Cashmemo + User/Admin Operations प्लेटफ़ॉर्म है।
+          यह प्लेटफ़ॉर्म LPG Distributor के पूरे daily workflow को एक जगह संभालने के लिए बनाया गया है।
+          Upload, filtering, reporting, printing, approval और admin control जैसी सभी जरूरी सुविधाएँ इसमें integrated हैं।
         </p>
         <p>
-          इसमें डेटा अपलोड, फ़िल्टरिंग, प्रिंटिंग, टैक्स इनवॉइस जनरेशन, रजिस्ट्रेशन अप्रूवल,
-          प्रोफाइल/बैंक/रेट मैनेजमेंट जैसी सभी प्रक्रियाएँ एक ही एप्लिकेशन में इंटीग्रेटेड हैं।
+          इसका उद्देश्य daily distributor work को तेज, व्यवस्थित, searchable और कम error-prone बनाना है,
+          ताकि operational decisions और print workflow दोनों आसानी से manage हो सकें।
         </p>
-        
 
         <div className="about-summary-grid">
-          <section className="about-summary-card">
-            <h3>1️⃣ मुख्य उद्देश्य (Core Purpose)</h3>
-            <ul>
-              <li>LPG उपभोक्ता/ऑर्डर डेटा अपलोड करके एक actionable टेबल व्यू उपलब्ध कराना</li>
-              <li>eKYC Pending मामलों को हाइलाइट करना</li>
-              <li>Bulk Cashmemo प्रिंट और Tax Invoice जनरेट करना</li>
-              <li>डीलर ऑपरेशन्स को Admin Approval Workflow के माध्यम से नियंत्रित करना</li>
-            </ul>
-          </section>
-
-          <section className="about-summary-card">
-            <h3>2️⃣ सुरक्षा एवं एक्सेस कंट्रोल (Security & Access Control)</h3>
-            <ul>
-              <li>User Login: डीलर कोड + PIN</li>
-              <li>Admin Login: Firebase Auth (Email/Password)</li>
-              <li>Account Status Check: Pending / Active / Disabled / Expired स्थिति के अनुसार एक्सेस नियंत्रण</li>
-              <li>Package Validity Logic: Demo / Basic / Premium / Enterprise पैकेज के अनुसार वैधता अवधि और Expiry हैंडलिंग</li>
-            </ul>
-          </section>
-
-          <section className="about-summary-card">
-            <h3>3️⃣ डेटा प्रबंधन एवं आर्किटेक्चर (Data Handling & Architecture)</h3>
-            <ul>
-              <li>Primary Source: Firebase Firestore (Users, Registration Requests, Update Approvals, Feedback आदि)</li>
-              <li>Fallback System: Firebase असफल होने पर LocalStorage बैकअप</li>
-              <li>Upload Support: CSV + XLSX (Papaparse, XLSX library)</li>
-              <li>Date Handling: Excel Serial Dates एवं String Formats का Normalization</li>
-            </ul>
-          </section>
-
-          <section className="about-summary-card">
-            <h3>4️⃣ MIS एवं रिपोर्टिंग इंजन (MIS & Reporting Engine)</h3>
-            <ul>
-              <li>Multi-filter Table: eKYC, Area, Nature, Consumer Type, Order Status / Source / Type, Cashmemo Status, Delivery Man, Mobile Registration Status, Date Range</li>
-              <li>Global Search</li>
-              <li>Sorting & Pagination</li>
-              <li>Dynamic Columns Add/Remove</li>
-              <li>Total Record Count</li>
-              <li>Printable Table Report</li>
-              <li>Pending eKYC Rows के लिए Red/Bold Visual Alert</li>
-            </ul>
-          </section>
-
-          <section className="about-summary-card">
-            <h3>5️⃣ Admin गवर्नेंस सिस्टम (Admin Governance System)</h3>
-            <ul>
-              <li>Pending Registration Approval / Rejection</li>
-              <li>Manual User Creation + Package Validity सेट करना</li>
-              <li>Active / Total Users Management (Edit, Enable/Disable, Delete)</li>
-              <li>Profile / Bank / Rates Change Approval Queue</li>
-              <li>Feedback Read/Unread Toggle + Delete</li>
-              <li>User Detail Inspection (Profile/Bank/Rates JSON View)</li>
-            </ul>
-          </section>
-
-          <section className="about-summary-card">
-            <h3>6️⃣ Consumer एवं फील्ड ऑपरेशन्स (Consumer & Field Operations)</h3>
-            <ul>
-              <li>Consumer-wise Row Selection for Cashmemo Print</li>
-              <li>Page Layout Modes: A4 - 3 Cashmemo per Page, Large - 4 Cashmemo per Page</li>
-              <li>User Rates से Auto-rate Mapping</li>
-              <li>Online Paid vs COD Cashmemo Rendering</li>
-            </ul>
-          </section>
-
-          <section className="about-summary-card">
-            <h3>7️⃣ प्रोडक्टिविटी टूल्स (Productivity Tools)</h3>
-            <ul>
-              <li>Rate Update Module</li>
-              <li>GST आधारित Basic Price Recalculation</li>
-              <li>Invoice Module: Line Items, GST Split, Round-off Calculation, Amount in Words</li>
-              <li>Print-Optimized Invoice Rendering (Input/Select से Printable Text Transformation)</li>
-              <li>Invoice Footer में Bank Details + Declaration</li>
-            </ul>
-          </section>
-
-          <section className="about-summary-card">
-            <h3>8️⃣ UI/UX लेयर (UI/UX Layer)</h3>
-            <ul>
-              <li>Fixed Navbar + Role-based Actions</li>
-              <li>Book-view Style Modal Sections</li>
-              <li>Admin Dashboard Cards / Tabs / Table Layout</li>
-              <li>Responsive Design (Admin, Rates, Invoice Sections के लिए)</li>
-            </ul>
-          </section>
+          {summaryCards.map((card) => (
+            <section key={card.title} className="about-summary-card">
+              <h3>{card.title}</h3>
+              <ul>
+                {card.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
         </div>
       </div>
     );
