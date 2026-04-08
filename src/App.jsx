@@ -128,9 +128,9 @@ const PACKAGE_OPTIONS = [
 
 const PACKAGE_PRICING = {
   'Demo Package - 1 Day': 'Free',
-  'Basic Package - 7 Days': '1000',
-  'Premium Package - 30 Days': '3000',
-  'Enterprise Package - 365 Days': '7500',
+  'Basic Package - 7 Days': 'Rs. 1000',
+  'Premium Package - 30 Days': 'Rs. 3000',
+  'Enterprise Package - 365 Days': 'Rs. 7500',
 };
 
 const getPackageValidityDays = (packageName = '') => {
@@ -777,10 +777,6 @@ function App() {
       date: '',
     });
     const fixedPackages = PACKAGE_OPTIONS;
-    const packagePricingEntries = fixedPackages.map((pkg) => ({
-      name: pkg,
-      price: PACKAGE_PRICING[pkg] || '-',
-    }));
     const onChange = (e) => {
       const { name, value } = e.target;
       setForm(prev => ({ ...prev, [name]: value }));
@@ -870,20 +866,6 @@ function App() {
       <div className="placeholder-container">
         <h2 className="register-title">रजिस्टर करें</h2>
         <div className="register-form">
-          <div className="package-pricing-card">
-            <div className="package-pricing-title">Package Rates</div>
-            <div className="package-pricing-list">
-              {packagePricingEntries.map((item) => (
-                <div
-                  key={item.name}
-                  className={`package-pricing-row ${form.package === item.name ? 'package-pricing-row--active' : ''}`}
-                >
-                  <span className="package-pricing-name">{item.name}</span>
-                  <span className="package-pricing-value">{item.price}</span>
-                </div>
-              ))}
-            </div>
-          </div>
           <select name="package" value={form.package} onChange={onChange} className="form-input">
             <option value="">पैकेज चुनें</option>
             {fixedPackages.map((opt, i) => (
