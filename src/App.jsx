@@ -2952,6 +2952,9 @@ function App() {
   const handleFileUpload = (file) => {
     if (!file) return;
 
+    const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
+      .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
+
     const processAndSetData = (data) => {
       const normalizedData = normalizeData(data);
       setParsedData(normalizedData);
@@ -2961,19 +2964,19 @@ function App() {
         const headers = Object.keys(firstRow);
         setHeaders(headers);
         setVisibleHeaders(defaultVisibleHeaders);
-        setUniqueEkycStatuses([...new Set(normalizedData.map(row => row['EKYC Status']).filter(Boolean))]);
-        setUniqueAreas([...new Set(normalizedData.map(row => row['Delivery Area']).filter(Boolean))]);
-        setUniqueNatures([...new Set(normalizedData.map(row => row['Consumer Nature']).filter(Boolean))]);
-        setUniqueMobileStatuses([...new Set(['Available', 'Not Available'])]);
-        setUniqueConsumerStatuses([...new Set(normalizedData.map(row => row['Consumer Type']).filter(Boolean))]);
-        setUniqueConnectionTypes([...new Set(normalizedData.map(row => row['Consumer Package']).filter(Boolean))]);
-        setUniqueOnlineRefillPaymentStatuses([...new Set(normalizedData.map(row => row['Online Refill Payment status']).filter(Boolean))]);
-        setUniqueOrderStatuses([...new Set(normalizedData.map(row => row['Order Status']).filter(Boolean))]);
-        setUniqueOrderSources([...new Set(normalizedData.map(row => row['Order Source']).filter(Boolean))]);
-        setUniqueOrderTypes([...new Set(normalizedData.map(row => row['Order Type']).filter(Boolean))]);
-        setUniqueCashMemoStatuses([...new Set(normalizedData.map(row => row['Cash Memo Status']).filter(Boolean))]);
-        setUniqueDeliveryMen([...new Set(normalizedData.map(row => row['Delivery Man']).filter(Boolean))]);
-        setUniqueIsRegMobileStatuses([...new Set(['Yes', 'No'])]);
+        setUniqueEkycStatuses(sortedUniqueValues(normalizedData.map(row => row['EKYC Status'])));
+        setUniqueAreas(sortedUniqueValues(normalizedData.map(row => row['Delivery Area'])));
+        setUniqueNatures(sortedUniqueValues(normalizedData.map(row => row['Consumer Nature'])));
+        setUniqueMobileStatuses(sortedUniqueValues(['Available', 'Not Available']));
+        setUniqueConsumerStatuses(sortedUniqueValues(normalizedData.map(row => row['Consumer Type'])));
+        setUniqueConnectionTypes(sortedUniqueValues(normalizedData.map(row => row['Consumer Package'])));
+        setUniqueOnlineRefillPaymentStatuses(sortedUniqueValues(normalizedData.map(row => row['Online Refill Payment status'])));
+        setUniqueOrderStatuses(sortedUniqueValues(normalizedData.map(row => row['Order Status'])));
+        setUniqueOrderSources(sortedUniqueValues(normalizedData.map(row => row['Order Source'])));
+        setUniqueOrderTypes(sortedUniqueValues(normalizedData.map(row => row['Order Type'])));
+        setUniqueCashMemoStatuses(sortedUniqueValues(normalizedData.map(row => row['Cash Memo Status'])));
+        setUniqueDeliveryMen(sortedUniqueValues(normalizedData.map(row => row['Delivery Man'])));
+        setUniqueIsRegMobileStatuses(sortedUniqueValues(['Yes', 'No']));
       }
 
       setShowDataButton(true);
@@ -3184,385 +3187,438 @@ function App() {
           <CashMemoEnglish customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
         );
 
-        let wrapperStyles = `
-          width: 100%;
-          box-sizing: border-box;
-          padding: 5mm;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-        `;
+        const memosPerPage = pageType === '4 Cashmemo/Page' ? 4 : 3;
+        const pageBreakClass = (index + 1) % memosPerPage === 0 && (index + 1) < customersToPrint.length
+          ? ' cashmemo-page-break'
+          : '';
 
-        if (pageType === 'A4 3 Cashmemo/Page') {
-          wrapperStyles += `height: 97.66mm;`; // A4 height (297mm) / 3 - 2mm margin
-          if ((index + 1) % 3 !== 0) {
-            wrapperStyles += `margin-bottom: 2mm;`;
-          }
-          if ((index + 1) % 3 === 0 && (index + 1) < customersToPrint.length) {
-            wrapperStyles += `page-break-after: always;`;
-          }
-        } else if (pageType === 'Lager 4 Cashmemo/Page') {
-          wrapperStyles += `height: 72.75mm;`; // A4 height (297mm) / 4 - 2mm margin
-          if ((index + 1) % 4 !== 0) {
-            wrapperStyles += `margin-bottom: 2mm;`;
-          }
-          if ((index + 1) % 4 === 0 && (index + 1) < customersToPrint.length) {
-            wrapperStyles += `page-break-after: always;`;
-          }
-        }
-
-        allCashMemosHtml += `<div style="${wrapperStyles}">${cashMemoHtml}</div>`;
+        allCashMemosHtml += `<div class="cashmemo-print-item cashmemo-print-item--${memosPerPage}${pageBreakClass}">${cashMemoHtml}</div>`;
       });
 
       const fullHtml = `
         <html>
           <head>
             <title>Cash Memos</title>
+            <link rel="stylesheet" href="CashMemoPrint.css" />
             <style>
-              @page { size: A4; margin: 0; }
-              body { margin: 0; }
-              /* Styles from CashMemoEnglish.jsx */
-              .cash-memo-container {
-                font-family: Arial, sans-serif;
-                border: 1px solid #000;
-                padding: 5mm;
-                margin: 0 auto;
-                box-sizing: border-box;
-                background-color: white; /* Outer background white */
-                color: black; /* Default text color black */
+              @page {
+                size: A4 portrait;
+                margin: 4mm 6mm 5mm;
               }
-              .cash-memo-wrapper {
-                border: 1px solid #ccc;
-                page-break-inside: avoid; /* Prevent cash memo from breaking across pages */
+              html, body {
+                margin: 0;
+                padding: 0;
+                background: #ffffff;
+                color: #111;
+                font-family: Calibri, sans-serif;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              * {
+                box-sizing: border-box;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+              }
+              .cashmemo-print-item {
+                width: 100%;
+                height: 94mm;
+                margin: 0 0 2mm;
+                border: 1px solid #111;
+                overflow: hidden;
+                page-break-inside: avoid;
+                break-inside: avoid;
+              }
+              .cashmemo-print-item--4 {
+                height: 68.75mm;
+                margin-bottom: 1.5mm;
+              }
+              .cashmemo-page-break {
+                page-break-after: always;
+                break-after: page;
+              }
+              .only-details-print {
+                height: 100%;
+                display: flex;
+                align-items: flex-end;
+              }
+              .only-details-print .tax-details {
+                width: 100%;
               }
               .cash-memo-single {
                 display: flex;
-                font-family: Arial, sans-serif;
                 width: 100%;
-                box-sizing: border-box;
                 height: 100%;
-                background-color: white;
-                page-break-inside: avoid; /* Prevent cash memo content from breaking across pages */
+                background: #fff;
+                color: #111;
               }
+              .distributor-copy,
               .tax-invoice {
-                width: 58%;
-                padding: 5px;
-                box-sizing: border-box;
-                font-size: 10px;
-                height: 100%;
-                color: black;
-                position: relative; /* For watermark positioning */
+                min-height: 0;
+                display: flex;
+                flex-direction: column;
               }
               .distributor-copy {
-                width: 42%;
-                border-right: 1px dashed black;
-                padding: 5px;
-                box-sizing: border-box;
-                font-size: 10px;
-                height: 100%;
-                color: black;
-                position: relative; /* For watermark positioning */
+                width: 41.5%;
+                border-right: 1px dashed #666;
               }
-              .distributor-header {
-                position: relative;
+              .tax-invoice {
+                width: 58.5%;
+              }
+              .distributor-header,
+              .tax-invoice-header {
+                min-height: 12.5mm;
+                display: flex;
+                align-items: stretch;
+                border-bottom: 1px solid #222;
+              }
+              .distributor-header-logo,
+              .tax-invoice-header-logo {
+                width: 34%;
+                display: flex;
+                align-items: center;
+                padding: 1mm 1.5mm;
+              }
+              .distributor-header-image,
+              .tax-invoice-header-image {
                 width: 100%;
+                max-height: 10.5mm;
+                object-fit: contain;
               }
-              .distributor-header-details {
-                position: absolute;
-                top: 50%;
-                right: 10px;
-                transform: translateY(-50%);
+              .distributor-header-details,
+              .tax-invoice-header-details {
+                flex: 1;
+                padding: 0.9mm 1.5mm 0.7mm;
                 text-align: right;
-                color: black;
-                font-size: 8px;
-                font-weight: bold;
+                font-size: 2.8mm;
+                font-weight: 700;
+                line-height: 1.1;
               }
-              .customer-details-distributor {
-                border: 1px solid black;
-                padding: 5px;
-                margin-bottom: 5px;
-                display: flex;
-                font-size: 8px;
-              }
-              .distributor-details-left {
-                flex: 1;
-                display: grid;
-                grid-template-columns: auto 1fr;
-                gap: 1px;
-                padding-right: 5px;
-                border-right: 1px dashed #ccc;
-              }
-              .distributor-details-right {
-                width: 150px;
-                display: grid;
-                grid-template-columns: auto 1fr;
-                gap: 1px;
-                padding-left: 5px;
-              }
+              .distributor-header-detail-text,
+              .tax-invoice-header-detail-text,
+              .declaration-text,
+              .signature-text,
               .tax-invoice-title {
-                margin: 0px 130px;
-                font-weight: bold;
-                font-size: 9px;
-                color: black;
+                margin: 0;
               }
-              .customer-details-tax-invoice {
-                border: 1px solid black;
-                padding: 5px;
-                margin-bottom: 5px;
-                display: flex;
-                font-size: 8px;
-              }
-              .tax-invoice-details-left {
-                flex: 1;
-                display: grid;
-                grid-template-columns: auto 1fr;
-                gap: 1px;
-                padding-right: 5px;
-                border-right: 1px dashed #ccc;
-              }
-              .tax-invoice-details-right {
-                width: 150px;
-                display: grid;
-                grid-template-columns: auto 1fr;
-                gap: 1px;
-                padding-left: 5px;
-              }
-              .delivery-details {
-                border: 1px solid black;
-                padding: 5px;
-                margin-bottom: 5px;
-                display: grid;
-                grid-template-columns: auto 1fr;
-                gap: 1px;
-                font-size: 8px;
-              }
-              .product-details {
-                padding: 5px;
-                margin-bottom: 5px;
-                font-size: 8px;
-              }
-              .declaration {
-                border: 1px solid black;
-                padding: 30px;
-                margin-bottom: 5px;
-                font-size: 7px;
-                color: red;
-              }
-              .signature-section {
-                margin-top: 10px;
-                border-top: 1px solid black;
-                width: 150px;
-                margin-left: auto;
+              .distributor-copy-title {
+                display: inline-block;
+                margin: 0.9mm 0 0.8mm 1.2mm;
+                padding: 0.35mm 1.4mm;
+                background: #ececec;
+                color: #222;
+                font-size: 2.45mm;
+                font-weight: 700;
               }
               .contact-info {
                 display: grid;
-                grid-template-columns: 1fr 1fr 1fr 1fr auto;
-                gap: 0px;
-                align-items: center;
-                padding: 0px 0;
-                font-size: 7px;
-                border-bottom: 1px solid black;
-                margin-bottom: 5px;
-                background-color: rgb(0, 0, 128);
-                color: white;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                border-bottom: 1px solid #222;
+                background: #0a4c9a;
+                color: #fff;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .contact-info > div {
+                padding: 0.65mm 1mm;
+                border-right: 1px solid rgba(255, 255, 255, 0.45);
+                font-size: 2.05mm;
+                line-height: 1.05;
+              }
+              .contact-info > div:last-child {
+                border-right: none;
               }
               .contact-info-strong {
-                color: white;
-                font-size: 9px;
-              }
-              .hp-pay-image-container {
-                text-align: end;
-                width: 16%;
-                display: grid;
-                flex-direction: column;
-                align-items: end;
-              }
-              .hp-pay-image {
-                width: 70px;
-                margin-bottom: 5px;
-              }
-              .image-1906-container {
-                flex: 1;
-                text-align: right;
-              }
-              .image-1906 {
-                height: 15px;
-                vertical-align: middle;
+                font-size: 3.5mm;
+                font-weight: 700;
+                color: #fff;
               }
               .header-content {
+                min-height: 5.4mm;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                margin-bottom: 5px;
+                padding: 0 1.2mm;
               }
-              .distributor-header, .tax-invoice-header {
-                display: flex;
-                align-items: center;
-                margin-bottom: 5px;
-              }
-              .distributor-header-logo, .tax-invoice-header-logo {
-                flex: 1;
-              }
-              .distributor-header-image, .tax-invoice-header-image {
-                width: 35%;
-              }
-              .distributor-header-details, .tax-invoice-header-details {
-                flex: 2;
-                text-align: end;
-                font-size: 8px;
-                font-weight: bold;
-              }
-              .distributor-copy-title {
-                text-align: justify;
-                font-size: 9px;
-                font-weight: bold;
-                color: black;
-                margin: 5px 0;
-              }
-              .distributor-header-image {
-                width: 35%;
-              }
-              .distributor-header-detail-text {
-                margin: 0;
-                font-size: 9px;
-              }
-              .tax-invoice-header-image {
-                width: 100%;
-              }
-              .tax-invoice-header-detail-text {
-                margin: 0;
-                font-size: 9px;
-              }
-              .declaration-text {
-                margin: 0;
-              }
-              .signature-text {
-                margin: 0;
-                font-size: 8px;
-                text-align: right;
-              }
-              .price-value {
-                text-align: right;
-              }
-              .total-amount {
-                font-weight: bold;
-              }
-              .status-alert {
-                color: #d32f2f;
-                font-weight: bold;
-              }
-              .status-paid {
-                font-weight: bold;
-              }
-              .payable-bold {
-                font-weight: bold;
-              }
-              .instructions-section {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-end;
-                margin-top: 5px;
-                font-size: 7px;
-                border: 1px solid black;
-                
-              }
-              .instructions-text-container {
-                line-height: 1.5;
-                width: 109%;
-              }
-              .instructions-title {
-                margin: 0;
-                font-weight: bold;
-              }
-              .instructions-list {
-                margin: 0;
-                padding-left: 10px;
+              .tax-invoice-title {
+                font-size: 2.5mm;
+                font-weight: 700;
+                padding-right: 5.4mm;
               }
               .header-content-flex-spacer {
                 flex: 1;
               }
-              .header, .customer-details, .delivery-details, .product-details, .amount-details, .declaration, .contact-info {
-                margin-bottom: 5px;
+              .image-1906 {
+                height: 5.2mm;
+                object-fit: contain;
               }
-              .header div, .customer-details div, .delivery-details div, .product-details div, .amount-details div {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 2px;
+              .memo-table-wrap {
+                flex: 1;
+                min-height: 0;
+                padding: 0 1mm;
+                overflow: hidden;
               }
-              .header span, .customer-details span, .delivery-details span, .product-details span, .amount-details span {
-                font-size: 9px;
+              .memo-table-wrap--tax {
+                padding-top: 0.25mm;
               }
-              .header .title {
-                font-size: 12px;
-                font-weight: bold;
+              .memo-table-box {
+                height: 100%;
+                border: 1px solid #222;
+                overflow: hidden;
+                background: #fff;
+              }
+              .memo-table-box--distributor {
+                height: auto;
+                min-height: 100%;
+              }
+              .details-headline,
+              .details-address {
+                font-size: 2.2mm;
+                line-height: 1.08;
+                margin: 0 0 0.45mm;
+                font-weight: 700;
+              }
+              .details-headline--emphasis {
+                font-size: 2.85mm;
+                line-height: 1.12;
+                font-weight: 800;
+              }
+              .details-headline--primary {
+                font-size: 3.15mm;
+              }
+              .details-address {
+                margin-bottom: 0.95mm;
+                font-size: 2.55mm;
+                line-height: 1.12;
+                font-weight: 600;
+              }
+              .pair-table {
+                table-layout: fixed;
+              }
+              .pair-table td {
+                padding: 0.05mm 0;
+                font-size: 2.05mm;
+                line-height: 1.06;
+                vertical-align: top;
+                font-weight: 600;
+              }
+              .pair-table__row--emphasis td {
+                font-size: 2.45mm;
+                font-weight: 800;
+              }
+              .pair-table__row--payment td {
+                font-size: 2.55mm;
+                font-weight: 800;
+              }
+              .pair-table__row--mobile td {
+                font-size: 2.75mm;
+                font-weight: 800;
+              }
+              .pair-table__row--alert td {
+                color: #c22121;
+                font-weight: 800;
+              }
+              .pair-table--dense td {
+                padding: 0.03mm 0;
+              }
+              .pair-table__label {
+                width: 44%;
+                white-space: nowrap;
+              }
+              .pair-table__sep {
+                width: 4%;
                 text-align: center;
-                margin-bottom: 5px;
+                white-space: nowrap;
+              }
+              .pair-table__value {
+                width: 52%;
+                word-break: break-word;
+              }
+              .pair-table--amount .pair-table__value {
+                text-align: right;
+                padding-right: 0.2mm;
+              }
+              .distributor-details {
+                padding: 1.6mm 1.6mm 0 1.8mm;
+              }
+              .tax-details {
+                padding: 1.2mm 1.15mm 0 1.1mm;
+              }
+              .tax-details__columns {
+                display: grid;
+                grid-template-columns: 1.02fr 0.98fr;
+                gap: 1.2mm;
+              }
+              .tax-details__column {
+                min-width: 0;
+              }
+              .tax-details__column--right .pair-table__label {
+                width: 54%;
+              }
+              .tax-details__column--right .pair-table__sep {
+                width: 4%;
+              }
+              .tax-details__column--right .pair-table__value {
+                width: 42%;
+              }
+              .tax-details__spacer {
+                height: 1.3mm;
+              }
+              .pair-table--dist-main .pair-table__label {
+                width: 34%;
+                white-space: nowrap;
+              }
+              .pair-table--dist-main .pair-table__sep {
+                width: 3%;
+                white-space: nowrap;
+              }
+              .pair-table--dist-main .pair-table__value {
+                width: 63%;
+                white-space: nowrap;
+                word-break: normal;
+              }
+              .pair-table--dist-amounts .pair-table__label {
+                width: 34%;
+                white-space: nowrap;
+              }
+              .pair-table--dist-amounts .pair-table__sep {
+                width: 3%;
+                white-space: nowrap;
+              }
+              .pair-table--dist-amounts .pair-table__value {
+                width: 63%;
+                white-space: nowrap;
+                word-break: normal;
+                text-align: left;
+                padding-right: 0;
+              }
+              .pair-table--dist-amounts .pair-table__row--emphasis .pair-table__value {
+                text-align: left;
+              }
+              .pair-table--dist-amounts {
+                margin-top: 0.45mm;
+                table-layout: auto;
+              }
+              .pair-table--dist-main {
+                table-layout: auto;
+              }
+              .pair-table--tax-main .pair-table__label {
+                width: 35%;
+              }
+              .pair-table--tax-main .pair-table__sep {
+                width: 4%;
+              }
+              .pair-table--tax-main .pair-table__value {
+                width: 61%;
+              }
+              .pair-table--tax-amounts .pair-table__value {
+                white-space: nowrap;
+              }
+              .hidden {
+                display: none;
               }
               .declaration {
-                font-size: 10px;
-                font-weight: bold;
+                min-height: 11.2mm;
+                display: flex;
+                align-items: flex-end;
+                border: 1px solid #222;
+                margin: 0.9mm 1mm 1mm;
+              }
+              .declaration-text {
+                flex: 1;
+                padding: 0.9mm 1mm 0.55mm;
+                color: #c22121;
+                font-size: 1.9mm;
+                line-height: 1.1;
                 text-align: justify;
-                margin-top: 5px;
-                color: red; /* Declaration text red */
+                font-weight: 700;
               }
-              .contact-info {
-               
-                gap: 90px;
-                background-color: #00008B; /* Blue background */
-                color: white; /* White text */
-                padding: 3px 5mm;
-                font-size: 6px;
-                margin-top: 3px;
-              }
-              .contact-info span {
-                font-weight: bold;
-              }
-              .section-title {
-                font-weight: bold;
-                background-color: #eee;
-                padding: 2px;
-                margin-bottom: 3px;
-                font-size: 9px;
-              }
-              .text-center {
+              .signature-section {
+                width: 30%;
+                min-width: 26mm;
+                margin: 0 1.2mm 0.85mm 0.4mm;
+                border-top: 1px solid #222;
+                padding-top: 0.4mm;
                 text-align: center;
+                font-size: 2mm;
+                font-weight: 600;
               }
-              .text-right {
-                text-align: right;
+              .signature-text {
+                padding: 0 1.3mm 0.5mm;
+                font-size: 2.1mm;
+                font-weight: 700;
               }
-              .font-bold {
-                font-weight: bold;
-              }
-              .flex-container {
+              .instructions-section {
                 display: flex;
-                justify-content: space-between;
+                align-items: stretch;
+                border: 1px solid #222;
+                margin: 0 1mm 1mm;
               }
-              .flex-item {
-                width: 48%; /* Adjust as needed */
+              .instructions-text-container {
+                flex: 1;
+                padding: 0.5mm 1mm 0.2mm;
               }
-              .address-value {
-                overflow: hidden;
-                text-overflow: ellipsis;
+              .instructions-list {
+                margin: 0;
+                padding-left: 3.2mm;
+                font-size: 1.7mm;
+                line-height: 1.2;
               }
-              .watermark-container {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
+              .hp-pay-image-container {
+                width: 19mm;
                 display: flex;
-                justify-content: center;
-                align-items: center;
-                z-index: -1;
+                align-items: flex-end;
+                justify-content: flex-end;
+                padding: 0.6mm 0.8mm 0.6mm 0;
               }
-              .watermark-image {
-                opacity: 0.1;
-                width: 200px;
+              .hp-pay-image {
+                width: 16.5mm;
                 height: auto;
+                object-fit: contain;
+              }
+              .cash-memo-single--compact .distributor-header,
+              .cash-memo-single--compact .tax-invoice-header {
+                min-height: 10.8mm;
+              }
+              .cash-memo-single--compact .distributor-header-details,
+              .cash-memo-single--compact .tax-invoice-header-details {
+                font-size: 2.35mm;
+              }
+              .cash-memo-single--compact .distributor-copy-title,
+              .cash-memo-single--compact .tax-invoice-title {
+                font-size: 2.15mm;
+              }
+              .cash-memo-single--compact .details-headline--emphasis {
+                font-size: 2.45mm;
+              }
+              .cash-memo-single--compact .details-headline--primary,
+              .cash-memo-single--compact .details-address {
+                font-size: 2.2mm;
+              }
+              .cash-memo-single--compact .pair-table td,
+              .cash-memo-single--compact .pair-table__row--emphasis td,
+              .cash-memo-single--compact .pair-table__row--payment td,
+              .cash-memo-single--compact .pair-table__row--mobile td {
+                font-size: 1.9mm;
+                line-height: 1.02;
+              }
+              .cash-memo-single--compact .contact-info > div {
+                font-size: 1.75mm;
+              }
+              .cash-memo-single--compact .contact-info-strong {
+                font-size: 2.85mm;
+              }
+              .cash-memo-single--compact .instructions-list,
+              .cash-memo-single--compact .declaration-text,
+              .cash-memo-single--compact .signature-text,
+              .cash-memo-single--compact .signature-section {
+                font-size: 1.65mm;
               }
             </style>
           </head>
           <body>
-            <div id="print-root" style="display: flex; flex-wrap: wrap; align-content: flex-start; margin-top: 20mm">
+            <div id="print-root" style="display: flex; flex-wrap: wrap; align-content: flex-start;">
               ${allCashMemosHtml}
             </div>
           </body>
@@ -3572,12 +3628,29 @@ function App() {
       const printWindow = window.open('', '_blank');
       printWindow.document.write(fullHtml);
       printWindow.document.close();
-
-      // Wait for images and other resources to load before printing
-      printWindow.onload = () => {
-        printWindow.print();
-            // printWindow.close(); // Keep the window open after printing
+      const triggerPrint = () => {
+        const images = Array.from(printWindow.document.images || []);
+        Promise.all(
+          images.map((img) => {
+            if (img.complete) return Promise.resolve();
+            return new Promise((resolve) => {
+              img.addEventListener('load', resolve, { once: true });
+              img.addEventListener('error', resolve, { once: true });
+            });
+          })
+        ).then(() => {
+          printWindow.focus();
+          setTimeout(() => {
+            printWindow.print();
+          }, 200);
+        });
       };
+
+      if (printWindow.document.readyState === 'complete') {
+        triggerPrint();
+      } else {
+        printWindow.addEventListener('load', triggerPrint, { once: true });
+      }
     };
 
   const handleCheckboxChange = (consumerNo) => {
@@ -4003,16 +4076,16 @@ function App() {
 
 
       {parsedData.length > 0 && showParsedData && (
-        <div style={{ marginTop: '20px' }}>
+        <div className="filters-shell">
 
 
 
 
 
           {/* New Filter UI */}
-          <div className="filters-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px', padding: '15px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#f9f9f9' }}>
+          <div className="filters-container">
             {/* eKYC Filter */}
-            <select value={eKycFilter} onChange={(e) => setEKycFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={eKycFilter} onChange={(e) => setEKycFilter(e.target.value)}>
               <option value="All">All eKYC</option>
               {uniqueEkycStatuses.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
@@ -4020,7 +4093,7 @@ function App() {
             </select>
 
             {/* Area Filter */}
-            <select value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
               <option value="All">All Areas</option>
               {uniqueAreas.map((area, index) => (
                 <option key={index} value={area}>{area}</option>
@@ -4028,7 +4101,7 @@ function App() {
             </select>
 
             {/* Nature Filter */}
-            <select value={natureFilter} onChange={(e) => setNatureFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={natureFilter} onChange={(e) => setNatureFilter(e.target.value)}>
               <option value="All">All Nature</option>
               {uniqueNatures.map((nature, index) => (
                 <option key={index} value={nature}>{nature}</option>
@@ -4036,7 +4109,7 @@ function App() {
             </select>
 
             {/* Mobile Status Filter */}
-            <select value={mobileStatusFilter} onChange={(e) => setMobileStatusFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={mobileStatusFilter} onChange={(e) => setMobileStatusFilter(e.target.value)}>
               <option value="All">All Mobile Status</option>
               {uniqueMobileStatuses.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
@@ -4044,7 +4117,7 @@ function App() {
             </select>
 
             {/* Consumer Status Filter */}
-            <select value={consumerStatusFilter} onChange={(e) => setConsumerStatusFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={consumerStatusFilter} onChange={(e) => setConsumerStatusFilter(e.target.value)}>
               <option value="All">All Consumer Status</option>
               {uniqueConsumerStatuses.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
@@ -4052,7 +4125,7 @@ function App() {
             </select>
 
             {/* Connection Type Filter */}
-            <select value={connectionTypeFilter} onChange={(e) => setConnectionTypeFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={connectionTypeFilter} onChange={(e) => setConnectionTypeFilter(e.target.value)}>
               <option value="All">All Connection Types</option>
               {uniqueConnectionTypes.map((type, index) => (
                 <option key={index} value={type}>{type}</option>
@@ -4060,7 +4133,7 @@ function App() {
             </select>
 
             {/* Online Refill Payment Status Filter */}
-            <select value={onlineRefillPaymentStatusFilter} onChange={(e) => setOnlineRefillPaymentStatusFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={onlineRefillPaymentStatusFilter} onChange={(e) => setOnlineRefillPaymentStatusFilter(e.target.value)}>
               <option value="All">All Online Refill Payment Status</option>
               {uniqueOnlineRefillPaymentStatuses.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
@@ -4072,7 +4145,7 @@ function App() {
 
 
             {/* Order Status Filter */}
-            <select value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)}>
               <option value="All">All Order Status</option>
               {uniqueOrderStatuses.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
@@ -4080,7 +4153,7 @@ function App() {
             </select>
 
             {/* Order Source Filter */}
-            <select value={orderSourceFilter} onChange={(e) => setOrderSourceFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={orderSourceFilter} onChange={(e) => setOrderSourceFilter(e.target.value)}>
               <option value="All">All Order Source</option>
               {uniqueOrderSources.map((source, index) => (
                 <option key={index} value={source}>{source}</option>
@@ -4088,7 +4161,7 @@ function App() {
             </select>
 
             {/* Order Type Filter */}
-            <select value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
               <option value="All">All Order Type</option>
               {uniqueOrderTypes.map((type, index) => (
                 <option key={index} value={type}>{type}</option>
@@ -4096,7 +4169,7 @@ function App() {
             </select>
 
             {/* Cash Memo Status Filter */}
-            <select value={cashMemoStatusFilter} onChange={(e) => setCashMemoStatusFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={cashMemoStatusFilter} onChange={(e) => setCashMemoStatusFilter(e.target.value)}>
               <option value="All">All Cash Memo Status</option>
               {uniqueCashMemoStatuses.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
@@ -4104,7 +4177,7 @@ function App() {
             </select>
 
             {/* Delivery Man Filter */}
-            <select value={deliveryManFilter} onChange={(e) => setDeliveryManFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={deliveryManFilter} onChange={(e) => setDeliveryManFilter(e.target.value)}>
               <option value="All">All Delivery Man</option>
               {uniqueDeliveryMen.map((man, index) => (
                 <option key={index} value={man}>{man}</option>
@@ -4112,7 +4185,7 @@ function App() {
             </select>
 
             {/* Is Reg Mobile Filter */}
-            <select value={isRegMobileFilter} onChange={(e) => setIsRegMobileFilter(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={isRegMobileFilter} onChange={(e) => setIsRegMobileFilter(e.target.value)}>
               <option value="All">All Is Reg Mobile</option>
               {uniqueIsRegMobileStatuses.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
@@ -4120,23 +4193,23 @@ function App() {
             </select>
 
             {/* Refill Date Range */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#fff', padding: '5px 10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-              <span>Order date</span>
-              <input type="date" value={orderDateStart} onChange={(e) => setOrderDateStart(e.target.value)} style={{ border: 'none', outline: 'none' }} />
-              <span>to</span>
-              <input type="date" value={orderDateEnd} onChange={(e) => setOrderDateEnd(e.target.value)} style={{ border: 'none', outline: 'none' }} />
+            <div className="filter-date-group">
+              <span className="filter-date-label">Order Date</span>
+              <input className="filter-date-input" type="date" value={orderDateStart} onChange={(e) => setOrderDateStart(e.target.value)} />
+              <span className="filter-date-divider">to</span>
+              <input className="filter-date-input" type="date" value={orderDateEnd} onChange={(e) => setOrderDateEnd(e.target.value)} />
             </div>
 
             {/* Cash Memo Date Range */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#fff', padding: '5px 10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-              <span>Cash Memo Date</span>
-              <input type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} style={{ border: 'none', outline: 'none' }} />
-              <span>to</span>
-              <input type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} style={{ border: 'none', outline: 'none' }} />
+            <div className="filter-date-group">
+              <span className="filter-date-label">Cash Memo Date</span>
+              <input className="filter-date-input" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
+              <span className="filter-date-divider">to</span>
+              <input className="filter-date-input" type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} />
             </div>
 
             {/* Sort By */}
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
               <option value="">Sort By</option>
               {headers.map((header, index) => (
                 <option key={index} value={header}>{header}</option>
@@ -4144,37 +4217,48 @@ function App() {
             </select>
 
             {/* Sort Order */}
-            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <select className="filter-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
               <option value="asc">asc</option>
               <option value="desc">desc</option>
             </select>
 
-            <button onClick={() => { /* filteredData useMemo will react to state changes */ }} style={{ padding: '8px 15px', borderRadius: '4px', border: 'none', backgroundColor: '#007bff', color: 'white', cursor: 'pointer' }}>Filter</button>
-            <button onClick={handleResetFilters} style={{ padding: '8px 15px', borderRadius: '4px', border: 'none', backgroundColor: '#6c757d', color: 'white', cursor: 'pointer' }}>Reset Filters</button>
+            <div className="filters-reset-wrap">
+              <button className="filter-action filter-action--secondary" onClick={handleResetFilters}>Reset Filters</button>
+            </div>
           </div>
 
-          <div className="table-controls" style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: '10px' }}>
-            <input type="text" placeholder="Search within data..." value={searchTerm} onChange={handleSearchChange} style={{ padding: '8px', width: '240px' }} />
+          <div className="table-controls">
+            <div className="table-control-group">
+              <label className="table-control-label" htmlFor="searchDataInput">Search</label>
+              <input id="searchDataInput" className="search-input" type="text" placeholder="Search within data..." value={searchTerm} onChange={handleSearchChange} />
+            </div>
 
-            <label htmlFor="addColumnSelect">Add Column:</label>
-            <select id="addColumnSelect" onChange={(e) => addColumn(e.target.value)} value="">
+            <div className="table-control-group">
+              <label className="table-control-label" htmlFor="addColumnSelect">Add Column</label>
+              <select className="table-select" id="addColumnSelect" onChange={(e) => addColumn(e.target.value)} value="">
               <option value="" disabled>Select a column</option>
               {availableHeadersToAdd.map(header => <option key={header} value={header}>{header}</option>)}
-            </select>
-            <label htmlFor="removeColumnSelect">Remove Column:</label>
-            <select id="removeColumnSelect" onChange={(e) => removeColumn(e.target.value)} value="">
+              </select>
+            </div>
+
+            <div className="table-control-group">
+              <label className="table-control-label" htmlFor="removeColumnSelect">Remove Column</label>
+              <select className="table-select" id="removeColumnSelect" onChange={(e) => removeColumn(e.target.value)} value="">
               <option value="" disabled>Select a column</option>
               {visibleHeaders.map(header => <option key={header} value={header}>{header}</option>)}
-            </select>
+              </select>
+            </div>
 
-            {/* Page Type Dropdown */}
-            <label htmlFor="pageTypeSelect">Page Type:</label>
-            <select id="pageTypeSelect" onChange={(e) => setPageType(e.target.value)} value={pageType}>
+            <div className="table-control-group">
+              <label className="table-control-label" htmlFor="pageTypeSelect">Page Type</label>
+              <select className="table-select" id="pageTypeSelect" onChange={(e) => setPageType(e.target.value)} value={pageType}>
               <option value="3 Cashmemo/Page">3 Cashmemo/Page</option>
               <option value="4 Cashmemo/Page">4 Cashmemo/Page</option>
-            </select>
-            <button className="action-button" onClick={handlePrintData} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Data</button>
-            <button className="action-button" onClick={handlePrintCashmemo} style={{ marginLeft: '10px', padding: '8px 15px', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Print Cashmemo</button>
+              </select>
+            </div>
+
+            <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
+            <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
 
             </div>
 
