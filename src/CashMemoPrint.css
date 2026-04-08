@@ -1,232 +1,482 @@
-/* CashMemoPrint.css */
-
-/* Ensure the content fits within an A4 page */
-@media print {
-  body {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    width: 210mm; /* A4 width */
-    height: 297mm; /* A4 height */
-    overflow: hidden;
-  }
-
-  .cashmemo-container {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
-    width: 100%;
-    height: auto;
-    margin: 0;
-    padding: 0;
-    page-break-inside: avoid;
-  }
-
-  .cashmemo-section {
-    width: 48%; /* Adjust width to fit two sections side by side */
-    padding: 10px;
-    box-sizing: border-box;
-    border: 1px solid black;
-    background: white;
-  }
-
-  .cashmemo-section h1, .cashmemo-section h2, .cashmemo-section h3 {
-    margin: 0;
-    padding: 0;
-    font-size: 14px;
-  }
-
-  .cashmemo-section table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .cashmemo-section table th,
-  .cashmemo-section table td {
-    border: 1px solid black;
-    padding: 5px;
-    text-align: left;
-    font-size: 12px;
-  }
-
-  .no-print {
-    display: none;
-  }
+body {
+  font-family: Calibri, sans-serif;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
-/* Integrating styles from App.css to ensure print preview matches the original layout */
-
-@media print {
-  .invoice-container {
-    border: 2px solid #5f6b7c !important;
-    width: 210mm; /* A4 width */
-    height: 297mm; /* A4 height */
-    margin: 0 auto;
-    padding: 20mm;
-    box-sizing: border-box;
-    background: white;
-  }
-
-  .invoice-header {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: 10px;
-    border-bottom: 2px solid #9aa6b8;
-    padding: 8px 8px 10px 8px;
-    background: #eaf4ff;
-  }
-
-  .invoice-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 10px;
-    border-bottom: 1px solid #a5b0c0;
-    padding-bottom: 10px;
-  }
-
-  .invoice-box,
-  .section-box {
-    border: 1px solid #aeb8c7;
-    border-radius: 4px;
-    padding: 8px;
-    background: #f9fbff;
-    position: relative;
-  }
-
-  .section-label {
-    position: absolute;
-    top: -10px;
-    left: 8px;
-    background: #eaf4ff;
-    border: 1px solid #aeb8c7;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 11px;
-    color: #1f4fb2;
-  }
-
-  .invoice-meta {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    margin-top: 10px;
-    border-bottom: 1px solid #dfe3eb;
-    padding-bottom: 10px;
-  }
-
-  .meta-item {
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    padding: 6px 8px;
-    background: #f7fafc;
-  }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  box-sizing: border-box;
 }
 
-/* Ensuring consistent styles for Distributor Copy and Tax Invoice sections */
+.hidden {
+  display: none;
+}
 
-@media print {
-  .cash-memo-wrapper {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 10mm;
-    box-sizing: border-box;
-    page-break-inside: avoid;
-  }
+.only-details-print {
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
 
-  .cash-memo-single {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
+.only-details-print .tax-details {
+  width: 100%;
+}
 
-  .distributor-copy, .tax-invoice {
-    width: calc(50% - 10mm); /* Adjusted to fit within A4 width */
-    padding: 5mm;
-    box-sizing: border-box;
-    border: 1px solid black;
-    background: white;
-  }
+.cash-memo-single {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  color: #111;
+}
 
-  .distributor-header, .tax-invoice-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 2px solid black;
-    padding-bottom: 5mm;
-  }
+.distributor-copy,
+.tax-invoice {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
 
-  .distributor-header-logo img, .tax-invoice-header-logo img {
-    width: 80px;
-    height: auto;
-  }
+.distributor-copy {
+  width: 41.5%;
+  border-right: 1px dashed #6e6e6e;
+}
 
-  .distributor-header-details, .tax-invoice-header-details {
-    text-align: left;
-    font-size: 10px;
-  }
+.tax-invoice {
+  width: 58.5%;
+}
 
-  .customer-details-distributor, .customer-details-tax-invoice {
-    display: flex;
-    flex-direction: column;
-    gap: 3mm;
-    font-size: 10px;
-  }
+.distributor-header,
+.tax-invoice-header {
+  min-height: 12.5mm;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #222;
+}
 
-  .distributor-details-left, .tax-invoice-details-left {
-    width: 50%;
-    float: left;
-  }
+.distributor-header-logo,
+.tax-invoice-header-logo {
+  width: 34%;
+  display: flex;
+  align-items: center;
+  padding: 1mm 1.5mm;
+  box-sizing: border-box;
+}
 
-  .distributor-details-right, .tax-invoice-details-right {
-    width: 50%;
-    float: right;
-    text-align: right;
-  }
+.distributor-header-image,
+.tax-invoice-header-image {
+  width: 100%;
+  max-height: 10.5mm;
+  object-fit: contain;
+}
 
-  .price-value {
-    font-weight: bold;
-  }
+.distributor-header-details,
+.tax-invoice-header-details {
+  flex: 1;
+  padding: 0.9mm 1.5mm 0.7mm;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: 2.8mm;
+  font-weight: 700;
+  line-height: 1.1;
+}
 
-  .total-amount {
-    font-size: 12px;
-    color: red;
-  }
+.distributor-header-detail-text,
+.tax-invoice-header-detail-text {
+  margin: 0;
+}
 
-  /* Adjusting layout for multiple cash memos with dynamic gaps and page type */
-  .cash-memo-wrapper {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: flex-start;
-    width: 100%;
-    height: auto;
-    margin: 0;
-    padding: 10mm;
-    box-sizing: border-box;
-    page-break-inside: avoid;
-  }
+.distributor-copy-title {
+  display: inline-block;
+  margin: 0.9mm 0 0.8mm 1.2mm;
+  padding: 0.35mm 1.4mm;
+  background: #ececec;
+  color: #222;
+  font-size: 2.45mm;
+  font-weight: 700;
+}
 
-  .cash-memo-single {
-    width: calc(100% / var(--cashmemo-per-page) - 10mm); /* Dynamic width based on page type */
-    margin-bottom: 10mm; /* Gap between cash memos */
-    padding: 5mm;
-    box-sizing: border-box;
-    border: 1px solid black;
-    background: white;
-    page-break-inside: avoid;
-  }
+.contact-info {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid #222;
+  background: #0a4c9a;
+  color: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.contact-info > div {
+  padding: 0.65mm 1mm;
+  border-right: 1px solid rgba(255, 255, 255, 0.45);
+  font-size: 2.05mm;
+  line-height: 1.05;
+}
+
+.contact-info > div:last-child {
+  border-right: none;
+}
+
+.contact-info-strong {
+  font-size: 3.5mm;
+  font-weight: 700;
+  color: #fff;
+}
+
+.header-content {
+  min-height: 5.4mm;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.2mm;
+  box-sizing: border-box;
+}
+
+.tax-invoice-title {
+  margin: 0;
+  font-size: 2.5mm;
+  font-weight: 700;
+  padding-right: 5.4mm;
+}
+
+.header-content-flex-spacer {
+  flex: 1;
+}
+
+.image-1906 {
+  height: 5.2mm;
+  object-fit: contain;
+}
+
+.memo-table-wrap {
+  flex: 1;
+  min-height: 0;
+  padding: 0 1mm;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.memo-table-wrap--tax {
+  padding-top: 0.25mm;
+}
+
+.memo-table-box {
+  height: 100%;
+  border: 1px solid #222;
+  overflow: hidden;
+  background: #fff;
+}
+
+.memo-table-box--distributor {
+  height: auto;
+  min-height: 100%;
+}
+
+.details-headline,
+.details-address {
+  font-size: 2.2mm;
+  line-height: 1.08;
+  margin: 0 0 0.45mm;
+  font-weight: 700;
+}
+
+.details-headline--emphasis {
+  font-size: 2.85mm;
+  line-height: 1.12;
+  font-weight: 800;
+}
+
+.details-headline--primary {
+  font-size: 3.15mm;
+}
+
+.details-address {
+  margin-bottom: 0.95mm;
+  font-size: 2.55mm;
+  line-height: 1.12;
+  font-weight: 600;
+}
+
+.pair-table {
+  table-layout: fixed;
+}
+
+.pair-table td {
+  padding: 0.05mm 0;
+  font-size: 2.05mm;
+  line-height: 1.06;
+  vertical-align: top;
+  font-weight: 600;
+}
+
+.pair-table__row--emphasis td {
+  font-size: 2.45mm;
+  font-weight: 800;
+}
+
+.pair-table__row--payment td {
+  font-size: 2.55mm;
+  font-weight: 800;
+}
+
+.pair-table__row--mobile td {
+  font-size: 2.75mm;
+  font-weight: 800;
+}
+
+.pair-table__row--alert td {
+  color: #c22121;
+  font-weight: 800;
+}
+
+.pair-table--dense td {
+  padding: 0.03mm 0;
+}
+
+.pair-table__label {
+  width: 44%;
+  white-space: nowrap;
+}
+
+.pair-table__sep {
+  width: 4%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.pair-table__value {
+  width: 52%;
+  word-break: break-word;
+}
+
+.pair-table--amount .pair-table__value {
+  text-align: right;
+  padding-right: 0.2mm;
+}
+
+.distributor-details {
+  padding: 1.6mm 1.6mm 0 1.8mm;
+}
+
+.tax-details {
+  padding: 1.2mm 1.15mm 0 1.1mm;
+}
+
+.tax-details__columns {
+  display: grid;
+  grid-template-columns: 1.02fr 0.98fr;
+  gap: 1.2mm;
+}
+
+.tax-details__column {
+  min-width: 0;
+}
+
+.tax-details__column--right .pair-table__label {
+  width: 54%;
+}
+
+.tax-details__column--right .pair-table__sep {
+  width: 4%;
+}
+
+.tax-details__column--right .pair-table__value {
+  width: 42%;
+}
+
+.tax-details__spacer {
+  height: 1.3mm;
+}
+
+.pair-table--dist-main .pair-table__label {
+  width: 34%;
+  white-space: nowrap;
+}
+
+.pair-table--dist-main .pair-table__sep {
+  width: 3%;
+  white-space: nowrap;
+}
+
+.pair-table--dist-main .pair-table__value {
+  width: 63%;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.pair-table--dist-amounts .pair-table__label {
+  width: 34%;
+  white-space: nowrap;
+}
+
+.pair-table--dist-amounts .pair-table__sep {
+  width: 3%;
+  white-space: nowrap;
+}
+
+.pair-table--dist-amounts .pair-table__value {
+  width: 63%;
+  white-space: nowrap;
+  word-break: normal;
+  text-align: left;
+  padding-right: 0;
+}
+
+.pair-table--dist-amounts .pair-table__row--emphasis .pair-table__value {
+  text-align: left;
+}
+
+.pair-table--dist-amounts {
+  margin-top: 0.45mm;
+  table-layout: auto;
+}
+
+.pair-table--dist-main {
+  table-layout: auto;
+}
+
+.pair-table--dist-quick {
+  table-layout: auto;
+}
+
+.pair-table--tax-main .pair-table__label {
+  width: 35%;
+}
+
+.pair-table--tax-main .pair-table__sep {
+  width: 4%;
+}
+
+.pair-table--tax-main .pair-table__value {
+  width: 62%;
+}
+
+.pair-table--tax-amounts .pair-table__value {
+  white-space: nowrap;
+}
+
+.declaration {
+  min-height: 11.2mm;
+  display: flex;
+  align-items: flex-end;
+  border: 1px solid #222;
+  margin: 0.9mm 1mm 1mm;
+}
+
+.declaration-text {
+  flex: 1;
+  margin: 0;
+  padding: 0.9mm 1mm 0.55mm;
+  color: #c22121;
+  font-size: 1.9mm;
+  line-height: 1.1;
+  text-align: justify;
+  font-weight: 700;
+}
+
+.signature-section {
+  width: 30%;
+  min-width: 26mm;
+  margin: 0 1.2mm 0.85mm 0.4mm;
+  border-top: 1px solid #222;
+  padding-top: 0.4mm;
+  text-align: center;
+  font-size: 2mm;
+  font-weight: 600;
+}
+
+.signature-text {
+  margin: 0;
+  padding: 0 1.3mm 0.5mm;
+  font-size: 2.1mm;
+  font-weight: 700;
+}
+
+.instructions-section {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #222;
+  margin: 0 1mm 1mm;
+}
+
+.instructions-text-container {
+  flex: 1;
+  padding: 0.5mm 1mm 0.2mm;
+  box-sizing: border-box;
+}
+
+.instructions-list {
+  margin: 0;
+  padding-left: 3.2mm;
+  font-size: 1.7mm;
+  line-height: 1.2;
+}
+
+.hp-pay-image-container {
+  width: 19mm;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0.6mm 0.8mm 0.6mm 0;
+  box-sizing: border-box;
+}
+
+.hp-pay-image {
+  width: 16.5mm;
+  height: auto;
+  object-fit: contain;
+}
+
+.cash-memo-single--compact .distributor-header,
+.cash-memo-single--compact .tax-invoice-header {
+  min-height: 10.8mm;
+}
+
+.cash-memo-single--compact .distributor-header-details,
+.cash-memo-single--compact .tax-invoice-header-details {
+  font-size: 2.35mm;
+}
+
+.cash-memo-single--compact .distributor-copy-title,
+.cash-memo-single--compact .tax-invoice-title {
+  font-size: 2.15mm;
+}
+
+.cash-memo-single--compact .details-headline--emphasis {
+  font-size: 2.45mm;
+}
+
+.cash-memo-single--compact .details-headline--primary,
+.cash-memo-single--compact .details-address {
+  font-size: 2.2mm;
+}
+
+.cash-memo-single--compact .pair-table td,
+.cash-memo-single--compact .pair-table__row--emphasis td,
+.cash-memo-single--compact .pair-table__row--payment td,
+.cash-memo-single--compact .pair-table__row--mobile td {
+  font-size: 1.9mm;
+  line-height: 1.02;
+}
+
+.cash-memo-single--compact .contact-info > div {
+  font-size: 1.75mm;
+}
+
+.cash-memo-single--compact .contact-info-strong {
+  font-size: 2.85mm;
+}
+
+.cash-memo-single--compact .instructions-list,
+.cash-memo-single--compact .declaration-text,
+.cash-memo-single--compact .signature-text,
+.cash-memo-single--compact .signature-section {
+  font-size: 1.65mm;
+}
+
+@page {
+  margin: 0;
 }
