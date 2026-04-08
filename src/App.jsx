@@ -72,6 +72,53 @@ const parseDateString = (dateString) => {
   return null;
 };
 
+const getNormalizedRowDate = (value) => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(value);
+  }
+  if (typeof value === 'number') {
+    return excelSerialDateToJSDate(value);
+  }
+  if (typeof value === 'string') {
+    return parseDateString(value);
+  }
+  return null;
+};
+
+const getStartOfDay = (value) => {
+  const date = getNormalizedRowDate(value);
+  if (!date) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const getElapsedDays = (value, now = new Date()) => {
+  const date = getStartOfDay(value);
+  if (!date) return null;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const isEkycNotDoneStatus = (status) => {
+  const normalized = String(status || '').toLowerCase().trim();
+  return normalized === 'pending' || normalized === 'ekyc not done' || normalized === 'not done';
+};
+
+const isOnlinePaidStatus = (status) => String(status || '').toLowerCase().trim() === 'paid';
+
+const isPendingSvRow = (row = {}) => {
+  const normalizedOrderType = String(row?.['Order Type'] || '').toLowerCase().trim();
+  return normalizedOrderType.includes('pending sv');
+};
+
+const isConsumerStatusMatch = (value, target) => {
+  return String(value || '').toLowerCase().trim() === String(target || '').toLowerCase().trim();
+};
+
+const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
+  .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
+
 const PACKAGE_OPTIONS = [
   'Demo Package - 1 Day',
   'Basic Package - 7 Days',
@@ -2254,6 +2301,8 @@ function App() {
   const [cashMemoDateEnd, setCashMemoDateEnd] = useState('');
   const [sortBy, setSortBy] = useState('');
   const [sortOrder, setSortOrder] = useState('asc');
+  const [activeReportFilter, setActiveReportFilter] = useState('');
+  const [showBookingReport, setShowBookingReport] = useState(true);
 
   // New Filter states
   const [orderStatusFilter, setOrderStatusFilter] = useState('All');
@@ -2293,9 +2342,6 @@ function App() {
 
   const handleFileUpload = async (file) => {
     if (!file) return;
-
-    const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
-      .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
 
     const processAndSetData = (data) => {
       const normalizedData = normalizeData(data);
@@ -2380,6 +2426,7 @@ function App() {
     setCashMemoStatusFilter('All');
     setDeliveryManFilter('All');
     setIsRegMobileFilter('All');
+    setActiveReportFilter('');
     setCurrentPage(1);
     setSelectedCustomerIds([]); // Clear selected customer IDs on reset
   };
@@ -3022,14 +3069,72 @@ function App() {
     }
   };
 
-  const filteredData = useMemo(() => {
+  const matchesReportFilter = (row, reportKey) => {
+    const ageInDays = getElapsedDays(row['Order Date']);
+    const orderDate = getStartOfDay(row['Order Date']);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    let tempFilteredData = parsedData.filter(row => {
+    switch (reportKey) {
+      case 'onlinePaid':
+        return isOnlinePaidStatus(row['Online Refill Payment status']);
+      case 'eKycNotDone':
+        return isEkycNotDoneStatus(row['EKYC Status']);
+      case 'sbcBooking':
+        return isConsumerStatusMatch(row['Consumer Type'], 'SBC');
+      case 'dbcBooking':
+        return isConsumerStatusMatch(row['Consumer Type'], 'DBC');
+      case 'pending02To05Days':
+        return ageInDays !== null && ageInDays >= 2 && ageInDays <= 5;
+      case 'pending05To10Days':
+        return ageInDays !== null && ageInDays >= 5 && ageInDays <= 10;
+      case 'pendingDay1':
+        return ageInDays === 1;
+      case 'pendingDay2':
+        return ageInDays === 2;
+      case 'pendingDay3':
+        return ageInDays === 3;
+      case 'pendingDay4':
+        return ageInDays === 4;
+      case 'pendingDay5':
+        return ageInDays === 5;
+      case 'pendingDay6':
+        return ageInDays === 6;
+      case 'pendingDay7':
+        return ageInDays === 7;
+      case 'pendingDay8':
+        return ageInDays === 8;
+      case 'pendingDay9':
+        return ageInDays === 9;
+      case 'pendingDay10':
+        return ageInDays === 10;
+      case 'pendingAbove21Days':
+        return ageInDays !== null && ageInDays > 21;
+      case 'pendingAbove15Days':
+        return ageInDays !== null && ageInDays > 15;
+      case 'pendingAbove10Days':
+        return ageInDays !== null && ageInDays > 10;
+      case 'pendingAbove7Days':
+        return ageInDays !== null && ageInDays > 7;
+      case 'pendingAbove3Days':
+        return ageInDays !== null && ageInDays > 3;
+      case 'todayBooking':
+        return orderDate && orderDate.getTime() === today.getTime();
+      case 'pendingSv':
+        return isPendingSvRow(row);
+      default:
+        return true;
+    }
+  };
+
+  const applyStructuredFilters = (rows, excludedFilters = []) => {
+    const excluded = new Set(excludedFilters);
+
+    let tempFilteredData = rows.filter(row => {
       const consumerNo = String(row['Consumer No.']);
       return /^\d{6}$/.test(consumerNo);
     });
 
-    // Search Term Filter
     if (searchTerm) {
       const lowercasedSearchTerm = searchTerm.toLowerCase();
       tempFilteredData = tempFilteredData.filter(row =>
@@ -3039,128 +3144,112 @@ function App() {
       );
     }
 
-    // Dropdown Filters
-    if (eKycFilter !== 'All') {
+    if (!excluded.has('eKycFilter') && eKycFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['EKYC Status'] === eKycFilter);
     }
-    if (areaFilter !== 'All') {
+    if (!excluded.has('areaFilter') && areaFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Delivery Area'] === areaFilter);
     }
-    if (natureFilter !== 'All') {
+    if (!excluded.has('natureFilter') && natureFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Consumer Nature'] === natureFilter);
     }
-    if (mobileStatusFilter !== 'All') {
+    if (!excluded.has('mobileStatusFilter') && mobileStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row =>
         mobileStatusFilter === 'Available' ? (row['Mobile No.'] && row['Mobile No.'] !== '') : (!row['Mobile No.'] || row['Mobile No.'] === '')
       );
     }
-    if (consumerStatusFilter !== 'All') {
+    if (!excluded.has('consumerStatusFilter') && consumerStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Consumer Type'] === consumerStatusFilter);
     }
-    if (connectionTypeFilter !== 'All') {
+    if (!excluded.has('connectionTypeFilter') && connectionTypeFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Consumer Package'] === connectionTypeFilter);
     }
-    if (onlineRefillPaymentStatusFilter !== 'All') {
+    if (!excluded.has('onlineRefillPaymentStatusFilter') && onlineRefillPaymentStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Online Refill Payment status'] === onlineRefillPaymentStatusFilter);
     }
-
-
-
-    // New Dropdown Filters
-    if (orderStatusFilter !== 'All') {
+    if (!excluded.has('orderStatusFilter') && orderStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Order Status'] === orderStatusFilter);
     }
-    if (orderSourceFilter !== 'All') {
+    if (!excluded.has('orderSourceFilter') && orderSourceFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Order Source'] === orderSourceFilter);
     }
-    if (orderTypeFilter !== 'All') {
+    if (!excluded.has('orderTypeFilter') && orderTypeFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Order Type'] === orderTypeFilter);
     }
-    if (cashMemoStatusFilter !== 'All') {
+    if (!excluded.has('cashMemoStatusFilter') && cashMemoStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Cash Memo Status'] === cashMemoStatusFilter);
     }
-    if (deliveryManFilter !== 'All') {
+    if (!excluded.has('deliveryManFilter') && deliveryManFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Delivery Man'] === deliveryManFilter);
     }
-    if (isRegMobileFilter !== 'All') {
+    if (!excluded.has('isRegMobileFilter') && isRegMobileFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row =>
         isRegMobileFilter === 'Yes' ? (row['Is Reg Mobile'] && row['Is Reg Mobile'] !== '') : (!row['Is Reg Mobile'] || row['Is Reg Mobile'] === '')
       );
     }
 
-    // Date Range Filters
-    // Order Date (assuming 'Order Date' is the order date)
-    if (orderDateStart && orderDateEnd) {
+    if (!excluded.has('orderDateRange') && orderDateStart && orderDateEnd) {
       tempFilteredData = tempFilteredData.filter(row => {
-        const rowDate = row['Order Date'];
-        if (!rowDate) return false; // Skip if date is not available
-        // Convert Excel serial date or parse date string
-        const convertedRowDate = typeof rowDate === 'number' ? excelSerialDateToJSDate(rowDate) : parseDateString(rowDate);
-
-        if (!convertedRowDate || isNaN(convertedRowDate.getTime())) return false;
-        const orderDate = convertedRowDate;
+        const convertedRowDate = getNormalizedRowDate(row['Order Date']);
+        if (!convertedRowDate) return false;
+        const orderDate = new Date(convertedRowDate);
         const start = new Date(orderDateStart);
         const end = new Date(orderDateEnd);
-        end.setHours(23, 59, 59, 999);
-        // Set time to 00:00:00 for accurate date comparison
         orderDate.setHours(0, 0, 0, 0);
         start.setHours(0, 0, 0, 0);
         end.setHours(0, 0, 0, 0);
-
         return orderDate >= start && orderDate <= end;
       });
     }
 
-    // Cash Memo Date
-    if (cashMemoDateStart && cashMemoDateEnd) {
+    if (!excluded.has('cashMemoDateRange') && cashMemoDateStart && cashMemoDateEnd) {
       tempFilteredData = tempFilteredData.filter(row => {
-        const rowDate = row['Cash Memo Date'];
-        if (!rowDate) return false; // Skip if date is not available
-        // Convert Excel serial date or parse date string
-        const convertedRowDate = typeof rowDate === 'number' ? excelSerialDateToJSDate(rowDate) : parseDateString(rowDate);
-
-        if (!convertedRowDate || isNaN(convertedRowDate.getTime())) return false;
-        const cashMemoDate = convertedRowDate;
+        const convertedRowDate = getNormalizedRowDate(row['Cash Memo Date']);
+        if (!convertedRowDate) return false;
+        const cashMemoDate = new Date(convertedRowDate);
         const start = new Date(cashMemoDateStart);
         const end = new Date(cashMemoDateEnd);
-        end.setHours(23, 59, 59, 999);
-        // Set time to 00:00:00 for accurate date comparison
         cashMemoDate.setHours(0, 0, 0, 0);
         start.setHours(0, 0, 0, 0);
         end.setHours(0, 0, 0, 0);
-
         return cashMemoDate >= start && cashMemoDate <= end;
       });
     }
 
-    // Sorting
-    if (sortBy) {
-      tempFilteredData = [...tempFilteredData].sort((a, b) => {
-        const aValue = a[sortBy];
-        const bValue = b[sortBy];
-
-        if (aValue === undefined || aValue === null) return sortOrder === 'asc' ? 1 : -1;
-        if (bValue === undefined || bValue === null) return sortOrder === 'asc' ? -1 : 1;
-
-        // Handle date sorting
-        if (sortBy === 'Order Date' || sortBy === 'Cash Memo Date') {
-          const dateA = new Date(aValue);
-          const dateB = new Date(bValue);
-          return sortOrder === 'asc' ? dateA.getTime() - dateB.getTime() : dateB.getTime() - dateA.getTime();
-        }
-
-        if (typeof aValue === 'string' && typeof bValue === 'string') {
-          return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-        }
-        if (typeof aValue === 'number' && typeof bValue === 'number') {
-          return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
-        }
-        // Fallback for other types or mixed types
-        return 0;
-      });
+    if (!excluded.has('activeReportFilter') && activeReportFilter) {
+      tempFilteredData = tempFilteredData.filter(row => matchesReportFilter(row, activeReportFilter));
     }
 
     return tempFilteredData;
+  };
+
+  const sortRows = (rows) => {
+    if (!sortBy) return rows;
+    return [...rows].sort((a, b) => {
+      const aValue = a[sortBy];
+      const bValue = b[sortBy];
+
+      if (aValue === undefined || aValue === null) return sortOrder === 'asc' ? 1 : -1;
+      if (bValue === undefined || bValue === null) return sortOrder === 'asc' ? -1 : 1;
+
+      if (sortBy === 'Order Date' || sortBy === 'Cash Memo Date') {
+        const dateA = new Date(aValue);
+        const dateB = new Date(bValue);
+        return sortOrder === 'asc' ? dateA.getTime() - dateB.getTime() : dateB.getTime() - dateA.getTime();
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+      }
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+      return 0;
+    });
+  };
+
+  const baseFilteredData = useMemo(() => {
+    return sortRows(applyStructuredFilters(parsedData, ['activeReportFilter']));
   }, [
     parsedData,
     searchTerm,
@@ -3185,7 +3274,101 @@ function App() {
     cashMemoStatusFilter,
     deliveryManFilter,
     isRegMobileFilter,
+    activeReportFilter,
   ]);
+
+  const bookingReport = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+
+    const metrics = {
+      totalPendingBooking: baseFilteredData.length,
+      onlinePaid: 0,
+      eKycNotDone: 0,
+      sbcBooking: 0,
+      dbcBooking: 0,
+      pending02To05Days: 0,
+      pending05To10Days: 0,
+      pendingDay1: 0,
+      pendingDay2: 0,
+      pendingDay3: 0,
+      pendingDay4: 0,
+      pendingDay5: 0,
+      pendingDay6: 0,
+      pendingDay7: 0,
+      pendingDay8: 0,
+      pendingDay9: 0,
+      pendingDay10: 0,
+      pendingAbove21Days: 0,
+      pendingAbove15Days: 0,
+      pendingAbove10Days: 0,
+      pendingAbove7Days: 0,
+      pendingAbove3Days: 0,
+      todayBooking: 0,
+      pendingSv: 0,
+    };
+
+    baseFilteredData.forEach((row) => {
+      const ageInDays = getElapsedDays(row['Order Date'], now);
+      const orderDate = getStartOfDay(row['Order Date']);
+
+      if (isOnlinePaidStatus(row['Online Refill Payment status'])) {
+        metrics.onlinePaid += 1;
+      }
+
+      if (isEkycNotDoneStatus(row['EKYC Status'])) {
+        metrics.eKycNotDone += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Consumer Type'], 'SBC')) {
+        metrics.sbcBooking += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Consumer Type'], 'DBC')) {
+        metrics.dbcBooking += 1;
+      }
+
+      if (ageInDays !== null) {
+        if (ageInDays >= 2 && ageInDays <= 5) metrics.pending02To05Days += 1;
+        if (ageInDays >= 5 && ageInDays <= 10) metrics.pending05To10Days += 1;
+        if (ageInDays === 1) metrics.pendingDay1 += 1;
+        if (ageInDays === 2) metrics.pendingDay2 += 1;
+        if (ageInDays === 3) metrics.pendingDay3 += 1;
+        if (ageInDays === 4) metrics.pendingDay4 += 1;
+        if (ageInDays === 5) metrics.pendingDay5 += 1;
+        if (ageInDays === 6) metrics.pendingDay6 += 1;
+        if (ageInDays === 7) metrics.pendingDay7 += 1;
+        if (ageInDays === 8) metrics.pendingDay8 += 1;
+        if (ageInDays === 9) metrics.pendingDay9 += 1;
+        if (ageInDays === 10) metrics.pendingDay10 += 1;
+        if (ageInDays > 21) metrics.pendingAbove21Days += 1;
+        if (ageInDays > 15) metrics.pendingAbove15Days += 1;
+        if (ageInDays > 10) metrics.pendingAbove10Days += 1;
+        if (ageInDays > 7) metrics.pendingAbove7Days += 1;
+        if (ageInDays > 3) metrics.pendingAbove3Days += 1;
+      }
+
+      if (isPendingSvRow(row)) {
+        metrics.pendingSv += 1;
+      }
+
+      if (orderDate) {
+        if (orderDate.getTime() === today.getTime()) {
+          metrics.todayBooking += 1;
+        }
+      }
+    });
+
+    return { metrics };
+  }, [baseFilteredData]);
+
+  const filteredData = useMemo(() => {
+    if (!activeReportFilter) {
+      return baseFilteredData;
+    }
+    return baseFilteredData.filter((row) => matchesReportFilter(row, activeReportFilter));
+  }, [activeReportFilter, baseFilteredData]);
 
   useEffect(() => {
     setTimeout(() => {
@@ -3212,6 +3395,7 @@ function App() {
     cashMemoStatusFilter,
     deliveryManFilter,
     isRegMobileFilter,
+    activeReportFilter,
   ]);
 
 
@@ -3225,6 +3409,63 @@ function App() {
     const endIndex = startIndex + itemsPerPage;
     return filteredData.slice(startIndex, endIndex);
   }, [filteredData, currentPage, itemsPerPage]);
+
+  const reportCards = [
+    { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
+    { key: 'onlinePaid', label: 'Online Paid', value: bookingReport.metrics.onlinePaid },
+    { key: 'eKycNotDone', label: 'EKYC Pending', value: bookingReport.metrics.eKycNotDone },
+    { key: 'sbcBooking', label: 'SBC Booking', value: bookingReport.metrics.sbcBooking },
+    { key: 'dbcBooking', label: 'DBC Booking', value: bookingReport.metrics.dbcBooking },
+    { key: 'pendingSv', label: 'Pending SV', value: bookingReport.metrics.pendingSv },
+    { key: 'todayBooking', label: "Today's Booking", value: bookingReport.metrics.todayBooking },
+    { key: 'pendingDay1', label: '1 Day', value: bookingReport.metrics.pendingDay1 },
+    { key: 'pendingDay2', label: '2 Days', value: bookingReport.metrics.pendingDay2 },
+    { key: 'pendingDay3', label: '3 Days', value: bookingReport.metrics.pendingDay3 },
+    { key: 'pendingDay4', label: '4 Days', value: bookingReport.metrics.pendingDay4 },
+    { key: 'pendingDay5', label: '5 Days', value: bookingReport.metrics.pendingDay5 },
+    { key: 'pendingDay6', label: '6 Days', value: bookingReport.metrics.pendingDay6 },
+    { key: 'pendingDay7', label: '7 Days', value: bookingReport.metrics.pendingDay7 },
+    { key: 'pendingDay8', label: '8 Days', value: bookingReport.metrics.pendingDay8 },
+    { key: 'pendingDay9', label: '9 Days', value: bookingReport.metrics.pendingDay9 },
+    { key: 'pendingDay10', label: '10 Days', value: bookingReport.metrics.pendingDay10 },
+    { key: 'pending02To05Days', label: '02 - 05 Days', value: bookingReport.metrics.pending02To05Days },
+    { key: 'pending05To10Days', label: '05 - 10 Days', value: bookingReport.metrics.pending05To10Days },
+    { key: 'pendingAbove3Days', label: '> 3 Days', value: bookingReport.metrics.pendingAbove3Days },
+    { key: 'pendingAbove7Days', label: '> 7 Days', value: bookingReport.metrics.pendingAbove7Days },
+    { key: 'pendingAbove10Days', label: '> 10 Days', value: bookingReport.metrics.pendingAbove10Days },
+    { key: 'pendingAbove15Days', label: '> 15 Days', value: bookingReport.metrics.pendingAbove15Days },
+    { key: 'pendingAbove21Days', label: '> 21 Days', value: bookingReport.metrics.pendingAbove21Days },
+  ];
+  const reportFilterOptions = reportCards.filter((card) => card.key !== 'totalPendingBooking');
+  const availableEkycOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['eKycFilter']).map(row => row['EKYC Status'])), [parsedData, searchTerm, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableAreaOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['areaFilter']).map(row => row['Delivery Area'])), [parsedData, searchTerm, eKycFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableNatureOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['natureFilter']).map(row => row['Consumer Nature'])), [parsedData, searchTerm, eKycFilter, areaFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableMobileStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['mobileStatusFilter']).map(row => (row['Mobile No.'] && row['Mobile No.'] !== '' ? 'Available' : 'Not Available'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableConsumerStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['consumerStatusFilter']).map(row => row['Consumer Type'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableConnectionTypeOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['connectionTypeFilter']).map(row => row['Consumer Package'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableOnlinePaymentOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['onlineRefillPaymentStatusFilter']).map(row => row['Online Refill Payment status'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableOrderStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['orderStatusFilter']).map(row => row['Order Status'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableOrderSourceOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['orderSourceFilter']).map(row => row['Order Source'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableOrderTypeOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['orderTypeFilter']).map(row => row['Order Type'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableCashMemoStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['cashMemoStatusFilter']).map(row => row['Cash Memo Status'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableDeliveryManOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['deliveryManFilter']).map(row => row['Delivery Man'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableIsRegMobileOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['isRegMobileFilter']).map(row => (row['Is Reg Mobile'] && row['Is Reg Mobile'] !== '' ? 'Yes' : 'No'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+
+  useEffect(() => {
+    if (eKycFilter !== 'All' && !availableEkycOptions.includes(eKycFilter)) setEKycFilter('All');
+    if (areaFilter !== 'All' && !availableAreaOptions.includes(areaFilter)) setAreaFilter('All');
+    if (natureFilter !== 'All' && !availableNatureOptions.includes(natureFilter)) setNatureFilter('All');
+    if (mobileStatusFilter !== 'All' && !availableMobileStatusOptions.includes(mobileStatusFilter)) setMobileStatusFilter('All');
+    if (consumerStatusFilter !== 'All' && !availableConsumerStatusOptions.includes(consumerStatusFilter)) setConsumerStatusFilter('All');
+    if (connectionTypeFilter !== 'All' && !availableConnectionTypeOptions.includes(connectionTypeFilter)) setConnectionTypeFilter('All');
+    if (onlineRefillPaymentStatusFilter !== 'All' && !availableOnlinePaymentOptions.includes(onlineRefillPaymentStatusFilter)) setOnlineRefillPaymentStatusFilter('All');
+    if (orderStatusFilter !== 'All' && !availableOrderStatusOptions.includes(orderStatusFilter)) setOrderStatusFilter('All');
+    if (orderSourceFilter !== 'All' && !availableOrderSourceOptions.includes(orderSourceFilter)) setOrderSourceFilter('All');
+    if (orderTypeFilter !== 'All' && !availableOrderTypeOptions.includes(orderTypeFilter)) setOrderTypeFilter('All');
+    if (cashMemoStatusFilter !== 'All' && !availableCashMemoStatusOptions.includes(cashMemoStatusFilter)) setCashMemoStatusFilter('All');
+    if (deliveryManFilter !== 'All' && !availableDeliveryManOptions.includes(deliveryManFilter)) setDeliveryManFilter('All');
+    if (isRegMobileFilter !== 'All' && !availableIsRegMobileOptions.includes(isRegMobileFilter)) setIsRegMobileFilter('All');
+  }, [eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, availableEkycOptions, availableAreaOptions, availableNatureOptions, availableMobileStatusOptions, availableConsumerStatusOptions, availableConnectionTypeOptions, availableOnlinePaymentOptions, availableOrderStatusOptions, availableOrderSourceOptions, availableOrderTypeOptions, availableCashMemoStatusOptions, availableDeliveryManOptions, availableIsRegMobileOptions]);
 
   const handleNextPage = () => {
     setCurrentPage(prev => Math.min(prev + 1, totalPages));
@@ -3284,6 +3525,9 @@ function App() {
               <>
                 <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
                 <button onClick={handleReUploadClick} className="navbar-button">Re-Upload</button>
+                {showParsedData && !showBookingReport && (
+                  <button onClick={() => setShowBookingReport(true)} className="navbar-button">Show Report</button>
+                )}
               </>
             )}
           </div>
@@ -3431,16 +3675,59 @@ function App() {
       {parsedData.length > 0 && showParsedData && (
         <div className="filters-shell">
 
+          {showBookingReport && (
+            <div className="booking-report-panel">
+              <div className="booking-report-header">
+                <div>
+                  <h3>Pending Booking Report</h3>
+                </div>
+                <div className="booking-report-actions">
+                  <span className="booking-report-badge">Records: {filteredData.length}</span>
+                  {activeReportFilter && (
+                    <button className="booking-report-clear" onClick={() => setActiveReportFilter('')}>
+                      Clear Report Filter
+                    </button>
+                  )}
+                  <button className="booking-report-clear" onClick={() => setShowBookingReport(false)}>
+                    Hide Report
+                  </button>
+                </div>
+              </div>
+
+              <div className="booking-report-grid">
+                {reportCards.map((card) => (
+                  <button
+                    key={card.key}
+                    type="button"
+                    className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''}`}
+                    onClick={() => setActiveReportFilter((prev) => (prev === card.key || card.key === 'totalPendingBooking' ? '' : card.key))}
+                  >
+                    <span className="booking-report-label">{card.label}</span>
+                    <strong>{card.value}</strong>
+                  </button>
+                ))}
+              </div>
+
+            </div>
+          )}
+
 
 
 
 
           {/* New Filter UI */}
           <div className="filters-container">
+            <select className="filter-select" value={activeReportFilter || 'All'} onChange={(e) => setActiveReportFilter(e.target.value === 'All' ? '' : e.target.value)}>
+              <option value="All">All Report Filters</option>
+              {reportFilterOptions.map((item) => (
+                <option key={item.key} value={item.key}>{item.label}</option>
+              ))}
+            </select>
+
             {/* eKYC Filter */}
             <select className="filter-select" value={eKycFilter} onChange={(e) => setEKycFilter(e.target.value)}>
               <option value="All">All eKYC</option>
-              {uniqueEkycStatuses.map((status, index) => (
+              {availableEkycOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
@@ -3448,7 +3735,7 @@ function App() {
             {/* Area Filter */}
             <select className="filter-select" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
               <option value="All">All Areas</option>
-              {uniqueAreas.map((area, index) => (
+              {availableAreaOptions.map((area, index) => (
                 <option key={index} value={area}>{area}</option>
               ))}
             </select>
@@ -3456,7 +3743,7 @@ function App() {
             {/* Nature Filter */}
             <select className="filter-select" value={natureFilter} onChange={(e) => setNatureFilter(e.target.value)}>
               <option value="All">All Nature</option>
-              {uniqueNatures.map((nature, index) => (
+              {availableNatureOptions.map((nature, index) => (
                 <option key={index} value={nature}>{nature}</option>
               ))}
             </select>
@@ -3464,7 +3751,7 @@ function App() {
             {/* Mobile Status Filter */}
             <select className="filter-select" value={mobileStatusFilter} onChange={(e) => setMobileStatusFilter(e.target.value)}>
               <option value="All">All Mobile Status</option>
-              {uniqueMobileStatuses.map((status, index) => (
+              {availableMobileStatusOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
@@ -3472,7 +3759,7 @@ function App() {
             {/* Consumer Status Filter */}
             <select className="filter-select" value={consumerStatusFilter} onChange={(e) => setConsumerStatusFilter(e.target.value)}>
               <option value="All">All Consumer Status</option>
-              {uniqueConsumerStatuses.map((status, index) => (
+              {availableConsumerStatusOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
@@ -3480,7 +3767,7 @@ function App() {
             {/* Connection Type Filter */}
             <select className="filter-select" value={connectionTypeFilter} onChange={(e) => setConnectionTypeFilter(e.target.value)}>
               <option value="All">All Connection Types</option>
-              {uniqueConnectionTypes.map((type, index) => (
+              {availableConnectionTypeOptions.map((type, index) => (
                 <option key={index} value={type}>{type}</option>
               ))}
             </select>
@@ -3488,7 +3775,7 @@ function App() {
             {/* Online Refill Payment Status Filter */}
             <select className="filter-select" value={onlineRefillPaymentStatusFilter} onChange={(e) => setOnlineRefillPaymentStatusFilter(e.target.value)}>
               <option value="All">All Online Refill Payment Status</option>
-              {uniqueOnlineRefillPaymentStatuses.map((status, index) => (
+              {availableOnlinePaymentOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
@@ -3500,7 +3787,7 @@ function App() {
             {/* Order Status Filter */}
             <select className="filter-select" value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)}>
               <option value="All">All Order Status</option>
-              {uniqueOrderStatuses.map((status, index) => (
+              {availableOrderStatusOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
@@ -3508,7 +3795,7 @@ function App() {
             {/* Order Source Filter */}
             <select className="filter-select" value={orderSourceFilter} onChange={(e) => setOrderSourceFilter(e.target.value)}>
               <option value="All">All Order Source</option>
-              {uniqueOrderSources.map((source, index) => (
+              {availableOrderSourceOptions.map((source, index) => (
                 <option key={index} value={source}>{source}</option>
               ))}
             </select>
@@ -3516,7 +3803,7 @@ function App() {
             {/* Order Type Filter */}
             <select className="filter-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
               <option value="All">All Order Type</option>
-              {uniqueOrderTypes.map((type, index) => (
+              {availableOrderTypeOptions.map((type, index) => (
                 <option key={index} value={type}>{type}</option>
               ))}
             </select>
@@ -3524,7 +3811,7 @@ function App() {
             {/* Cash Memo Status Filter */}
             <select className="filter-select" value={cashMemoStatusFilter} onChange={(e) => setCashMemoStatusFilter(e.target.value)}>
               <option value="All">All Cash Memo Status</option>
-              {uniqueCashMemoStatuses.map((status, index) => (
+              {availableCashMemoStatusOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
@@ -3532,7 +3819,7 @@ function App() {
             {/* Delivery Man Filter */}
             <select className="filter-select" value={deliveryManFilter} onChange={(e) => setDeliveryManFilter(e.target.value)}>
               <option value="All">All Delivery Man</option>
-              {uniqueDeliveryMen.map((man, index) => (
+              {availableDeliveryManOptions.map((man, index) => (
                 <option key={index} value={man}>{man}</option>
               ))}
             </select>
@@ -3540,7 +3827,7 @@ function App() {
             {/* Is Reg Mobile Filter */}
             <select className="filter-select" value={isRegMobileFilter} onChange={(e) => setIsRegMobileFilter(e.target.value)}>
               <option value="All">All Is Reg Mobile</option>
-              {uniqueIsRegMobileStatuses.map((status, index) => (
+              {availableIsRegMobileOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
