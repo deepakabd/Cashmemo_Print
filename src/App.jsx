@@ -126,6 +126,13 @@ const PACKAGE_OPTIONS = [
   'Enterprise Package - 365 Days',
 ];
 
+const PACKAGE_PRICING = {
+  'Demo Package - 1 Day': 'Free',
+  'Basic Package - 7 Days': 'Rs. 1000',
+  'Premium Package - 30 Days': 'Rs. 3000',
+  'Enterprise Package - 365 Days': 'Rs. 7500',
+};
+
 const getPackageValidityDays = (packageName = '') => {
   const normalized = String(packageName || '').toLowerCase();
   if (normalized.includes('demo')) return 1;
@@ -862,7 +869,7 @@ function App() {
           <select name="package" value={form.package} onChange={onChange} className="form-input">
             <option value="">पैकेज चुनें</option>
             {fixedPackages.map((opt, i) => (
-              <option key={i} value={opt}>{opt}</option>
+              <option key={i} value={opt}>{`${opt} - ${PACKAGE_PRICING[opt] || '-'}`}</option>
             ))}
           </select>
           <input name="dealerCode" className="form-input" placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
@@ -1045,14 +1052,80 @@ function App() {
   };
 
   const AdminPanel = ({ onClose, onAdminLogout }) => {
+    const adminImportRef = useRef(null);
     const [requests, setRequests] = useState([]);
     const [users, setUsers] = useState([]);
     const [feedback, setFeedback] = useState([]);
     const [updateApprovals, setUpdateApprovals] = useState([]);
-    const [activeAdminTab, setActiveAdminTab] = useState('pending-registration');
+    const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
+    const [adminSearchTerm, setAdminSearchTerm] = useState('');
+    const [adminDateRange, setAdminDateRange] = useState('all');
+    const [adminSubFilter, setAdminSubFilter] = useState('all');
+    const [adminCurrentPage, setAdminCurrentPage] = useState(1);
+    const [adminItemsPerPage] = useState(10);
+    const [adminRoleMode, setAdminRoleMode] = useState(() => localStorage.getItem('adminRoleMode') || 'super-admin');
+    const [selectedRequestIds, setSelectedRequestIds] = useState([]);
+    const [selectedApprovalIds, setSelectedApprovalIds] = useState([]);
+    const [selectedUserTokens, setSelectedUserTokens] = useState([]);
     const [viewRequest, setViewRequest] = useState(null);
     const [viewApproval, setViewApproval] = useState(null);
     const [detailView, setDetailView] = useState(null);
+    const [auditTrail, setAuditTrail] = useState(() => {
+      try {
+        const raw = localStorage.getItem('adminAuditTrail');
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    });
+    const [adminNotes, setAdminNotes] = useState(() => {
+      try {
+        const raw = localStorage.getItem('adminNotes');
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    });
+    const [feedbackMetaOverrides, setFeedbackMetaOverrides] = useState(() => {
+      try {
+        const raw = localStorage.getItem('feedbackMetaOverrides');
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    });
+    const [feedbackReplies, setFeedbackReplies] = useState(() => {
+      try {
+        const raw = localStorage.getItem('feedbackReplies');
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    });
+    const [savedAdminViews, setSavedAdminViews] = useState(() => {
+      try {
+        const raw = localStorage.getItem('savedAdminViews');
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    });
+    const [deletedUsersBin, setDeletedUsersBin] = useState(() => {
+      try {
+        const raw = localStorage.getItem('deletedUsersBin');
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    });
+    const [adminNotifications, setAdminNotifications] = useState([]);
+    const [adminDataHealth, setAdminDataHealth] = useState({ source: 'unknown', lastSyncAt: '', firebaseReachable: false });
     const [hiddenApprovalIds, setHiddenApprovalIds] = useState([]);
     const [registrationStatusOverrides, setRegistrationStatusOverrides] = useState(() => {
       try {
@@ -1186,7 +1259,15 @@ function App() {
             mergedFeedbackMap.set(key, f);
           }
         });
-        const mergedFeedback = Array.from(mergedFeedbackMap.values());
+        const mergedFeedback = Array.from(mergedFeedbackMap.values()).map((item) => {
+          const override = feedbackMetaOverrides[item.id] || {};
+          return {
+            priority: 'medium',
+            resolved: false,
+            ...item,
+            ...override,
+          };
+        });
 
         setRequests(reqWithOverrides);
         setUsers(firebaseUsers);
@@ -1195,6 +1276,11 @@ function App() {
         localStorage.setItem('registrationRequests', JSON.stringify(reqWithOverrides));
         localStorage.setItem('usersData', JSON.stringify(firebaseUsers));
         localStorage.setItem('feedbackData', JSON.stringify(mergedFeedback));
+        setAdminDataHealth({
+          source: firebaseUsers.length > 0 || firebaseRequests.length > 0 || firebaseApprovals.length > 0 || firebaseFeedback.length > 0 ? 'firebase+local' : 'local',
+          lastSyncAt: new Date().toISOString(),
+          firebaseReachable: true,
+        });
       } catch {
         try {
           const reqRaw = localStorage.getItem('registrationRequests');
@@ -1212,11 +1298,21 @@ function App() {
           setUsers(Array.isArray(userList) ? userList : []);
           setFeedback(Array.isArray(fbList) ? fbList : []);
           setUpdateApprovals([]);
+          setAdminDataHealth({
+            source: 'local',
+            lastSyncAt: new Date().toISOString(),
+            firebaseReachable: false,
+          });
         } catch {
           setRequests([]);
           setUsers([]);
           setFeedback([]);
           setUpdateApprovals([]);
+          setAdminDataHealth({
+            source: 'unavailable',
+            lastSyncAt: new Date().toISOString(),
+            firebaseReachable: false,
+          });
         }
       }
     };
@@ -1239,6 +1335,63 @@ function App() {
       const d = new Date(`${value}T00:00:00`);
       return Number.isNaN(d.getTime()) ? value : d.toISOString();
     };
+
+    const logAdminActivity = (action, details = {}) => {
+      const entry = {
+        id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        action,
+        details,
+        createdAt: new Date().toISOString(),
+      };
+      setAuditTrail((prev) => {
+        const next = [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 150);
+        localStorage.setItem('adminAuditTrail', JSON.stringify(next));
+        return next;
+      });
+    };
+
+    const confirmAdminAction = (message) => window.confirm(message);
+
+    const persistAdminNotes = (nextNotes) => {
+      setAdminNotes(nextNotes);
+      localStorage.setItem('adminNotes', JSON.stringify(nextNotes));
+    };
+
+    const saveAdminNote = (noteKey, noteValue) => {
+      const nextNotes = { ...adminNotes, [noteKey]: noteValue };
+      persistAdminNotes(nextNotes);
+      logAdminActivity('note_saved', { noteKey });
+    };
+
+    const persistFeedbackMetaOverrides = (nextOverrides) => {
+      setFeedbackMetaOverrides(nextOverrides);
+      localStorage.setItem('feedbackMetaOverrides', JSON.stringify(nextOverrides));
+    };
+
+    const persistFeedbackReplies = (nextReplies) => {
+      setFeedbackReplies(nextReplies);
+      localStorage.setItem('feedbackReplies', JSON.stringify(nextReplies));
+    };
+
+    const persistSavedAdminViews = (nextViews) => {
+      setSavedAdminViews(nextViews);
+      localStorage.setItem('savedAdminViews', JSON.stringify(nextViews));
+    };
+
+    const persistDeletedUsersBin = (nextBin) => {
+      setDeletedUsersBin(nextBin);
+      localStorage.setItem('deletedUsersBin', JSON.stringify(nextBin));
+    };
+
+    const adminRolePermissions = {
+      'super-admin': { tabs: ['dashboard', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'recycle-bin', 'audit'], mutate: true },
+      'approval-admin': { tabs: ['dashboard', 'pending-registration', 'approval', 'feedback', 'audit'], mutate: true },
+      'support-admin': { tabs: ['dashboard', 'active-user', 'total-user', 'feedback', 'audit'], mutate: true },
+      viewer: { tabs: ['dashboard', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
+    };
+    const currentRolePermissions = adminRolePermissions[adminRoleMode] || adminRolePermissions['super-admin'];
+    const canAccessTab = (tabKey) => currentRolePermissions.tabs.includes(tabKey);
+    const canMutateAdminData = Boolean(currentRolePermissions.mutate);
 
     const setRegistrationOverride = (id, status) => {
       setRegistrationStatusOverrides((prev) => {
@@ -1264,9 +1417,26 @@ function App() {
       loadData();
     }, []);
 
-    const approveRequest = async (id) => {
+    useEffect(() => {
+      localStorage.setItem('adminRoleMode', adminRoleMode);
+      if (!canAccessTab(activeAdminTab)) {
+        setActiveAdminTab('dashboard');
+      }
+    }, [adminRoleMode, activeAdminTab]);
+
+    useEffect(() => {
+      setAdminSubFilter('all');
+      setAdminSearchTerm('');
+      setSelectedRequestIds([]);
+      setSelectedApprovalIds([]);
+      setSelectedUserTokens([]);
+      setAdminCurrentPage(1);
+    }, [activeAdminTab]);
+
+    const approveRequest = async (id, options = {}) => {
       const req = requests.find((r) => r.id === id);
       if (!req) return;
+      if (!options.skipConfirm && !confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`)) return;
       try {
         setRegistrationOverride(id, 'approved');
         const validity = computeValidityDates(req.package || '');
@@ -1327,6 +1497,7 @@ function App() {
           localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
         }
         await loadData();
+        logAdminActivity('registration_approved', { id, dealerCode: req.dealerCode || '' });
         if (!isLocalOnlyRequest && !requestStatusUpdated) {
           setRequests((prev) => prev.filter((r) => r.id !== id));
         }
@@ -1335,7 +1506,9 @@ function App() {
       }
     };
 
-    const rejectRequest = async (id) => {
+    const rejectRequest = async (id, options = {}) => {
+      const req = requests.find((r) => r.id === id);
+      if (!options.skipConfirm && !confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`)) return;
       try {
         setRegistrationOverride(id, 'rejected');
         const requestId = String(id || '');
@@ -1351,6 +1524,7 @@ function App() {
           localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
         }
         await loadData();
+        logAdminActivity('registration_rejected', { id, dealerCode: req?.dealerCode || '' });
       } catch {
         alert('Reject failed. Check Firestore rules.');
       }
@@ -1361,6 +1535,7 @@ function App() {
         alert('Dealer code, dealer name, package and PIN required.');
         return;
       }
+      if (!confirmAdminAction(`Create manual user ${newUser.dealerCode.trim()}?`)) return;
       try {
         const validity = computeValidityDates(newUser.package);
         await addDoc(collection(db, 'users'), {
@@ -1381,17 +1556,19 @@ function App() {
         });
         setNewUser({ dealerCode: '', dealerName: '', mobile: '', email: '', package: '', pin: '', role: 'operator' });
         await loadData();
+        logAdminActivity('manual_user_created', { dealerCode: newUser.dealerCode.trim() });
       } catch {
         alert('Create user failed.');
       }
     };
 
-    const toggleUserStatus = async (userOrId) => {
+    const toggleUserStatus = async (userOrId, options = {}) => {
       const target = typeof userOrId === 'object'
         ? userOrId
         : users.find((u) => u.id === userOrId);
       if (!target) return;
       const nextStatus = target.status === 'active' ? 'disabled' : 'active';
+      if (!options.skipConfirm && !confirmAdminAction(`${nextStatus === 'disabled' ? 'Disable' : 'Enable'} ${target.dealerCode || 'this user'}?`)) return;
       try {
         if (target.id) {
           await updateDoc(doc(db, 'users', target.id), {
@@ -1399,6 +1576,7 @@ function App() {
             updatedAt: serverTimestamp(),
           });
           await loadData();
+          logAdminActivity('user_status_changed', { dealerCode: target.dealerCode || '', status: nextStatus });
           return;
         }
         throw new Error('LOCAL_ONLY_USER');
@@ -1406,6 +1584,7 @@ function App() {
         const token = resolveEditToken(target);
         const nextUsers = users.map((u) => (isSameUserByToken(u, token) ? { ...u, status: nextStatus } : u));
         writeUsersLocal(nextUsers);
+        logAdminActivity('user_status_changed_local', { dealerCode: target.dealerCode || '', status: nextStatus });
         alert('Status updated locally.');
       }
     };
@@ -1415,10 +1594,13 @@ function App() {
         ? userOrId
         : users.find((u) => u.id === userOrId);
       if (!target) return;
+      if (!confirmAdminAction(`Delete ${target.dealerCode || 'this user'} permanently?`)) return;
       try {
+        persistDeletedUsersBin([{ ...target, deletedAt: new Date().toISOString() }, ...deletedUsersBin].slice(0, 200));
         if (target.id) {
           await deleteDoc(doc(db, 'users', target.id));
           await loadData();
+          logAdminActivity('user_deleted', { dealerCode: target.dealerCode || '' });
           return;
         }
         throw new Error('LOCAL_ONLY_USER');
@@ -1426,6 +1608,7 @@ function App() {
         const token = resolveEditToken(target);
         const nextUsers = users.filter((u) => !isSameUserByToken(u, token));
         writeUsersLocal(nextUsers);
+        logAdminActivity('user_deleted_local', { dealerCode: target.dealerCode || '' });
         alert('User deleted locally.');
       }
     };
@@ -1467,6 +1650,7 @@ function App() {
         alert('User not found.');
         return;
       }
+      if (!confirmAdminAction(`Save changes for ${targetUser.dealerCode || 'this user'}?`)) return;
       try {
         const fallbackValidity = computeValidityDates(editUser.package);
         const validFromIso = toIsoDate(editUser.validFrom) || fallbackValidity.validFrom;
@@ -1493,6 +1677,7 @@ function App() {
         });
         setEditingUserId('');
         await loadData();
+        logAdminActivity('user_updated', { dealerCode: targetUser.dealerCode || '' });
       } catch {
         const fallbackValidity = computeValidityDates(editUser.package);
         const validFromIso = toIsoDate(editUser.validFrom) || fallbackValidity.validFrom;
@@ -1520,6 +1705,7 @@ function App() {
         ));
         writeUsersLocal(nextUsers);
         setEditingUserId('');
+        logAdminActivity('user_updated_local', { dealerCode: targetUser.dealerCode || '' });
         alert('User updated locally. Firebase permission denied.');
       }
     };
@@ -1559,7 +1745,7 @@ function App() {
     const combinedPendingApprovals = [...collectionPendingApprovals, ...fallbackPendingApprovals]
       .filter((approval) => !hiddenApprovalIds.includes(approval.id));
 
-    const approveUpdateRequest = async (approval) => {
+    const approveUpdateRequest = async (approval, options = {}) => {
       if (!approval?.id) return;
       const approvalType = normalizeApprovalType(approval.type);
       const fieldByType = {
@@ -1572,6 +1758,7 @@ function App() {
         alert(`Unsupported approval type: ${approval.type || 'unknown'}`);
         return;
       }
+      if (!options.skipConfirm && !confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return;
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (!targetUser?.id) {
@@ -1606,15 +1793,17 @@ function App() {
         }
         setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
         await loadData();
+        logAdminActivity('update_approved', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
         alert('Request approved successfully.');
       } catch {
         alert('Approval failed.');
       }
     };
 
-    const rejectUpdateRequest = async (approval) => {
+    const rejectUpdateRequest = async (approval, options = {}) => {
       if (!approval?.id) return;
       const approvalType = normalizeApprovalType(approval.type);
+      if (!options.skipConfirm && !confirmAdminAction(`Reject ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return;
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (targetUser?.id) {
@@ -1646,6 +1835,7 @@ function App() {
         }
         setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
         await loadData();
+        logAdminActivity('update_rejected', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
       } catch {
         alert('Reject failed.');
       }
@@ -1665,6 +1855,7 @@ function App() {
         const nextFeedback = feedback.map((f) => (f.id === item.id ? { ...f, read: nextRead } : f));
         setFeedback(nextFeedback);
         localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
+        logAdminActivity('feedback_read_toggle', { id: item.id, read: nextRead });
       } catch {
         alert('Unable to update feedback status.');
       }
@@ -1672,6 +1863,7 @@ function App() {
 
     const deleteFeedbackItem = async (item) => {
       const targetUser = users.find((u) => u.id === item?.userId || String(u?.dealerCode || '').trim() === String(item?.dealerCode || '').trim());
+      if (!confirmAdminAction(`Delete feedback from ${item?.dealerCode || 'this user'}?`)) return;
       try {
         if (item?.source !== 'userDoc' && item?.id && !String(item.id).startsWith('userfb-')) {
           try {
@@ -1705,65 +1897,615 @@ function App() {
         });
         setFeedback(nextFeedback);
         localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
+        logAdminActivity('feedback_deleted', { id: item.id, dealerCode: item?.dealerCode || '' });
       } catch {
         alert('Unable to delete feedback.');
       }
     };
 
+    const updateFeedbackMeta = async (item, patch) => {
+      const nextFeedback = feedback.map((f) => (f.id === item.id ? { ...f, ...patch } : f));
+      setFeedback(nextFeedback);
+      localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
+      const nextOverrides = { ...feedbackMetaOverrides, [item.id]: { ...(feedbackMetaOverrides[item.id] || {}), ...patch } };
+      persistFeedbackMetaOverrides(nextOverrides);
+      try {
+        if (item?.id && item?.source !== 'userDoc' && !String(item.id).startsWith('userfb-')) {
+          await updateDoc(doc(db, 'feedback', item.id), { ...patch, updatedAt: serverTimestamp() });
+        }
+      } catch {}
+    };
+
+    const setFeedbackPriority = async (item, priority) => {
+      await updateFeedbackMeta(item, { priority });
+      logAdminActivity('feedback_priority', { id: item.id, priority });
+    };
+
+    const toggleFeedbackResolved = async (item) => {
+      const resolved = !Boolean(item?.resolved);
+      await updateFeedbackMeta(item, { resolved });
+      logAdminActivity('feedback_resolved', { id: item.id, resolved });
+    };
+
     const openDetailView = (user, type) => {
       if (type === 'profile') {
-        setDetailView({ title: `Profile - ${user?.dealerCode || ''}`, data: user?.profileData || {} });
+        setDetailView({ title: `Profile - ${user?.dealerCode || ''}`, data: user?.profileData || {}, noteKey: `user:${user?.id || user?.dealerCode}:profile` });
         return;
       }
       if (type === 'bank') {
-        setDetailView({ title: `Bank - ${user?.dealerCode || ''}`, data: user?.bankDetailsData || {} });
+        setDetailView({ title: `Bank - ${user?.dealerCode || ''}`, data: user?.bankDetailsData || {}, noteKey: `user:${user?.id || user?.dealerCode}:bank` });
         return;
       }
-      setDetailView({ title: `Rates - ${user?.dealerCode || ''}`, data: user?.ratesData || [] });
+      setDetailView({ title: `Rates - ${user?.dealerCode || ''}`, data: user?.ratesData || [], noteKey: `user:${user?.id || user?.dealerCode}:rates` });
     };
 
     const pendingRegistrationRequests = requests.filter((r) => (r.status || 'pending') === 'pending');
     const pendingCount = pendingRegistrationRequests.length;
     const activeUsers = users.filter((u) => u.status === 'active').length;
     const activeUsersList = users.filter((u) => u.status === 'active');
+    const disabledUsers = users.filter((u) => u.status === 'disabled').length;
+    const unreadFeedbackCount = feedback.filter((item) => !item?.read).length;
+    const approvalTypeCounts = combinedPendingApprovals.reduce((acc, item) => {
+      const key = normalizeApprovalType(item?.type);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const expiringUsers = users
+      .filter((u) => u.status === 'active')
+      .map((u) => ({ ...u, remainingDays: getRemainingDays(u.validTill) }))
+      .filter((u) => u.remainingDays !== null && u.remainingDays >= 0 && u.remainingDays <= 7)
+      .sort((a, b) => a.remainingDays - b.remainingDays);
+    const searchLower = adminSearchTerm.trim().toLowerCase();
+    const rangeDaysMap = { today: 0, '7d': 7, '30d': 30 };
+    const isWithinAdminDateRange = (value) => {
+      if (adminDateRange === 'all') return true;
+      const date = new Date(value || '');
+      if (Number.isNaN(date.getTime())) return false;
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      if (adminDateRange === 'today') {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        return date >= start && date <= today;
+      }
+      const days = rangeDaysMap[adminDateRange];
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - days);
+      return date >= start && date <= today;
+    };
+    const matchesAdminSearch = (values) => {
+      if (!searchLower) return true;
+      return values.some((value) => String(value || '').toLowerCase().includes(searchLower));
+    };
+    const filteredPendingRegistrationRequests = pendingRegistrationRequests.filter((r) =>
+      isWithinAdminDateRange(r.createdAt || r.approvedAt) &&
+      (adminSubFilter === 'all' || String(r.package || '') === adminSubFilter) &&
+      matchesAdminSearch([r.dealerCode, r.dealerName, r.mobile, r.email, r.package])
+    );
+    const filteredUsersList = (activeAdminTab === 'active-user' ? activeUsersList : users).filter((u) => {
+      const matchesSubFilter = adminSubFilter === 'all'
+        || (adminSubFilter === 'expiring' && getRemainingDays(u.validTill) !== null && getRemainingDays(u.validTill) >= 0 && getRemainingDays(u.validTill) <= 7)
+        || String(u.status || '').toLowerCase() === adminSubFilter
+        || String(u.role || '').toLowerCase() === adminSubFilter;
+      return isWithinAdminDateRange(u.createdAt || u.approvedAt || u.updatedAt)
+        && matchesSubFilter
+        && matchesAdminSearch([u.dealerCode, u.dealerName, u.mobile, u.email, u.package, u.pin, u.status, u.role]);
+    });
+    const filteredApprovals = combinedPendingApprovals.filter((a) =>
+      isWithinAdminDateRange(a.requestedAt || a.approvedAt || a.rejectedAt) &&
+      (adminSubFilter === 'all' || normalizeApprovalType(a.type) === adminSubFilter) &&
+      matchesAdminSearch([a.dealerCode, a.dealerName, a.type, a.requestedAt])
+    );
+    const filteredFeedback = feedback.filter((f) => {
+      const priority = String(f.priority || 'medium').toLowerCase();
+      const feedbackState = f.resolved ? 'resolved' : (f.read ? 'read' : 'unread');
+      const matchesSubFilter = adminSubFilter === 'all'
+        || adminSubFilter === priority
+        || adminSubFilter === feedbackState
+        || (adminSubFilter === 'open' && !f.resolved);
+      return isWithinAdminDateRange(f.createdAt || f.date) &&
+        matchesSubFilter &&
+        matchesAdminSearch([f.dealerCode, f.dealerName, f.email, f.text, f.createdAt, f.date, f.read ? 'read' : 'unread', priority, f.resolved ? 'resolved' : 'open']);
+    });
+    const paginateAdminRows = (rows) => {
+      const start = (adminCurrentPage - 1) * adminItemsPerPage;
+      return rows.slice(start, start + adminItemsPerPage);
+    };
+    const currentTabRows = activeAdminTab === 'pending-registration'
+      ? filteredPendingRegistrationRequests
+      : activeAdminTab === 'approval'
+        ? filteredApprovals
+        : activeAdminTab === 'feedback'
+          ? filteredFeedback
+          : (activeAdminTab === 'active-user' || activeAdminTab === 'total-user')
+            ? filteredUsersList
+            : activeAdminTab === 'recycle-bin'
+              ? deletedUsersBin
+              : activeAdminTab === 'audit'
+                ? auditTrail
+                : [];
+    const adminTotalPages = Math.max(1, Math.ceil(currentTabRows.length / adminItemsPerPage));
+    const pagedPendingRegistrationRequests = paginateAdminRows(filteredPendingRegistrationRequests);
+    const pagedUsersList = paginateAdminRows(filteredUsersList);
+    const pagedApprovals = paginateAdminRows(filteredApprovals);
+    const pagedFeedback = paginateAdminRows(filteredFeedback);
+    const pagedDeletedUsers = paginateAdminRows(deletedUsersBin);
+    const pagedAuditTrail = paginateAdminRows(auditTrail);
+    const notifications = [
+      pendingCount > 0 ? { id: 'pending-requests', text: `${pendingCount} registration requests pending`, tone: 'blue' } : null,
+      combinedPendingApprovals.length > 0 ? { id: 'pending-approvals', text: `${combinedPendingApprovals.length} profile/bank/rate approvals waiting`, tone: 'amber' } : null,
+      expiringUsers.length > 0 ? { id: 'expiring-users', text: `${expiringUsers.length} active users expiring within 7 days`, tone: 'rose' } : null,
+      unreadFeedbackCount > 0 ? { id: 'unread-feedback', text: `${unreadFeedbackCount} unread feedback messages`, tone: 'green' } : null,
+    ].filter(Boolean);
+    const exportRowsAsCsv = (filename, rows) => {
+      if (!Array.isArray(rows) || rows.length === 0) {
+        alert('No data available to export.');
+        return;
+      }
+      const columns = Array.from(
+        rows.reduce((set, row) => {
+          Object.keys(row || {}).forEach((key) => set.add(key));
+          return set;
+        }, new Set())
+      );
+      const escapeCell = (value) => {
+        const text = String(value ?? '');
+        if (/[",\n]/.test(text)) {
+          return `"${text.replace(/"/g, '""')}"`;
+        }
+        return text;
+      };
+      const csv = [
+        columns.join(','),
+        ...rows.map((row) => columns.map((column) => escapeCell(row?.[column])).join(',')),
+      ].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    };
+    const adminStats = [
+      { label: 'Pending Registration', value: pendingCount, tone: 'blue' },
+      { label: 'Pending Approval', value: combinedPendingApprovals.length, tone: 'amber' },
+      { label: 'Active Users', value: activeUsers, tone: 'green' },
+      { label: 'Total Users', value: users.length, tone: 'navy' },
+      { label: 'Disabled Users', value: disabledUsers, tone: 'slate' },
+      { label: 'Unread Feedback', value: unreadFeedbackCount, tone: 'rose' },
+    ];
+    const countItemsInDays = (items, getDateValue, days) => {
+      const now = new Date();
+      now.setHours(23, 59, 59, 999);
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - days);
+      return items.filter((item) => {
+        const raw = getDateValue(item);
+        const date = new Date(raw || '');
+        return !Number.isNaN(date.getTime()) && date >= start && date <= now;
+      }).length;
+    };
+    const dateSummaryCards = [
+      { label: 'Today', value: countItemsInDays(requests, (item) => item.createdAt || item.approvedAt, 0) },
+      { label: '7 Days', value: countItemsInDays(requests, (item) => item.createdAt || item.approvedAt, 7) },
+      { label: '30 Days', value: countItemsInDays(requests, (item) => item.createdAt || item.approvedAt, 30) },
+    ];
+    const adminTabs = [
+      { key: 'dashboard', label: 'Dashboard', count: null },
+      { key: 'pending-registration', label: 'Pending Registration', count: pendingCount },
+      { key: 'approval', label: 'Approval', count: combinedPendingApprovals.length },
+      { key: 'active-user', label: 'Active User', count: activeUsersList.length },
+      { key: 'total-user', label: 'Total User', count: users.length },
+      { key: 'create-user', label: 'Create User', count: null },
+      { key: 'feedback', label: 'Feedback', count: unreadFeedbackCount },
+      { key: 'recycle-bin', label: 'Recycle Bin', count: deletedUsersBin.length },
+      { key: 'audit', label: 'Audit', count: auditTrail.length },
+    ];
+    const approvalSummaryCards = [
+      { label: 'Profile', value: approvalTypeCounts.profile || 0 },
+      { label: 'Bank', value: approvalTypeCounts.bank || 0 },
+      { label: 'Rates', value: approvalTypeCounts.rates || 0 },
+    ];
+    const adminSubFilterOptions = {
+      'pending-registration': [{ value: 'all', label: 'All Packages' }, ...PACKAGE_OPTIONS.map((pkg) => ({ value: pkg, label: pkg }))],
+      'approval': [
+        { value: 'all', label: 'All Approval Types' },
+        { value: 'profile', label: 'Profile' },
+        { value: 'bank', label: 'Bank' },
+        { value: 'rates', label: 'Rates' },
+      ],
+      'active-user': [
+        { value: 'all', label: 'All Users' },
+        { value: 'active', label: 'Active' },
+        { value: 'disabled', label: 'Disabled' },
+        { value: 'expired', label: 'Expired' },
+        { value: 'admin', label: 'Admin Role' },
+        { value: 'operator', label: 'Operator Role' },
+        { value: 'viewer', label: 'Viewer Role' },
+        { value: 'expiring', label: 'Expiring Soon' },
+      ],
+      'total-user': [
+        { value: 'all', label: 'All Users' },
+        { value: 'active', label: 'Active' },
+        { value: 'disabled', label: 'Disabled' },
+        { value: 'expired', label: 'Expired' },
+        { value: 'admin', label: 'Admin Role' },
+        { value: 'operator', label: 'Operator Role' },
+        { value: 'viewer', label: 'Viewer Role' },
+        { value: 'expiring', label: 'Expiring Soon' },
+      ],
+      'feedback': [
+        { value: 'all', label: 'All Feedback' },
+        { value: 'unread', label: 'Unread' },
+        { value: 'read', label: 'Read' },
+        { value: 'open', label: 'Open' },
+        { value: 'resolved', label: 'Resolved' },
+        { value: 'high', label: 'High Priority' },
+        { value: 'medium', label: 'Medium Priority' },
+        { value: 'low', label: 'Low Priority' },
+      ],
+      'create-user': [{ value: 'all', label: 'No extra filter' }],
+    };
+    const currentTabMeta = {
+      dashboard: {
+        title: 'Admin Dashboard',
+        subtitle: 'Analytics, alerts, notifications, and quick admin control.',
+      },
+      'pending-registration': {
+        title: 'Pending Registration Requests',
+        subtitle: `${filteredPendingRegistrationRequests.length} visible requests`,
+      },
+      'approval': {
+        title: 'Approval Queue',
+        subtitle: `${filteredApprovals.length} pending updates waiting for action`,
+      },
+      'active-user': {
+        title: 'Active Users',
+        subtitle: `${filteredUsersList.length} active users currently visible`,
+      },
+      'total-user': {
+        title: 'All Users',
+        subtitle: `${filteredUsersList.length} users currently visible`,
+      },
+      'create-user': {
+        title: 'Create User',
+        subtitle: 'Manually add a distributor login with package and role.',
+      },
+      'feedback': {
+        title: 'Feedback Inbox',
+        subtitle: `${filteredFeedback.length} feedback entries currently visible`,
+      },
+      'recycle-bin': {
+        title: 'Recycle Bin',
+        subtitle: `${deletedUsersBin.length} deleted users available for restore`,
+      },
+      audit: {
+        title: 'Audit Trail',
+        subtitle: `${auditTrail.length} recent admin events recorded`,
+      },
+    }[activeAdminTab];
+    const activeDrawer = detailView
+      ? { ...detailView, type: 'detail' }
+      : viewApproval
+        ? { title: `Approval - ${viewApproval?.dealerCode || ''}`, data: viewApproval?.payload || {}, noteKey: `approval:${viewApproval?.id || ''}`, type: 'approval' }
+        : viewRequest
+          ? { title: `Request - ${viewRequest?.dealerCode || ''}`, data: viewRequest || {}, noteKey: `request:${viewRequest?.id || ''}`, type: 'request' }
+          : null;
+    const activeSubFilterOptions = adminSubFilterOptions[activeAdminTab] || [{ value: 'all', label: 'All' }];
+
+    const toggleRequestSelection = (id) => {
+      setSelectedRequestIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+    };
+    const toggleApprovalSelection = (id) => {
+      setSelectedApprovalIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+    };
+    const toggleUserSelection = (token) => {
+      setSelectedUserTokens((prev) => (prev.includes(token) ? prev.filter((item) => item !== token) : [...prev, token]));
+    };
+
+    const bulkApproveRegistrations = async () => {
+      if (selectedRequestIds.length === 0) return;
+      if (!confirmAdminAction(`Approve ${selectedRequestIds.length} selected registration requests?`)) return;
+      for (const id of selectedRequestIds) {
+        // eslint-disable-next-line no-await-in-loop
+        await approveRequest(id, { skipConfirm: true });
+      }
+      setSelectedRequestIds([]);
+    };
+    const bulkRejectRegistrations = async () => {
+      if (selectedRequestIds.length === 0) return;
+      if (!confirmAdminAction(`Reject ${selectedRequestIds.length} selected registration requests?`)) return;
+      for (const id of selectedRequestIds) {
+        // eslint-disable-next-line no-await-in-loop
+        await rejectRequest(id, { skipConfirm: true });
+      }
+      setSelectedRequestIds([]);
+    };
+    const bulkApproveUpdates = async () => {
+      const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
+      if (targets.length === 0) return;
+      if (!confirmAdminAction(`Approve ${targets.length} selected update requests?`)) return;
+      for (const item of targets) {
+        // eslint-disable-next-line no-await-in-loop
+        await approveUpdateRequest(item, { skipConfirm: true });
+      }
+      setSelectedApprovalIds([]);
+    };
+    const bulkRejectUpdates = async () => {
+      const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
+      if (targets.length === 0) return;
+      if (!confirmAdminAction(`Reject ${targets.length} selected update requests?`)) return;
+      for (const item of targets) {
+        // eslint-disable-next-line no-await-in-loop
+        await rejectUpdateRequest(item, { skipConfirm: true });
+      }
+      setSelectedApprovalIds([]);
+    };
+    const bulkToggleUsers = async () => {
+      const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
+      if (targets.length === 0) return;
+      if (!confirmAdminAction(`Toggle status for ${targets.length} selected users?`)) return;
+      for (const item of targets) {
+        // eslint-disable-next-line no-await-in-loop
+        await toggleUserStatus(item, { skipConfirm: true });
+      }
+      setSelectedUserTokens([]);
+    };
+
+    useEffect(() => {
+      setAdminNotifications(notifications);
+    }, [pendingCount, combinedPendingApprovals.length, expiringUsers.length, unreadFeedbackCount]);
+
+    useEffect(() => {
+      setAdminCurrentPage((prev) => Math.min(prev, adminTotalPages));
+    }, [adminTotalPages]);
 
     return (
       <div className="placeholder-container admin-panel">
         <div className="admin-header">
-          <h2>Admin Panel</h2>
-          <button className="admin-logout-btn" onClick={onAdminLogout}>Log Out</button>
+          <div className="admin-header-copy">
+            <div className="admin-kicker">Control Center</div>
+            <h2>Admin Panel</h2>
+            <p>Registrations, approvals, users, and feedback ko ek jagah se manage kijiye.</p>
+          </div>
+          <div className="admin-header-actions">
+            <select className="form-input admin-role-select" value={adminRoleMode} onChange={(e) => setAdminRoleMode(e.target.value)}>
+              <option value="super-admin">Super Admin</option>
+              <option value="approval-admin">Approval Admin</option>
+              <option value="support-admin">Support Admin</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button className="admin-ghost-btn" onClick={loadData}>Refresh Data</button>
+            <button className="admin-logout-btn" onClick={onAdminLogout}>Log Out</button>
+          </div>
         </div>
-        <div className="admin-grid">
-          <div className="admin-card">
-            <div className="admin-stat-label">Pending Registration Request</div>
-            <div className="admin-stat-value">{pendingCount}</div>
+
+        <div className="admin-notification-strip">
+          {adminNotifications.length === 0 ? (
+            <span className="admin-notification-item admin-notification-item--green">No urgent admin alerts right now.</span>
+          ) : (
+            adminNotifications.map((item) => (
+              <span key={item.id} className={`admin-notification-item admin-notification-item--${item.tone}`}>{item.text}</span>
+            ))
+          )}
+        </div>
+
+        <div className="admin-overview">
+          <div className="admin-grid">
+            {adminStats.map((item) => (
+              <div key={item.label} className={`admin-card admin-card--${item.tone}`}>
+                <div className="admin-stat-label">{item.label}</div>
+                <div className="admin-stat-value">{item.value}</div>
+              </div>
+            ))}
           </div>
-          <div className="admin-card">
-            <div className="admin-stat-label">Active User</div>
-            <div className="admin-stat-value">{activeUsers}</div>
+
+          <div className="admin-highlight">
+            <div className="admin-highlight-title">Quick Snapshot</div>
+            <div className="admin-highlight-value">{pendingCount + combinedPendingApprovals.length}</div>
+            <div className="admin-highlight-text">items need admin action right now</div>
           </div>
-          <div className="admin-card">
-            <div className="admin-stat-label">Total User</div>
-            <div className="admin-stat-value">{users.length}</div>
+        </div>
+
+        <div className="admin-date-summary">
+          {dateSummaryCards.map((item) => (
+            <div key={item.label} className="admin-date-card">
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+
+        <div className="admin-utility-grid">
+          <div className="admin-utility-card">
+            <div className="admin-utility-head">
+              <h3>Approval Summary</h3>
+              <span>{combinedPendingApprovals.length} pending</span>
+            </div>
+            <div className="admin-mini-stats">
+              {approvalSummaryCards.map((item) => (
+                <div key={item.label} className="admin-mini-card">
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="admin-utility-card">
+            <div className="admin-utility-head">
+              <h3>Package Expiry Alerts</h3>
+              <span>{expiringUsers.length} users</span>
+            </div>
+            <div className="admin-expiry-list">
+              {expiringUsers.length === 0 ? (
+                <div className="admin-expiry-empty">No active users expiring in next 7 days.</div>
+              ) : (
+                expiringUsers.slice(0, 5).map((user) => (
+                  <div key={user.id || user.dealerCode} className="admin-expiry-item">
+                    <div>
+                      <strong>{user.dealerCode || '-'}</strong>
+                      <span>{user.dealerName || '-'}</span>
+                    </div>
+                    <div className="admin-expiry-days">{user.remainingDays}d</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="admin-utility-card">
+            <div className="admin-utility-head">
+              <h3>Recent Activity</h3>
+              <span>{auditTrail.length} logs</span>
+            </div>
+            <div className="admin-activity-list">
+              {auditTrail.length === 0 ? (
+                <div className="admin-expiry-empty">No admin activity recorded yet.</div>
+              ) : (
+                auditTrail.slice(0, 5).map((item) => (
+                  <div key={item.id} className="admin-activity-item">
+                    <strong>{String(item.action || '').replace(/_/g, ' ')}</strong>
+                    <span>{formatDisplayDate(item.createdAt)}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 
         <div className="admin-tab-row">
-          <button className={activeAdminTab === 'create-user' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('create-user')}>Create User Manually</button>
-          <button className={activeAdminTab === 'active-user' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('active-user')}>Active User</button>
-          <button className={activeAdminTab === 'total-user' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('total-user')}>Total User</button>
-          <button className={activeAdminTab === 'pending-registration' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('pending-registration')}>Pending Registration Request</button>
-          <button className={activeAdminTab === 'approval' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('approval')}>Approval</button>
-          <button className={activeAdminTab === 'feedback' ? 'admin-tab active' : 'admin-tab'} onClick={() => setActiveAdminTab('feedback')}>Feedback</button>
+          {adminTabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={activeAdminTab === tab.key ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => canAccessTab(tab.key) && setActiveAdminTab(tab.key)}
+              disabled={!canAccessTab(tab.key)}
+            >
+              <span>{tab.label}</span>
+              {tab.count !== null && <span className="admin-tab-count">{tab.count}</span>}
+            </button>
+          ))}
         </div>
+
+        <div className="admin-toolbar">
+          <div className="admin-toolbar-copy">
+            <h3>{currentTabMeta.title}</h3>
+            <p>{currentTabMeta.subtitle}</p>
+          </div>
+          <div className="admin-toolbar-actions">
+            <div className="admin-range-pills">
+              <button className={adminDateRange === 'all' ? 'admin-range-pill active' : 'admin-range-pill'} onClick={() => setAdminDateRange('all')}>All</button>
+              <button className={adminDateRange === 'today' ? 'admin-range-pill active' : 'admin-range-pill'} onClick={() => setAdminDateRange('today')}>Today</button>
+              <button className={adminDateRange === '7d' ? 'admin-range-pill active' : 'admin-range-pill'} onClick={() => setAdminDateRange('7d')}>7 Days</button>
+              <button className={adminDateRange === '30d' ? 'admin-range-pill active' : 'admin-range-pill'} onClick={() => setAdminDateRange('30d')}>30 Days</button>
+            </div>
+            <select className="form-input admin-subfilter-select" value={adminSubFilter} onChange={(e) => setAdminSubFilter(e.target.value)}>
+              {activeSubFilterOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <button className="admin-ghost-btn" onClick={saveCurrentAdminView}>Save View</button>
+            {activeAdminTab === 'pending-registration' && (
+              <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('pending-registrations.csv', filteredPendingRegistrationRequests)}>Export CSV</button>
+            )}
+            {(activeAdminTab === 'active-user' || activeAdminTab === 'total-user') && (
+              <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('users.csv', filteredUsersList)}>Export CSV</button>
+            )}
+            {activeAdminTab === 'approval' && (
+              <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('approvals.csv', filteredApprovals)}>Export CSV</button>
+            )}
+            {activeAdminTab === 'feedback' && (
+              <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('feedback.csv', filteredFeedback)}>Export CSV</button>
+            )}
+            {activeAdminTab !== 'create-user' && (
+              <input
+                className="form-input admin-search-input"
+                type="text"
+                value={adminSearchTerm}
+                onChange={(e) => setAdminSearchTerm(e.target.value)}
+                placeholder="Search current tab..."
+              />
+            )}
+          </div>
+        </div>
+
+        {savedAdminViews.length > 0 && (
+          <div className="admin-saved-views">
+            {savedAdminViews.map((view) => (
+              <button key={view.id} className="admin-saved-view-chip" onClick={() => applySavedAdminView(view)}>{view.label}</button>
+            ))}
+          </div>
+        )}
+
+        {activeAdminTab === 'dashboard' && (
+          <div className="admin-dashboard-grid">
+            <div className="admin-section">
+              <h3>Registration Trend</h3>
+              <div className="admin-chart-bars">
+                {dateSummaryCards.map((item) => (
+                  <div key={item.label} className="admin-chart-bar">
+                    <div className="admin-chart-bar-fill" style={{ height: `${Math.max(18, item.value * 8)}px` }} />
+                    <strong>{item.value}</strong>
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="admin-section">
+              <h3>Package Mix</h3>
+              <div className="admin-list-grid">
+                {PACKAGE_OPTIONS.map((pkg) => {
+                  const count = users.filter((u) => u.package === pkg).length;
+                  return (
+                    <div key={pkg} className="admin-list-card">
+                      <span>{pkg}</span>
+                      <strong>{count}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="admin-section">
+              <h3>Sync Health</h3>
+              <div className="admin-health-grid">
+                <div className="admin-health-card">
+                  <span>Source</span>
+                  <strong>{adminDataHealth.source}</strong>
+                </div>
+                <div className="admin-health-card">
+                  <span>Firebase</span>
+                  <strong>{adminDataHealth.firebaseReachable ? 'Connected' : 'Fallback'}</strong>
+                </div>
+                <div className="admin-health-card">
+                  <span>Last Sync</span>
+                  <strong>{formatDisplayDate(adminDataHealth.lastSyncAt)}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeAdminTab === 'pending-registration' && (
         <div className="admin-section">
-          <h3>Pending Registration Requests</h3>
+          <div className="admin-bulk-bar">
+            <span>{selectedRequestIds.length} selected</span>
+            <div className="admin-bulk-actions">
+              <button className="admin-ghost-btn" onClick={() => setSelectedRequestIds(filteredPendingRegistrationRequests.map((r) => r.id))}>Select All</button>
+              <button className="admin-ghost-btn" onClick={bulkApproveRegistrations}>Bulk Approve</button>
+              <button className="admin-ghost-btn" onClick={bulkRejectRegistrations}>Bulk Reject</button>
+            </div>
+          </div>
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>
+                  <th>Select</th>
                   <th>Dealer Code</th>
                   <th>Dealer Name</th>
                   <th>Mobile</th>
@@ -1773,23 +2515,24 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {pendingRegistrationRequests.length === 0 ? (
+                {pagedPendingRegistrationRequests.length === 0 ? (
                   <tr>
-                    <td colSpan="6">No requests found.</td>
+                    <td colSpan="7" className="admin-empty-cell">No registration requests match the current search.</td>
                   </tr>
                 ) : (
-                  pendingRegistrationRequests.map((r) => (
+                  pagedPendingRegistrationRequests.map((r) => (
                     <tr key={r.id}>
+                      <td><input type="checkbox" checked={selectedRequestIds.includes(r.id)} onChange={() => toggleRequestSelection(r.id)} /></td>
                       <td>{r.dealerCode || '-'}</td>
                       <td>{r.dealerName || '-'}</td>
                       <td>{r.mobile || '-'}</td>
                       <td>{r.email || '-'}</td>
-                      <td>{r.package || '-'}</td>
+                      <td><span className="admin-status-chip admin-status-chip--info">{r.package || '-'}</span></td>
                       <td>
                         <div className="admin-actions">
                           <button onClick={() => setViewRequest(r)}>View</button>
-                          <button onClick={() => approveRequest(r.id)}>Approve</button>
-                          <button onClick={() => rejectRequest(r.id)}>Reject</button>
+                          <button onClick={() => approveRequest(r.id)} disabled={!canMutateAdminData}>Approve</button>
+                          <button onClick={() => rejectRequest(r.id)} disabled={!canMutateAdminData}>Reject</button>
                         </div>
                       </td>
                     </tr>
@@ -1803,7 +2546,13 @@ function App() {
 
         {activeAdminTab === 'create-user' && (
         <div className="admin-section">
-          <h3>Create User (Manual)</h3>
+          <div className="admin-bulk-bar">
+            <span>Bulk Import Users</span>
+            <div className="admin-bulk-actions">
+              <button className="admin-ghost-btn" onClick={() => adminImportRef.current?.click()}>Import CSV/XLSX</button>
+              <input ref={adminImportRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={handleAdminImport} />
+            </div>
+          </div>
           <div className="admin-form">
             <input className="form-input" placeholder="Dealer Code" value={newUser.dealerCode} onChange={(e) => setNewUser((p) => ({ ...p, dealerCode: e.target.value }))} />
             <input className="form-input" placeholder="Dealer Name" value={newUser.dealerName} onChange={(e) => setNewUser((p) => ({ ...p, dealerName: e.target.value }))} />
@@ -1821,18 +2570,25 @@ function App() {
               <option value="viewer">Viewer</option>
               <option value="admin">Admin</option>
             </select>
-            <button onClick={addManualUser}>Create User</button>
+            <button onClick={addManualUser} disabled={!canMutateAdminData}>Create User</button>
           </div>
         </div>
         )}
 
         {(activeAdminTab === 'active-user' || activeAdminTab === 'total-user') && (
         <div className="admin-section">
-          <h3>{activeAdminTab === 'active-user' ? 'Active User' : 'Total User'}</h3>
+          <div className="admin-bulk-bar">
+            <span>{selectedUserTokens.length} selected</span>
+            <div className="admin-bulk-actions">
+              <button className="admin-ghost-btn" onClick={() => setSelectedUserTokens(filteredUsersList.map((u) => resolveEditToken(u)))}>Select All</button>
+              <button className="admin-ghost-btn" onClick={bulkToggleUsers}>Bulk Toggle Status</button>
+            </div>
+          </div>
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>
+                  <th>Select</th>
                   <th>Code</th>
                   <th>Name</th>
                   <th>Mobile</th>
@@ -1847,19 +2603,23 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {(activeAdminTab === 'active-user' ? activeUsersList : users).length === 0 ? (
+                {pagedUsersList.length === 0 ? (
                   <tr>
-                    <td colSpan="11">No users found.</td>
+                    <td colSpan="12" className="admin-empty-cell">No users match the current search.</td>
                   </tr>
                 ) : (
-                  (activeAdminTab === 'active-user' ? activeUsersList : users).map((u, idx) => (
+                  pagedUsersList.map((u, idx) => (
                     <tr key={u.id || `${u.dealerCode || 'user'}-${idx}`}>
+                      <td><input type="checkbox" checked={selectedUserTokens.includes(resolveEditToken(u))} onChange={() => toggleUserSelection(resolveEditToken(u))} /></td>
                       <td>{u.dealerCode || '-'}</td>
                       <td>{u.dealerName || '-'}</td>
                       <td>{u.mobile || '-'}</td>
                       <td>{u.email || '-'}</td>
-                      <td>{u.package || '-'}</td>
+                      <td><span className="admin-status-chip admin-status-chip--info">{u.package || '-'}</span></td>
                       <td>
+                        <span className={`admin-status-chip admin-status-chip--${String(u.status || '').toLowerCase() || 'info'}`}>
+                          {u.status || '-'}
+                        </span>{' '}
                         {formatDisplayDate(u.validTill)}
                         {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
                       </td>
@@ -1869,11 +2629,12 @@ function App() {
                       <td>{Array.isArray(u.ratesData) && u.ratesData.length > 0 ? <button onClick={() => openDetailView(u, 'rates')}>View</button> : '-'}</td>
                       <td>
                         <div className="admin-actions">
-                          <button onClick={() => startEditUser(u)}>Edit</button>
-                          <button onClick={() => toggleUserStatus(u)}>
+                          <button onClick={() => setDetailView({ title: `User - ${u?.dealerCode || ''}`, data: u, noteKey: `user:${u?.id || u?.dealerCode}:general` })}>View</button>
+                          <button onClick={() => startEditUser(u)} disabled={!canMutateAdminData}>Edit</button>
+                          <button onClick={() => toggleUserStatus(u)} disabled={!canMutateAdminData}>
                             {u.status === 'active' ? 'Disable' : 'Enable'}
                           </button>
-                          <button onClick={() => deleteUser(u)}>Delete</button>
+                          <button onClick={() => deleteUser(u)} disabled={!canMutateAdminData}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -1928,7 +2689,7 @@ function App() {
               <input className="form-input" placeholder="IFSC" value={editUser.bankDetailsData.ifsc} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, ifsc: e.target.value } }))} />
             </div>
             <div className="form-actions">
-              <button onClick={saveEditedUser}>Save User Changes</button>
+              <button onClick={saveEditedUser} disabled={!canMutateAdminData}>Save User Changes</button>
               <button onClick={() => setEditingUserId('')}>Cancel</button>
             </div>
           </div>
@@ -1936,11 +2697,19 @@ function App() {
 
         {activeAdminTab === 'approval' && (
           <div className="admin-section">
-            <h3>Approval</h3>
+            <div className="admin-bulk-bar">
+              <span>{selectedApprovalIds.length} selected</span>
+              <div className="admin-bulk-actions">
+                <button className="admin-ghost-btn" onClick={() => setSelectedApprovalIds(filteredApprovals.map((a) => a.id))}>Select All</button>
+                <button className="admin-ghost-btn" onClick={bulkApproveUpdates}>Bulk Approve</button>
+                <button className="admin-ghost-btn" onClick={bulkRejectUpdates}>Bulk Reject</button>
+              </div>
+            </div>
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
                   <tr>
+                    <th>Select</th>
                     <th>Code</th>
                     <th>Name</th>
                     <th>Type</th>
@@ -1949,22 +2718,23 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {combinedPendingApprovals.length === 0 ? (
+                  {pagedApprovals.length === 0 ? (
                     <tr>
-                      <td colSpan="5">No pending approval requests.</td>
+                      <td colSpan="6" className="admin-empty-cell">No approval requests match the current search.</td>
                     </tr>
                   ) : (
-                    combinedPendingApprovals.map((a) => (
+                    pagedApprovals.map((a) => (
                       <tr key={a.id}>
+                        <td><input type="checkbox" checked={selectedApprovalIds.includes(a.id)} onChange={() => toggleApprovalSelection(a.id)} /></td>
                         <td>{a.dealerCode || '-'}</td>
                         <td>{a.dealerName || '-'}</td>
-                        <td>{a.type || '-'}</td>
+                        <td><span className="admin-status-chip admin-status-chip--amber">{a.type || '-'}</span></td>
                         <td>{formatDisplayDate(a.requestedAt)}</td>
                         <td>
                           <div className="admin-actions">
                             <button onClick={() => setViewApproval(a)}>View</button>
-                            <button onClick={() => approveUpdateRequest(a)}>Approve</button>
-                            <button onClick={() => rejectUpdateRequest(a)}>Reject</button>
+                            <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
+                            <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
                           </div>
                         </td>
                       </tr>
@@ -1978,7 +2748,6 @@ function App() {
 
         {activeAdminTab === 'feedback' && (
           <div className="admin-section">
-            <h3>Feedback</h3>
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
@@ -1993,25 +2762,39 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {feedback.length === 0 ? (
+                  {pagedFeedback.length === 0 ? (
                     <tr>
-                      <td colSpan="7">No feedback found.</td>
+                      <td colSpan="7" className="admin-empty-cell">No feedback entries match the current search.</td>
                     </tr>
                   ) : (
-                    feedback.map((f, index) => (
+                    pagedFeedback.map((f, index) => (
                       <tr key={f.id || index}>
                         <td>{f.dealerCode || '-'}</td>
                         <td>{f.dealerName || '-'}</td>
                         <td>{f.email || '-'}</td>
                         <td>{f.text || '-'}</td>
-                        <td className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</td>
+                        <td>
+                          <div className="feedback-status-stack">
+                            <span className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</span>
+                            <span className={f.resolved ? 'feedback-read' : 'feedback-unread'}>{f.resolved ? 'Resolved' : 'Open'}</span>
+                          </div>
+                        </td>
                         <td>{formatDisplayDate(f.createdAt || f.date)}</td>
                         <td>
                           <div className="admin-actions">
-                            <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)}>
+                            <select className="form-input admin-inline-select" value={f.priority || 'medium'} onChange={(e) => setFeedbackPriority(f, e.target.value)} disabled={!canMutateAdminData}>
+                              <option value="high">High</option>
+                              <option value="medium">Medium</option>
+                              <option value="low">Low</option>
+                            </select>
+                            <button className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
+                              {f.resolved ? 'Reopen' : 'Resolve'}
+                            </button>
+                            <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
                               {f.read ? 'Mark Unread' : 'Mark Read'}
                             </button>
-                            <button className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)}>
+                            <button className="admin-ghost-btn" onClick={() => sendFeedbackReply(f)}>Reply</button>
+                            <button className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
                               Delete
                             </button>
                           </div>
@@ -2025,33 +2808,106 @@ function App() {
           </div>
         )}
 
-        {viewRequest && (
-          <div className="admin-section admin-book">
-            <h3>Request Details</h3>
-            <pre>{JSON.stringify(viewRequest, null, 2)}</pre>
-            <div className="form-actions">
-              <button onClick={() => setViewRequest(null)}>Close</button>
+        {activeDrawer && (
+          <div className="admin-drawer-backdrop" onClick={() => { setViewRequest(null); setViewApproval(null); setDetailView(null); }}>
+            <div className="admin-drawer" onClick={(e) => e.stopPropagation()}>
+              <div className="admin-drawer-head">
+                <div>
+                  <h3>{activeDrawer.title}</h3>
+                  <p>Detailed data, internal note, and audit-friendly snapshot.</p>
+                </div>
+                <button className="admin-ghost-btn" onClick={() => { setViewRequest(null); setViewApproval(null); setDetailView(null); }}>Close</button>
+              </div>
+              <div className="admin-drawer-note">
+                <label>Admin Note</label>
+                <textarea
+                  className="form-textarea"
+                  rows="4"
+                  value={adminNotes[activeDrawer.noteKey || ''] || ''}
+                  onChange={(e) => saveAdminNote(activeDrawer.noteKey || 'general', e.target.value)}
+                  placeholder="Write internal note..."
+                />
+              </div>
+              <pre>{JSON.stringify(activeDrawer.data || {}, null, 2)}</pre>
             </div>
           </div>
         )}
 
-        {viewApproval && (
-          <div className="admin-section admin-book">
-            <h3>Approval Details</h3>
-            <pre>{JSON.stringify(viewApproval.payload || {}, null, 2)}</pre>
-            <div className="form-actions">
-              <button onClick={() => setViewApproval(null)}>Close</button>
+        {activeAdminTab === 'recycle-bin' && (
+          <div className="admin-section">
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Deleted At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedDeletedUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="admin-empty-cell">Recycle bin is empty.</td>
+                    </tr>
+                  ) : (
+                    pagedDeletedUsers.map((user, index) => (
+                      <tr key={`${user.id || user.dealerCode}-${index}`}>
+                        <td>{user.dealerCode || '-'}</td>
+                        <td>{user.dealerName || '-'}</td>
+                        <td>{formatDisplayDate(user.deletedAt)}</td>
+                        <td><button className="admin-ghost-btn" onClick={() => restoreDeletedUser(user)} disabled={!canMutateAdminData}>Restore</button></td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
-        {detailView && (
-          <div className="admin-section admin-book">
-            <h3>{detailView.title}</h3>
-            <pre>{JSON.stringify(detailView.data || {}, null, 2)}</pre>
-            <div className="form-actions">
-              <button onClick={() => setDetailView(null)}>Close</button>
+        {activeAdminTab === 'audit' && (
+          <div className="admin-section">
+            <div className="admin-bulk-bar">
+              <span>{auditTrail.length} audit records</span>
+              <div className="admin-bulk-actions">
+                <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('admin-audit.csv', auditTrail)}>Export Audit</button>
+              </div>
             </div>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Action</th>
+                    <th>Date</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedAuditTrail.length === 0 ? (
+                    <tr>
+                      <td colSpan="3" className="admin-empty-cell">No audit records found.</td>
+                    </tr>
+                  ) : (
+                    pagedAuditTrail.map((item) => (
+                      <tr key={item.id}>
+                        <td><span className="admin-status-chip admin-status-chip--info">{String(item.action || '').replace(/_/g, ' ')}</span></td>
+                        <td>{formatDisplayDate(item.createdAt)}</td>
+                        <td>{JSON.stringify(item.details || {})}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {['pending-registration', 'approval', 'active-user', 'total-user', 'feedback', 'recycle-bin', 'audit'].includes(activeAdminTab) && adminTotalPages > 1 && (
+          <div className="admin-pagination">
+            <button className="admin-ghost-btn" onClick={() => setAdminCurrentPage((prev) => Math.max(1, prev - 1))} disabled={adminCurrentPage === 1}>Previous</button>
+            <span>Page {adminCurrentPage} of {adminTotalPages}</span>
+            <button className="admin-ghost-btn" onClick={() => setAdminCurrentPage((prev) => Math.min(adminTotalPages, prev + 1))} disabled={adminCurrentPage === adminTotalPages}>Next</button>
           </div>
         )}
 
@@ -3046,6 +3902,97 @@ function App() {
         triggerPrint();
       } else {
         printWindow.addEventListener('load', triggerPrint, { once: true });
+      }
+    };
+
+    const restoreDeletedUser = async (item) => {
+      if (!item) return;
+      if (!confirmAdminAction(`Restore ${item.dealerCode || 'this user'} from recycle bin?`)) return;
+      try {
+        if (item.id) {
+          await addDoc(collection(db, 'users'), {
+            ...item,
+            restoredAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } catch {}
+      const nextUsers = [...users, { ...item, status: item.status || 'active' }];
+      writeUsersLocal(nextUsers);
+      const nextBin = deletedUsersBin.filter((user) => !(user.id === item.id && user.dealerCode === item.dealerCode));
+      persistDeletedUsersBin(nextBin);
+      logAdminActivity('user_restored', { dealerCode: item.dealerCode || '' });
+    };
+
+    const saveCurrentAdminView = () => {
+      const label = window.prompt('Saved view name?');
+      if (!label) return;
+      const nextViews = [
+        {
+          id: `view-${Date.now()}`,
+          label,
+          activeAdminTab,
+          adminSearchTerm,
+          adminDateRange,
+          adminSubFilter,
+        },
+        ...savedAdminViews,
+      ].slice(0, 20);
+      persistSavedAdminViews(nextViews);
+      logAdminActivity('saved_view_created', { label });
+    };
+
+    const applySavedAdminView = (view) => {
+      if (!view) return;
+      setActiveAdminTab(view.activeAdminTab || 'dashboard');
+      setAdminSearchTerm(view.adminSearchTerm || '');
+      setAdminDateRange(view.adminDateRange || 'all');
+      setAdminSubFilter(view.adminSubFilter || 'all');
+      logAdminActivity('saved_view_applied', { label: view.label || '' });
+    };
+
+    const sendFeedbackReply = (item) => {
+      const currentReply = feedbackReplies[item.id] || '';
+      const draft = window.prompt(`Reply for ${item.dealerCode || 'user'}`, currentReply);
+      if (draft === null) return;
+      const nextReplies = { ...feedbackReplies, [item.id]: draft };
+      persistFeedbackReplies(nextReplies);
+      logAdminActivity('feedback_reply_saved', { id: item.id, dealerCode: item.dealerCode || '' });
+    };
+
+    const handleAdminImport = async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const { default: XLSX } = await import('xlsx');
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(worksheet);
+          const importedUsers = rows.map((row) => ({
+            dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
+            dealerName: String(row.dealerName || row['Dealer Name'] || '').trim(),
+            mobile: String(row.mobile || row.Mobile || '').trim(),
+            email: String(row.email || row.Email || '').trim(),
+            package: String(row.package || row.Package || '').trim(),
+            pin: String(row.pin || row.PIN || '').trim(),
+            role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
+            status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
+            validFrom: toIsoDate(row.validFrom || row['Valid From']) || new Date().toISOString(),
+            validTill: toIsoDate(row.validTill || row['Valid Till']) || computeValidityDates(String(row.package || row.Package || '')).validTill,
+          })).filter((row) => row.dealerCode && row.dealerName && row.package && row.pin);
+          const nextUsers = [...users, ...importedUsers];
+          writeUsersLocal(nextUsers);
+          logAdminActivity('bulk_users_imported', { count: importedUsers.length });
+          alert(`${importedUsers.length} users imported locally.`);
+        };
+        reader.readAsArrayBuffer(file);
+      } catch {
+        alert('Import failed.');
+      } finally {
+        event.target.value = null;
       }
     };
 
