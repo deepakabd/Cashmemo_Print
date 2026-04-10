@@ -56,6 +56,7 @@ const DistributorDetails = ({
   totalAmount,
   eKyc,
   payment,
+  hideCompactRows = false,
 }) => {
   const leftRows = [
     [HINDI_LABELS.mobileNo, mobileNo],
@@ -64,7 +65,7 @@ const DistributorDetails = ({
     [HINDI_LABELS.productHsnQty, `${product} / ${hsn} / ${orderQty}`],
     [HINDI_LABELS.orderNoAndDate, `${orderNo} - ${orderDate}`],
     [HINDI_LABELS.cashMemoNoAndDate, `${cashMemoNo} - ${cashMemoDate}`],
-  ];
+  ].filter((_, index) => !hideCompactRows || ![2, 3].includes(index));
 
   const amountRowsLeft = [
     [HINDI_LABELS.basePrice, basePrice],
@@ -75,7 +76,7 @@ const DistributorDetails = ({
     [HINDI_LABELS.totalAmount, totalAmount],
     [HINDI_LABELS.eKyc, eKyc],
     [HINDI_LABELS.payment, payment],
-  ];
+  ].filter((_, index) => !hideCompactRows || ![1, 2].includes(index));
 
   return (
     <div className="distributor-details">
@@ -113,13 +114,14 @@ const TaxInvoiceDetails = ({
   sgst,
   totalAmount,
   netPayable,
+  hideCompactRows = false,
 }) => {
   const middleTopRows = [
     [HINDI_LABELS.consumerName, consumerName],
     [HINDI_LABELS.consumerNo, consumerNo],
     [HINDI_LABELS.lpgId, lpgId],
     [HINDI_LABELS.address, address],
-  ];
+  ].filter((_, index) => !hideCompactRows || ![1, 2, 3].includes(index));
 
   const middleBottomRows = [
     [HINDI_LABELS.mobileNo, mobileNo],
@@ -129,7 +131,7 @@ const TaxInvoiceDetails = ({
     [HINDI_LABELS.eKyc, eKyc],
     [HINDI_LABELS.bookingSource, bookingSource],
     [HINDI_LABELS.payment, payment],
-  ];
+  ].filter((_, index) => !hideCompactRows || ![5, 6, 7].includes(index));
 
   const normalizedPayment = String(payment || '').trim().toLowerCase();
   const isOnlinePayment = normalizedPayment.includes('ऑनलाइन') && !normalizedPayment.includes('डिलीवरी');
@@ -156,9 +158,9 @@ const TaxInvoiceDetails = ({
     <div className="tax-details">
       <div className="tax-details__columns">
         <div className="tax-details__column">
-          <PairTable rows={middleTopRows} dense className="pair-table--tax-main" emphasisLabels={[HINDI_LABELS.consumerName, HINDI_LABELS.consumerNo, HINDI_LABELS.lpgId]} />
+          <PairTable rows={middleTopRows} dense className="pair-table--tax-main pair-table--tax-top" emphasisLabels={[HINDI_LABELS.consumerName, HINDI_LABELS.consumerNo, HINDI_LABELS.lpgId]} />
           <div className="tax-details__spacer" />
-          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main" emphasisLabels={[HINDI_LABELS.mobileNo, HINDI_LABELS.eKyc]} />
+          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main pair-table--tax-bottom" emphasisLabels={[HINDI_LABELS.mobileNo, HINDI_LABELS.eKyc]} />
         </div>
         <div className="tax-details__column tax-details__column--right">
           <PairTable rows={rightRows} amountAlign dense className="pair-table--tax-amounts" emphasisLabels={[HINDI_LABELS.payment, HINDI_LABELS.totalAmount]} />
@@ -175,7 +177,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
 
   const consumerName = getHindiValue('Consumer Name', customer['Consumer Name'] || '');
   const consumerNo = customer['Consumer No.'] || '';
-  const lpgId = customer['LPG ID'] || '';
+  const lpgId = customer['LPG ID'] || customer.UniqueConsumerId || customer['Unique Consumer Id'] || customer['Unique Consumer ID'] || '';
   const address = getHindiValue('Address', customer['Address'] || '');
   const mobileNo = customer['Mobile No.'] || '';
   const deliveryArea = getHindiValue('Delivery Area', customer['Delivery Area'] || '');
@@ -260,7 +262,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
         <div className="distributor-copy-title">{HINDI_LABELS.distributorCopy}</div>
         <div className="memo-table-wrap">
           <div className="memo-table-box memo-table-box--distributor">
-            <DistributorDetails {...commonProps} />
+            <DistributorDetails {...commonProps} hideCompactRows={isCompactPage} />
           </div>
         </div>
         <div className="declaration">
@@ -316,7 +318,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
 
         <div className="memo-table-wrap memo-table-wrap--tax">
           <div className="memo-table-box memo-table-box--tax">
-            <TaxInvoiceDetails {...commonProps} />
+            <TaxInvoiceDetails {...commonProps} hideCompactRows={isCompactPage} />
           </div>
         </div>
         <p className="signature-text">For {dealerName}...........</p>

@@ -184,20 +184,20 @@ table {
 }
 
 .details-headline--emphasis {
-  font-size: 2.85mm;
+  font-size: 3.05mm;
   line-height: 1.12;
   font-weight: 800;
 }
 
 .details-headline--primary {
-  font-size: 3.15mm;
+  font-size: 3.35mm;
 }
 
 .details-address {
   margin-bottom: 0.95mm;
-  font-size: 2.55mm;
+  font-size: 2.8mm;
   line-height: 1.12;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .pair-table {
@@ -206,24 +206,29 @@ table {
 
 .pair-table td {
   padding: 0.05mm 0;
-  font-size: 2.05mm;
+  font-size: 2.18mm;
   line-height: 1.06;
   vertical-align: top;
   font-weight: 600;
 }
 
 .pair-table__row--emphasis td {
-  font-size: 2.45mm;
+  font-size: 2.58mm;
   font-weight: 800;
 }
 
 .pair-table__row--payment td {
-  font-size: 2.55mm;
+  font-size: 2.65mm;
   font-weight: 800;
 }
 
 .pair-table__row--mobile td {
-  font-size: 2.75mm;
+  font-size: 3mm;
+  font-weight: 800;
+}
+
+.pair-table__row--address td {
+  font-size: 2.35mm;
   font-weight: 800;
 }
 
@@ -263,6 +268,170 @@ table {
 
 .tax-details {
   padding: 1.2mm 1.15mm 0 1.1mm;
+}
+
+.tax-details .pair-table td {
+  font-size: 2.35mm;
+  line-height: 1.1;
+}
+
+.tax-details .pair-table__row--emphasis td,
+.tax-details .pair-table__row--mobile td,
+.tax-details .pair-table__row--payment td {
+  font-size: 2.65mm;
+}
+
+.cashmemo-print-item--2 .memo-table-box,
+.cashmemo-print-item--3 .memo-table-box {
+  display: flex;
+}
+
+.cashmemo-print-item--2 .memo-table-box--distributor,
+.cashmemo-print-item--2 .memo-table-box--tax {
+  height: 100%;
+}
+
+.cashmemo-print-item--2 .distributor-details,
+.cashmemo-print-item--2 .tax-details,
+.cashmemo-print-item--3 .distributor-details,
+.cashmemo-print-item--3 .tax-details {
+  width: 100%;
+}
+
+.cashmemo-print-item--2 .distributor-details,
+.cashmemo-print-item--2 .tax-details {
+  height: 100%;
+}
+
+.cashmemo-print-item--2 .distributor-details {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr 1fr;
+  align-items: stretch;
+  padding-bottom: 1mm;
+}
+
+.cashmemo-print-item--2 .pair-table--dist-main,
+.cashmemo-print-item--2 .pair-table--dist-amounts {
+  height: 100%;
+}
+
+.cashmemo-print-item--2 .distributor-copy-title,
+.cashmemo-print-item--2 .tax-invoice-title {
+  font-size: 2.8mm;
+}
+
+.cashmemo-print-item--2 .contact-info > div {
+  font-size: 2.35mm;
+}
+
+.cashmemo-print-item--2 .contact-info-strong {
+  font-size: 4mm;
+}
+
+.cashmemo-print-item--2 .details-headline--emphasis {
+  font-size: 3.55mm;
+}
+
+.cashmemo-print-item--2 .details-headline--primary {
+  font-size: 3.95mm;
+}
+
+.cashmemo-print-item--2 .details-address {
+  font-size: 3.3mm;
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.cashmemo-print-item--2 .pair-table td {
+  padding-top: 0.9mm;
+  padding-bottom: 0.9mm;
+  font-size: 2.85mm;
+  line-height: 1.12;
+  vertical-align: middle;
+}
+
+.cashmemo-print-item--2 .pair-table__row--emphasis td,
+.cashmemo-print-item--2 .pair-table__row--payment td {
+  font-size: 3.15mm;
+}
+
+.cashmemo-print-item--2 .pair-table__row--mobile td {
+  font-size: 3.45mm;
+}
+
+.cashmemo-print-item--2 .pair-table__row--address td {
+  font-size: 3mm;
+}
+
+.cashmemo-print-item--2 .pair-table__row--delivery-area .pair-table__value {
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.cashmemo-print-item--2 .tax-details .pair-table td {
+  font-size: 2.8mm;
+}
+
+.cashmemo-print-item--2 .tax-details .pair-table__row--emphasis td,
+.cashmemo-print-item--2 .tax-details .pair-table__row--mobile td,
+.cashmemo-print-item--2 .tax-details .pair-table__row--payment td {
+  font-size: 3.15mm;
+}
+
+.cashmemo-print-item--2 .tax-details__columns {
+  height: 100%;
+  align-items: stretch;
+}
+
+.cashmemo-print-item--2 .tax-details__column {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+}
+
+.cashmemo-print-item--2 .tax-details__column--right {
+  display: flex;
+}
+
+.cashmemo-print-item--2 .pair-table--tax-top {
+  order: 1;
+}
+
+.cashmemo-print-item--2 .pair-table--tax-bottom {
+  order: 2;
+}
+
+.cashmemo-print-item--2 .tax-details__spacer {
+  order: 3;
+}
+
+.cashmemo-print-item--2 .pair-table--tax-amounts {
+  height: 100%;
+}
+
+.cashmemo-print-item--3 .pair-table td {
+  padding-top: 0.22mm;
+  padding-bottom: 0.22mm;
+  vertical-align: middle;
+}
+
+.cashmemo-print-item--2 .pair-table--dense td {
+  padding-top: 0.7mm;
+  padding-bottom: 0.7mm;
+}
+
+.cashmemo-print-item--3 .pair-table--dense td {
+  padding-top: 0.18mm;
+  padding-bottom: 0.18mm;
+}
+
+.cashmemo-print-item--2 .tax-details__spacer {
+  height: auto;
+}
+
+.cashmemo-print-item--3 .tax-details__spacer {
+  height: 2.2mm;
 }
 
 .tax-details__columns {

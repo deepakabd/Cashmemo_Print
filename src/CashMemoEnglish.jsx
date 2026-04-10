@@ -21,6 +21,8 @@ const PairTable = ({ rows, amountAlign = false, dense = false, className = '', e
         if (emphasisLabels.includes(label)) classes.push('pair-table__row--emphasis');
         if (label === 'Payment') classes.push('pair-table__row--payment');
         if (label === 'Mobile No.') classes.push('pair-table__row--mobile');
+        if (label === 'Address') classes.push('pair-table__row--address');
+        if (label === 'Delivery Area') classes.push('pair-table__row--delivery-area');
         if (label === 'E-KYC' && /ekyc\s*not\s*done/i.test(String(value))) classes.push('pair-table__row--alert');
 
         return (
@@ -61,8 +63,11 @@ const DistributorDetails = ({
   miStatus,
   eKyc,
   payment,
-  salesType
+  salesType,
+  hideCompactRows = false
 }) => {
+  const hiddenMainLabels = new Set(['Delivery Staff', 'Product / HSN / Qty']);
+  const hiddenAmountLabels = new Set(['Dlvry Charges (Rs.)', 'C & C Rebate (Rs.)']);
   const leftRows = [
     ['Mobile No.', mobileNo],
     ['Delivery Area', deliveryArea],
@@ -70,7 +75,7 @@ const DistributorDetails = ({
     ['Product / HSN / Qty', `${product} / ${hsn} / ${orderQty}`],
     ['Order No. & Order Date', `${orderNo} - ${orderDate}`],
     ['Cash Memo No. & Date', `${cashMemoNo} - ${cashMemoDate}`]
-  ];
+  ].filter(([label]) => !hideCompactRows || !hiddenMainLabels.has(label));
 
   const amountRowsLeft = [
     ['Base Price (Rs.)', basePrice],
@@ -81,7 +86,7 @@ const DistributorDetails = ({
     ['Total Amount(Rs.)', totalAmount],
     ['E-KYC', eKyc],
     ['Payment', payment]
-  ];
+  ].filter(([label]) => !hideCompactRows || !hiddenAmountLabels.has(label));
 
   return (
     <div className="distributor-details">
@@ -123,7 +128,8 @@ const TaxInvoiceDetails = ({
   sgst,
   totalAmount,
   advanceOnline,
-  netPayable
+  netPayable,
+  hideCompactRows = false
 }) => {
   const middleTopRows = [
     ['Consumer Name', consumerName],
@@ -131,6 +137,9 @@ const TaxInvoiceDetails = ({
     ['LPD ID', lpgId],
     ['Address', address]
   ];
+
+  const hiddenMiddleLabels = new Set(['Category', 'Product/ HSN', 'Connection/ Qty']);
+  const hiddenRightLabels = new Set(['Delivery Charges (Rs.)', 'C & C Rebate (Rs.)', 'Taxable Amount (Rs.)']);
 
   const middleBottomRows = [
     ['Mobile No.', mobileNo],
@@ -140,7 +149,7 @@ const TaxInvoiceDetails = ({
     ['E-KYC', eKyc],
     ['Booking Source', bookingSource],
     ['Payment', payment]
-  ];
+  ].filter(([label]) => !hideCompactRows || !hiddenMiddleLabels.has(label));
 
   const rightRows = [
     ['Order No.', orderNo],
@@ -156,7 +165,7 @@ const TaxInvoiceDetails = ({
     ['Total Amount (Rs.)', totalAmount],
     ['Advance (Online) (Rs.)', advanceOnline],
     ['Net Payable (Rs.)', netPayable]
-  ];
+  ].filter(([label]) => !hideCompactRows || !hiddenRightLabels.has(label));
 
   const normalizedPayment = String(payment || '').trim().toLowerCase();
   const isOnlinePayment = normalizedPayment.includes('online') && !normalizedPayment.includes('pay on delivery');
@@ -170,9 +179,9 @@ const TaxInvoiceDetails = ({
     <div className="tax-details">
       <div className="tax-details__columns">
         <div className="tax-details__column">
-          <PairTable rows={middleTopRows} dense className="pair-table--tax-main" emphasisLabels={['Consumer Name', 'Consumer No.', 'LPD ID']} />
+          <PairTable rows={middleTopRows} dense className="pair-table--tax-main pair-table--tax-top" emphasisLabels={['Consumer Name', 'Consumer No.', 'LPD ID']} />
           <div className="tax-details__spacer" />
-          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main" emphasisLabels={['Mobile No.', 'E-KYC']} />
+          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main pair-table--tax-bottom" emphasisLabels={['Mobile No.', 'E-KYC']} />
         </div>
         <div className="tax-details__column tax-details__column--right">
           <PairTable rows={rightRows} amountAlign dense className="pair-table--tax-amounts" emphasisLabels={['Payment', 'Total Amount (Rs.)']} />
@@ -189,7 +198,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
 
   const consumerName = customer['Consumer Name'] || '';
   const consumerNo = customer['Consumer No.'] || '';
-  const lpgId = customer['LPG ID'] || '';
+  const lpgId = customer['LPG ID'] || customer.UniqueConsumerId || customer['Unique Consumer Id'] || customer['Unique Consumer ID'] || '';
   const address = customer['Address'] || '';
   const mobileNo = customer['Mobile No.'] || '';
   const deliveryArea = customer['Delivery Area'] || '';
@@ -289,7 +298,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
         <div className="distributor-copy-title">Distributor Copy</div>
         <div className="memo-table-wrap">
           <div className="memo-table-box memo-table-box--distributor">
-            <DistributorDetails {...commonProps} />
+            <DistributorDetails {...commonProps} hideCompactRows={isCompactPage} />
           </div>
         </div>
         <div className="declaration">
@@ -345,7 +354,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
 
         <div className="memo-table-wrap memo-table-wrap--tax">
           <div className="memo-table-box memo-table-box--tax">
-            <TaxInvoiceDetails {...commonProps} />
+            <TaxInvoiceDetails {...commonProps} hideCompactRows={isCompactPage} />
           </div>
         </div>
         <p className="signature-text">For {dealerName}...........</p>
