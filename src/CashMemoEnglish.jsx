@@ -3,6 +3,8 @@ import './CashMemoPrint.css';
 
 const valueOrBlank = (value) => (value === undefined || value === null || value === '' ? '' : String(value));
 
+const shouldShowLabel = (settings, key) => !settings || settings[key] !== false;
+
 const pickMoney = (customer, keys) => {
   for (const key of keys) {
     if (customer[key] !== undefined && customer[key] !== null && customer[key] !== '') {
@@ -64,35 +66,33 @@ const DistributorDetails = ({
   eKyc,
   payment,
   salesType,
-  hideCompactRows = false
+  labelSettings
 }) => {
-  const hiddenMainLabels = new Set(['Delivery Staff', 'Product / HSN / Qty']);
-  const hiddenAmountLabels = new Set(['Dlvry Charges (Rs.)', 'C & C Rebate (Rs.)']);
   const leftRows = [
-    ['Mobile No.', mobileNo],
-    ['Delivery Area', deliveryArea],
-    ['Delivery Staff', deliveryMan],
-    ['Product / HSN / Qty', `${product} / ${hsn} / ${orderQty}`],
-    ['Order No. & Order Date', `${orderNo} - ${orderDate}`],
-    ['Cash Memo No. & Date', `${cashMemoNo} - ${cashMemoDate}`]
-  ].filter(([label]) => !hideCompactRows || !hiddenMainLabels.has(label));
+    ['Mobile No.', mobileNo, 'mobileNo'],
+    ['Delivery Area', deliveryArea, 'deliveryArea'],
+    ['Delivery Staff', deliveryMan, 'deliveryStaff'],
+    ['Product / HSN / Qty', `${product} / ${hsn} / ${orderQty}`, 'productHsnQty'],
+    ['Order No. & Order Date', `${orderNo} - ${orderDate}`, 'orderNoAndDate'],
+    ['Cash Memo No. & Date', `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate']
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const amountRowsLeft = [
-    ['Base Price (Rs.)', basePrice],
-    ['Dlvry Charges (Rs.)', dlvryCharges],
-    ['C & C Rebate (Rs.)', cAndCRebate],
-    ['CGST (2.50%)(Rs.)', cgst],
-    ['SGST (2.50%)(Rs.)', sgst],
-    ['Total Amount(Rs.)', totalAmount],
-    ['E-KYC', eKyc],
-    ['Payment', payment]
-  ].filter(([label]) => !hideCompactRows || !hiddenAmountLabels.has(label));
+    ['Base Price (Rs.)', basePrice, 'basePrice'],
+    ['Dlvry Charges (Rs.)', dlvryCharges, 'dlvryCharges'],
+    ['C & C Rebate (Rs.)', cAndCRebate, 'cashCarryRebate'],
+    ['CGST (2.50%)(Rs.)', cgst, 'cgst'],
+    ['SGST (2.50%)(Rs.)', sgst, 'sgst'],
+    ['Total Amount(Rs.)', totalAmount, 'totalAmount'],
+    ['E-KYC', eKyc, 'eKyc'],
+    ['Payment', payment, 'payment']
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
     <div className="distributor-details">
-      <div className="details-headline details-headline--emphasis details-headline--primary">Consumer Name : {consumerName}</div>
-      <div className="details-headline details-headline--emphasis details-headline--primary">Consumer No / LPG ID : {consumerNo} / {lpgId}</div>
-      <div className="details-address">Address: {address}</div>
+      {shouldShowLabel(labelSettings, 'consumerName') && <div className="details-headline details-headline--emphasis details-headline--primary">Consumer Name : {consumerName}</div>}
+      {shouldShowLabel(labelSettings, 'consumerNoLpgId') && <div className="details-headline details-headline--emphasis details-headline--primary">Consumer No / LPG ID : {consumerNo} / {lpgId}</div>}
+      {shouldShowLabel(labelSettings, 'address') && <div className="details-address">Address: {address}</div>}
       <PairTable rows={leftRows} className="pair-table--dist-main" emphasisLabels={['Mobile No.', 'E-KYC', 'Payment']} />
       <PairTable rows={amountRowsLeft} className="pair-table--dist-amounts" emphasisLabels={['Total Amount(Rs.)']} />
     </div>
@@ -129,51 +129,45 @@ const TaxInvoiceDetails = ({
   totalAmount,
   advanceOnline,
   netPayable,
-  hideCompactRows = false
+  labelSettings
 }) => {
   const middleTopRows = [
-    ['Consumer Name', consumerName],
-    ['Consumer No.', consumerNo],
-    ['LPD ID', lpgId],
-    ['Address', address]
-  ];
-
-  const hiddenMiddleLabels = new Set(['Category', 'Product/ HSN', 'Connection/ Qty']);
-  const hiddenRightLabels = new Set(['Delivery Charges (Rs.)', 'C & C Rebate (Rs.)', 'Taxable Amount (Rs.)']);
+    ['Consumer Name', consumerName, 'taxConsumerName'],
+    ['Consumer No.', consumerNo, 'taxConsumerNo'],
+    ['LPD ID', lpgId, 'taxLpgId'],
+    ['Address', address, 'taxAddress']
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const middleBottomRows = [
-    ['Mobile No.', mobileNo],
-    ['Category', category],
-    ['Product/ HSN', `${product} / ${hsn}`],
-    ['Connection/ Qty', connectionQty],
-    ['E-KYC', eKyc],
-    ['Booking Source', bookingSource],
-    ['Payment', payment]
-  ].filter(([label]) => !hideCompactRows || !hiddenMiddleLabels.has(label));
-
-  const rightRows = [
-    ['Order No.', orderNo],
-    ['Order Date', orderDate],
-    ['CashMemo No.', cashMemoNo],
-    ['CashMemo Date', cashMemoDate],
-    ['Base Price (Rs.)', basePrice],
-    ['Delivery Charges (Rs.)', dlvryCharges],
-    ['C & C Rebate (Rs.)', cAndCRebate],
-    ['Taxable Amount (Rs.)', taxableAmount],
-    ['CGST (2.50%)(Rs.)', cgst],
-    ['SGST (2.50%)(Rs.)', sgst],
-    ['Total Amount (Rs.)', totalAmount],
-    ['Advance (Online) (Rs.)', advanceOnline],
-    ['Net Payable (Rs.)', netPayable]
-  ].filter(([label]) => !hideCompactRows || !hiddenRightLabels.has(label));
+    ['Mobile No.', mobileNo, 'mobileNo'],
+    ['Category', category, 'category'],
+    ['Product/ HSN', `${product} / ${hsn}`, 'productHsn'],
+    ['Connection/ Qty', connectionQty, 'connectionQty'],
+    ['E-KYC', eKyc, 'eKyc'],
+    ['Booking Source', bookingSource, 'bookingSource'],
+    ['Payment', payment, 'payment']
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const normalizedPayment = String(payment || '').trim().toLowerCase();
   const isOnlinePayment = normalizedPayment.includes('online') && !normalizedPayment.includes('pay on delivery');
   const displayAdvanceOnline = isOnlinePayment ? 'Paid' : '00';
   const displayNetPayable = isOnlinePayment ? '00' : totalAmount;
 
-  rightRows[rightRows.findIndex(([label]) => label === 'Advance (Online) (Rs.)')] = ['Advance (Online) (Rs.)', displayAdvanceOnline];
-  rightRows[rightRows.findIndex(([label]) => label === 'Net Payable (Rs.)')] = ['Net Payable (Rs.)', displayNetPayable];
+  const rightRows = [
+    ['Order No.', orderNo, 'orderNo'],
+    ['Order Date', orderDate, 'orderDate'],
+    ['CashMemo No.', cashMemoNo, 'cashMemoNo'],
+    ['CashMemo Date', cashMemoDate, 'cashMemoDate'],
+    ['Base Price (Rs.)', basePrice, 'basePrice'],
+    ['Delivery Charges (Rs.)', dlvryCharges, 'deliveryCharges'],
+    ['C & C Rebate (Rs.)', cAndCRebate, 'cashCarryRebate'],
+    ['Taxable Amount (Rs.)', taxableAmount, 'taxableAmount'],
+    ['CGST (2.50%)(Rs.)', cgst, 'cgst'],
+    ['SGST (2.50%)(Rs.)', sgst, 'sgst'],
+    ['Total Amount (Rs.)', totalAmount, 'totalAmount'],
+    ['Advance (Online) (Rs.)', displayAdvanceOnline, 'advanceOnline'],
+    ['Net Payable (Rs.)', displayNetPayable, 'netPayable']
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
     <div className="tax-details">
@@ -191,7 +185,7 @@ const TaxInvoiceDetails = ({
   );
 };
 
-const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType }) => {
+const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType, labelSettings }) => {
   if (!customer) {
     return <p>Please select a customer to generate Cash Memo.</p>;
   }
@@ -298,7 +292,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
         <div className="distributor-copy-title">Distributor Copy</div>
         <div className="memo-table-wrap">
           <div className="memo-table-box memo-table-box--distributor">
-            <DistributorDetails {...commonProps} hideCompactRows={isCompactPage} />
+            <DistributorDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
         <div className="declaration">
@@ -354,7 +348,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
 
         <div className="memo-table-wrap memo-table-wrap--tax">
           <div className="memo-table-box memo-table-box--tax">
-            <TaxInvoiceDetails {...commonProps} hideCompactRows={isCompactPage} />
+            <TaxInvoiceDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
         <p className="signature-text">For {dealerName}...........</p>
