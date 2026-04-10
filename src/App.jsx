@@ -3144,6 +3144,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1); // New state for current page
   const [itemsPerPage] = useState(25); // Number of items per page
   const [pageType, setPageType] = useState('A4 3 Cashmemo/Page'); // New state for page type
+  const [printLanguage, setPrintLanguage] = useState('English');
   const [customersToPrint, setCustomersToPrint] = useState([]); // New state to hold multiple customers for printing
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]); // New state to track selected customer IDs
   const cashMemoRef = useRef(); // Ref for the cash memo component
@@ -3364,12 +3365,13 @@ function App() {
         return;
       }
 
-      const [{ renderToString }, { default: CashMemoEnglish }] = await Promise.all([
+      const isHindiPrint = printLanguage === 'Hindi';
+      const [{ renderToString }, { default: CashMemoTemplate }] = await Promise.all([
         import('react-dom/server'),
-        import('./CashMemoEnglish'),
+        isHindiPrint ? import('./CashMemoHindi') : import('./CashMemoEnglish'),
       ]);
 
-      const customersToPrint = parsedData.filter(customer =>
+      const customersToPrint = filteredData.filter(customer =>
         selectedCustomerIds.includes(String(customer['Consumer No.']))
       );
 
@@ -3456,7 +3458,7 @@ function App() {
         } catch {}
 
         const cashMemoHtml = renderToString(
-          <CashMemoEnglish customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
+          <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
         );
 
         const memosPerPage = pageType === '4 Cashmemo/Page' ? 4 : 3;
@@ -3470,7 +3472,7 @@ function App() {
       const fullHtml = `
         <html>
           <head>
-            <title>Cash Memos</title>
+            <title>${isHindiPrint ? 'Hindi Cash Memos' : 'Cash Memos'}</title>
             <link rel="stylesheet" href="CashMemoPrint.css" />
             <style>
               @page {
@@ -4861,6 +4863,14 @@ function App() {
               <select className="table-select" id="pageTypeSelect" onChange={(e) => setPageType(e.target.value)} value={pageType}>
               <option value="3 Cashmemo/Page">3 Cashmemo/Page</option>
               <option value="4 Cashmemo/Page">4 Cashmemo/Page</option>
+              </select>
+            </div>
+
+            <div className="table-control-group">
+              <label className="table-control-label" htmlFor="printLanguageSelect">Print Language</label>
+              <select className="table-select" id="printLanguageSelect" onChange={(e) => setPrintLanguage(e.target.value)} value={printLanguage}>
+              <option value="English">English</option>
+              <option value="Hindi">Hindi</option>
               </select>
             </div>
 
