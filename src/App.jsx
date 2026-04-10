@@ -119,6 +119,12 @@ const isConsumerStatusMatch = (value, target) => {
 const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
   .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
 
+const getCashMemoPerPage = (pageType) => {
+  if (pageType === '2 Cashmemo/Page') return 2;
+  if (pageType === '4 Cashmemo/Page') return 4;
+  return 3;
+};
+
 const PACKAGE_OPTIONS = [
   'Demo Package - 1 Day',
   'Basic Package - 7 Days',
@@ -225,6 +231,9 @@ const normalizeData = (data) => {
         const newKey = headerMapping[cleanedKey] || key.trim();
         newRow[newKey] = row[key];
       }
+    }
+    if (!newRow['LPG ID'] && newRow.UniqueConsumerId) {
+      newRow['LPG ID'] = newRow.UniqueConsumerId;
     }
     return newRow;
   });
@@ -3143,7 +3152,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1); // New state for current page
   const [itemsPerPage] = useState(25); // Number of items per page
-  const [pageType, setPageType] = useState('A4 3 Cashmemo/Page'); // New state for page type
+  const [pageType, setPageType] = useState('3 Cashmemo/Page'); // New state for page type
   const [printLanguage, setPrintLanguage] = useState('English');
   const [customersToPrint, setCustomersToPrint] = useState([]); // New state to hold multiple customers for printing
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]); // New state to track selected customer IDs
@@ -3405,6 +3414,7 @@ function App() {
 
         // Normalize common keys for print template compatibility
         processedCustomer['Order No.'] = pickFirstValue(processedCustomer, ['Order No.']);
+        processedCustomer['LPG ID'] = pickFirstValue(processedCustomer, ['LPG ID', 'UniqueConsumerId', 'Unique Consumer Id', 'Unique Consumer ID']);
         processedCustomer['Cash Memo No.'] = pickFirstValue(processedCustomer, ['Cash Memo No.', 'CashMemoNo', 'Cash Memo']);
         processedCustomer['HSN'] = '27111900';
 
@@ -3461,7 +3471,7 @@ function App() {
           <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
         );
 
-        const memosPerPage = pageType === '4 Cashmemo/Page' ? 4 : 3;
+        const memosPerPage = getCashMemoPerPage(pageType);
         const pageBreakClass = (index + 1) % memosPerPage === 0 && (index + 1) < customersToPrint.length
           ? ' cashmemo-page-break'
           : '';
@@ -3503,6 +3513,10 @@ function App() {
                 overflow: hidden;
                 page-break-inside: avoid;
                 break-inside: avoid;
+              }
+              .cashmemo-print-item--2 {
+                height: 142mm;
+                margin-bottom: 2mm;
               }
               .cashmemo-print-item--4 {
                 height: 68.75mm;
@@ -3654,39 +3668,43 @@ function App() {
                 font-weight: 700;
               }
               .details-headline--emphasis {
-                font-size: 2.85mm;
+                font-size: 3.05mm;
                 line-height: 1.12;
                 font-weight: 800;
               }
               .details-headline--primary {
-                font-size: 3.15mm;
+                font-size: 3.35mm;
               }
               .details-address {
                 margin-bottom: 0.95mm;
-                font-size: 2.55mm;
+                font-size: 2.8mm;
                 line-height: 1.12;
-                font-weight: 600;
+                font-weight: 800;
               }
               .pair-table {
                 table-layout: fixed;
               }
               .pair-table td {
                 padding: 0.05mm 0;
-                font-size: 2.05mm;
+                font-size: 2.18mm;
                 line-height: 1.06;
                 vertical-align: top;
                 font-weight: 600;
               }
               .pair-table__row--emphasis td {
-                font-size: 2.45mm;
+                font-size: 2.58mm;
                 font-weight: 800;
               }
               .pair-table__row--payment td {
-                font-size: 2.55mm;
+                font-size: 2.65mm;
                 font-weight: 800;
               }
               .pair-table__row--mobile td {
-                font-size: 2.75mm;
+                font-size: 3mm;
+                font-weight: 800;
+              }
+              .pair-table__row--address td {
+                font-size: 2.35mm;
                 font-weight: 800;
               }
               .pair-table__row--alert td {
@@ -3718,6 +3736,137 @@ function App() {
               }
               .tax-details {
                 padding: 1.2mm 1.15mm 0 1.1mm;
+              }
+              .tax-details .pair-table td {
+                font-size: 2.35mm;
+                line-height: 1.1;
+              }
+              .tax-details .pair-table__row--emphasis td,
+              .tax-details .pair-table__row--mobile td,
+              .tax-details .pair-table__row--payment td {
+                font-size: 2.65mm;
+              }
+              .cashmemo-print-item--2 .memo-table-box,
+              .cashmemo-print-item--3 .memo-table-box {
+                display: flex;
+              }
+              .cashmemo-print-item--2 .memo-table-box--distributor,
+              .cashmemo-print-item--2 .memo-table-box--tax {
+                height: 100%;
+              }
+              .cashmemo-print-item--2 .distributor-details,
+              .cashmemo-print-item--2 .tax-details,
+              .cashmemo-print-item--3 .distributor-details,
+              .cashmemo-print-item--3 .tax-details {
+                width: 100%;
+              }
+              .cashmemo-print-item--2 .distributor-details,
+              .cashmemo-print-item--2 .tax-details {
+                height: 100%;
+              }
+              .cashmemo-print-item--2 .distributor-details {
+                display: grid;
+                grid-template-rows: auto auto auto 1fr 1fr;
+                align-items: stretch;
+                padding-bottom: 1mm;
+              }
+              .cashmemo-print-item--2 .pair-table--dist-main,
+              .cashmemo-print-item--2 .pair-table--dist-amounts {
+                height: 100%;
+              }
+              .cashmemo-print-item--2 .distributor-copy-title,
+              .cashmemo-print-item--2 .tax-invoice-title {
+                font-size: 2.8mm;
+              }
+              .cashmemo-print-item--2 .contact-info > div {
+                font-size: 2.35mm;
+              }
+              .cashmemo-print-item--2 .contact-info-strong {
+                font-size: 4mm;
+              }
+              .cashmemo-print-item--2 .details-headline--emphasis {
+                font-size: 3.55mm;
+              }
+              .cashmemo-print-item--2 .details-headline--primary {
+                font-size: 3.95mm;
+              }
+              .cashmemo-print-item--2 .details-address {
+                font-size: 3.3mm;
+                white-space: normal;
+                overflow: visible;
+                word-break: break-word;
+              }
+              .cashmemo-print-item--2 .pair-table td {
+                padding-top: 0.9mm;
+                padding-bottom: 0.9mm;
+                font-size: 2.85mm;
+                line-height: 1.12;
+                vertical-align: middle;
+              }
+              .cashmemo-print-item--2 .pair-table__row--emphasis td,
+              .cashmemo-print-item--2 .pair-table__row--payment td {
+                font-size: 3.15mm;
+              }
+              .cashmemo-print-item--2 .pair-table__row--mobile td {
+                font-size: 3.45mm;
+              }
+              .cashmemo-print-item--2 .pair-table__row--address td {
+                font-size: 3mm;
+              }
+              .cashmemo-print-item--2 .pair-table__row--delivery-area .pair-table__value {
+                white-space: normal;
+                overflow: visible;
+                word-break: break-word;
+              }
+              .cashmemo-print-item--2 .tax-details .pair-table td {
+                font-size: 2.8mm;
+              }
+              .cashmemo-print-item--2 .tax-details .pair-table__row--emphasis td,
+              .cashmemo-print-item--2 .tax-details .pair-table__row--mobile td,
+              .cashmemo-print-item--2 .tax-details .pair-table__row--payment td {
+                font-size: 3.15mm;
+              }
+              .cashmemo-print-item--2 .tax-details__columns {
+                height: 100%;
+                align-items: stretch;
+              }
+              .cashmemo-print-item--2 .tax-details__column {
+                display: grid;
+                grid-template-rows: auto auto 1fr;
+              }
+              .cashmemo-print-item--2 .tax-details__column--right {
+                display: flex;
+              }
+              .cashmemo-print-item--2 .pair-table--tax-top {
+                order: 1;
+              }
+              .cashmemo-print-item--2 .pair-table--tax-bottom {
+                order: 2;
+              }
+              .cashmemo-print-item--2 .tax-details__spacer {
+                order: 3;
+              }
+              .cashmemo-print-item--2 .pair-table--tax-amounts {
+                height: 100%;
+              }
+              .cashmemo-print-item--3 .pair-table td {
+                padding-top: 0.22mm;
+                padding-bottom: 0.22mm;
+                vertical-align: middle;
+              }
+              .cashmemo-print-item--2 .pair-table--dense td {
+                padding-top: 0.7mm;
+                padding-bottom: 0.7mm;
+              }
+              .cashmemo-print-item--3 .pair-table--dense td {
+                padding-top: 0.18mm;
+                padding-bottom: 0.18mm;
+              }
+              .cashmemo-print-item--2 .tax-details__spacer {
+                height: auto;
+              }
+              .cashmemo-print-item--3 .tax-details__spacer {
+                height: 2.2mm;
               }
               .tax-details__columns {
                 display: grid;
@@ -4861,6 +5010,7 @@ function App() {
             <div className="table-control-group">
               <label className="table-control-label" htmlFor="pageTypeSelect">Page Type</label>
               <select className="table-select" id="pageTypeSelect" onChange={(e) => setPageType(e.target.value)} value={pageType}>
+              <option value="2 Cashmemo/Page">2 Cashmemo/Page</option>
               <option value="3 Cashmemo/Page">3 Cashmemo/Page</option>
               <option value="4 Cashmemo/Page">4 Cashmemo/Page</option>
               </select>
@@ -4966,10 +5116,7 @@ function App() {
               <div
                 key={index}
                 style={{
-                  pageBreakAfter:
-                    pageType === 'A4 3 Cashmemo/Page'
-                      ? (index + 1) % 3 === 0 ? 'always' : 'auto'
-                      : (index + 1) % 4 === 0 ? 'always' : 'auto',
+                  pageBreakAfter: (index + 1) % getCashMemoPerPage(pageType) === 0 ? 'always' : 'auto',
                 }}
               >
                   <CashMemoEnglish customerData={item.customer} />
