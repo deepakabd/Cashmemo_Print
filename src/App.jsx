@@ -190,6 +190,10 @@ const mergeCashMemoLabelSettings = (savedSettings = {}) => {
   return defaults;
 };
 
+const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
+  dealerCode ? `cashMemoLabelSettings_${String(dealerCode).trim()}` : 'cashMemoLabelSettings'
+);
+
 const PACKAGE_OPTIONS = [
   'Demo Package - 1 Day',
   'Basic Package - 7 Days',
@@ -632,6 +636,7 @@ function App() {
             profileData: docData.profileData || null,
             bankDetailsData: docData.bankDetailsData || null,
             ratesData: Array.isArray(docData.ratesData) ? docData.ratesData : [],
+            cashMemoLabelSettings: mergeCashMemoLabelSettings(docData.cashMemoLabelSettings || {}),
           };
           if (status !== 'active') {
             firestoreUser.status = status;
@@ -690,6 +695,20 @@ function App() {
     }
     writeUsersData(users);
 
+    let cachedLabelSettings = {};
+    try {
+      cachedLabelSettings = JSON.parse(localStorage.getItem(getCashMemoLabelSettingsStorageKey(firestoreUser.dealerCode)) || '{}');
+    } catch {
+      cachedLabelSettings = {};
+    }
+    const userLabelSettings = mergeCashMemoLabelSettings(firestoreUser.cashMemoLabelSettings || cachedLabelSettings);
+    localUser.cashMemoLabelSettings = userLabelSettings;
+    const syncedUsers = readUsersData().map((user) => (
+      user.id === localUser.id ? { ...user, cashMemoLabelSettings: userLabelSettings } : user
+    ));
+    writeUsersData(syncedUsers);
+    localStorage.setItem(getCashMemoLabelSettingsStorageKey(firestoreUser.dealerCode), JSON.stringify(userLabelSettings));
+    setCashMemoLabelSettings(userLabelSettings);
     setLoggedInUser(localUser);
     setIsLoggedIn(true);
     setShowUserLogin(false);
@@ -4695,6 +4714,24 @@ function App() {
     });
   };
 
+  const persistCashMemoLabelSettings = (settings) => {
+    const mergedSettings = mergeCashMemoLabelSettings(settings);
+    const storageKey = getCashMemoLabelSettingsStorageKey(loggedInUser?.dealerCode);
+    localStorage.setItem(storageKey, JSON.stringify(mergedSettings));
+    if (!loggedInUser?.id) return;
+
+    updateUserInStore(
+      loggedInUser.id,
+      (user) => ({ ...user, cashMemoLabelSettings: mergedSettings }),
+      loggedInUser.dealerCode
+    );
+
+    updateUserInFirebase(loggedInUser.id, { cashMemoLabelSettings: mergedSettings }, loggedInUser.dealerCode)
+      .catch(() => {
+        alert('Lebel Update local save ho gaya, Firebase sync nahi ho paya. Internet/Firebase check karein.');
+      });
+  };
+
   const updateCashMemoLabelSetting = (targetPageType, labelKey, checked) => {
     setCashMemoLabelSettings((prev) => {
       const next = mergeCashMemoLabelSettings(prev);
@@ -4702,7 +4739,7 @@ function App() {
         ...next[targetPageType],
         [labelKey]: checked,
       };
-      localStorage.setItem('cashMemoLabelSettings', JSON.stringify(next));
+      persistCashMemoLabelSettings(next);
       return next;
     });
   };
@@ -4714,7 +4751,7 @@ function App() {
         acc[item.key] = checked;
         return acc;
       }, {});
-      localStorage.setItem('cashMemoLabelSettings', JSON.stringify(next));
+      persistCashMemoLabelSettings(next);
       return next;
     });
   };
@@ -4724,7 +4761,7 @@ function App() {
       const defaults = createDefaultCashMemoLabelSettings();
       const next = mergeCashMemoLabelSettings(prev);
       next[targetPageType] = defaults[targetPageType];
-      localStorage.setItem('cashMemoLabelSettings', JSON.stringify(next));
+      persistCashMemoLabelSettings(next);
       return next;
     });
   };
