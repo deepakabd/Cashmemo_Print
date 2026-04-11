@@ -125,6 +125,75 @@ const getCashMemoPerPage = (pageType) => {
   return 3;
 };
 
+const CASHMEMO_PAGE_TYPES = ['2 Cashmemo/Page', '3 Cashmemo/Page', '4 Cashmemo/Page'];
+
+const CASHMEMO_LABEL_OPTIONS = [
+  { key: 'consumerName', label: 'Consumer Name', group: 'Distributor Copy' },
+  { key: 'consumerNoLpgId', label: 'Consumer No / LPG ID', group: 'Distributor Copy' },
+  { key: 'address', label: 'Address', group: 'Distributor Copy' },
+  { key: 'mobileNo', label: 'Mobile No.', group: 'Common Details' },
+  { key: 'deliveryArea', label: 'Delivery Area', group: 'Distributor Copy' },
+  { key: 'deliveryStaff', label: 'Delivery Staff', group: 'Distributor Copy' },
+  { key: 'productHsnQty', label: 'Product / HSN / Qty', group: 'Distributor Copy' },
+  { key: 'orderNoAndDate', label: 'Order No. & Order Date', group: 'Distributor Copy' },
+  { key: 'cashMemoNoAndDate', label: 'Cash Memo No. & Date', group: 'Distributor Copy' },
+  { key: 'basePrice', label: 'Base Price (Rs.)', group: 'Amount Details' },
+  { key: 'dlvryCharges', label: 'Dlvry Charges (Rs.)', group: 'Amount Details' },
+  { key: 'cashCarryRebate', label: 'C & C Rebate (Rs.)', group: 'Amount Details' },
+  { key: 'cgst', label: 'CGST (2.50%)(Rs.)', group: 'Amount Details' },
+  { key: 'sgst', label: 'SGST (2.50%)(Rs.)', group: 'Amount Details' },
+  { key: 'totalAmount', label: 'Total Amount (Rs.)', group: 'Amount Details' },
+  { key: 'eKyc', label: 'E-KYC', group: 'Common Details' },
+  { key: 'payment', label: 'Payment', group: 'Common Details' },
+  { key: 'taxConsumerName', label: 'Tax Consumer Name', group: 'Tax Invoice' },
+  { key: 'taxConsumerNo', label: 'Tax Consumer No.', group: 'Tax Invoice' },
+  { key: 'taxLpgId', label: 'Tax LPG ID', group: 'Tax Invoice' },
+  { key: 'taxAddress', label: 'Tax Address', group: 'Tax Invoice' },
+  { key: 'category', label: 'Category', group: 'Tax Invoice' },
+  { key: 'productHsn', label: 'Product/ HSN', group: 'Tax Invoice' },
+  { key: 'connectionQty', label: 'Connection/ Qty', group: 'Tax Invoice' },
+  { key: 'bookingSource', label: 'Booking Source', group: 'Tax Invoice' },
+  { key: 'orderNo', label: 'Order No.', group: 'Tax Invoice' },
+  { key: 'orderDate', label: 'Order Date', group: 'Tax Invoice' },
+  { key: 'cashMemoNo', label: 'CashMemo No.', group: 'Tax Invoice' },
+  { key: 'cashMemoDate', label: 'CashMemo Date', group: 'Tax Invoice' },
+  { key: 'deliveryCharges', label: 'Delivery Charges (Rs.)', group: 'Tax Invoice' },
+  { key: 'taxableAmount', label: 'Taxable Amount (Rs.)', group: 'Tax Invoice' },
+  { key: 'advanceOnline', label: 'Advance (Online) (Rs.)', group: 'Tax Invoice' },
+  { key: 'netPayable', label: 'Net Payable (Rs.)', group: 'Tax Invoice' },
+];
+
+const DEFAULT_HIDDEN_LABELS_BY_PAGE_TYPE = {
+  '4 Cashmemo/Page': new Set(['deliveryStaff', 'productHsnQty', 'dlvryCharges', 'cashCarryRebate', 'category', 'productHsn', 'connectionQty', 'deliveryCharges', 'taxableAmount']),
+};
+
+const createDefaultCashMemoLabelSettings = () => {
+  const settings = {};
+  CASHMEMO_PAGE_TYPES.forEach((type) => {
+    const hiddenLabels = DEFAULT_HIDDEN_LABELS_BY_PAGE_TYPE[type] || new Set();
+    settings[type] = CASHMEMO_LABEL_OPTIONS.reduce((acc, item) => {
+      acc[item.key] = !hiddenLabels.has(item.key);
+      return acc;
+    }, {});
+  });
+  return settings;
+};
+
+const mergeCashMemoLabelSettings = (savedSettings = {}) => {
+  const defaults = createDefaultCashMemoLabelSettings();
+  CASHMEMO_PAGE_TYPES.forEach((type) => {
+    defaults[type] = {
+      ...defaults[type],
+      ...(savedSettings?.[type] || {}),
+    };
+  });
+  return defaults;
+};
+
+const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
+  dealerCode ? `cashMemoLabelSettings_${String(dealerCode).trim()}` : 'cashMemoLabelSettings'
+);
+
 const PACKAGE_OPTIONS = [
   'Demo Package - 1 Day',
   'Basic Package - 7 Days',
@@ -266,6 +335,7 @@ function App() {
   const [showHomeInfo, setShowHomeInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(true);
   const [showInvoicePage, setShowInvoicePage] = useState(false);
+  const [showLabelUpdate, setShowLabelUpdate] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showUserLogin, setShowUserLogin] = useState(false);
@@ -566,6 +636,7 @@ function App() {
             profileData: docData.profileData || null,
             bankDetailsData: docData.bankDetailsData || null,
             ratesData: Array.isArray(docData.ratesData) ? docData.ratesData : [],
+            cashMemoLabelSettings: mergeCashMemoLabelSettings(docData.cashMemoLabelSettings || {}),
           };
           if (status !== 'active') {
             firestoreUser.status = status;
@@ -624,6 +695,20 @@ function App() {
     }
     writeUsersData(users);
 
+    let cachedLabelSettings = {};
+    try {
+      cachedLabelSettings = JSON.parse(localStorage.getItem(getCashMemoLabelSettingsStorageKey(firestoreUser.dealerCode)) || '{}');
+    } catch {
+      cachedLabelSettings = {};
+    }
+    const userLabelSettings = mergeCashMemoLabelSettings(firestoreUser.cashMemoLabelSettings || cachedLabelSettings);
+    localUser.cashMemoLabelSettings = userLabelSettings;
+    const syncedUsers = readUsersData().map((user) => (
+      user.id === localUser.id ? { ...user, cashMemoLabelSettings: userLabelSettings } : user
+    ));
+    writeUsersData(syncedUsers);
+    localStorage.setItem(getCashMemoLabelSettingsStorageKey(firestoreUser.dealerCode), JSON.stringify(userLabelSettings));
+    setCashMemoLabelSettings(userLabelSettings);
     setLoggedInUser(localUser);
     setIsLoggedIn(true);
     setShowUserLogin(false);
@@ -646,6 +731,7 @@ function App() {
     setShowHomeInfo(false);
     setShowAboutInfo(false);
     setShowInvoicePage(false);
+    setShowLabelUpdate(false);
     setShowContactForm(false);
     setShowUserProfile(false);
     setShowRegisterForm(false);
@@ -667,6 +753,11 @@ function App() {
   const handleRateUpdate = () => {
     hideAllViews();
     setShowRateUpdate(true);
+    setShowUserMenu(false);
+  };
+  const handleLabelUpdate = () => {
+    hideAllViews();
+    setShowLabelUpdate(true);
     setShowUserMenu(false);
   };
   const handleBankDetails = () => {
@@ -3154,6 +3245,15 @@ function App() {
   const [itemsPerPage] = useState(25); // Number of items per page
   const [pageType, setPageType] = useState('3 Cashmemo/Page'); // New state for page type
   const [printLanguage, setPrintLanguage] = useState('English');
+  const [labelUpdatePageType, setLabelUpdatePageType] = useState('3 Cashmemo/Page');
+  const [cashMemoLabelSettings, setCashMemoLabelSettings] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cashMemoLabelSettings') || '{}');
+      return mergeCashMemoLabelSettings(saved);
+    } catch {
+      return createDefaultCashMemoLabelSettings();
+    }
+  });
   const [customersToPrint, setCustomersToPrint] = useState([]); // New state to hold multiple customers for printing
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]); // New state to track selected customer IDs
   const cashMemoRef = useRef(); // Ref for the cash memo component
@@ -3468,7 +3568,7 @@ function App() {
         } catch {}
 
         const cashMemoHtml = renderToString(
-          <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} />
+          <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} labelSettings={cashMemoLabelSettings[pageType]} />
         );
 
         const memosPerPage = getCashMemoPerPage(pageType);
@@ -4614,6 +4714,112 @@ function App() {
     });
   };
 
+  const persistCashMemoLabelSettings = (settings) => {
+    const mergedSettings = mergeCashMemoLabelSettings(settings);
+    const storageKey = getCashMemoLabelSettingsStorageKey(loggedInUser?.dealerCode);
+    localStorage.setItem(storageKey, JSON.stringify(mergedSettings));
+    if (!loggedInUser?.id) return;
+
+    updateUserInStore(
+      loggedInUser.id,
+      (user) => ({ ...user, cashMemoLabelSettings: mergedSettings }),
+      loggedInUser.dealerCode
+    );
+
+    updateUserInFirebase(loggedInUser.id, { cashMemoLabelSettings: mergedSettings }, loggedInUser.dealerCode)
+      .catch(() => {
+        alert('Lebel Update local save ho gaya, Firebase sync nahi ho paya. Internet/Firebase check karein.');
+      });
+  };
+
+  const updateCashMemoLabelSetting = (targetPageType, labelKey, checked) => {
+    setCashMemoLabelSettings((prev) => {
+      const next = mergeCashMemoLabelSettings(prev);
+      next[targetPageType] = {
+        ...next[targetPageType],
+        [labelKey]: checked,
+      };
+      persistCashMemoLabelSettings(next);
+      return next;
+    });
+  };
+
+  const setAllCashMemoLabelsForPage = (targetPageType, checked) => {
+    setCashMemoLabelSettings((prev) => {
+      const next = mergeCashMemoLabelSettings(prev);
+      next[targetPageType] = CASHMEMO_LABEL_OPTIONS.reduce((acc, item) => {
+        acc[item.key] = checked;
+        return acc;
+      }, {});
+      persistCashMemoLabelSettings(next);
+      return next;
+    });
+  };
+
+  const resetCashMemoLabelsForPage = (targetPageType) => {
+    setCashMemoLabelSettings((prev) => {
+      const defaults = createDefaultCashMemoLabelSettings();
+      const next = mergeCashMemoLabelSettings(prev);
+      next[targetPageType] = defaults[targetPageType];
+      persistCashMemoLabelSettings(next);
+      return next;
+    });
+  };
+
+  const LabelUpdatePage = () => {
+    const activeSettings = cashMemoLabelSettings[labelUpdatePageType] || {};
+    const groupedLabels = CASHMEMO_LABEL_OPTIONS.reduce((acc, item) => {
+      if (!acc[item.group]) acc[item.group] = [];
+      acc[item.group].push(item);
+      return acc;
+    }, {});
+
+    return (
+      <div className="placeholder-container label-update-page">
+        <div className="label-update-header">
+          <div>
+            <h2>Lebel Update</h2>
+            <p>Cashmemo print mein kaunse labels dikhane hain, page type ke hisab se select karein.</p>
+          </div>
+          <div className="label-update-actions">
+            <select className="form-input" value={labelUpdatePageType} onChange={(e) => setLabelUpdatePageType(e.target.value)}>
+              {CASHMEMO_PAGE_TYPES.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            <button type="button" onClick={() => setAllCashMemoLabelsForPage(labelUpdatePageType, true)}>Select All</button>
+            <button type="button" onClick={() => setAllCashMemoLabelsForPage(labelUpdatePageType, false)}>Clear All</button>
+            <button type="button" onClick={() => resetCashMemoLabelsForPage(labelUpdatePageType)}>Reset Default</button>
+          </div>
+        </div>
+
+        <div className="label-update-grid">
+          {Object.entries(groupedLabels).map(([group, items]) => (
+            <section key={group} className="label-update-section">
+              <h3>{group}</h3>
+              <div className="label-checkbox-list">
+                {items.map((item) => (
+                  <label key={item.key} className="label-checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={activeSettings[item.key] !== false}
+                      onChange={(e) => updateCashMemoLabelSetting(labelUpdatePageType, item.key, e.target.checked)}
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="form-actions">
+          <button onClick={() => setShowLabelUpdate(false)}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
   const availableHeadersToAdd = headers.filter(header => !visibleHeaders.includes(header));
   const hideUserNavbar = showAdminPanel;
   const pendingTypesFromUpdates = Object.entries(loggedInUser?.pendingUpdates || {})
@@ -4667,6 +4873,7 @@ function App() {
                     <button onClick={handleProfileUpdate}>Profile Update</button>
                     <button onClick={handleBankDetails}>Bank Details</button>
                     <button onClick={handleRateUpdate}>Rate Update</button>
+                    <button onClick={handleLabelUpdate}>Lebel Update</button>
                     <button onClick={handleLogout}>Logout</button>
                   </div>
                 )}
@@ -4685,7 +4892,7 @@ function App() {
           </div>
         </nav>
       )}
-      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showAdminPanel || showAdminLogin || showUserLogin) && (
+      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showAdminPanel || showAdminLogin || showUserLogin) && (
         <div className="book-view">
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
@@ -4694,6 +4901,7 @@ function App() {
               <LazyInvoicePage loggedInUser={loggedInUser} />
             </Suspense>
           )}
+          {showLabelUpdate && <LabelUpdatePage />}
           {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
             <div className="placeholder-container admin-login-panel">

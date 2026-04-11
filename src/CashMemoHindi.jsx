@@ -4,6 +4,8 @@ import { HINDI_LABELS, getHindiValue } from './hindiPrint';
 
 const valueOrBlank = (value) => (value === undefined || value === null || value === '' ? '' : String(value));
 
+const shouldShowLabel = (settings, key) => !settings || settings[key] !== false;
+
 const pickMoney = (customer, keys) => {
   for (const key of keys) {
     if (customer[key] !== undefined && customer[key] !== null && customer[key] !== '') {
@@ -56,33 +58,33 @@ const DistributorDetails = ({
   totalAmount,
   eKyc,
   payment,
-  hideCompactRows = false,
+  labelSettings,
 }) => {
   const leftRows = [
-    [HINDI_LABELS.mobileNo, mobileNo],
-    [HINDI_LABELS.deliveryArea, deliveryArea],
-    ['डिलीवरी कर्मी', deliveryMan],
-    [HINDI_LABELS.productHsnQty, `${product} / ${hsn} / ${orderQty}`],
-    [HINDI_LABELS.orderNoAndDate, `${orderNo} - ${orderDate}`],
-    [HINDI_LABELS.cashMemoNoAndDate, `${cashMemoNo} - ${cashMemoDate}`],
-  ].filter((_, index) => !hideCompactRows || ![2, 3].includes(index));
+    [HINDI_LABELS.mobileNo, mobileNo, 'mobileNo'],
+    [HINDI_LABELS.deliveryArea, deliveryArea, 'deliveryArea'],
+    ['डिलीवरी कर्मी', deliveryMan, 'deliveryStaff'],
+    [HINDI_LABELS.productHsnQty, `${product} / ${hsn} / ${orderQty}`, 'productHsnQty'],
+    [HINDI_LABELS.orderNoAndDate, `${orderNo} - ${orderDate}`, 'orderNoAndDate'],
+    [HINDI_LABELS.cashMemoNoAndDate, `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate'],
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const amountRowsLeft = [
-    [HINDI_LABELS.basePrice, basePrice],
-    [HINDI_LABELS.deliveryCharges, dlvryCharges],
-    [HINDI_LABELS.cashCarryRebate, cAndCRebate],
-    [HINDI_LABELS.cgst, cgst],
-    [HINDI_LABELS.sgst, sgst],
-    [HINDI_LABELS.totalAmount, totalAmount],
-    [HINDI_LABELS.eKyc, eKyc],
-    [HINDI_LABELS.payment, payment],
-  ].filter((_, index) => !hideCompactRows || ![1, 2].includes(index));
+    [HINDI_LABELS.basePrice, basePrice, 'basePrice'],
+    [HINDI_LABELS.deliveryCharges, dlvryCharges, 'dlvryCharges'],
+    [HINDI_LABELS.cashCarryRebate, cAndCRebate, 'cashCarryRebate'],
+    [HINDI_LABELS.cgst, cgst, 'cgst'],
+    [HINDI_LABELS.sgst, sgst, 'sgst'],
+    [HINDI_LABELS.totalAmount, totalAmount, 'totalAmount'],
+    [HINDI_LABELS.eKyc, eKyc, 'eKyc'],
+    [HINDI_LABELS.payment, payment, 'payment'],
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
     <div className="distributor-details">
-      <div className="details-headline details-headline--emphasis details-headline--primary">{HINDI_LABELS.consumerName} : {consumerName}</div>
-      <div className="details-headline details-headline--emphasis details-headline--primary">{HINDI_LABELS.consumerNo} / {HINDI_LABELS.lpgId} : {consumerNo} / {lpgId}</div>
-      <div className="details-address">{HINDI_LABELS.address}: {address}</div>
+      {shouldShowLabel(labelSettings, 'consumerName') && <div className="details-headline details-headline--emphasis details-headline--primary">{HINDI_LABELS.consumerName} : {consumerName}</div>}
+      {shouldShowLabel(labelSettings, 'consumerNoLpgId') && <div className="details-headline details-headline--emphasis details-headline--primary">{HINDI_LABELS.consumerNo} / {HINDI_LABELS.lpgId} : {consumerNo} / {lpgId}</div>}
+      {shouldShowLabel(labelSettings, 'address') && <div className="details-address">{HINDI_LABELS.address}: {address}</div>}
       <PairTable rows={leftRows} className="pair-table--dist-main" emphasisLabels={[HINDI_LABELS.mobileNo, HINDI_LABELS.eKyc, HINDI_LABELS.payment]} />
       <PairTable rows={amountRowsLeft} className="pair-table--dist-amounts" emphasisLabels={[HINDI_LABELS.totalAmount]} />
     </div>
@@ -114,24 +116,24 @@ const TaxInvoiceDetails = ({
   sgst,
   totalAmount,
   netPayable,
-  hideCompactRows = false,
+  labelSettings,
 }) => {
   const middleTopRows = [
-    [HINDI_LABELS.consumerName, consumerName],
-    [HINDI_LABELS.consumerNo, consumerNo],
-    [HINDI_LABELS.lpgId, lpgId],
-    [HINDI_LABELS.address, address],
-  ].filter((_, index) => !hideCompactRows || ![1, 2, 3].includes(index));
+    [HINDI_LABELS.consumerName, consumerName, 'taxConsumerName'],
+    [HINDI_LABELS.consumerNo, consumerNo, 'taxConsumerNo'],
+    [HINDI_LABELS.lpgId, lpgId, 'taxLpgId'],
+    [HINDI_LABELS.address, address, 'taxAddress'],
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const middleBottomRows = [
-    [HINDI_LABELS.mobileNo, mobileNo],
-    [HINDI_LABELS.category, category],
-    [HINDI_LABELS.productHsn, `${product} / ${hsn}`],
-    [HINDI_LABELS.connectionQty, connectionQty],
-    [HINDI_LABELS.eKyc, eKyc],
-    [HINDI_LABELS.bookingSource, bookingSource],
-    [HINDI_LABELS.payment, payment],
-  ].filter((_, index) => !hideCompactRows || ![5, 6, 7].includes(index));
+    [HINDI_LABELS.mobileNo, mobileNo, 'mobileNo'],
+    [HINDI_LABELS.category, category, 'category'],
+    [HINDI_LABELS.productHsn, `${product} / ${hsn}`, 'productHsn'],
+    [HINDI_LABELS.connectionQty, connectionQty, 'connectionQty'],
+    [HINDI_LABELS.eKyc, eKyc, 'eKyc'],
+    [HINDI_LABELS.bookingSource, bookingSource, 'bookingSource'],
+    [HINDI_LABELS.payment, payment, 'payment'],
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const normalizedPayment = String(payment || '').trim().toLowerCase();
   const isOnlinePayment = normalizedPayment.includes('ऑनलाइन') && !normalizedPayment.includes('डिलीवरी');
@@ -139,20 +141,20 @@ const TaxInvoiceDetails = ({
   const displayNetPayable = isOnlinePayment ? '00' : netPayable || totalAmount;
 
   const rightRows = [
-    [HINDI_LABELS.orderNo, orderNo],
-    [HINDI_LABELS.orderDate, orderDate],
-    [HINDI_LABELS.cashMemoNo, cashMemoNo],
-    [HINDI_LABELS.cashMemoDate, cashMemoDate],
-    [HINDI_LABELS.basePrice, basePrice],
-    [HINDI_LABELS.deliveryCharges, dlvryCharges],
-    [HINDI_LABELS.cashCarryRebate, cAndCRebate],
-    [HINDI_LABELS.taxableAmount, taxableAmount],
-    [HINDI_LABELS.cgst, cgst],
-    [HINDI_LABELS.sgst, sgst],
-    [HINDI_LABELS.totalAmount, totalAmount],
-    [HINDI_LABELS.advanceOnline, displayAdvanceOnline],
-    [HINDI_LABELS.netPayable, displayNetPayable],
-  ];
+    [HINDI_LABELS.orderNo, orderNo, 'orderNo'],
+    [HINDI_LABELS.orderDate, orderDate, 'orderDate'],
+    [HINDI_LABELS.cashMemoNo, cashMemoNo, 'cashMemoNo'],
+    [HINDI_LABELS.cashMemoDate, cashMemoDate, 'cashMemoDate'],
+    [HINDI_LABELS.basePrice, basePrice, 'basePrice'],
+    [HINDI_LABELS.deliveryCharges, dlvryCharges, 'deliveryCharges'],
+    [HINDI_LABELS.cashCarryRebate, cAndCRebate, 'cashCarryRebate'],
+    [HINDI_LABELS.taxableAmount, taxableAmount, 'taxableAmount'],
+    [HINDI_LABELS.cgst, cgst, 'cgst'],
+    [HINDI_LABELS.sgst, sgst, 'sgst'],
+    [HINDI_LABELS.totalAmount, totalAmount, 'totalAmount'],
+    [HINDI_LABELS.advanceOnline, displayAdvanceOnline, 'advanceOnline'],
+    [HINDI_LABELS.netPayable, displayNetPayable, 'netPayable'],
+  ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
     <div className="tax-details">
@@ -170,7 +172,7 @@ const TaxInvoiceDetails = ({
   );
 };
 
-const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType }) => {
+const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType, labelSettings }) => {
   if (!customer) {
     return <p>कृपया कैश मेमो बनाने के लिए उपभोक्ता चुनें।</p>;
   }
@@ -262,7 +264,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
         <div className="distributor-copy-title">{HINDI_LABELS.distributorCopy}</div>
         <div className="memo-table-wrap">
           <div className="memo-table-box memo-table-box--distributor">
-            <DistributorDetails {...commonProps} hideCompactRows={isCompactPage} />
+            <DistributorDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
         <div className="declaration">
@@ -318,7 +320,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
 
         <div className="memo-table-wrap memo-table-wrap--tax">
           <div className="memo-table-box memo-table-box--tax">
-            <TaxInvoiceDetails {...commonProps} hideCompactRows={isCompactPage} />
+            <TaxInvoiceDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
         <p className="signature-text">For {dealerName}...........</p>

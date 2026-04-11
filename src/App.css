@@ -610,6 +610,96 @@
 .form-actions button:last-child {
   background-color: #6c757d;
 }
+
+.label-update-page {
+  max-width: 1180px;
+}
+
+.label-update-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.label-update-header h2 {
+  margin: 0 0 6px;
+  color: #12345b;
+}
+
+.label-update-header p {
+  margin: 0;
+  color: #536579;
+  font-size: 13px;
+}
+
+.label-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 360px;
+}
+
+.label-update-actions .form-input {
+  width: 180px;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+
+.label-update-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.label-update-section {
+  border: 1px solid #d7e0ea;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
+.label-update-section h3 {
+  margin: 0 0 10px;
+  color: #14365f;
+  font-size: 14px;
+}
+
+.label-checkbox-list {
+  display: grid;
+  gap: 7px;
+}
+
+.label-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1d2d44;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.label-checkbox-item input {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 900px) {
+  .label-update-header {
+    flex-direction: column;
+  }
+
+  .label-update-actions {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .label-update-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .register-title {
   text-align: center;
   color: #0d6efd;
