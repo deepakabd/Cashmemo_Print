@@ -37,6 +37,26 @@ const formatDateToDDMMYYYY = (date) => {
   return `${day}-${month}-${year}`;
 };
 
+const createValidatedDate = (year, month, day, hour = 0, minute = 0, second = 0) => {
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour) || 0,
+    Number(minute) || 0,
+    Number(second) || 0,
+  );
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() !== Number(month) - 1 ||
+    date.getDate() !== Number(day)
+  ) {
+    return null;
+  }
+  return date;
+};
+
 // Helper function to parse various date string formats
 const parseDateString = (dateString) => {
   if (!dateString || typeof dateString !== 'string') {
@@ -48,24 +68,42 @@ const parseDateString = (dateString) => {
     return null;
   }
 
-  // Attempt 1: DD-MM-YYYY HH:mm:ss (or just DD-MM-YYYY)
-  let parts = trimmedDateString.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:[ T](\d{1,2}):(\d{1,2}):(\d{1,2}))?$/);
+  // Attempt 1: DD-MM-YYYY / DD/MM/YYYY / DD,MM,YYYY with optional HH:mm or HH:mm:ss
+  let parts = trimmedDateString.match(/^(\d{1,2})[-/,](\d{1,2})[-/,](\d{4})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
   if (parts) {
-    const date = new Date(parts[3], parts[2] - 1, parts[1], parts[4] || 0, parts[5] || 0, parts[6] || 0);
-    if (!isNaN(date.getTime())) return date;
+    const date = createValidatedDate(parts[3], parts[2], parts[1], parts[4], parts[5], parts[6]);
+    if (date) return date;
   }
 
-  // Attempt 2: DD/MM/YYYY HH:mm:ss (or just DD/MM/YYYY)
-  parts = trimmedDateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{1,2}):(\d{1,2}))?$/);
+  // Attempt 2: YYYY-MM-DD / YYYY/MM/DD with optional HH:mm or HH:mm:ss
+  parts = trimmedDateString.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
   if (parts) {
-    const date = new Date(parts[3], parts[2] - 1, parts[1], parts[4] || 0, parts[5] || 0, parts[6] || 0);
-    if (!isNaN(date.getTime())) return date;
+    const date = createValidatedDate(parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]);
+    if (date) return date;
   }
 
-  // Attempt 3: Let new Date() try to parse it. This handles ISO (YYYY-MM-DD) and American (MM/DD/YYYY).
-  const date = new Date(trimmedDateString);
-  if (!isNaN(date.getTime())) {
-    return date;
+  // Attempt 3: only allow native parsing for unambiguous strings.
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmedDateString) || /[a-zA-Z]/.test(trimmedDateString)) {
+    const date = new Date(trimmedDateString);
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  const compactParts = trimmedDateString.match(/^(\d{1,2})(\d{1,2})(\d{4})$/);
+  if (compactParts) {
+    const date = createValidatedDate(compactParts[3], compactParts[2], compactParts[1]);
+    if (date) {
+      return date;
+    }
+  }
+
+  if (/^\d+$/.test(trimmedDateString)) {
+    const excelValue = Number(trimmedDateString);
+    const date = excelSerialDateToJSDate(excelValue);
+    if (date) {
+      return date;
+    }
   }
 
   // If all attempts fail, return null
@@ -3025,7 +3063,7 @@ function App() {
     const todayOrders = parsedData.filter((row) => {
       const raw = row?.['Order Date'];
       if (!raw) return false;
-      const dt = typeof raw === 'number' ? excelSerialDateToJSDate(raw) : parseDateString(raw) || new Date(raw);
+      const dt = getNormalizedRowDate(raw);
       if (!dt || Number.isNaN(dt.getTime())) return false;
       dt.setHours(0, 0, 0, 0);
       return dt.getTime() === today.getTime();
@@ -4451,8 +4489,11 @@ function App() {
       if (bValue === undefined || bValue === null) return sortOrder === 'asc' ? -1 : 1;
 
       if (sortBy === 'Order Date' || sortBy === 'Cash Memo Date') {
-        const dateA = new Date(aValue);
-        const dateB = new Date(bValue);
+        const dateA = getNormalizedRowDate(aValue);
+        const dateB = getNormalizedRowDate(bValue);
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return sortOrder === 'asc' ? 1 : -1;
+        if (!dateB) return sortOrder === 'asc' ? -1 : 1;
         return sortOrder === 'asc' ? dateA.getTime() - dateB.getTime() : dateB.getTime() - dateA.getTime();
       }
 
