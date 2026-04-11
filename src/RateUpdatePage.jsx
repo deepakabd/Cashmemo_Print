@@ -46,7 +46,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates }) {
     const basic = factor > 0 ? parseFloat((rspNum / factor).toFixed(2)) : 0;
     return { ...row, BasicPrice: basic };
   };
-
+//hi
   const handleFieldChange = (index, field, value) => {
     setRates((prev) =>
       prev.map((row, i) => {
