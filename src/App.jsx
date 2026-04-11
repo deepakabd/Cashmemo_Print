@@ -232,6 +232,8 @@ const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
   dealerCode ? `cashMemoLabelSettings_${String(dealerCode).trim()}` : 'cashMemoLabelSettings'
 );
 
+const USER_SESSION_STORAGE_KEY = 'cashmemoUserSession';
+
 const PACKAGE_OPTIONS = [
   'Demo Package - 1 Day',
   'Basic Package - 7 Days',
@@ -399,6 +401,18 @@ function App() {
 
   const writeUsersData = (users) => {
     localStorage.setItem('usersData', JSON.stringify(users));
+  };
+
+  const persistUserSession = (user) => {
+    if (!user) return;
+    localStorage.setItem(USER_SESSION_STORAGE_KEY, JSON.stringify({
+      id: user.id || '',
+      dealerCode: user.dealerCode || '',
+    }));
+  };
+
+  const clearUserSession = () => {
+    localStorage.removeItem(USER_SESSION_STORAGE_KEY);
   };
 
   const updateUserInStore = (userId, updater, dealerCode = '') => {
@@ -747,8 +761,10 @@ function App() {
     writeUsersData(syncedUsers);
     localStorage.setItem(getCashMemoLabelSettingsStorageKey(firestoreUser.dealerCode), JSON.stringify(userLabelSettings));
     setCashMemoLabelSettings(userLabelSettings);
+    setLabelDraftSettings(mergeCashMemoLabelSettings(userLabelSettings));
     setLoggedInUser(localUser);
     setIsLoggedIn(true);
+    persistUserSession(localUser);
     setShowUserLogin(false);
     setShowAboutInfo(true);
     setUserDealerCode('');
@@ -758,6 +774,7 @@ function App() {
 
   const handleLogout = () => {
     hideAllViews();
+    clearUserSession();
     setIsLoggedIn(false);
     setShowUserMenu(false);
     setLoggedInUser(null);
@@ -829,6 +846,39 @@ function App() {
       navigateToHome();
     }
   };
+
+  useEffect(() => {
+    try {
+      const rawSession = localStorage.getItem(USER_SESSION_STORAGE_KEY);
+      if (!rawSession) return;
+
+      const session = JSON.parse(rawSession);
+      const users = readUsersData();
+      const matchedUser = users.find((user) =>
+        (session?.id && user?.id === session.id) ||
+        (session?.dealerCode && String(user?.dealerCode || '').trim() === String(session.dealerCode).trim())
+      );
+
+      if (!matchedUser) {
+        clearUserSession();
+        return;
+      }
+
+      const restoredUser = {
+        ...matchedUser,
+        cashMemoLabelSettings: mergeCashMemoLabelSettings(matchedUser.cashMemoLabelSettings || {}),
+      };
+
+      setLoggedInUser(restoredUser);
+      setCashMemoLabelSettings(restoredUser.cashMemoLabelSettings);
+      setLabelDraftSettings(mergeCashMemoLabelSettings(restoredUser.cashMemoLabelSettings));
+      setIsLoggedIn(true);
+      setShowAboutInfo(false);
+      setShowHomeInfo(true);
+    } catch {
+      clearUserSession();
+    }
+  }, []);
 
   useEffect(() => {
     if (isLoggedIn) {
