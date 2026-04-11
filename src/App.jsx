@@ -10,7 +10,7 @@ import './App.css';
 
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
 
-// Helper function to convert Excel serial date to JavaScript Date object
+// Helper function to convert Excel serial date to JavaScript Date object 
 const excelSerialDateToJSDate = (serial) => {
   if (typeof serial !== 'number' || isNaN(serial)) {
     return null;
