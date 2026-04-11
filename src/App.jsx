@@ -782,6 +782,12 @@ function App() {
     setShowUserLogin(false);
   };
 
+  const navigateToHome = () => {
+    hideAllViews();
+    setShowHomeInfo(true);
+    setShowUserMenu(false);
+  };
+
   const handleProfileUpdate = () => {
     hideAllViews();
     setShowProfileUpdate(true);
@@ -795,6 +801,7 @@ function App() {
   };
   const handleLabelUpdate = () => {
     hideAllViews();
+    setLabelDraftSettings(mergeCashMemoLabelSettings(cashMemoLabelSettings));
     setShowLabelUpdate(true);
     setShowUserMenu(false);
   };
@@ -819,7 +826,7 @@ function App() {
       hideAllViews();
       setShowParsedData(true);
     } else {
-      setShowParsedData(false);
+      navigateToHome();
     }
   };
 
@@ -838,9 +845,7 @@ function App() {
   }, [isLoggedIn, showProfileUpdate, loggedInUser]);
 
   const handleHomeOpen = () => {
-    hideAllViews();
-    setShowHomeInfo(true);
-    setShowUserMenu(false);
+    navigateToHome();
   };
 
   const handleAboutOpen = () => {
@@ -3292,6 +3297,7 @@ function App() {
       return createDefaultCashMemoLabelSettings();
     }
   });
+  const [labelDraftSettings, setLabelDraftSettings] = useState(() => createDefaultCashMemoLabelSettings());
   const [customersToPrint, setCustomersToPrint] = useState([]); // New state to hold multiple customers for printing
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]); // New state to track selected customer IDs
   const cashMemoRef = useRef(); // Ref for the cash memo component
@@ -4316,13 +4322,18 @@ function App() {
     });
   };
 
-  const handleSelectAllChange = (event) => {
-    if (event.target.checked) {
-      const allConsumerNos = filteredData.map(customer => String(customer['Consumer No.']));
-      setSelectedCustomerIds(allConsumerNos);
-    } else {
-      setSelectedCustomerIds([]);
-    }
+  const handleSelectAllChange = () => {
+    const currentPageConsumerNos = currentTableData.map(customer => String(customer['Consumer No.']));
+    setSelectedCustomerIds((prev) => {
+      const isEveryCurrentRowSelected =
+        currentPageConsumerNos.length > 0 && currentPageConsumerNos.every((id) => prev.includes(id));
+
+      if (isEveryCurrentRowSelected) {
+        return prev.filter((id) => !currentPageConsumerNos.includes(id));
+      }
+
+      return [...new Set([...prev, ...currentPageConsumerNos])];
+    });
   };
 
   const matchesReportFilter = (row, reportKey) => {
@@ -4669,6 +4680,10 @@ function App() {
     return filteredData.slice(startIndex, endIndex);
   }, [filteredData, currentPage, itemsPerPage]);
 
+  const areAllCurrentRowsSelected =
+    currentTableData.length > 0 &&
+    currentTableData.every((customer) => selectedCustomerIds.includes(String(customer['Consumer No.'])));
+
   const reportCards = [
     { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
     { key: 'onlinePaid', label: 'Online Paid', value: bookingReport.metrics.onlinePaid },
@@ -4773,42 +4788,46 @@ function App() {
       });
   };
 
+  const handleSaveCashMemoLabels = () => {
+    const nextSettings = mergeCashMemoLabelSettings(labelDraftSettings);
+    setCashMemoLabelSettings(nextSettings);
+    persistCashMemoLabelSettings(nextSettings);
+    alert('Lebel Update save ho gaya.');
+  };
+
   const updateCashMemoLabelSetting = (targetPageType, labelKey, checked) => {
-    setCashMemoLabelSettings((prev) => {
+    setLabelDraftSettings((prev) => {
       const next = mergeCashMemoLabelSettings(prev);
       next[targetPageType] = {
         ...next[targetPageType],
         [labelKey]: checked,
       };
-      persistCashMemoLabelSettings(next);
       return next;
     });
   };
 
   const setAllCashMemoLabelsForPage = (targetPageType, checked) => {
-    setCashMemoLabelSettings((prev) => {
+    setLabelDraftSettings((prev) => {
       const next = mergeCashMemoLabelSettings(prev);
       next[targetPageType] = CASHMEMO_LABEL_OPTIONS.reduce((acc, item) => {
         acc[item.key] = checked;
         return acc;
       }, {});
-      persistCashMemoLabelSettings(next);
       return next;
     });
   };
 
   const resetCashMemoLabelsForPage = (targetPageType) => {
-    setCashMemoLabelSettings((prev) => {
+    setLabelDraftSettings((prev) => {
       const defaults = createDefaultCashMemoLabelSettings();
       const next = mergeCashMemoLabelSettings(prev);
       next[targetPageType] = defaults[targetPageType];
-      persistCashMemoLabelSettings(next);
       return next;
     });
   };
 
   const LabelUpdatePage = () => {
-    const activeSettings = cashMemoLabelSettings[labelUpdatePageType] || {};
+    const activeSettings = labelDraftSettings[labelUpdatePageType] || {};
     const groupedLabels = CASHMEMO_LABEL_OPTIONS.reduce((acc, item) => {
       if (!acc[item.group]) acc[item.group] = [];
       acc[item.group].push(item);
@@ -4855,7 +4874,11 @@ function App() {
         </div>
 
         <div className="form-actions">
-          <button onClick={() => setShowLabelUpdate(false)}>Close</button>
+          <button onClick={handleSaveCashMemoLabels}>Save</button>
+          <button onClick={() => {
+            setLabelDraftSettings(mergeCashMemoLabelSettings(cashMemoLabelSettings));
+            navigateToHome();
+          }}>Close</button>
         </div>
       </div>
     );
@@ -4943,7 +4966,7 @@ function App() {
             </Suspense>
           )}
           {showLabelUpdate && <LabelUpdatePage />}
-          {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} onAdminLogout={handleAdminLogout} />}
+          {showAdminPanel && <AdminPanel onClose={navigateToHome} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
             <div className="placeholder-container admin-login-panel">
               <h2>Admin Login</h2>
@@ -4967,7 +4990,7 @@ function App() {
               </div>
               <div className="form-actions">
                 <button onClick={handleAdminLoginSubmit}>Login</button>
-                <button onClick={() => setShowAdminLogin(false)}>Close</button>
+                <button onClick={navigateToHome}>Close</button>
               </div>
             </div>
           )}
@@ -4994,22 +5017,22 @@ function App() {
               </div>
               <div className="form-actions">
                 <button onClick={handleUserLoginSubmit}>Login</button>
-                <button onClick={() => setShowUserLogin(false)}>Close</button>
+                <button onClick={navigateToHome}>Close</button>
               </div>
             </div>
           )}
-          {showProfileUpdate && <ProfileUpdateForm onClose={() => setShowProfileUpdate(false)} />}
+          {showProfileUpdate && <ProfileUpdateForm onClose={navigateToHome} />}
           {showRateUpdate && (
             <RateUpdatePage
-              onClose={() => setShowRateUpdate(false)}
+              onClose={navigateToHome}
               initialRatesData={Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null}
               onSaveRates={handleSaveRatesForUser}
             />
           )}
-          {showBankDetails && <BankDetailsForm onClose={() => setShowBankDetails(false)} />}
-          {showRegisterForm && <RegisterForm onClose={() => setShowRegisterForm(false)} />}
-          {showUserProfile && <UserProfile onClose={() => setShowUserProfile(false)} />}
-          {showContactForm && <ContactForm onClose={() => setShowContactForm(false)} />}
+          {showBankDetails && <BankDetailsForm onClose={navigateToHome} />}
+          {showRegisterForm && <RegisterForm onClose={navigateToHome} />}
+          {showUserProfile && <UserProfile onClose={navigateToHome} />}
+          {showContactForm && <ContactForm onClose={navigateToHome} />}
         </div>
       )}
       
@@ -5286,7 +5309,7 @@ function App() {
                       <input
                         type="checkbox"
                         onChange={handleSelectAllChange}
-                        checked={selectedCustomerIds.length === currentTableData.length && currentTableData.length > 0}
+                        checked={areAllCurrentRowsSelected}
                       />
                     </th>
                     {visibleHeaders.map((header, index) => (
