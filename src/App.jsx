@@ -8,12 +8,12 @@ import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverT
 
 import './App.css';
 import {
-  areAllFilteredRowsSelected,
   buildPrintDataHtml,
-  getSelectedCustomersForPrint,
-  toggleCustomerSelection,
-  toggleSelectAllFiltered,
 } from './utils/printSelection';
+import { useAdminData } from './hooks/useAdminData';
+import { useApprovalQueue } from './hooks/useApprovalQueue';
+import { useCashmemoSelection } from './hooks/useCashmemoSelection';
+import { useParsedDataFilters } from './hooks/useParsedDataFilters';
 
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
 
@@ -392,9 +392,6 @@ function App() {
   const [userPin, setUserPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [dealerWelcome, setDealerWelcome] = useState('');
-  const [showDataButton, setShowDataButton] = useState(false); // New state for "Show Data" button
-  const [fileUploadMessage, setFileUploadMessage] = useState(''); // New state for upload message
-  const [showParsedData, setShowParsedData] = useState(false); // New state to control visibility of parsed data
 
   const readUsersData = () => {
     try {
@@ -1253,89 +1250,71 @@ function App() {
 
   const AdminPanel = ({ onClose, onAdminLogout }) => {
     const adminImportRef = useRef(null);
-    const [requests, setRequests] = useState([]);
-    const [users, setUsers] = useState([]);
-    const [feedback, setFeedback] = useState([]);
-    const [updateApprovals, setUpdateApprovals] = useState([]);
-    const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
-    const [adminSearchTerm, setAdminSearchTerm] = useState('');
-    const [adminDateRange, setAdminDateRange] = useState('all');
-    const [adminSubFilter, setAdminSubFilter] = useState('all');
-    const [adminCurrentPage, setAdminCurrentPage] = useState(1);
     const [adminItemsPerPage] = useState(10);
     const [adminRoleMode, setAdminRoleMode] = useState(() => localStorage.getItem('adminRoleMode') || 'super-admin');
-    const [selectedRequestIds, setSelectedRequestIds] = useState([]);
-    const [selectedApprovalIds, setSelectedApprovalIds] = useState([]);
-    const [selectedUserTokens, setSelectedUserTokens] = useState([]);
-    const [viewRequest, setViewRequest] = useState(null);
-    const [viewApproval, setViewApproval] = useState(null);
-    const [detailView, setDetailView] = useState(null);
-    const [auditTrail, setAuditTrail] = useState(() => {
-      try {
-        const raw = localStorage.getItem('adminAuditTrail');
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    });
-    const [adminNotes, setAdminNotes] = useState(() => {
-      try {
-        const raw = localStorage.getItem('adminNotes');
-        const parsed = raw ? JSON.parse(raw) : {};
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch {
-        return {};
-      }
-    });
-    const [feedbackMetaOverrides, setFeedbackMetaOverrides] = useState(() => {
-      try {
-        const raw = localStorage.getItem('feedbackMetaOverrides');
-        const parsed = raw ? JSON.parse(raw) : {};
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch {
-        return {};
-      }
-    });
-    const [feedbackReplies, setFeedbackReplies] = useState(() => {
-      try {
-        const raw = localStorage.getItem('feedbackReplies');
-        const parsed = raw ? JSON.parse(raw) : {};
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch {
-        return {};
-      }
-    });
-    const [savedAdminViews, setSavedAdminViews] = useState(() => {
-      try {
-        const raw = localStorage.getItem('savedAdminViews');
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    });
-    const [deletedUsersBin, setDeletedUsersBin] = useState(() => {
-      try {
-        const raw = localStorage.getItem('deletedUsersBin');
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    });
-    const [adminNotifications, setAdminNotifications] = useState([]);
-    const [adminDataHealth, setAdminDataHealth] = useState({ source: 'unknown', lastSyncAt: '', firebaseReachable: false });
-    const [hiddenApprovalIds, setHiddenApprovalIds] = useState([]);
-    const [registrationStatusOverrides, setRegistrationStatusOverrides] = useState(() => {
-      try {
-        const raw = localStorage.getItem('registrationStatusOverrides');
-        const parsed = raw ? JSON.parse(raw) : {};
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch {
-        return {};
-      }
-    });
+    const {
+      requests,
+      setRequests,
+      users,
+      setUsers,
+      feedback,
+      setFeedback,
+      updateApprovals,
+      setUpdateApprovals,
+      activeAdminTab,
+      setActiveAdminTab,
+      adminSearchTerm,
+      setAdminSearchTerm,
+      adminDateRange,
+      setAdminDateRange,
+      adminSubFilter,
+      setAdminSubFilter,
+      adminCurrentPage,
+      setAdminCurrentPage,
+      viewRequest,
+      setViewRequest,
+      viewApproval,
+      setViewApproval,
+      detailView,
+      setDetailView,
+      auditTrail,
+      setAuditTrail,
+      adminNotes,
+      setAdminNotes,
+      feedbackMetaOverrides,
+      setFeedbackMetaOverrides,
+      feedbackReplies,
+      setFeedbackReplies,
+      savedAdminViews,
+      setSavedAdminViews,
+      deletedUsersBin,
+      setDeletedUsersBin,
+      adminNotifications,
+      setAdminNotifications,
+      adminDataHealth,
+      setAdminDataHealth,
+      hiddenApprovalIds,
+      setHiddenApprovalIds,
+      registrationStatusOverrides,
+      setRegistrationStatusOverrides,
+      confirmAdminAction,
+      paginateAdminRows,
+    } = useAdminData();
+    const {
+      selectedRequestIds,
+      selectedApprovalIds,
+      selectedUserTokens,
+      toggleRequestSelection,
+      toggleApprovalSelection,
+      toggleUserSelection,
+      setSelectedRequestIds,
+      setSelectedApprovalIds,
+      setSelectedUserTokens,
+      clearSelectedRequestIds,
+      clearSelectedApprovalIds,
+      clearSelectedUserTokens,
+      clearAllSelections,
+    } = useApprovalQueue();
     const [newUser, setNewUser] = useState({
       dealerCode: '',
       dealerName: '',
@@ -1550,8 +1529,6 @@ function App() {
       });
     };
 
-    const confirmAdminAction = (message) => window.confirm(message);
-
     const persistAdminNotes = (nextNotes) => {
       setAdminNotes(nextNotes);
       localStorage.setItem('adminNotes', JSON.stringify(nextNotes));
@@ -1627,9 +1604,7 @@ function App() {
     useEffect(() => {
       setAdminSubFilter('all');
       setAdminSearchTerm('');
-      setSelectedRequestIds([]);
-      setSelectedApprovalIds([]);
-      setSelectedUserTokens([]);
+      clearAllSelections();
       setAdminCurrentPage(1);
     }, [activeAdminTab]);
 
@@ -2208,10 +2183,6 @@ function App() {
         matchesSubFilter &&
         matchesAdminSearch([f.dealerCode, f.dealerName, f.email, f.text, f.createdAt, f.date, f.read ? 'read' : 'unread', priority, f.resolved ? 'resolved' : 'open']);
     });
-    const paginateAdminRows = (rows) => {
-      const start = (adminCurrentPage - 1) * adminItemsPerPage;
-      return rows.slice(start, start + adminItemsPerPage);
-    };
     const currentTabRows = activeAdminTab === 'pending-registration'
       ? filteredPendingRegistrationRequests
       : activeAdminTab === 'approval'
@@ -2226,12 +2197,12 @@ function App() {
                 ? auditTrail
                 : [];
     const adminTotalPages = Math.max(1, Math.ceil(currentTabRows.length / adminItemsPerPage));
-    const pagedPendingRegistrationRequests = paginateAdminRows(filteredPendingRegistrationRequests);
-    const pagedUsersList = paginateAdminRows(filteredUsersList);
-    const pagedApprovals = paginateAdminRows(filteredApprovals);
-    const pagedFeedback = paginateAdminRows(filteredFeedback);
-    const pagedDeletedUsers = paginateAdminRows(deletedUsersBin);
-    const pagedAuditTrail = paginateAdminRows(auditTrail);
+    const pagedPendingRegistrationRequests = paginateAdminRows(filteredPendingRegistrationRequests, adminItemsPerPage, adminCurrentPage);
+    const pagedUsersList = paginateAdminRows(filteredUsersList, adminItemsPerPage, adminCurrentPage);
+    const pagedApprovals = paginateAdminRows(filteredApprovals, adminItemsPerPage, adminCurrentPage);
+    const pagedFeedback = paginateAdminRows(filteredFeedback, adminItemsPerPage, adminCurrentPage);
+    const pagedDeletedUsers = paginateAdminRows(deletedUsersBin, adminItemsPerPage, adminCurrentPage);
+    const pagedAuditTrail = paginateAdminRows(auditTrail, adminItemsPerPage, adminCurrentPage);
     const notifications = [
       pendingCount > 0 ? { id: 'pending-requests', text: `${pendingCount} registration requests pending`, tone: 'blue' } : null,
       combinedPendingApprovals.length > 0 ? { id: 'pending-approvals', text: `${combinedPendingApprovals.length} profile/bank/rate approvals waiting`, tone: 'amber' } : null,
@@ -2398,16 +2369,6 @@ function App() {
           : null;
     const activeSubFilterOptions = adminSubFilterOptions[activeAdminTab] || [{ value: 'all', label: 'All' }];
 
-    const toggleRequestSelection = (id) => {
-      setSelectedRequestIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
-    };
-    const toggleApprovalSelection = (id) => {
-      setSelectedApprovalIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
-    };
-    const toggleUserSelection = (token) => {
-      setSelectedUserTokens((prev) => (prev.includes(token) ? prev.filter((item) => item !== token) : [...prev, token]));
-    };
-
     const bulkApproveRegistrations = async () => {
       if (selectedRequestIds.length === 0) return;
       if (!confirmAdminAction(`Approve ${selectedRequestIds.length} selected registration requests?`)) return;
@@ -2415,7 +2376,7 @@ function App() {
         // eslint-disable-next-line no-await-in-loop
         await approveRequest(id, { skipConfirm: true });
       }
-      setSelectedRequestIds([]);
+      clearSelectedRequestIds();
     };
     const bulkRejectRegistrations = async () => {
       if (selectedRequestIds.length === 0) return;
@@ -2424,7 +2385,7 @@ function App() {
         // eslint-disable-next-line no-await-in-loop
         await rejectRequest(id, { skipConfirm: true });
       }
-      setSelectedRequestIds([]);
+      clearSelectedRequestIds();
     };
     const bulkApproveUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -2434,7 +2395,7 @@ function App() {
         // eslint-disable-next-line no-await-in-loop
         await approveUpdateRequest(item, { skipConfirm: true });
       }
-      setSelectedApprovalIds([]);
+      clearSelectedApprovalIds();
     };
     const bulkRejectUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -2444,7 +2405,7 @@ function App() {
         // eslint-disable-next-line no-await-in-loop
         await rejectUpdateRequest(item, { skipConfirm: true });
       }
-      setSelectedApprovalIds([]);
+      clearSelectedApprovalIds();
     };
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
@@ -2454,7 +2415,7 @@ function App() {
         // eslint-disable-next-line no-await-in-loop
         await toggleUserStatus(item, { skipConfirm: true });
       }
-      setSelectedUserTokens([]);
+      clearSelectedUserTokens();
     };
 
     useEffect(() => {
@@ -3336,15 +3297,6 @@ function App() {
       </div>
     );
   };
-  const [parsedData, setParsedData] = useState([]);
-
-  const [headers, setHeaders] = useState([]);
-  const [visibleHeaders, setVisibleHeaders] = useState([]); // New state for visible headers
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1); // New state for current page
-  const [itemsPerPage] = useState(25); // Number of items per page
-  const [pageType, setPageType] = useState('3 Cashmemo/Page'); // New state for page type
-  const [printLanguage, setPrintLanguage] = useState('English');
   const [labelUpdatePageType, setLabelUpdatePageType] = useState('3 Cashmemo/Page');
   const [cashMemoLabelSettings, setCashMemoLabelSettings] = useState(() => {
     try {
@@ -3356,7 +3308,6 @@ function App() {
   });
   const [labelDraftSettings, setLabelDraftSettings] = useState(() => createDefaultCashMemoLabelSettings());
   const [customersToPrint, setCustomersToPrint] = useState([]); // New state to hold multiple customers for printing
-  const [selectedCustomerIds, setSelectedCustomerIds] = useState([]); // New state to track selected customer IDs
   const cashMemoRef = useRef(); // Ref for the cash memo component
 
   // Sample Dealer Details (to be updated by user registration later)
@@ -3372,50 +3323,6 @@ function App() {
     },
   };
 
-  // Filter states
-  const [eKycFilter, setEKycFilter] = useState('All');
-  const [areaFilter, setAreaFilter] = useState('All');
-  const [natureFilter, setNatureFilter] = useState('All');
-  const [mobileStatusFilter, setMobileStatusFilter] = useState('All'); // Assuming this is derived from Mobile No.
-  const [consumerStatusFilter, setConsumerStatusFilter] = useState('All');
-  const [connectionTypeFilter, setConnectionTypeFilter] = useState('All');
-  const [onlineRefillPaymentStatusFilter, setOnlineRefillPaymentStatusFilter] = useState('All');
-
-
-  const [orderDateStart, setOrderDateStart] = useState('');
-  const [orderDateEnd, setOrderDateEnd] = useState('');
-  const [cashMemoDateStart, setCashMemoDateStart] = useState('');
-  const [cashMemoDateEnd, setCashMemoDateEnd] = useState('');
-  const [sortBy, setSortBy] = useState('');
-  const [sortOrder, setSortOrder] = useState('asc');
-  const [activeReportFilter, setActiveReportFilter] = useState('');
-  const [showBookingReport, setShowBookingReport] = useState(true);
-
-  // New Filter states
-  const [orderStatusFilter, setOrderStatusFilter] = useState('All');
-  const [orderSourceFilter, setOrderSourceFilter] = useState('All');
-  const [orderTypeFilter, setOrderTypeFilter] = useState('All');
-  const [cashMemoStatusFilter, setCashMemoStatusFilter] = useState('All');
-  const [deliveryManFilter, setDeliveryManFilter] = useState('All');
-  const [isRegMobileFilter, setIsRegMobileFilter] = useState('All');
-  const [uniqueEkycStatuses, setUniqueEkycStatuses] = useState([]);
-  const [uniqueAreas, setUniqueAreas] = useState([]);
-  const [uniqueNatures, setUniqueNatures] = useState([]);
-  const [uniqueMobileStatuses, setUniqueMobileStatuses] = useState([]);
-  const [uniqueConsumerStatuses, setUniqueConsumerStatuses] = useState([]);
-  const [uniqueConnectionTypes, setUniqueConnectionTypes] = useState([]);
-  const [uniqueOnlineRefillPaymentStatuses, setUniqueOnlineRefillPaymentStatuses] = useState([]);
-
-
-
-  // New Unique options for filters
-  const [uniqueOrderStatuses, setUniqueOrderStatuses] = useState([]);
-  const [uniqueOrderSources, setUniqueOrderSources] = useState([]);
-  const [uniqueOrderTypes, setUniqueOrderTypes] = useState([]);
-  const [uniqueCashMemoStatuses, setUniqueCashMemoStatuses] = useState([]);
-  const [uniqueDeliveryMen, setUniqueDeliveryMen] = useState([]);
-  const [uniqueIsRegMobileStatuses, setUniqueIsRegMobileStatuses] = useState([]);
-
   const defaultVisibleHeaders = [
     'Consumer No.',
     'Consumer Name',
@@ -3427,95 +3334,94 @@ function App() {
     'EKYC Status'
   ];
 
-  const handleFileUpload = async (file) => {
-    if (!file) return;
-
-    const processAndSetData = (data) => {
-      const normalizedData = normalizeData(data);
-      setParsedData(normalizedData);
-
-      if (normalizedData.length > 0) {
-        const firstRow = normalizedData[0];
-        const headers = Object.keys(firstRow);
-        setHeaders(headers);
-        setVisibleHeaders(defaultVisibleHeaders);
-        setUniqueEkycStatuses(sortedUniqueValues(normalizedData.map(row => row['EKYC Status'])));
-        setUniqueAreas(sortedUniqueValues(normalizedData.map(row => row['Delivery Area'])));
-        setUniqueNatures(sortedUniqueValues(normalizedData.map(row => row['Consumer Nature'])));
-        setUniqueMobileStatuses(sortedUniqueValues(['Available', 'Not Available']));
-        setUniqueConsumerStatuses(sortedUniqueValues(normalizedData.map(row => row['Consumer Type'])));
-        setUniqueConnectionTypes(sortedUniqueValues(normalizedData.map(row => row['Consumer Package'])));
-        setUniqueOnlineRefillPaymentStatuses(sortedUniqueValues(normalizedData.map(row => row['Online Refill Payment status'])));
-        setUniqueOrderStatuses(sortedUniqueValues(normalizedData.map(row => row['Order Status'])));
-        setUniqueOrderSources(sortedUniqueValues(normalizedData.map(row => row['Order Source'])));
-        setUniqueOrderTypes(sortedUniqueValues(normalizedData.map(row => row['Order Type'])));
-        setUniqueCashMemoStatuses(sortedUniqueValues(normalizedData.map(row => row['Cash Memo Status'])));
-        setUniqueDeliveryMen(sortedUniqueValues(normalizedData.map(row => row['Delivery Man'])));
-        setUniqueIsRegMobileStatuses(sortedUniqueValues(['Yes', 'No']));
-      }
-
-      setShowDataButton(true);
-      hideAllViews();
-      setShowParsedData(true);
-      setFileUploadMessage('File uploaded successfully!');
-      setTimeout(() => setFileUploadMessage(''), 5000);
-    };
-
-    if (file.name.endsWith('.csv')) {
-      const { default: Papa } = await import('papaparse');
-      Papa.parse(file, {
-        header: true,
-        complete: (result) => processAndSetData(result.data),
-        error: (error) => {
-          console.error('Error parsing CSV file:', error);
-          alert('Error parsing CSV file. Please try again.');
-        },
-      });
-    } else if (file.name.endsWith('.xlsx')) {
-      const XLSX = await import('xlsx');
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet);
-        processAndSetData(json);
-      };
-      reader.readAsArrayBuffer(file);
-    }
-  };
+  const {
+    parsedData,
+    headers,
+    visibleHeaders,
+    setVisibleHeaders,
+    searchTerm,
+    setSearchTerm,
+    currentPage,
+    setCurrentPage,
+    itemsPerPage,
+    pageType,
+    setPageType,
+    printLanguage,
+    setPrintLanguage,
+    showDataButton,
+    showParsedData,
+    setShowParsedData,
+    showBookingReport,
+    setShowBookingReport,
+    eKycFilter,
+    setEKycFilter,
+    areaFilter,
+    setAreaFilter,
+    natureFilter,
+    setNatureFilter,
+    mobileStatusFilter,
+    setMobileStatusFilter,
+    consumerStatusFilter,
+    setConsumerStatusFilter,
+    connectionTypeFilter,
+    setConnectionTypeFilter,
+    onlineRefillPaymentStatusFilter,
+    setOnlineRefillPaymentStatusFilter,
+    orderDateStart,
+    setOrderDateStart,
+    orderDateEnd,
+    setOrderDateEnd,
+    cashMemoDateStart,
+    setCashMemoDateStart,
+    cashMemoDateEnd,
+    setCashMemoDateEnd,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
+    activeReportFilter,
+    setActiveReportFilter,
+    orderStatusFilter,
+    setOrderStatusFilter,
+    orderSourceFilter,
+    setOrderSourceFilter,
+    orderTypeFilter,
+    setOrderTypeFilter,
+    cashMemoStatusFilter,
+    setCashMemoStatusFilter,
+    deliveryManFilter,
+    setDeliveryManFilter,
+    isRegMobileFilter,
+    setIsRegMobileFilter,
+    uniqueEkycStatuses,
+    uniqueAreas,
+    uniqueNatures,
+    uniqueMobileStatuses,
+    uniqueConsumerStatuses,
+    uniqueConnectionTypes,
+    uniqueOnlineRefillPaymentStatuses,
+    uniqueOrderStatuses,
+    uniqueOrderSources,
+    uniqueOrderTypes,
+    uniqueCashMemoStatuses,
+    uniqueDeliveryMen,
+    uniqueIsRegMobileStatuses,
+    handleFileUpload,
+    handleResetFilters,
+  } = useParsedDataFilters({
+    normalizeData,
+    sortedUniqueValues,
+    defaultVisibleHeaders,
+    hideAllViews,
+  });
 
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
   };
 
-  const handleResetFilters = () => {
-    setSearchTerm('');
-    setEKycFilter('All');
-    setAreaFilter('All');
-    setNatureFilter('All');
-    setMobileStatusFilter('All');
-    setConsumerStatusFilter('All');
-    setConnectionTypeFilter('All');
-    setOnlineRefillPaymentStatusFilter('All');
-
-
-    setOrderDateStart('');
-    setOrderDateEnd('');
-    setCashMemoDateStart('');
-    setCashMemoDateEnd('');
-    setSortBy('');
-    setSortOrder('asc');
-    setOrderStatusFilter('All');
-    setOrderSourceFilter('All');
-    setOrderTypeFilter('All');
-    setCashMemoStatusFilter('All');
-    setDeliveryManFilter('All');
-    setIsRegMobileFilter('All');
-    setActiveReportFilter('');
-    setCurrentPage(1);
-    setSelectedCustomerIds([]); // Clear selected customer IDs on reset
+  const handleResetAllFilters = () => {
+    handleResetFilters();
+    clearSelection();
   };
 
   const handlePrintData = () => {
@@ -3547,7 +3453,7 @@ function App() {
         isHindiPrint ? import('./CashMemoHindi') : import('./CashMemoEnglish'),
       ]);
 
-      const customersToPrint = getSelectedCustomersForPrint(filteredData, selectedCustomerIds);
+      const customersToPrint = selectedCustomersForPrint;
 
       let allCashMemosHtml = '';
 
@@ -4332,14 +4238,6 @@ function App() {
       }
     };
 
-  const handleCheckboxChange = (consumerNo) => {
-    setSelectedCustomerIds((prev) => toggleCustomerSelection(prev, consumerNo));
-  };
-
-  const handleSelectAllChange = () => {
-    setSelectedCustomerIds((prev) => toggleSelectAllFiltered(prev, filteredData));
-  };
-
   const matchesReportFilter = (row, reportKey) => {
     const ageInDays = getElapsedDays(row['Order Date']);
     const orderDate = getStartOfDay(row['Order Date']);
@@ -4684,7 +4582,14 @@ function App() {
     return filteredData.slice(startIndex, endIndex);
   }, [filteredData, currentPage, itemsPerPage]);
 
-  const isAllFilteredRowsSelected = areAllFilteredRowsSelected(filteredData, selectedCustomerIds);
+  const {
+    selectedCustomerIds,
+    isAllFilteredRowsSelected,
+    selectedCustomersForPrint,
+    handleCheckboxChange,
+    handleSelectAllChange,
+    clearSelection,
+  } = useCashmemoSelection(filteredData);
 
   const reportCards = [
     { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
@@ -5255,7 +5160,7 @@ function App() {
             </select>
 
             <div className="filters-reset-wrap">
-              <button className="filter-action filter-action--secondary" onClick={handleResetFilters}>Reset Filters</button>
+              <button className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>Reset Filters</button>
             </div>
           </div>
 
