@@ -7,6 +7,13 @@ import { auth, db } from './firebase';
 import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 
 import './App.css';
+import {
+  areAllFilteredRowsSelected,
+  buildPrintDataHtml,
+  getSelectedCustomersForPrint,
+  toggleCustomerSelection,
+  toggleSelectAllFiltered,
+} from './utils/printSelection';
 
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
 
@@ -156,13 +163,6 @@ const isConsumerStatusMatch = (value, target) => {
 
 const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
   .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
-
-const escapeHtml = (value) => String(value ?? '')
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&#39;');
 
 const getCashMemoPerPage = (pageType) => {
   if (pageType === '2 Cashmemo/Page') return 2;
@@ -3519,51 +3519,13 @@ function App() {
   };
 
   const handlePrintData = () => {
-    const printContent = `
-      <style>
-        table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-        th, td {
-          border: 1px solid black;
-          padding: 8px;
-          text-align: left;
-        }
-      </style>
-      <h1>List of Cash Memo</h1>
-      <table>
-        <thead>
-          <tr>
-            ${visibleHeaders.map(header => `<th>${escapeHtml(header)}</th>`).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          ${filteredData.map(row => `
-            <tr>
-              ${visibleHeaders.map(header => {
-                let displayValue = row[header];
-
-                if (header === 'Order Date' || header === 'Cash Memo Date') {
-                  let date = null;
-                  if (typeof row[header] === 'number') {
-                    date = excelSerialDateToJSDate(row[header]);
-                  } else if (typeof row[header] === 'string') {
-                    date = parseDateString(row[header]);
-                  }
-                  displayValue = formatDateToDDMMYYYY(date);
-                } else if (header === 'Online Refill Payment status') {
-                  displayValue = row[header] === 'PAID' ? 'PAID' : 'COD';
-                }
-
-                return `<td>${escapeHtml(displayValue)}</td>`;
-              }).join('')}
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-      <p>Total Records: ${filteredData.length}</p>
-    `;
+    const printContent = buildPrintDataHtml({
+      visibleHeaders,
+      filteredData,
+      formatDateToDDMMYYYY,
+      excelSerialDateToJSDate,
+      parseDateString,
+    });
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert('Unable to open print window. Please allow pop-ups.');
@@ -3585,9 +3547,7 @@ function App() {
         isHindiPrint ? import('./CashMemoHindi') : import('./CashMemoEnglish'),
       ]);
 
-      const customersToPrint = filteredData.filter(customer =>
-        selectedCustomerIds.includes(String(customer['Consumer No.']))
-      );
+      const customersToPrint = getSelectedCustomersForPrint(filteredData, selectedCustomerIds);
 
       let allCashMemosHtml = '';
 
@@ -4373,28 +4333,11 @@ function App() {
     };
 
   const handleCheckboxChange = (consumerNo) => {
-    setSelectedCustomerIds(prev => {
-      const stringConsumerNo = String(consumerNo);
-      if (prev.includes(stringConsumerNo)) {
-        return prev.filter(id => id !== stringConsumerNo);
-      } else {
-        return [...prev, stringConsumerNo];
-      }
-    });
+    setSelectedCustomerIds((prev) => toggleCustomerSelection(prev, consumerNo));
   };
 
   const handleSelectAllChange = () => {
-    const filteredConsumerNos = filteredData.map((customer) => String(customer['Consumer No.']));
-    setSelectedCustomerIds((prev) => {
-      const isEveryFilteredRowSelected =
-        filteredConsumerNos.length > 0 && filteredConsumerNos.every((id) => prev.includes(id));
-
-      if (isEveryFilteredRowSelected) {
-        return prev.filter((id) => !filteredConsumerNos.includes(id));
-      }
-
-      return [...new Set([...prev, ...filteredConsumerNos])];
-    });
+    setSelectedCustomerIds((prev) => toggleSelectAllFiltered(prev, filteredData));
   };
 
   const matchesReportFilter = (row, reportKey) => {
@@ -4741,9 +4684,7 @@ function App() {
     return filteredData.slice(startIndex, endIndex);
   }, [filteredData, currentPage, itemsPerPage]);
 
-  const areAllFilteredRowsSelected =
-    filteredData.length > 0 &&
-    filteredData.every((customer) => selectedCustomerIds.includes(String(customer['Consumer No.'])));
+  const isAllFilteredRowsSelected = areAllFilteredRowsSelected(filteredData, selectedCustomerIds);
 
   const reportCards = [
     { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
@@ -5370,7 +5311,7 @@ function App() {
                       <input
                         type="checkbox"
                         onChange={handleSelectAllChange}
-                        checked={areAllFilteredRowsSelected}
+                        checked={isAllFilteredRowsSelected}
                       />
                     </th>
                     {visibleHeaders.map((header, index) => (
