@@ -4373,16 +4373,16 @@ function App() {
   };
 
   const handleSelectAllChange = () => {
-    const currentPageConsumerNos = currentTableData.map(customer => String(customer['Consumer No.']));
+    const filteredConsumerNos = filteredData.map((customer) => String(customer['Consumer No.']));
     setSelectedCustomerIds((prev) => {
-      const isEveryCurrentRowSelected =
-        currentPageConsumerNos.length > 0 && currentPageConsumerNos.every((id) => prev.includes(id));
+      const isEveryFilteredRowSelected =
+        filteredConsumerNos.length > 0 && filteredConsumerNos.every((id) => prev.includes(id));
 
-      if (isEveryCurrentRowSelected) {
-        return prev.filter((id) => !currentPageConsumerNos.includes(id));
+      if (isEveryFilteredRowSelected) {
+        return prev.filter((id) => !filteredConsumerNos.includes(id));
       }
 
-      return [...new Set([...prev, ...currentPageConsumerNos])];
+      return [...new Set([...prev, ...filteredConsumerNos])];
     });
   };
 
@@ -4730,9 +4730,9 @@ function App() {
     return filteredData.slice(startIndex, endIndex);
   }, [filteredData, currentPage, itemsPerPage]);
 
-  const areAllCurrentRowsSelected =
-    currentTableData.length > 0 &&
-    currentTableData.every((customer) => selectedCustomerIds.includes(String(customer['Consumer No.'])));
+  const areAllFilteredRowsSelected =
+    filteredData.length > 0 &&
+    filteredData.every((customer) => selectedCustomerIds.includes(String(customer['Consumer No.'])));
 
   const reportCards = [
     { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
@@ -5359,7 +5359,7 @@ function App() {
                       <input
                         type="checkbox"
                         onChange={handleSelectAllChange}
-                        checked={areAllCurrentRowsSelected}
+                        checked={areAllFilteredRowsSelected}
                       />
                     </th>
                     {visibleHeaders.map((header, index) => (
