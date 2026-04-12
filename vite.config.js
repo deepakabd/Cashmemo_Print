@@ -11,6 +11,14 @@ export default defineConfig({
       },
     }),
   ],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './test/setupTests.js',
+    pool: 'threads',
+    maxWorkers: 1,
+    minWorkers: 1,
+  },
   server: {
     port: 8000, // Set the port to 8000
   },
