@@ -74,7 +74,7 @@ function InvoicePage({ loggedInUser }) {
     () => new Map(invoiceRates.map((rate) => [rate.Item, rate])),
     [invoiceRates]
   );
-//test Cashmemo HPCL invoice
+//test Cashmemo HPCL invoice 
   const lineItems = invoiceRows.map((row) => {
     const rate = itemRateMap.get(row.item) || null;
     const qty = Math.max(0, parseFloat(row.quantity) || 0);
