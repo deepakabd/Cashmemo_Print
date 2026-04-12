@@ -157,6 +157,13 @@ const isConsumerStatusMatch = (value, target) => {
 const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
   .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
 
+const escapeHtml = (value) => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;');
+
 const getCashMemoPerPage = (pageType) => {
   if (pageType === '2 Cashmemo/Page') return 2;
   if (pageType === '4 Cashmemo/Page') return 4;
@@ -3528,7 +3535,7 @@ function App() {
       <table>
         <thead>
           <tr>
-            ${visibleHeaders.map(header => `<th>${header}</th>`).join('')}
+            ${visibleHeaders.map(header => `<th>${escapeHtml(header)}</th>`).join('')}
           </tr>
         </thead>
         <tbody>
@@ -3549,7 +3556,7 @@ function App() {
                   displayValue = row[header] === 'PAID' ? 'PAID' : 'COD';
                 }
 
-                return `<td>${displayValue}</td>`;
+                return `<td>${escapeHtml(displayValue)}</td>`;
               }).join('')}
             </tr>
           `).join('')}
@@ -3558,6 +3565,10 @@ function App() {
       <p>Total Records: ${filteredData.length}</p>
     `;
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Unable to open print window. Please allow pop-ups.');
+      return;
+    }
     printWindow.document.write(printContent);
     printWindow.document.close();
     printWindow.print();
