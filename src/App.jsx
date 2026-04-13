@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef } from 'react';
+﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef } from 'react';
 import { lazy, Suspense } from 'react';
 import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
@@ -307,6 +307,7 @@ const normalizePendingTypeLabel = (type) => {
   if (raw === 'profile' || raw === 'profiledata') return 'profile';
   if (raw === 'bank' || raw === 'bankdetails' || raw === 'bankdetailsdata') return 'bank';
   if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
+  if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
   return raw;
 };
 
@@ -383,6 +384,7 @@ function App() {
   const [showAboutInfo, setShowAboutInfo] = useState(true);
   const [showInvoicePage, setShowInvoicePage] = useState(false);
   const [showLabelUpdate, setShowLabelUpdate] = useState(false);
+  const [showHeaderUpdate, setShowHeaderUpdate] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showUserLogin, setShowUserLogin] = useState(false);
@@ -642,6 +644,61 @@ function App() {
     );
   };
 
+  const HeaderUpdateForm = ({ onClose }) => {
+    const [formData, setFormData] = useState({
+      distributorName: '',
+      address: '',
+      email: '',
+      gstn: '',
+      telephone: '',
+    });
+
+    useEffect(() => {
+      if (loggedInUser?.hindiHeaderData) {
+        setFormData((prev) => ({ ...prev, ...loggedInUser.hindiHeaderData }));
+      }
+    }, [loggedInUser?.hindiHeaderData]);
+
+    const handleChange = (e) => {
+      const { name, value } = e.target;
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleSave = async () => {
+      const ok = await submitUpdateApprovalRequest({
+        type: 'header',
+        payload: formData,
+        localKey: 'hindiHeaderData',
+        successMessage: 'Header details update request submitted. Your request is pending with admin for approval.',
+      });
+      if (ok) {
+        onClose();
+      }
+    };
+
+    return (
+      <div className="placeholder-container">
+        <h2>Header Update (Hindi / Local)</h2>
+        <div className="profile-form">
+          <span className="profile-label">Distributor Name</span>
+          <input className="form-input" name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} placeholder="उदा: MAHADEV HP GAS..." />
+          <span className="profile-label">Address</span>
+          <textarea className="form-textarea" name="address" rows="3" value={formData.address} onChange={handleChange} placeholder="उदा: ATHARI, RUNNISAIDPUR..." />
+          <span className="profile-label">Email</span>
+          <input className="form-input" name="email" type="text" value={formData.email} onChange={handleChange} placeholder="उदा: mahadev.sitamarhi@gmail.com" />
+          <span className="profile-label">GSTN</span>
+          <input className="form-input" name="gstn" type="text" value={formData.gstn} onChange={handleChange} placeholder="उदा: 10ABBFM6137E1ZU" />
+          <span className="profile-label">Telephone</span>
+          <input className="form-input" name="telephone" type="text" value={formData.telephone} onChange={handleChange} placeholder="उदा: 7070236555" />
+        </div>
+        <div className="form-actions">
+          <button onClick={handleSave}>Save</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
   // Placeholder Component for Rate Update
   // const RateUpdatePlaceholder = () => (
   //   <div className="placeholder-container">
@@ -791,6 +848,7 @@ function App() {
     setShowAboutInfo(false);
     setShowInvoicePage(false);
     setShowLabelUpdate(false);
+    setShowHeaderUpdate(false);
     setShowContactForm(false);
     setShowUserProfile(false);
     setShowRegisterForm(false);
@@ -824,6 +882,11 @@ function App() {
     hideAllViews();
     setLabelDraftSettings(mergeCashMemoLabelSettings(cashMemoLabelSettings));
     setShowLabelUpdate(true);
+    setShowUserMenu(false);
+  };
+  const handleHeaderUpdate = () => {
+    hideAllViews();
+    setShowHeaderUpdate(true);
     setShowUserMenu(false);
   };
   const handleBankDetails = () => {
@@ -1890,6 +1953,7 @@ function App() {
       if (raw === 'profile' || raw === 'profiledata') return 'profile';
       if (raw === 'bank' || raw === 'bankdetails' || raw === 'bankdetailsdata') return 'bank';
       if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
+      if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
       return raw;
     };
 
@@ -1927,6 +1991,7 @@ function App() {
         profile: 'profileData',
         bank: 'bankDetailsData',
         rates: 'ratesData',
+        header: 'hindiHeaderData',
       };
       const targetField = fieldByType[approvalType];
       if (!targetField) {
@@ -1950,6 +2015,9 @@ function App() {
         }
         if (approvalType === 'bank') {
           nextStatus.bankDetailsData = 'approved';
+        }
+        if (approvalType === 'header') {
+          nextStatus.hindiHeaderData = 'approved';
         }
         await updateDoc(doc(db, 'users', targetUser.id), {
           [targetField]: approval.payload,
@@ -1992,6 +2060,9 @@ function App() {
           }
           if (approvalType === 'bank') {
             nextStatus.bankDetailsData = 'rejected';
+          }
+          if (approvalType === 'header') {
+            nextStatus.hindiHeaderData = 'rejected';
           }
           await updateDoc(doc(db, 'users', targetUser.id), {
             approvalStatus: nextStatus,
@@ -2111,10 +2182,20 @@ function App() {
         setDetailView({ title: `Bank - ${user?.dealerCode || ''}`, data: user?.bankDetailsData || {}, noteKey: `user:${user?.id || user?.dealerCode}:bank` });
         return;
       }
+      if (type === 'header') {
+        setDetailView({ title: `Header - ${user?.dealerCode || ''}`, data: user?.hindiHeaderData || {}, noteKey: `user:${user?.id || user?.dealerCode}:header` });
+        return;
+      }
       setDetailView({ title: `Rates - ${user?.dealerCode || ''}`, data: user?.ratesData || [], noteKey: `user:${user?.id || user?.dealerCode}:rates` });
     };
 
-    const pendingRegistrationRequests = requests.filter((r) => (r.status || 'pending') === 'pending');
+    const pendingRegistrationRequests = requests.filter((r) => {
+      if ((r.status || 'pending') !== 'pending') return false;
+      // Agar user already create ho chuka hai aur active/disabled/expired hai, toh request hide karein
+      const isAlreadyVerified = users.some((u) => String(u?.dealerCode || '').trim() === String(r?.dealerCode || '').trim() && u.status !== 'pending');
+      if (isAlreadyVerified) return false;
+      return true;
+    });
     const pendingCount = pendingRegistrationRequests.length;
     const activeUsers = users.filter((u) => u.status === 'active').length;
     const activeUsersList = users.filter((u) => u.status === 'active');
@@ -2281,6 +2362,7 @@ function App() {
       { label: 'Profile', value: approvalTypeCounts.profile || 0 },
       { label: 'Bank', value: approvalTypeCounts.bank || 0 },
       { label: 'Rates', value: approvalTypeCounts.rates || 0 },
+      { label: 'Header', value: approvalTypeCounts.header || 0 },
     ];
     const adminSubFilterOptions = {
       'pending-registration': [{ value: 'all', label: 'All Packages' }, ...PACKAGE_OPTIONS.map((pkg) => ({ value: pkg, label: pkg }))],
@@ -2289,6 +2371,7 @@ function App() {
         { value: 'profile', label: 'Profile' },
         { value: 'bank', label: 'Bank' },
         { value: 'rates', label: 'Rates' },
+        { value: 'header', label: 'Header' },
       ],
       'active-user': [
         { value: 'all', label: 'All Users' },
@@ -2760,6 +2843,7 @@ function App() {
                   <th>Profile Updated</th>
                   <th>Bank Updated</th>
                   <th>Rate Updated</th>
+                  <th>Header Updated</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -2788,6 +2872,7 @@ function App() {
                       <td>{u.profileData ? <button onClick={() => openDetailView(u, 'profile')}>View</button> : '-'}</td>
                       <td>{u.bankDetailsData ? <button onClick={() => openDetailView(u, 'bank')}>View</button> : '-'}</td>
                       <td>{Array.isArray(u.ratesData) && u.ratesData.length > 0 ? <button onClick={() => openDetailView(u, 'rates')}>View</button> : '-'}</td>
+                      <td>{u.hindiHeaderData ? <button onClick={() => openDetailView(u, 'header')}>View</button> : '-'}</td>
                       <td>
                         <div className="admin-actions">
                           <button onClick={() => setDetailView({ title: `User - ${u?.dealerCode || ''}`, data: u, noteKey: `user:${u?.id || u?.dealerCode}:general` })}>View</button>
@@ -3453,20 +3538,129 @@ function App() {
         isHindiPrint ? import('./CashMemoHindi') : import('./CashMemoEnglish'),
       ]);
 
-      const customersToPrint = selectedCustomersForPrint;
+      // एड्रेस को साफ़ करने और चिपके हुए शब्दों को अलग करने का फंक्शन
+      const formatAddress = (text) => {
+        if (!text) return '';
+        let formatted = text;
+        
+        // 1. '-' , '+' और ',' जैसे चिन्हों के आगे-पीछे स्पेस दें
+        formatted = formatted.replace(/([-+,])/g, ' $1 ');
+        
+        // 2. 'S/O', 'W/O', 'D/O', 'C/O' (या बिना स्लैश के 'SO', 'WO') के ठीक बाद अगर लेटर है, तो स्पेस दें
+        formatted = formatted.replace(/\b([SWDCswdc]\/?[Oo])([a-zA-Z]{3,})/g, '$1 $2');
+        
+        // 3. अंकों और अक्षरों को अलग करें (e.g., 16VILL -> 16 VILL या WARD16 -> WARD 16)
+        formatted = formatted.replace(/(\d)([a-zA-Z])/g, '$1 $2');
+        formatted = formatted.replace(/([a-zA-Z])(\d)/g, '$1 $2');
+        
+        // 4. कुछ खास चिपके हुए शब्दों (Keywords और Surnames) को अलग करें 
+        const keywords = [
+          'WARD', 'VILL', 'VPO', 'POST', 'PO', 'PS', 'DIST', 'PIN', 'BLOCK', 'TEHSIL', 'NAGAR', 'ROAD', 'GALI', 'TOLA', 'CHOWK',
+          'KUMARI', 'KUMAR', 'DEVI', 'SINGH', 'SAHNI', 'PASWAN', 'THAKUR', 'YADAV', 'MAHTO', 'SHARMA', 'MANDAL', 'CHAUDHARY', 'PANDIT', 'MISHRA', 'MUKHIYA', 'MANJHI', 'CHAUHAN'
+        ];
+        keywords.forEach(keyword => {
+          const regex = new RegExp(`(${keyword})`, 'gi');
+          formatted = formatted.replace(regex, ' $1 ');
+        });
+        
+        // 5. लगातार एक जैसे अलग-अलग शब्दों को एक करें (e.g., "VILL VILL" -> "VILL")
+        formatted = formatted.replace(/\b(\w+)(?:\s+\1)+\b/gi, '$1');
+        
+        // 6. चिपके हुए एक जैसे शब्दों (कम से कम 4 अक्षर) को सिंगल करें (e.g., "SAHNISONPURVASONPURVA" -> "SAHNISONPURVA")
+        formatted = formatted.replace(/(\w{4,})\1+/gi, '$1');
+
+        // 7. एक्स्ट्रा स्पेस को हटाकर शब्दों को Array में बदलें
+        let words = formatted.replace(/\s+/g, ' ').trim().split(' ');
+        
+        // 8. आस-पास के मिलते-जुलते शब्दों को हटाएं (Typos in village names e.g., "SONPURVA Sonpurwa")
+        let uniqueWords = [];
+        for (let i = 0; i < words.length; i++) {
+          if (i > 0 && uniqueWords.length > 0) {
+            let prev = uniqueWords[uniqueWords.length - 1].toLowerCase();
+            let curr = words[i].toLowerCase();
+            // अगर दोनों शब्द 5 या उससे ज्यादा अक्षर के हैं, पहले 5 अक्षर समान हैं, और लंबाई में ज्यादा अंतर नहीं है
+            if (prev.length >= 5 && curr.length >= 5 && prev.substring(0, 5) === curr.substring(0, 5) && Math.abs(prev.length - curr.length) <= 2) {
+              continue; // दूसरे मिलते-जुलते शब्द को छोड़ दें
+            }
+          }
+          uniqueWords.push(words[i]);
+        }
+
+        return uniqueWords.join(' ');
+      };
+
+      let customersToPrint = selectedCustomersForPrint.map(customer => {
+        const formattedCustomer = { ...customer };
+        if (formattedCustomer['Address']) {
+          formattedCustomer['Address'] = formatAddress(formattedCustomer['Address']);
+        }
+        return formattedCustomer;
+      });
+
+      if (isHindiPrint) {
+        const transliterateText = async (text) => {
+          if (!text) return '';
+          try {
+            // TODO: जब आपको API Key मिल जाए, तो उसे यहाँ डालें
+            const GOOGLE_CLOUD_API_KEY = 'YOUR_GOOGLE_CLOUD_API_KEY';
+            
+            // जब तक API Key नहीं डाली जाएगी, यह असली (English) टेक्स्ट ही वापस कर देगा
+            if (GOOGLE_CLOUD_API_KEY === 'YOUR_GOOGLE_CLOUD_API_KEY') {
+              console.warn("कृपया हिंदी ट्रांसलेशन के लिए अपनी Google Cloud API Key डालें।");
+              return text;
+            }
+
+            // Official Google Cloud Translation API Call
+            const response = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_CLOUD_API_KEY}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                q: text,
+                source: 'en',
+                target: 'hi',
+                format: 'text' // Plain text format (html नहीं)
+              })
+            });
+
+            const data = await response.json();
+            if (data && data.data && data.data.translations && data.data.translations[0]) {
+              return data.data.translations[0].translatedText;
+            }
+          } catch (error) {
+            console.error('Translation failed:', error);
+          }
+          return text;
+        };
+
+        customersToPrint = await Promise.all(
+          customersToPrint.map(async (customer) => {
+            const translatedCustomer = { ...customer };
+            if (customer['Consumer Name']) {
+              translatedCustomer['Consumer Name Hindi'] = await transliterateText(customer['Consumer Name']);
+            }
+            if (customer['Address']) {
+              translatedCustomer['Address Hindi'] = await transliterateText(customer['Address']);
+            }
+            return translatedCustomer;
+          })
+        );
+      }
 
       let allCashMemosHtml = '';
 
       const pd = loggedInUser?.profileData || null;
+      const hd = loggedInUser?.hindiHeaderData || null;
+      const baseDealerName = pd?.distributorName
+        ? (pd?.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
+        : '-';
+
       const dealerDetails = {
-        name: pd?.distributorName
-          ? (pd?.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
-          : '-',
-        gstn: pd?.gst || '-',
-        address: { plotNo: pd?.address || '-' },
+        name: (isHindiPrint && hd?.distributorName) ? hd.distributorName : baseDealerName,
+        gstn: (isHindiPrint && hd?.gstn) ? hd.gstn : (pd?.gst || '-'),
+        address: { plotNo: (isHindiPrint && hd?.address) ? hd.address : (pd?.address || '-') },
         contact: {
-          email: pd?.email || '-',
-          telephone: pd?.contact || '-',
+          email: (isHindiPrint && hd?.email) ? hd.email : (pd?.email || '-'),
+          telephone: (isHindiPrint && hd?.telephone) ? hd.telephone : (pd?.contact || '-'),
         },
       };
 
@@ -4808,9 +5002,6 @@ function App() {
         <nav className="navbar">
           <div className="navbar-left">
             <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
-            <button className="navbar-button" onClick={handleAboutOpen}>About</button>
-            {isLoggedIn && <button className="navbar-button" onClick={handleInvoiceOpen}>Invoice</button>}
-            <button className="navbar-button" onClick={handleContactOpen}>Contact</button>
             {isLoggedIn && !showDataButton && (
               <button className="navbar-button" onClick={handleReUploadClick}>
                 Upload Data
@@ -4840,11 +5031,15 @@ function App() {
                 </div>
                 {showUserMenu && (
                   <div className="dropdown-menu">
+                    <button onClick={handleAboutOpen}>About</button>
+                    <button onClick={handleInvoiceOpen}>Invoice</button>
+                    <button onClick={handleContactOpen}>Contact</button>
                     <button onClick={handleUserProfile}>User Profile</button>
                     <button onClick={handleProfileUpdate}>Profile Update</button>
                     <button onClick={handleBankDetails}>Bank Details</button>
                     <button onClick={handleRateUpdate}>Rate Update</button>
                     <button onClick={handleLabelUpdate}>Lebel Update</button>
+                    <button onClick={handleHeaderUpdate}>Header Update</button>
                     <button onClick={handleLogout}>Logout</button>
                   </div>
                 )}
@@ -4863,7 +5058,7 @@ function App() {
           </div>
         </nav>
       )}
-      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showAdminPanel || showAdminLogin || showUserLogin) && (
+      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin) && (
         <div className="book-view">
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
@@ -4873,6 +5068,7 @@ function App() {
             </Suspense>
           )}
           {showLabelUpdate && <LabelUpdatePage />}
+          {showHeaderUpdate && <HeaderUpdateForm onClose={navigateToHome} />}
           {showAdminPanel && <AdminPanel onClose={navigateToHome} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
             <div className="placeholder-container admin-login-panel">
