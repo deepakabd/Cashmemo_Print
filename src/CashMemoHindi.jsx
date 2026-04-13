@@ -1,6 +1,5 @@
 import React from 'react';
 import './CashMemoPrint.css';
-import { HINDI_LABELS, getHindiValue } from './hindiPrint';
 
 const valueOrBlank = (value) => (value === undefined || value === null || value === '' ? '' : String(value));
 
@@ -22,6 +21,11 @@ const PairTable = ({ rows, amountAlign = false, dense = false, className = '', e
       {rows.map(([label, value]) => {
         const classes = [];
         if (emphasisLabels.includes(label)) classes.push('pair-table__row--emphasis');
+        if (label === 'Payment') classes.push('pair-table__row--payment');
+        if (label === 'Mobile No.') classes.push('pair-table__row--mobile');
+        if (label === 'Address') classes.push('pair-table__row--address');
+        if (label === 'Delivery Area') classes.push('pair-table__row--delivery-area');
+        if (label === 'E-KYC' && /ekyc\s*not\s*done/i.test(String(value))) classes.push('pair-table__row--alert');
 
         return (
           <tr key={label} className={classes.join(' ')}>
@@ -50,43 +54,47 @@ const DistributorDetails = ({
   orderDate,
   cashMemoNo,
   cashMemoDate,
+  lastDeliveryDate,
   basePrice,
   dlvryCharges,
   cAndCRebate,
   cgst,
   sgst,
   totalAmount,
+  hoseExpiry,
+  miStatus,
   eKyc,
   payment,
+  salesType,
   labelSettings,
 }) => {
   const leftRows = [
-    [HINDI_LABELS.mobileNo, mobileNo, 'mobileNo'],
-    [HINDI_LABELS.deliveryArea, deliveryArea, 'deliveryArea'],
-    ['डिलीवरी कर्मी', deliveryMan, 'deliveryStaff'],
-    [HINDI_LABELS.productHsnQty, `${product} / ${hsn} / ${orderQty}`, 'productHsnQty'],
-    [HINDI_LABELS.orderNoAndDate, `${orderNo} - ${orderDate}`, 'orderNoAndDate'],
-    [HINDI_LABELS.cashMemoNoAndDate, `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate'],
+    ['Mobile No.', mobileNo, 'mobileNo'],
+    ['Delivery Area', deliveryArea, 'deliveryArea'],
+    ['Delivery Staff', deliveryMan, 'deliveryStaff'],
+    ['Product / HSN / Qty', `${product} / ${hsn} / ${orderQty}`, 'productHsnQty'],
+    ['Order No. & Order Date', `${orderNo} - ${orderDate}`, 'orderNoAndDate'],
+    ['Cash Memo No. & Date', `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const amountRowsLeft = [
-    [HINDI_LABELS.basePrice, basePrice, 'basePrice'],
-    [HINDI_LABELS.deliveryCharges, dlvryCharges, 'dlvryCharges'],
-    [HINDI_LABELS.cashCarryRebate, cAndCRebate, 'cashCarryRebate'],
-    [HINDI_LABELS.cgst, cgst, 'cgst'],
-    [HINDI_LABELS.sgst, sgst, 'sgst'],
-    [HINDI_LABELS.totalAmount, totalAmount, 'totalAmount'],
-    [HINDI_LABELS.eKyc, eKyc, 'eKyc'],
-    [HINDI_LABELS.payment, payment, 'payment'],
+    ['Base Price (Rs.)', basePrice, 'basePrice'],
+    ['Dlvry Charges (Rs.)', dlvryCharges, 'dlvryCharges'],
+    ['C & C Rebate (Rs.)', cAndCRebate, 'cashCarryRebate'],
+    ['CGST (2.50%)(Rs.)', cgst, 'cgst'],
+    ['SGST (2.50%)(Rs.)', sgst, 'sgst'],
+    ['Total Amount(Rs.)', totalAmount, 'totalAmount'],
+    ['E-KYC', eKyc, 'eKyc'],
+    ['Payment', payment, 'payment']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
     <div className="distributor-details">
-      {shouldShowLabel(labelSettings, 'consumerName') && <div className="details-headline details-headline--emphasis details-headline--primary">{HINDI_LABELS.consumerName} : {consumerName}</div>}
-      {shouldShowLabel(labelSettings, 'consumerNoLpgId') && <div className="details-headline details-headline--emphasis details-headline--primary">{HINDI_LABELS.consumerNo} / {HINDI_LABELS.lpgId} : {consumerNo} / {lpgId}</div>}
-      {shouldShowLabel(labelSettings, 'address') && <div className="details-address">{HINDI_LABELS.address}: {address}</div>}
-      <PairTable rows={leftRows} className="pair-table--dist-main" emphasisLabels={[HINDI_LABELS.mobileNo, HINDI_LABELS.eKyc, HINDI_LABELS.payment]} />
-      <PairTable rows={amountRowsLeft} className="pair-table--dist-amounts" emphasisLabels={[HINDI_LABELS.totalAmount]} />
+      {shouldShowLabel(labelSettings, 'consumerName') && <div className="details-headline details-headline--emphasis details-headline--primary">उपभोक्ता नाम : {consumerName}</div>}
+      {shouldShowLabel(labelSettings, 'consumerNoLpgId') && <div className="details-headline details-headline--emphasis details-headline--primary">Consumer No / LPG ID : {consumerNo} / {lpgId}</div>}
+      {shouldShowLabel(labelSettings, 'address') && <div className="details-address">पता: {address}</div>}
+      <PairTable rows={leftRows} className="pair-table--dist-main" emphasisLabels={['Mobile No.', 'E-KYC', 'Payment']} />
+      <PairTable rows={amountRowsLeft} className="pair-table--dist-amounts" emphasisLabels={['Total Amount(Rs.)']} />
     </div>
   );
 };
@@ -101,6 +109,10 @@ const TaxInvoiceDetails = ({
   product,
   hsn,
   connectionQty,
+  ctcStatus,
+  subsidyConsumed,
+  hoseExpiry,
+  miStatus,
   eKyc,
   bookingSource,
   payment,
@@ -115,57 +127,58 @@ const TaxInvoiceDetails = ({
   cgst,
   sgst,
   totalAmount,
+  advanceOnline,
   netPayable,
   labelSettings,
 }) => {
   const middleTopRows = [
-    [HINDI_LABELS.consumerName, consumerName, 'taxConsumerName'],
-    [HINDI_LABELS.consumerNo, consumerNo, 'taxConsumerNo'],
-    [HINDI_LABELS.lpgId, lpgId, 'taxLpgId'],
-    [HINDI_LABELS.address, address, 'taxAddress'],
+    ['उपभोक्ता नाम', consumerName, 'taxConsumerName'],
+    ['Consumer No.', consumerNo, 'taxConsumerNo'],
+    ['LPD ID', lpgId, 'taxLpgId'],
+    ['पता', address, 'taxAddress']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const middleBottomRows = [
-    [HINDI_LABELS.mobileNo, mobileNo, 'mobileNo'],
-    [HINDI_LABELS.category, category, 'category'],
-    [HINDI_LABELS.productHsn, `${product} / ${hsn}`, 'productHsn'],
-    [HINDI_LABELS.connectionQty, connectionQty, 'connectionQty'],
-    [HINDI_LABELS.eKyc, eKyc, 'eKyc'],
-    [HINDI_LABELS.bookingSource, bookingSource, 'bookingSource'],
-    [HINDI_LABELS.payment, payment, 'payment'],
+    ['Mobile No.', mobileNo, 'mobileNo'],
+    ['Category', category, 'category'],
+    ['Product/ HSN', `${product} / ${hsn}`, 'productHsn'],
+    ['Connection/ Qty', connectionQty, 'connectionQty'],
+    ['E-KYC', eKyc, 'eKyc'],
+    ['Booking Source', bookingSource, 'bookingSource'],
+    ['Payment', payment, 'payment']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const normalizedPayment = String(payment || '').trim().toLowerCase();
-  const isOnlinePayment = normalizedPayment.includes('ऑनलाइन') && !normalizedPayment.includes('डिलीवरी');
-  const displayAdvanceOnline = isOnlinePayment ? 'भुगतान किया गया' : '00';
-  const displayNetPayable = isOnlinePayment ? '00' : netPayable || totalAmount;
+  const isOnlinePayment = normalizedPayment.includes('online') && !normalizedPayment.includes('pay on delivery');
+  const displayAdvanceOnline = isOnlinePayment ? 'Paid' : '00';
+  const displayNetPayable = isOnlinePayment ? '00' : totalAmount;
 
   const rightRows = [
-    [HINDI_LABELS.orderNo, orderNo, 'orderNo'],
-    [HINDI_LABELS.orderDate, orderDate, 'orderDate'],
-    [HINDI_LABELS.cashMemoNo, cashMemoNo, 'cashMemoNo'],
-    [HINDI_LABELS.cashMemoDate, cashMemoDate, 'cashMemoDate'],
-    [HINDI_LABELS.basePrice, basePrice, 'basePrice'],
-    [HINDI_LABELS.deliveryCharges, dlvryCharges, 'deliveryCharges'],
-    [HINDI_LABELS.cashCarryRebate, cAndCRebate, 'cashCarryRebate'],
-    [HINDI_LABELS.taxableAmount, taxableAmount, 'taxableAmount'],
-    [HINDI_LABELS.cgst, cgst, 'cgst'],
-    [HINDI_LABELS.sgst, sgst, 'sgst'],
-    [HINDI_LABELS.totalAmount, totalAmount, 'totalAmount'],
-    [HINDI_LABELS.advanceOnline, displayAdvanceOnline, 'advanceOnline'],
-    [HINDI_LABELS.netPayable, displayNetPayable, 'netPayable'],
+    ['Order No.', orderNo, 'orderNo'],
+    ['Order Date', orderDate, 'orderDate'],
+    ['CashMemo No.', cashMemoNo, 'cashMemoNo'],
+    ['CashMemo Date', cashMemoDate, 'cashMemoDate'],
+    ['Base Price (Rs.)', basePrice, 'basePrice'],
+    ['Delivery Charges (Rs.)', dlvryCharges, 'deliveryCharges'],
+    ['C & C Rebate (Rs.)', cAndCRebate, 'cashCarryRebate'],
+    ['Taxable Amount (Rs.)', taxableAmount, 'taxableAmount'],
+    ['CGST (2.50%)(Rs.)', cgst, 'cgst'],
+    ['SGST (2.50%)(Rs.)', sgst, 'sgst'],
+    ['Total Amount (Rs.)', totalAmount, 'totalAmount'],
+    ['Advance (Online) (Rs.)', displayAdvanceOnline, 'advanceOnline'],
+    ['Net Payable (Rs.)', displayNetPayable, 'netPayable']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
     <div className="tax-details">
       <div className="tax-details__columns">
         <div className="tax-details__column">
-          <PairTable rows={middleTopRows} dense className="pair-table--tax-main pair-table--tax-top" emphasisLabels={[HINDI_LABELS.consumerName, HINDI_LABELS.consumerNo, HINDI_LABELS.lpgId]} />
+          <PairTable rows={middleTopRows} dense className="pair-table--tax-main pair-table--tax-top" emphasisLabels={['उपभोक्ता नाम', 'Consumer No.', 'LPD ID']} />
           <div className="tax-details__spacer" />
-          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main pair-table--tax-bottom" emphasisLabels={[HINDI_LABELS.mobileNo, HINDI_LABELS.eKyc]} />
+          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main pair-table--tax-bottom" emphasisLabels={['Mobile No.', 'E-KYC']} />
         </div>
         <div className="tax-details__column tax-details__column--right">
-          <PairTable rows={rightRows} amountAlign dense className="pair-table--tax-amounts" emphasisLabels={[HINDI_LABELS.payment, HINDI_LABELS.totalAmount]} />
+          <PairTable rows={rightRows} amountAlign dense className="pair-table--tax-amounts" emphasisLabels={['Payment', 'Total Amount (Rs.)']} />
         </div>
       </div>
     </div>
@@ -174,44 +187,52 @@ const TaxInvoiceDetails = ({
 
 const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType, labelSettings }) => {
   if (!customer) {
-    return <p>कृपया कैश मेमो बनाने के लिए उपभोक्ता चुनें।</p>;
+    return <p>Please select a customer to generate Cash Memo.</p>;
   }
 
-  const consumerName = getHindiValue('Consumer Name', customer['Consumer Name'] || '');
+  const consumerName = customer['Consumer Name Hindi'] || customer['Consumer Name'] || '';
   const consumerNo = customer['Consumer No.'] || '';
   const lpgId = customer['LPG ID'] || customer.UniqueConsumerId || customer['Unique Consumer Id'] || customer['Unique Consumer ID'] || '';
-  const address = getHindiValue('Address', customer['Address'] || '');
+  const address = customer['Address Hindi'] || customer['Address'] || '';
   const mobileNo = customer['Mobile No.'] || '';
-  const deliveryArea = getHindiValue('Delivery Area', customer['Delivery Area'] || '');
-  const deliveryMan = getHindiValue('Delivery Man', customer['Delivery Man'] || '');
-  const product = getHindiValue('Product', customer['Product'] || '');
+  const deliveryArea = customer['Delivery Area'] || '';
+  const deliveryMan = customer['Delivery Man'] || '';
+  const product = customer['Product'] || '';
   const hsn = customer['HSN'] || '';
   const orderQty = customer['Order Qty.'] || '';
   const orderNo = customer['Order No.'] || '';
   const orderDate = customer['Order Date'] ? formatDateToDDMMYYYY(new Date(customer['Order Date'])) : '';
   const cashMemoNo = customer['Cash Memo No.'] || '';
   const cashMemoDate = customer['Cash Memo Date'] ? formatDateToDDMMYYYY(new Date(customer['Cash Memo Date'])) : '';
+  const lastDeliveryDate = customer['Last Delivery Date'] ? formatDateToDDMMYYYY(new Date(customer['Last Delivery Date'])) : '';
 
-  const basePrice = pickMoney(customer, ['Base Price (₹)', 'Base Price (â‚¹)', 'Base Price (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Base Price (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
-  const dlvryCharges = pickMoney(customer, ['Delivery Charges (₹)', 'Delivery Charges (â‚¹)', 'Delivery Charges (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Delivery Charges (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
-  const cAndCRebate = pickMoney(customer, ['Cash & Carry Rebate (₹)', 'Cash & Carry Rebate (â‚¹)', 'Cash & Carry Rebate (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Cash & Carry Rebate (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
-  const cgst = pickMoney(customer, ['CGST (2.50%) (₹)', 'CGST (2.50%) (â‚¹)', 'CGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'CGST (2.50%) (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
-  const sgst = pickMoney(customer, ['SGST (2.50%) (₹)', 'SGST (2.50%) (â‚¹)', 'SGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'SGST (2.50%) (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
-  const totalAmount = pickMoney(customer, ['Total Amount (₹)', 'Total Amount (â‚¹)', 'Total Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Total Amount (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
-  const taxableAmount = pickMoney(customer, ['Taxable Amount (₹)', 'Taxable Amount (â‚¹)', 'Taxable Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Taxable Amount (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
-  const netPayable = pickMoney(customer, ['Net Payable (₹)', 'Net Payable (â‚¹)', 'Net Payable (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Net Payable (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const basePrice = pickMoney(customer, ['Base Price (₹)', 'Base Price (Ã¢â€šÂ¹)', 'Base Price (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const dlvryCharges = pickMoney(customer, ['Delivery Charges (₹)', 'Delivery Charges (Ã¢â€šÂ¹)', 'Delivery Charges (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const cAndCRebate = pickMoney(customer, ['Cash & Carry Rebate (₹)', 'Cash & Carry Rebate (Ã¢â€šÂ¹)', 'Cash & Carry Rebate (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const cgst = pickMoney(customer, ['CGST (2.50%) (₹)', 'CGST (2.50%) (Ã¢â€šÂ¹)', 'CGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const sgst = pickMoney(customer, ['SGST (2.50%) (₹)', 'SGST (2.50%) (Ã¢â€šÂ¹)', 'SGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const totalAmount = pickMoney(customer, ['Total Amount (₹)', 'Total Amount (Ã¢â€šÂ¹)', 'Total Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const taxableAmount = pickMoney(customer, ['Taxable Amount (₹)', 'Taxable Amount (Ã¢â€šÂ¹)', 'Taxable Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const advanceOnline = pickMoney(customer, ['Advance (Online) (₹)', 'Advance (Online) (Ã¢â€šÂ¹)', 'Advance (Online) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const netPayable = pickMoney(customer, ['Net Payable (₹)', 'Net Payable (Ã¢â€šÂ¹)', 'Net Payable (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
 
-  const category = getHindiValue('Consumer Package', customer['Consumer Package'] || '');
-  const connectionQty = getHindiValue('Connection/Qty', customer['Connection/Qty'] || 'SBC / 1');
-  const eKyc = getHindiValue('EKYC Status', customer['EKYC Status'] || 'Not Done');
+  const category = customer['Consumer Package'] || '';
+  const connectionQty = customer['Connection/Qty'] || 'SBC / 1';
+  const eKyc = customer['EKYC Status'] || 'Not Done';
   const onlineRefillPaymentStatus = customer['Online Refill Payment status'] || '';
   const rawPaymentMethod = customer['Payment Method'] || '';
-  const paymentSource = /paid/i.test(String(onlineRefillPaymentStatus)) ? 'Online' : (rawPaymentMethod || 'Pay On Delivery');
-  const payment = getHindiValue('Payment Method', paymentSource);
-  const bookingSource = getHindiValue('Order Source', customer['Order Source'] || 'HP Pay');
+  const payment = /paid/i.test(String(onlineRefillPaymentStatus))
+    ? 'Online'
+    : (rawPaymentMethod || 'Pay On Delivery');
+  const bookingSource = customer['Order Source'] || 'HP Pay';
+  const hoseExpiry = customer['Hose Expiry'] || '';
+  const miStatus = customer.MI || customer['MI Status'] || '';
+  const salesType = customer['Sales Type'] || '';
+  const ctcStatus = customer['CTC Status'] || '';
+  const subsidyConsumed = customer['Subsidy Consumed'] || '';
 
-  const dealerName = getHindiValue('Consumer Name', dealerDetails?.name || '');
-  const dealerPlotNo = getHindiValue('Address', dealerDetails?.address?.plotNo || '');
+  const dealerName = dealerDetails?.name || '';
+  const dealerPlotNo = dealerDetails?.address?.plotNo || '';
   const dealerEmail = dealerDetails?.contact?.email || '';
   const dealerTelephone = dealerDetails?.contact?.telephone || '';
   const dealerGstn = dealerDetails?.gstn || '';
@@ -231,6 +252,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
     orderDate,
     cashMemoNo,
     cashMemoDate,
+    lastDeliveryDate,
     basePrice,
     dlvryCharges,
     cAndCRebate,
@@ -243,7 +265,13 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
     payment,
     bookingSource,
     taxableAmount,
+    advanceOnline,
     netPayable,
+    hoseExpiry,
+    miStatus,
+    salesType,
+    ctcStatus,
+    subsidyConsumed
   };
 
   const isCompactPage = pageType === '4 Cashmemo/Page';
@@ -261,7 +289,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
             <p className="distributor-header-detail-text">GSTN : {dealerGstn}</p>
           </div>
         </div>
-        <div className="distributor-copy-title">{HINDI_LABELS.distributorCopy}</div>
+        <div className="distributor-copy-title">वितरक प्रति</div>
         <div className="memo-table-wrap">
           <div className="memo-table-box memo-table-box--distributor">
             <DistributorDetails {...commonProps} labelSettings={labelSettings} />
@@ -269,11 +297,10 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
         </div>
         <div className="declaration">
           <p className="declaration-text">
-            {HINDI_LABELS.declaration} : मैं भरे हुए एलपीजी सिलेंडर को सीलबंद स्थिति में प्राप्त करने तथा ऊपर लिखी गई राशि की पुष्टि करता/करती हूं।
-            सिलेंडर का वजन तथा रिसाव मेरे सामने जांचा गया।
+            घोषणा : मैं भरे हुए एलपीजी सिलेंडर को सीलबंद स्थिति में प्राप्त करने तथा ऊपर लिखी गई राशि की पुष्टि करता/करती हूं। सिलेंडर का वजन तथा रिसाव मेरे सामने जांचा गया।
           </p>
           <div className="signature-section">
-            <span>{HINDI_LABELS.signatureOfCustomer}</span>
+            <span>उपभोक्ता के हस्ताक्षर</span>
           </div>
         </div>
       </div>
@@ -286,8 +313,8 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
           <div className="tax-invoice-header-details">
             <p className="tax-invoice-header-detail-text">{dealerName}</p>
             <p className="tax-invoice-header-detail-text">{dealerPlotNo}</p>
-            <p className="tax-invoice-header-detail-text">Email : {dealerEmail} | Telephone : {dealerTelephone}</p>
-            <p className="tax-invoice-header-detail-text">GSTN : {dealerGstn}</p>
+            <p className="tax-invoice-header-detail-text">ईमेल : {dealerEmail} </p>
+            <p className="tax-invoice-header-detail-text">जीएसटीएन : {dealerGstn} | फोन : {dealerTelephone}</p>
           </div>
         </div>
 
@@ -297,7 +324,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
             <strong className="contact-info-strong">8888823456</strong>
           </div>
           <div>
-            WhatsApp Booking No. <br />
+            Whatsapp Booking No. <br />
             <strong className="contact-info-strong">9222201122</strong>
           </div>
           <div>
@@ -305,14 +332,14 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
             <strong className="contact-info-strong">9493602222</strong>
           </div>
           <div>
-            {HINDI_LABELS.complaintNo} <br />
+            Complaint No. <br />
             <strong className="contact-info-strong">1800 233 3555</strong>
           </div>
         </div>
 
         <div className="header-content">
           <div className="header-content-flex-spacer"></div>
-          <p className="tax-invoice-title">{HINDI_LABELS.taxInvoice}</p>
+          <p className="tax-invoice-title">कर चालान</p>
           <div className="header-content-flex-spacer">
             <img alt="1906" src="/1906.jpg" className="image-1906" />
           </div>
@@ -323,7 +350,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
             <TaxInvoiceDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
-        <p className="signature-text">For {dealerName}...........</p>
+        <p className="signature-text">{dealerName}.....</p>
 
         <div className="instructions-section">
           <div className="instructions-text-container">

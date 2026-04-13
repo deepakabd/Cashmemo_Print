@@ -314,8 +314,8 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
           <div className="tax-invoice-header-details">
             <p className="tax-invoice-header-detail-text">{dealerName}</p>
             <p className="tax-invoice-header-detail-text">{dealerPlotNo}</p>
-            <p className="tax-invoice-header-detail-text">Email : {dealerEmail} | Telephone : {dealerTelephone}</p>
-            <p className="tax-invoice-header-detail-text">GSTN : {dealerGstn}</p>
+            <p className="tax-invoice-header-detail-text">Email : {dealerEmail} </p>
+            <p className="tax-invoice-header-detail-text">GSTN : {dealerGstn} |Telephone : {dealerTelephone}</p>
           </div>
         </div>
 
@@ -351,7 +351,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
             <TaxInvoiceDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
-        <p className="signature-text">For {dealerName}...........</p>
+        <p className="signature-text">{dealerName}......</p>
 
         <div className="instructions-section">
           <div className="instructions-text-container">
