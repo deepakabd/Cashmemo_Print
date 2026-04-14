@@ -242,23 +242,23 @@ const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
 const USER_SESSION_STORAGE_KEY = 'cashmemoUserSession';
 
 const PACKAGE_OPTIONS = [
-  'Demo Package - 1 Day',
-  'Basic Package - 7 Days',
+  'Demo Package - 7 Days',
   'Premium Package - 30 Days',
   'Enterprise Package - 365 Days',
+  'Premium Package (हिंदी) - 365 Days',
 ];
 
 const PACKAGE_PRICING = {
-  'Demo Package - 1 Day': 'Free',
-  'Basic Package - 7 Days': 'Rs. 1000',
+  'Demo Package - 7 Days': 'Free',
   'Premium Package - 30 Days': 'Rs. 3000',
   'Enterprise Package - 365 Days': 'Rs. 7500',
+  'Premium Package (हिंदी) - 365 Days': 'Rs. 10000',
 };
 
 const getPackageValidityDays = (packageName = '') => {
   const normalized = String(packageName || '').toLowerCase();
-  if (normalized.includes('demo')) return 1;
-  if (normalized.includes('basic')) return 7;
+  if (normalized.includes('demo')) return 7;
+  if (normalized.includes('premium package (हिंदी)')) return 365;
   if (normalized.includes('premium')) return 30;
   if (normalized.includes('enterprise')) return 365;
   return 0;
@@ -2900,7 +2900,16 @@ function App() {
               <input className="form-input" placeholder="Dealer Name" value={editUser.dealerName} onChange={(e) => setEditUser((p) => ({ ...p, dealerName: e.target.value }))} />
               <input className="form-input" placeholder="Mobile" value={editUser.mobile} onChange={(e) => setEditUser((p) => ({ ...p, mobile: e.target.value }))} />
               <input className="form-input" placeholder="Email" value={editUser.email} onChange={(e) => setEditUser((p) => ({ ...p, email: e.target.value }))} />
-              <select className="form-input" value={editUser.package} onChange={(e) => setEditUser((p) => ({ ...p, package: e.target.value }))}>
+              <select className="form-input" value={editUser.package} onChange={(e) => {
+                const newPkg = e.target.value;
+                const validity = computeValidityDates(newPkg);
+                setEditUser((p) => ({
+                  ...p,
+                  package: newPkg,
+                  validFrom: toDateInputValue(validity.validFrom),
+                  validTill: toDateInputValue(validity.validTill)
+                }));
+              }}>
                 <option value="">Select Package</option>
                 {PACKAGE_OPTIONS.map((pkg) => (
                   <option key={pkg} value={pkg}>{pkg}</option>
@@ -3601,14 +3610,7 @@ function App() {
         const transliterateText = async (text) => {
           if (!text) return '';
           try {
-            // TODO: जब आपको API Key मिल जाए, तो उसे यहाँ डालें
-            const GOOGLE_CLOUD_API_KEY = 'YOUR_GOOGLE_CLOUD_API_KEY';
-            
-            // जब तक API Key नहीं डाली जाएगी, यह असली (English) टेक्स्ट ही वापस कर देगा
-            if (GOOGLE_CLOUD_API_KEY === 'YOUR_GOOGLE_CLOUD_API_KEY') {
-              console.warn("कृपया हिंदी ट्रांसलेशन के लिए अपनी Google Cloud API Key डालें।");
-              return text;
-            }
+            const GOOGLE_CLOUD_API_KEY = 'AIzaSyA9fCIrR8PkDcPAFxHm_bYXxOwXzeFfCGA';
 
             // Official Google Cloud Translation API Call
             const response = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_CLOUD_API_KEY}`, {
@@ -5039,7 +5041,9 @@ function App() {
                     <button onClick={handleBankDetails}>Bank Details</button>
                     <button onClick={handleRateUpdate}>Rate Update</button>
                     <button onClick={handleLabelUpdate}>Lebel Update</button>
-                    <button onClick={handleHeaderUpdate}>Header Update</button>
+                    {loggedInUser?.package === 'Premium Package (हिंदी) - 365 Days' && (
+                      <button onClick={handleHeaderUpdate}>Header Update</button>
+                    )}
                     <button onClick={handleLogout}>Logout</button>
                   </div>
                 )}
@@ -5391,13 +5395,15 @@ function App() {
               </select>
             </div>
 
-            <div className="table-control-group">
-              <label className="table-control-label" htmlFor="printLanguageSelect">Print Language</label>
-              <select className="table-select" id="printLanguageSelect" onChange={(e) => setPrintLanguage(e.target.value)} value={printLanguage}>
-              <option value="English">English</option>
-              <option value="Hindi">Hindi</option>
-              </select>
-            </div>
+            {loggedInUser?.package === 'Premium Package (हिंदी) - 365 Days' && (
+              <div className="table-control-group">
+                <label className="table-control-label" htmlFor="printLanguageSelect">Print Language</label>
+                <select className="table-select" id="printLanguageSelect" onChange={(e) => setPrintLanguage(e.target.value)} value={printLanguage}>
+                <option value="English">English</option>
+                <option value="Hindi">Hindi</option>
+                </select>
+              </div>
+            )}
 
             <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
             <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
