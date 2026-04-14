@@ -21,11 +21,11 @@ const PairTable = ({ rows, amountAlign = false, dense = false, className = '', e
       {rows.map(([label, value]) => {
         const classes = [];
         if (emphasisLabels.includes(label)) classes.push('pair-table__row--emphasis');
-        if (label === 'Payment') classes.push('pair-table__row--payment');
-        if (label === 'Mobile No.') classes.push('pair-table__row--mobile');
-        if (label === 'Address') classes.push('pair-table__row--address');
-        if (label === 'Delivery Area') classes.push('pair-table__row--delivery-area');
-        if (label === 'E-KYC' && /ekyc\s*not\s*done/i.test(String(value))) classes.push('pair-table__row--alert');
+        if (label === 'Payment' || label === 'भुगतान') classes.push('pair-table__row--payment');
+        if (label === 'Mobile No.' || label === 'मोबाइल नं.') classes.push('pair-table__row--mobile');
+        if (label === 'Address' || label === 'पता') classes.push('pair-table__row--address');
+        if (label === 'Delivery Area' || label === 'डिलीवरी एरिया') classes.push('pair-table__row--delivery-area');
+        if ((label === 'E-KYC' || label === 'ई-केवाईसी') && /not\s*done|लंबित|नहीं/i.test(String(value))) classes.push('pair-table__row--alert');
 
         return (
           <tr key={label} className={classes.join(' ')}>
@@ -69,23 +69,23 @@ const DistributorDetails = ({
   labelSettings,
 }) => {
   const leftRows = [
-    ['Mobile No.', mobileNo, 'mobileNo'],
-    ['Delivery Area', deliveryArea, 'deliveryArea'],
-    ['Delivery Staff', deliveryMan, 'deliveryStaff'],
-    ['Product / HSN / Qty', `${product} / ${hsn} / ${orderQty}`, 'productHsnQty'],
-    ['Order No. & Order Date', `${orderNo} - ${orderDate}`, 'orderNoAndDate'],
-    ['Cash Memo No. & Date', `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate']
+    ['मोबाइल नं.', mobileNo, 'mobileNo'],
+    ['डिलीवरी एरिया', deliveryArea, 'deliveryArea'],
+    ['डिलीवरी स्टाफ', deliveryMan, 'deliveryStaff'],
+    ['उत्पाद / HSN / मात्रा', `${product} / ${hsn} / ${orderQty}`, 'productHsnQty'],
+    ['ऑर्डर नं. और तिथि', `${orderNo} - ${orderDate}`, 'orderNoAndDate'],
+    ['कैशमेमो नं. और तिथि', `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const amountRowsLeft = [
-    ['Base Price (Rs.)', basePrice, 'basePrice'],
-    ['Dlvry Charges (Rs.)', dlvryCharges, 'dlvryCharges'],
-    ['C & C Rebate (Rs.)', cAndCRebate, 'cashCarryRebate'],
-    ['CGST (2.50%)(Rs.)', cgst, 'cgst'],
-    ['SGST (2.50%)(Rs.)', sgst, 'sgst'],
-    ['Total Amount(Rs.)', totalAmount, 'totalAmount'],
-    ['E-KYC', eKyc, 'eKyc'],
-    ['Payment', payment, 'payment']
+    ['मूल मूल्य (रु.)', basePrice, 'basePrice'],
+    ['डिलीवरी शुल्क (रु.)', dlvryCharges, 'dlvryCharges'],
+    ['कैश एंड कैरी छूट (रु.)', cAndCRebate, 'cashCarryRebate'],
+    ['CGST (2.50%)(रु.)', cgst, 'cgst'],
+    ['SGST (2.50%)(रु.)', sgst, 'sgst'],
+    ['कुल राशि (रु.)', totalAmount, 'totalAmount'],
+    ['ई-केवाईसी', eKyc, 'eKyc'],
+    ['भुगतान', payment, 'payment']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
@@ -93,8 +93,8 @@ const DistributorDetails = ({
       {shouldShowLabel(labelSettings, 'consumerName') && <div className="details-headline details-headline--emphasis details-headline--primary">उपभोक्ता नाम : {consumerName}</div>}
       {shouldShowLabel(labelSettings, 'consumerNoLpgId') && <div className="details-headline details-headline--emphasis details-headline--primary">Consumer No / LPG ID : {consumerNo} / {lpgId}</div>}
       {shouldShowLabel(labelSettings, 'address') && <div className="details-address">पता: {address}</div>}
-      <PairTable rows={leftRows} className="pair-table--dist-main" emphasisLabels={['Mobile No.', 'E-KYC', 'Payment']} />
-      <PairTable rows={amountRowsLeft} className="pair-table--dist-amounts" emphasisLabels={['Total Amount(Rs.)']} />
+      <PairTable rows={leftRows} className="pair-table--dist-main" emphasisLabels={['मोबाइल नं.', 'ई-केवाईसी', 'भुगतान']} />
+      <PairTable rows={amountRowsLeft} className="pair-table--dist-amounts" emphasisLabels={['कुल राशि (रु.)']} />
     </div>
   );
 };
@@ -139,46 +139,46 @@ const TaxInvoiceDetails = ({
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const middleBottomRows = [
-    ['Mobile No.', mobileNo, 'mobileNo'],
-    ['Category', category, 'category'],
-    ['Product/ HSN', `${product} / ${hsn}`, 'productHsn'],
-    ['Connection/ Qty', connectionQty, 'connectionQty'],
-    ['E-KYC', eKyc, 'eKyc'],
-    ['Booking Source', bookingSource, 'bookingSource'],
-    ['Payment', payment, 'payment']
+    ['मोबाइल नं.', mobileNo, 'mobileNo'],
+    ['श्रेणी', category, 'category'],
+    ['उत्पाद / HSN', `${product} / ${hsn}`, 'productHsn'],
+    ['कनेक्शन / मात्रा', connectionQty, 'connectionQty'],
+    ['ई-केवाईसी', eKyc, 'eKyc'],
+    ['बुकिंग स्रोत', bookingSource, 'bookingSource'],
+    ['भुगतान', payment, 'payment']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const normalizedPayment = String(payment || '').trim().toLowerCase();
-  const isOnlinePayment = normalizedPayment.includes('online') && !normalizedPayment.includes('pay on delivery');
+  const isOnlinePayment = (normalizedPayment.includes('online') || normalizedPayment.includes('ऑनलाइन')) && !normalizedPayment.includes('pay on delivery');
   const displayAdvanceOnline = isOnlinePayment ? 'Paid' : '00';
   const displayNetPayable = isOnlinePayment ? '00' : totalAmount;
 
   const rightRows = [
-    ['Order No.', orderNo, 'orderNo'],
-    ['Order Date', orderDate, 'orderDate'],
-    ['CashMemo No.', cashMemoNo, 'cashMemoNo'],
-    ['CashMemo Date', cashMemoDate, 'cashMemoDate'],
-    ['Base Price (Rs.)', basePrice, 'basePrice'],
-    ['Delivery Charges (Rs.)', dlvryCharges, 'deliveryCharges'],
-    ['C & C Rebate (Rs.)', cAndCRebate, 'cashCarryRebate'],
-    ['Taxable Amount (Rs.)', taxableAmount, 'taxableAmount'],
-    ['CGST (2.50%)(Rs.)', cgst, 'cgst'],
-    ['SGST (2.50%)(Rs.)', sgst, 'sgst'],
-    ['Total Amount (Rs.)', totalAmount, 'totalAmount'],
-    ['Advance (Online) (Rs.)', displayAdvanceOnline, 'advanceOnline'],
-    ['Net Payable (Rs.)', displayNetPayable, 'netPayable']
+    ['ऑर्डर नं.', orderNo, 'orderNo'],
+    ['ऑर्डर तिथि', orderDate, 'orderDate'],
+    ['कैशमेमो नं.', cashMemoNo, 'cashMemoNo'],
+    ['कैशमेमो तिथि', cashMemoDate, 'cashMemoDate'],
+    ['मूल मूल्य (रु.)', basePrice, 'basePrice'],
+    ['डिलीवरी शुल्क (रु.)', dlvryCharges, 'deliveryCharges'],
+    ['कैश एंड कैरी छूट (रु.)', cAndCRebate, 'cashCarryRebate'],
+    ['कर योग्य राशि (रु.)', taxableAmount, 'taxableAmount'],
+    ['CGST (2.50%)(रु.)', cgst, 'cgst'],
+    ['SGST (2.50%)(रु.)', sgst, 'sgst'],
+    ['कुल राशि (रु.)', totalAmount, 'totalAmount'],
+    ['अग्रिम (ऑनलाइन) (रु.)', displayAdvanceOnline, 'advanceOnline'],
+    ['शुद्ध देय (रु.)', displayNetPayable, 'netPayable']
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
     <div className="tax-details">
       <div className="tax-details__columns">
         <div className="tax-details__column">
-          <PairTable rows={middleTopRows} dense className="pair-table--tax-main pair-table--tax-top" emphasisLabels={['उपभोक्ता नाम', 'Consumer No.', 'LPD ID']} />
+          <PairTable rows={middleTopRows} dense className="pair-table--tax-main pair-table--tax-top" emphasisLabels={['उपभोक्ता नाम', 'Consumer No.']} />
           <div className="tax-details__spacer" />
-          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main pair-table--tax-bottom" emphasisLabels={['Mobile No.', 'E-KYC']} />
+          <PairTable rows={middleBottomRows} dense className="pair-table--tax-main pair-table--tax-bottom" emphasisLabels={['मोबाइल नं.', 'ई-केवाईसी']} />
         </div>
         <div className="tax-details__column tax-details__column--right">
-          <PairTable rows={rightRows} amountAlign dense className="pair-table--tax-amounts" emphasisLabels={['Payment', 'Total Amount (Rs.)']} />
+          <PairTable rows={rightRows} amountAlign dense className="pair-table--tax-amounts" emphasisLabels={['भुगतान', 'कुल राशि (रु.)']} />
         </div>
       </div>
     </div>
@@ -218,12 +218,17 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
 
   const category = customer['Consumer Package'] || '';
   const connectionQty = customer['Connection/Qty'] || 'SBC / 1';
-  const eKyc = customer['EKYC Status'] || 'Not Done';
+  let eKyc = customer['EKYC Status'] || 'Not Done';
+  if (/ekyc\s*done/i.test(eKyc) || /done/i.test(eKyc)) eKyc = 'पूर्ण (Done)';
+  else if (/not\s*done/i.test(eKyc)) eKyc = 'लंबित (Not Done)';
+  else if (/pending/i.test(eKyc)) eKyc = 'लंबित (Pending)';
+
   const onlineRefillPaymentStatus = customer['Online Refill Payment status'] || '';
   const rawPaymentMethod = customer['Payment Method'] || '';
-  const payment = /paid/i.test(String(onlineRefillPaymentStatus))
-    ? 'Online'
-    : (rawPaymentMethod || 'Pay On Delivery');
+  let payment = /paid/i.test(String(onlineRefillPaymentStatus))
+    ? 'ऑनलाइन (Online)'
+    : (rawPaymentMethod || 'कैश ऑन डिलीवरी (COD)');
+
   const bookingSource = customer['Order Source'] || 'HP Pay';
   const hoseExpiry = customer['Hose Expiry'] || '';
   const miStatus = customer.MI || customer['MI Status'] || '';
