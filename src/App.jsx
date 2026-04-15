@@ -4,7 +4,7 @@ import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, getDoc, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 
 import './App.css';
 import {
@@ -365,6 +365,7 @@ const normalizeData = (data) => {
 
 function App() {
   const fileInputRef = useRef(null);
+  const [translationDictionary, setTranslationDictionary] = useState({});
 
   const handleReUploadClick = () => {
     if (fileInputRef.current) {
@@ -394,6 +395,21 @@ function App() {
   const [userPin, setUserPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [dealerWelcome, setDealerWelcome] = useState('');
+
+  useEffect(() => {
+    const loadDict = async () => {
+      if (!isLoggedIn) return;
+      try {
+        const docSnap = await getDoc(doc(db, 'settings', 'translationDictionary'));
+        if (docSnap.exists()) {
+          setTranslationDictionary(docSnap.data() || {});
+        }
+      } catch (err) {
+        console.error('Failed to load dictionary', err);
+      }
+    };
+    loadDict();
+  }, [isLoggedIn]);
 
   const readUsersData = () => {
     try {
@@ -1388,6 +1404,8 @@ function App() {
       role: 'operator',
     });
     const [editingUserId, setEditingUserId] = useState('');
+    const [dictEng, setDictEng] = useState('');
+    const [dictHin, setDictHin] = useState('');
     const [editUser, setEditUser] = useState({
       dealerCode: '',
       dealerName: '',
@@ -1624,10 +1642,10 @@ function App() {
     };
 
     const adminRolePermissions = {
-      'super-admin': { tabs: ['dashboard', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'recycle-bin', 'audit'], mutate: true },
-      'approval-admin': { tabs: ['dashboard', 'pending-registration', 'approval', 'feedback', 'audit'], mutate: true },
-      'support-admin': { tabs: ['dashboard', 'active-user', 'total-user', 'feedback', 'audit'], mutate: true },
-      viewer: { tabs: ['dashboard', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
+      'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'recycle-bin', 'audit'], mutate: true },
+      'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'feedback', 'audit'], mutate: true },
+      'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: true },
+      viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
     };
     const currentRolePermissions = adminRolePermissions[adminRoleMode] || adminRolePermissions['super-admin'];
     const canAccessTab = (tabKey) => currentRolePermissions.tabs.includes(tabKey);
@@ -2349,6 +2367,7 @@ function App() {
     ];
     const adminTabs = [
       { key: 'dashboard', label: 'Dashboard', count: null },
+      { key: 'dictionary', label: 'Dictionary', count: Object.keys(translationDictionary).length },
       { key: 'pending-registration', label: 'Pending Registration', count: pendingCount },
       { key: 'approval', label: 'Approval', count: combinedPendingApprovals.length },
       { key: 'active-user', label: 'Active User', count: activeUsersList.length },
@@ -2403,6 +2422,7 @@ function App() {
         { value: 'medium', label: 'Medium Priority' },
         { value: 'low', label: 'Low Priority' },
       ],
+      'dictionary': [{ value: 'all', label: 'No extra filter' }],
       'create-user': [{ value: 'all', label: 'No extra filter' }],
     };
     const currentTabMeta = {
@@ -2433,6 +2453,10 @@ function App() {
       'feedback': {
         title: 'Feedback Inbox',
         subtitle: `${filteredFeedback.length} feedback entries currently visible`,
+      },
+      'dictionary': {
+        title: 'Translation Dictionary',
+        subtitle: 'Manage English to Hindi word mappings to save API costs.',
       },
       'recycle-bin': {
         title: 'Recycle Bin',
@@ -2476,9 +2500,10 @@ function App() {
       if (!confirmAdminAction(`Approve ${targets.length} selected update requests?`)) return;
       for (const item of targets) {
         // eslint-disable-next-line no-await-in-loop
-        await approveUpdateRequest(item, { skipConfirm: true });
+        await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
+      alert(`${targets.length} requests approved.`);
     };
     const bulkRejectUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -2486,9 +2511,10 @@ function App() {
       if (!confirmAdminAction(`Reject ${targets.length} selected update requests?`)) return;
       for (const item of targets) {
         // eslint-disable-next-line no-await-in-loop
-        await rejectUpdateRequest(item, { skipConfirm: true });
+        await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
+      alert(`${targets.length} requests rejected.`);
     };
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
@@ -2499,6 +2525,33 @@ function App() {
         await toggleUserStatus(item, { skipConfirm: true });
       }
       clearSelectedUserTokens();
+    };
+
+    const handleAddDict = async () => {
+      if (!dictEng.trim() || !dictHin.trim()) return;
+      const newDict = { ...translationDictionary, [dictEng.trim()]: dictHin.trim() };
+      setTranslationDictionary(newDict);
+      try {
+        await setDoc(doc(db, 'settings', 'translationDictionary'), newDict);
+        logAdminActivity('dictionary_updated', { word: dictEng.trim() });
+        setDictEng('');
+        setDictHin('');
+      } catch (err) {
+        alert('Failed to save dictionary to Firebase.');
+      }
+    };
+
+    const handleDeleteDict = async (key) => {
+      if (!confirmAdminAction(`Delete mapping for ${key}?`)) return;
+      const newDict = { ...translationDictionary };
+      delete newDict[key];
+      setTranslationDictionary(newDict);
+      try {
+        await setDoc(doc(db, 'settings', 'translationDictionary'), newDict);
+        logAdminActivity('dictionary_deleted', { word: key });
+      } catch (err) {
+        alert('Failed to delete mapping from Firebase.');
+      }
     };
 
     useEffect(() => {
@@ -3063,6 +3116,45 @@ function App() {
           </div>
         )}
 
+        {activeAdminTab === 'dictionary' && (
+          <div className="admin-section">
+            <div className="admin-bulk-bar">
+              <span>Manage Translation Dictionary</span>
+            </div>
+            <div className="admin-form">
+               <input className="form-input" placeholder="English Word (e.g. Mr.)" value={dictEng} onChange={(e) => setDictEng(e.target.value)} />
+               <input className="form-input" placeholder="Hindi Translation (e.g. श्री)" value={dictHin} onChange={(e) => setDictHin(e.target.value)} />
+               <button onClick={handleAddDict} disabled={!canMutateAdminData}>Add Word</button>
+            </div>
+            <div className="admin-table-wrap" style={{ marginTop: '20px' }}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>English Word</th>
+                    <th>Hindi Translation</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(translationDictionary).length === 0 ? (
+                    <tr><td colSpan="3" className="admin-empty-cell">No dictionary words found.</td></tr>
+                  ) : (
+                    Object.entries(translationDictionary).map(([eng, hin]) => (
+                      <tr key={eng}>
+                        <td>{eng}</td>
+                        <td>{hin}</td>
+                        <td>
+                          <button className="feedback-delete-btn" onClick={() => handleDeleteDict(eng)} disabled={!canMutateAdminData}>Delete</button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {activeDrawer && (
           <div className="admin-drawer-backdrop" onClick={() => { setViewRequest(null); setViewApproval(null); setDetailView(null); }}>
             <div className="admin-drawer" onClick={(e) => e.stopPropagation()}>
@@ -3610,28 +3702,48 @@ function App() {
         const transliterateText = async (text) => {
           if (!text) return '';
           try {
-            const GOOGLE_CLOUD_API_KEY = 'AIzaSyA9fCIrR8PkDcPAFxHm_bYXxOwXzeFfCGA';
+            const localCacheKey = `transCache_${text.toLowerCase().trim()}`;
+            const cached = localStorage.getItem(localCacheKey);
+            if (cached) return cached;
+            
+            const exactMatch = Object.keys(translationDictionary).find(k => k.toLowerCase() === text.toLowerCase().trim());
+            if (exactMatch) return translationDictionary[exactMatch];
 
-            // Official Google Cloud Translation API Call
+            let processedText = text;
+            const sortedKeys = Object.keys(translationDictionary).sort((a, b) => b.length - a.length);
+            sortedKeys.forEach(engWord => {
+              const escapedWord = engWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const regex = new RegExp(`(^|\\s)${escapedWord}(?=\\s|[,.-]|$)`, 'gi');
+              processedText = processedText.replace(regex, `$1${translationDictionary[engWord]}`);
+            });
+
+            if (!/[a-zA-Z]/.test(processedText)) {
+              localStorage.setItem(localCacheKey, processedText);
+              return processedText;
+            }
+
+            const GOOGLE_CLOUD_API_KEY = 'AIzaSyA9fCIrR8PkDcPAFxHm_bYXxOwXzeFfCGA';
             const response = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_CLOUD_API_KEY}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                q: text,
+                q: processedText,
                 source: 'en',
                 target: 'hi',
-                format: 'text' // Plain text format (html नहीं)
+                format: 'text'
               })
             });
 
             const data = await response.json();
             if (data && data.data && data.data.translations && data.data.translations[0]) {
-              return data.data.translations[0].translatedText;
+              const result = data.data.translations[0].translatedText;
+              localStorage.setItem(localCacheKey, result);
+              return result;
             }
           } catch (error) {
             console.error('Translation failed:', error);
           }
-          return text;
+          return processedText || text;
         };
 
         customersToPrint = await Promise.all(
