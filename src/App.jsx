@@ -396,6 +396,20 @@ function App() {
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [dealerWelcome, setDealerWelcome] = useState('');
 
+  const userMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   useEffect(() => {
     const loadDict = async () => {
       if (!isLoggedIn) return;
@@ -1175,26 +1189,37 @@ function App() {
         setData(null);
       }
     }, [loggedInUser?.profileData]);
+
+    const currentPackage = loggedInUser?.package || '-';
+    const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
+
     return (
       <div className="placeholder-container">
         <h2>User Profile</h2>
-        {data ? (
-          <div className="profile-form">
-            <span className="profile-label">Distributor Code</span>
-            <span>{data.distributorCode || '-'}</span>
-            <span className="profile-label">Distributor Name</span>
-            <span>{data.distributorName || '-'}</span>
-            <span className="profile-label">Contact</span>
-            <span>{data.contact || '-'}</span>
-            <span className="profile-label">Email</span>
-            <span>{data.email || '-'}</span>
-            <span className="profile-label">GST</span>
-            <span>{data.gst || '-'}</span>
-            <span className="profile-label">Address</span>
-            <span>{data.address || '-'}</span>
-          </div>
-        ) : (
-          <div>No profile details found. Please update your profile.</div>
+        <div className="profile-form">
+          <span className="profile-label">Current Package</span>
+          <span>{currentPackage}</span>
+          <span className="profile-label">Package Validity</span>
+          <span>{validity}</span>
+          {data && (
+            <>
+              <span className="profile-label">Distributor Code</span>
+              <span>{data.distributorCode || '-'}</span>
+              <span className="profile-label">Distributor Name</span>
+              <span>{data.distributorName || '-'}</span>
+              <span className="profile-label">Contact</span>
+              <span>{data.contact || '-'}</span>
+              <span className="profile-label">Email</span>
+              <span>{data.email || '-'}</span>
+              <span className="profile-label">GST</span>
+              <span>{data.gst || '-'}</span>
+              <span className="profile-label">Address</span>
+              <span>{data.address || '-'}</span>
+            </>
+          )}
+        </div>
+        {!data && (
+          <div style={{ marginTop: '15px' }}>No additional profile details found. Please update your profile.</div>
         )}
         <div className="form-actions">
           <button onClick={onClose}>Close</button>
@@ -5133,8 +5158,13 @@ function App() {
           </div>
           <div className="navbar-right">
             {isLoggedIn ? (
-              <div className="user-menu-container">
-                <span className="navbar-welcome">Welcome, {dealerWelcome}</span>
+            <div className="user-menu-container" ref={userMenuRef}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '10px' }}>
+                <span className="navbar-welcome" style={{ marginRight: 0 }}>Welcome, {dealerWelcome}</span>
+                <span style={{ fontSize: '10.5px', marginTop: '2px', fontWeight: 'normal', opacity: 0.85, whiteSpace: 'nowrap' }}>
+                  Current Package:- {loggedInUser?.package || 'N/A'} {loggedInUser?.validTill && `& It will expire in ${getRemainingDays(loggedInUser.validTill)} Days`}
+                </span>
+              </div>
                 {pendingUserApprovalTypes.length > 0 && (
                   <span className="navbar-pending-msg">
                     Your {pendingUserApprovalTypes.join(', ')} request is pending with admin for approval.
@@ -5145,10 +5175,10 @@ function App() {
                 </div>
                 {showUserMenu && (
                   <div className="dropdown-menu">
+                    <button onClick={handleUserProfile}>User Profile</button>
                     <button onClick={handleAboutOpen}>About</button>
                     <button onClick={handleInvoiceOpen}>Invoice</button>
                     <button onClick={handleContactOpen}>Contact</button>
-                    <button onClick={handleUserProfile}>User Profile</button>
                     <button onClick={handleProfileUpdate}>Profile Update</button>
                     <button onClick={handleBankDetails}>Bank Details</button>
                     <button onClick={handleRateUpdate}>Rate Update</button>
