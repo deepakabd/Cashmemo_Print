@@ -156,6 +156,17 @@
   background-color: #555;
 }
 
+.navbar-left .upgrade-plan-button {
+  border-color: #ffb020;
+  background: #b91c1c;
+  color: #fff;
+  font-weight: 800;
+}
+
+.navbar-left .upgrade-plan-button:hover {
+  background: #991b1b;
+}
+
 .admin-nav-button {
   border: 1px solid #8fb1ff;
   color: #fff;
@@ -182,6 +193,42 @@
   font-size: 11px;
   color: #ffe08a;
   font-weight: 600;
+}
+
+.navbar-expired-msg {
+  margin-top: 4px;
+  color: #ff3b30;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.navbar button:disabled,
+.dropdown-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.navbar button:disabled:hover,
+.dropdown-menu button:disabled:hover {
+  background-color: transparent;
+}
+
+.upgrade-plan-panel {
+  max-width: 520px;
+  width: 100%;
+}
+
+.upgrade-plan-pending {
+  margin: 14px 0 0;
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.upgrade-plan-upi {
+  color: #b91c1c;
+  font-weight: 800;
+  word-break: break-word;
 }
 
 .filters-shell {
