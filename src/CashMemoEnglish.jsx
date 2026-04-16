@@ -38,7 +38,7 @@ const PairTable = ({ rows, amountAlign = false, dense = false, className = '', e
     </tbody>
   </table>
 );
-
+//test
 const DistributorDetails = ({
   consumerName,
   consumerNo,
