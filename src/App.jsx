@@ -255,6 +255,8 @@ const PACKAGE_PRICING = {
   'Premium Package (हिंदी) - 365 Days': 'Rs. 10000',
 };
 
+const PAYMENT_UPI_ID = '8002074620@ybl';
+
 const getPackageValidityDays = (packageName = '') => {
   const normalized = String(packageName || '').toLowerCase();
   if (normalized.includes('demo')) return 7;
@@ -290,7 +292,7 @@ const formatDisplayDate = (value) => {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString();
+  return date.toLocaleDateString('en-GB');
 };
 
 const getRemainingDays = (validTill) => {
@@ -302,12 +304,21 @@ const getRemainingDays = (validTill) => {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 };
 
+const formatPackageNameForNavbar = (packageName = '') => {
+  const name = String(packageName || '').trim();
+  if (!name) return 'N/A';
+  return name.replace(/\s*-\s*\d+\s*Days?\s*$/i, '').trim();
+};
+
+const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS.filter((pkg) => !pkg.toLowerCase().includes('demo'));
+
 const normalizePendingTypeLabel = (type) => {
   const raw = String(type || '').toLowerCase().trim();
   if (raw === 'profile' || raw === 'profiledata') return 'profile';
   if (raw === 'bank' || raw === 'bankdetails' || raw === 'bankdetailsdata') return 'bank';
   if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
   if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
+  if (raw === 'planupgrade' || raw === 'plan' || raw === 'package') return 'plan upgrade';
   return raw;
 };
 
@@ -386,6 +397,7 @@ function App() {
   const [showInvoicePage, setShowInvoicePage] = useState(false);
   const [showLabelUpdate, setShowLabelUpdate] = useState(false);
   const [showHeaderUpdate, setShowHeaderUpdate] = useState(false);
+  const [showUpgradePlan, setShowUpgradePlan] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showUserLogin, setShowUserLogin] = useState(false);
@@ -395,6 +407,11 @@ function App() {
   const [userPin, setUserPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [dealerWelcome, setDealerWelcome] = useState('');
+  const isPlanExpired = Boolean(
+    isLoggedIn &&
+    loggedInUser &&
+    (String(loggedInUser?.status || '').toLowerCase() === 'expired' || isUserExpired(loggedInUser))
+  );
 
   const userMenuRef = useRef(null);
 
@@ -806,11 +823,6 @@ function App() {
       return;
     }
 
-    if (firestoreUser.status === 'expired') {
-      alert(`Your package expired on ${formatDisplayDate(firestoreUser.validTill)}. Kindly renew or contact admin.`);
-      return;
-    }
-
     if (isUserExpired(firestoreUser)) {
       try {
         await updateDoc(doc(db, 'users', firestoreUser.id), {
@@ -818,8 +830,7 @@ function App() {
           updatedAt: serverTimestamp(),
         });
       } catch {}
-      alert(`Your demo/account package expired on ${formatDisplayDate(firestoreUser.validTill)}. Kindly renew or contact admin.`);
-      return;
+      firestoreUser.status = 'expired';
     }
 
     let users = readUsersData();
@@ -860,7 +871,11 @@ function App() {
     setShowAboutInfo(true);
     setUserDealerCode('');
     setUserPin('');
-    alert('Logged in successfully!');
+    if (String(localUser.status || '').toLowerCase() === 'expired') {
+      alert('Logged in successfully. Plan Expired, Please contact Admin or Upgrade Plan');
+    } else {
+      alert('Logged in successfully!');
+    }
   };
 
   const handleLogout = () => {
@@ -879,6 +894,7 @@ function App() {
     setShowInvoicePage(false);
     setShowLabelUpdate(false);
     setShowHeaderUpdate(false);
+    setShowUpgradePlan(false);
     setShowContactForm(false);
     setShowUserProfile(false);
     setShowRegisterForm(false);
@@ -963,6 +979,7 @@ function App() {
 
       const restoredUser = {
         ...matchedUser,
+        status: isUserExpired(matchedUser) ? 'expired' : matchedUser.status,
         cashMemoLabelSettings: mergeCashMemoLabelSettings(matchedUser.cashMemoLabelSettings || {}),
       };
 
@@ -1010,6 +1027,12 @@ function App() {
   const handleContactOpen = () => {
     hideAllViews();
     setShowContactForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleUpgradePlanOpen = () => {
+    hideAllViews();
+    setShowUpgradePlan(true);
     setShowUserMenu(false);
   };
 
@@ -1170,7 +1193,7 @@ function App() {
           <input name="confirmPin" className="form-input" placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
           <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
           <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
-          <div className="upi-note">UPI ID for Payment: 8002074620@ybl</div>
+          <div className="upi-note">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
         </div>
         <div className="form-actions">
           <button onClick={onSubmit}>रजिस्टर करें</button>
@@ -1346,6 +1369,113 @@ function App() {
         </div>
         <div className="form-actions">
           <button onClick={submitFeedback}>Submit</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
+  const UpgradePlanForm = ({ onClose }) => {
+    const hasPendingUpgrade = String(loggedInUser?.pendingUpdates?.planUpgrade?.status || '').toLowerCase() === 'pending'
+      || String(loggedInUser?.approvalStatus?.planUpgrade || '').toLowerCase() === 'pending';
+    const [selectedPackage, setSelectedPackage] = useState(PLAN_UPGRADE_OPTIONS[0] || '');
+    const [paymentDetails, setPaymentDetails] = useState({
+      utr: '',
+      paymentDate: '',
+      paymentNote: '',
+    });
+
+    const handlePaymentDetailsChange = (e) => {
+      const { name, value } = e.target;
+      setPaymentDetails((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const submitUpgradeRequest = async () => {
+      if (!selectedPackage) {
+        alert('Please select a plan.');
+        return;
+      }
+      if (!paymentDetails.utr.trim() || !paymentDetails.paymentDate) {
+        alert('UTR number aur payment date required hai.');
+        return;
+      }
+      const payload = {
+        package: selectedPackage,
+        packagePrice: PACKAGE_PRICING[selectedPackage] || '',
+        currentPackage: loggedInUser?.package || '',
+        currentValidTill: loggedInUser?.validTill || '',
+        paymentUpiId: PAYMENT_UPI_ID,
+        paymentUtr: paymentDetails.utr.trim(),
+        paymentDate: paymentDetails.paymentDate,
+        paymentNote: paymentDetails.paymentNote.trim(),
+        requestedAt: new Date().toISOString(),
+      };
+      const ok = await submitUpdateApprovalRequest({
+        type: 'planUpgrade',
+        payload,
+        successMessage: 'Plan upgrade request submitted. Your request is pending with admin for approval.',
+      });
+      if (ok) {
+        onClose();
+      }
+    };
+
+    return (
+      <div className="placeholder-container upgrade-plan-panel">
+        <h2>Upgrade Plan</h2>
+        <div className="profile-form">
+          <span className="profile-label">Current Package</span>
+          <span>{formatPackageNameForNavbar(loggedInUser?.package)}</span>
+          <span className="profile-label">Expired On</span>
+          <span>{formatDisplayDate(loggedInUser?.validTill)}</span>
+          <span className="profile-label">Choose New Plan</span>
+          <select
+            className="form-input"
+            value={selectedPackage}
+            onChange={(e) => setSelectedPackage(e.target.value)}
+            disabled={hasPendingUpgrade}
+          >
+            {PLAN_UPGRADE_OPTIONS.map((pkg) => (
+              <option key={pkg} value={pkg}>
+                {`${formatPackageNameForNavbar(pkg)} - ${PACKAGE_PRICING[pkg] || '-'}`}
+              </option>
+            ))}
+          </select>
+          <span className="profile-label">Payment UPI ID</span>
+          <span className="upgrade-plan-upi">{PAYMENT_UPI_ID}</span>
+          <span className="profile-label">UTR Number</span>
+          <input
+            className="form-input"
+            name="utr"
+            value={paymentDetails.utr}
+            onChange={handlePaymentDetailsChange}
+            placeholder="Enter UTR / Transaction ID"
+            disabled={hasPendingUpgrade}
+          />
+          <span className="profile-label">Payment Date</span>
+          <input
+            className="form-input"
+            name="paymentDate"
+            type="date"
+            value={paymentDetails.paymentDate}
+            onChange={handlePaymentDetailsChange}
+            disabled={hasPendingUpgrade}
+          />
+          <span className="profile-label">Payment Remark</span>
+          <textarea
+            className="form-textarea"
+            name="paymentNote"
+            value={paymentDetails.paymentNote}
+            onChange={handlePaymentDetailsChange}
+            placeholder="Optional payment note"
+            disabled={hasPendingUpgrade}
+          />
+        </div>
+        {hasPendingUpgrade && (
+          <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
+        )}
+        <div className="form-actions">
+          <button onClick={submitUpgradeRequest} disabled={hasPendingUpgrade}>Send Request</button>
           <button onClick={onClose}>Close</button>
         </div>
       </div>
@@ -1997,6 +2127,7 @@ function App() {
       if (raw === 'bank' || raw === 'bankdetails' || raw === 'bankdetailsdata') return 'bank';
       if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
       if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
+      if (raw === 'planupgrade' || raw === 'plan' || raw === 'package') return 'planUpgrade';
       return raw;
     };
 
@@ -2037,7 +2168,7 @@ function App() {
         header: 'hindiHeaderData',
       };
       const targetField = fieldByType[approvalType];
-      if (!targetField) {
+      if (!targetField && approvalType !== 'planUpgrade') {
         alert(`Unsupported approval type: ${approval.type || 'unknown'}`);
         return;
       }
@@ -2062,13 +2193,33 @@ function App() {
         if (approvalType === 'header') {
           nextStatus.hindiHeaderData = 'approved';
         }
-        await updateDoc(doc(db, 'users', targetUser.id), {
+        if (approvalType === 'planUpgrade') {
+          const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
+          if (!nextPackage) {
+            alert('Plan upgrade request has no selected package.');
+            return;
+          }
+          const validity = computeValidityDates(nextPackage);
+          await updateDoc(doc(db, 'users', targetUser.id), {
+            package: nextPackage,
+            packageDays: validity.packageDays,
+            validFrom: validity.validFrom,
+            validTill: validity.validTill,
+            status: 'active',
+            approvalStatus: nextStatus,
+            [`pendingUpdates.${approvalType}.status`]: 'approved',
+            [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await updateDoc(doc(db, 'users', targetUser.id), {
           [targetField]: approval.payload,
           approvalStatus: nextStatus,
           [`pendingUpdates.${approvalType}.status`]: 'approved',
           [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
           updatedAt: serverTimestamp(),
-        });
+          });
+        }
         if (approval.source !== 'userDoc') {
           try {
             await updateDoc(doc(db, 'updateApprovals', approval.id), {
@@ -2329,7 +2480,7 @@ function App() {
     const pagedAuditTrail = paginateAdminRows(auditTrail, adminItemsPerPage, adminCurrentPage);
     const notifications = [
       pendingCount > 0 ? { id: 'pending-requests', text: `${pendingCount} registration requests pending`, tone: 'blue' } : null,
-      combinedPendingApprovals.length > 0 ? { id: 'pending-approvals', text: `${combinedPendingApprovals.length} profile/bank/rate approvals waiting`, tone: 'amber' } : null,
+      combinedPendingApprovals.length > 0 ? { id: 'pending-approvals', text: `${combinedPendingApprovals.length} approval requests waiting`, tone: 'amber' } : null,
       expiringUsers.length > 0 ? { id: 'expiring-users', text: `${expiringUsers.length} active users expiring within 7 days`, tone: 'rose' } : null,
       unreadFeedbackCount > 0 ? { id: 'unread-feedback', text: `${unreadFeedbackCount} unread feedback messages`, tone: 'green' } : null,
     ].filter(Boolean);
@@ -2407,6 +2558,7 @@ function App() {
       { label: 'Bank', value: approvalTypeCounts.bank || 0 },
       { label: 'Rates', value: approvalTypeCounts.rates || 0 },
       { label: 'Header', value: approvalTypeCounts.header || 0 },
+      { label: 'Plan Upgrade', value: approvalTypeCounts.planUpgrade || 0 },
     ];
     const adminSubFilterOptions = {
       'pending-registration': [{ value: 'all', label: 'All Packages' }, ...PACKAGE_OPTIONS.map((pkg) => ({ value: pkg, label: pkg }))],
@@ -2416,6 +2568,7 @@ function App() {
         { value: 'bank', label: 'Bank' },
         { value: 'rates', label: 'Rates' },
         { value: 'header', label: 'Header' },
+        { value: 'planUpgrade', label: 'Plan Upgrade' },
       ],
       'active-user': [
         { value: 'all', label: 'All Users' },
@@ -5133,25 +5286,36 @@ function App() {
     .filter(([, status]) => status === 'pending')
     .map(([type]) => normalizePendingTypeLabel(type));
   const pendingUserApprovalTypes = Array.from(new Set([...pendingTypesFromUpdates, ...pendingTypesFromStatus]));
+  const navbarPackageName = formatPackageNameForNavbar(loggedInUser?.package);
+  const packageValidityText = loggedInUser?.validTill
+    ? isPlanExpired
+      ? `& Expired on ${formatDisplayDate(loggedInUser.validTill)}`
+      : `& It will expire in ${getRemainingDays(loggedInUser.validTill)} Days`
+    : '';
 
   return (
     <>
-      {isLoggedIn && <FileUpload onFileUpload={handleFileUpload} ref={fileInputRef} />}
+      {isLoggedIn && !isPlanExpired && <FileUpload onFileUpload={handleFileUpload} ref={fileInputRef} />}
       {!hideUserNavbar && (
         <nav className="navbar">
           <div className="navbar-left">
-            <button className="navbar-button" onClick={handleHomeOpen}>Home</button>
-            {isLoggedIn && !showDataButton && (
-              <button className="navbar-button" onClick={handleReUploadClick}>
+            <button className="navbar-button" onClick={handleHomeOpen} disabled={isPlanExpired}>Home</button>
+            {isPlanExpired && (
+              <button className="navbar-button upgrade-plan-button" onClick={handleUpgradePlanOpen}>
+                Upgrade Plan
+              </button>
+            )}
+            {isLoggedIn && !isPlanExpired && !showDataButton && (
+              <button className="navbar-button" onClick={handleReUploadClick} disabled={isPlanExpired}>
                 Upload Data
               </button>
             )}
-            {isLoggedIn && showDataButton && (
+            {isLoggedIn && !isPlanExpired && showDataButton && (
               <>
-                <button onClick={handleShowData} className="navbar-button">{showParsedData ? 'Hide Data' : 'Show Data'}</button>
-                <button onClick={handleReUploadClick} className="navbar-button">Re-Upload</button>
+                <button onClick={handleShowData} className="navbar-button" disabled={isPlanExpired}>{showParsedData ? 'Hide Data' : 'Show Data'}</button>
+                <button onClick={handleReUploadClick} className="navbar-button" disabled={isPlanExpired}>Re-Upload</button>
                 {showParsedData && !showBookingReport && (
-                  <button onClick={() => setShowBookingReport(true)} className="navbar-button">Show Report</button>
+                  <button onClick={() => setShowBookingReport(true)} className="navbar-button" disabled={isPlanExpired}>Show Report</button>
                 )}
               </>
             )}
@@ -5162,10 +5326,13 @@ function App() {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '10px' }}>
                 <span className="navbar-welcome" style={{ marginRight: 0 }}>Welcome, {dealerWelcome}</span>
                 <span style={{ fontSize: '10.5px', marginTop: '2px', fontWeight: 'normal', opacity: 0.85, whiteSpace: 'nowrap' }}>
-                  Current Package:- {loggedInUser?.package || 'N/A'} {loggedInUser?.validTill && `& It will expire in ${getRemainingDays(loggedInUser.validTill)} Days`}
+                  Current Package:- {navbarPackageName} {packageValidityText}
                 </span>
+                {isPlanExpired && (
+                  <span className="navbar-expired-msg">Plan Expired, Please contact Admin or Upgrade Plan</span>
+                )}
               </div>
-                {pendingUserApprovalTypes.length > 0 && (
+                {!isPlanExpired && pendingUserApprovalTypes.length > 0 && (
                   <span className="navbar-pending-msg">
                     Your {pendingUserApprovalTypes.join(', ')} request is pending with admin for approval.
                   </span>
@@ -5175,16 +5342,16 @@ function App() {
                 </div>
                 {showUserMenu && (
                   <div className="dropdown-menu">
-                    <button onClick={handleUserProfile}>User Profile</button>
-                    <button onClick={handleAboutOpen}>About</button>
-                    <button onClick={handleInvoiceOpen}>Invoice</button>
-                    <button onClick={handleContactOpen}>Contact</button>
-                    <button onClick={handleProfileUpdate}>Profile Update</button>
-                    <button onClick={handleBankDetails}>Bank Details</button>
-                    <button onClick={handleRateUpdate}>Rate Update</button>
-                    <button onClick={handleLabelUpdate}>Lebel Update</button>
+                    <button onClick={handleUserProfile} disabled={isPlanExpired}>User Profile</button>
+                    <button onClick={handleAboutOpen} disabled={isPlanExpired}>About</button>
+                    <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
+                    <button onClick={handleContactOpen} disabled={isPlanExpired}>Contact</button>
+                    <button onClick={handleProfileUpdate} disabled={isPlanExpired}>Profile Update</button>
+                    <button onClick={handleBankDetails} disabled={isPlanExpired}>Bank Details</button>
+                    <button onClick={handleRateUpdate} disabled={isPlanExpired}>Rate Update</button>
+                    <button onClick={handleLabelUpdate} disabled={isPlanExpired}>Lebel Update</button>
                     {loggedInUser?.package === 'Premium Package (हिंदी) - 365 Days' && (
-                      <button onClick={handleHeaderUpdate}>Header Update</button>
+                      <button onClick={handleHeaderUpdate} disabled={isPlanExpired}>Header Update</button>
                     )}
                     <button onClick={handleLogout}>Logout</button>
                   </div>
@@ -5204,8 +5371,9 @@ function App() {
           </div>
         </nav>
       )}
-      {(showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin) && (
+      {(showUpgradePlan || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
+          {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && (
@@ -5311,7 +5479,7 @@ function App() {
       `}</style>
 
 
-      {parsedData.length > 0 && showParsedData && (
+      {!isPlanExpired && parsedData.length > 0 && showParsedData && (
         <div className="filters-shell">
 
           {showBookingReport && (
