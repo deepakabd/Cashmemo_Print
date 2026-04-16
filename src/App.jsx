@@ -332,6 +332,21 @@ const formatPackageOptionLabel = (packageName = '') => {
   return `${formatPackageNameForNavbar(packageName)} - ${PACKAGE_PRICING[packageName] || '-'} - Validity: ${validityText}`;
 };
 
+const getDictionaryDocId = (englishWord = '') => (
+  encodeURIComponent(String(englishWord || '').trim().toLowerCase()).replace(/\./g, '%2E') || `word-${Date.now()}`
+);
+
+const getExistingDictionaryEntry = (dictionary = {}, englishWord = '') => {
+  const normalized = String(englishWord || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const existingKey = Object.keys(dictionary || {}).find((key) => String(key || '').trim().toLowerCase() === normalized);
+  if (!existingKey) return null;
+  return {
+    englishWord: existingKey,
+    hindiTranslation: dictionary[existingKey],
+  };
+};
+
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS.filter((pkg) => !pkg.toLowerCase().includes('demo'));
 
 const normalizePendingTypeLabel = (type) => {
@@ -414,6 +429,7 @@ function App() {
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
+  const [showDictionaryForm, setShowDictionaryForm] = useState(false);
   const [showHomeInfo, setShowHomeInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(true);
   const [showInvoicePage, setShowInvoicePage] = useState(false);
@@ -451,18 +467,31 @@ function App() {
 
   useEffect(() => {
     const loadDict = async () => {
-      if (!isLoggedIn) return;
+      if (!isLoggedIn && !showAdminPanel) return;
       try {
+        let nextDictionary = {};
         const docSnap = await getDoc(doc(db, 'settings', 'translationDictionary'));
         if (docSnap.exists()) {
-          setTranslationDictionary(docSnap.data() || {});
+          nextDictionary = docSnap.data() || {};
         }
+        try {
+          const dictRowsSnap = await getDocs(collection(db, 'translationDictionary'));
+          dictRowsSnap.docs.forEach((item) => {
+            const data = item.data() || {};
+            const englishWord = String(data.englishWord || '').trim();
+            const hindiTranslation = String(data.hindiTranslation || '').trim();
+            if (englishWord && hindiTranslation) {
+              nextDictionary[englishWord] = hindiTranslation;
+            }
+          });
+        } catch {}
+        setTranslationDictionary(nextDictionary);
       } catch (err) {
         console.error('Failed to load dictionary', err);
       }
     };
     loadDict();
-  }, [isLoggedIn]);
+  }, [isLoggedIn, showAdminPanel]);
 
   const readUsersData = () => {
     try {
@@ -815,6 +844,7 @@ function App() {
             status: docData.status || 'active',
             approvalStatus: docData.approvalStatus || {},
             pendingUpdates: docData.pendingUpdates || {},
+            dictionaryPendingCount: Number(docData.dictionaryPendingCount || 0),
             profileData: docData.profileData || null,
             bankDetailsData: docData.bankDetailsData || null,
             ratesData: Array.isArray(docData.ratesData) ? docData.ratesData : [],
@@ -917,6 +947,7 @@ function App() {
     setShowLabelUpdate(false);
     setShowHeaderUpdate(false);
     setShowUpgradePlan(false);
+    setShowDictionaryForm(false);
     setShowContactForm(false);
     setShowUserProfile(false);
     setShowRegisterForm(false);
@@ -1049,6 +1080,12 @@ function App() {
   const handleContactOpen = () => {
     hideAllViews();
     setShowContactForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleDictionaryOpen = () => {
+    hideAllViews();
+    setShowDictionaryForm(true);
     setShowUserMenu(false);
   };
 
@@ -1397,6 +1434,96 @@ function App() {
     );
   };
 
+  const DictionaryRequestForm = ({ onClose }) => {
+    const [form, setForm] = useState({ englishWord: '', hindiTranslation: '' });
+    const pendingCount = Number(loggedInUser?.dictionaryPendingCount || 0);
+
+    const handleChange = (e) => {
+      const { name, value } = e.target;
+      setForm((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const submitDictionaryRequest = async () => {
+      const englishWord = form.englishWord.trim();
+      const hindiTranslation = form.hindiTranslation.trim();
+      if (!englishWord || !hindiTranslation) {
+        alert('English word aur Hindi translation required hai.');
+        return;
+      }
+      if (!loggedInUser?.id) {
+        alert('Please login first.');
+        return;
+      }
+
+      const nextPendingCount = pendingCount + 1;
+      const payload = {
+        englishWord,
+        hindiTranslation,
+        requestedBy: loggedInUser?.dealerCode || '',
+        requestedAt: new Date().toISOString(),
+      };
+
+      try {
+        await addDoc(collection(db, 'updateApprovals'), {
+          userId: loggedInUser.id,
+          dealerCode: loggedInUser.dealerCode || '',
+          dealerName: loggedInUser.dealerName || '',
+          type: 'dictionary',
+          payload,
+          status: 'pending',
+          requestedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        try {
+          await updateDoc(doc(db, 'users', loggedInUser.id), {
+            dictionaryPendingCount: nextPendingCount,
+            updatedAt: serverTimestamp(),
+          });
+        } catch {}
+
+        updateUserInStore(
+          loggedInUser.id,
+          (user) => ({ ...user, dictionaryPendingCount: nextPendingCount }),
+          loggedInUser.dealerCode
+        );
+        setForm({ englishWord: '', hindiTranslation: '' });
+        alert('Dictionary request submitted. Your request is pending with admin for approval.');
+      } catch {
+        alert('Dictionary request submit failed. Check Firebase permissions.');
+      }
+    };
+
+    return (
+      <div className="placeholder-container dictionary-request-panel">
+        <h2>Dictionary</h2>
+        <div className="dictionary-pending-count">{pendingCount} request pending</div>
+        <div className="profile-form">
+          <span className="profile-label">English Word</span>
+          <input
+            className="form-input"
+            name="englishWord"
+            value={form.englishWord}
+            onChange={handleChange}
+            placeholder="e.g. Mr."
+          />
+          <span className="profile-label">Hindi Translation</span>
+          <input
+            className="form-input"
+            name="hindiTranslation"
+            value={form.hindiTranslation}
+            onChange={handleChange}
+            placeholder="e.g. श्री"
+          />
+        </div>
+        <div className="form-actions">
+          <button onClick={submitDictionaryRequest}>Send Request</button>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
+
   const UpgradePlanForm = ({ onClose }) => {
     const hasPendingUpgrade = String(loggedInUser?.pendingUpdates?.planUpgrade?.status || '').toLowerCase() === 'pending'
       || String(loggedInUser?.approvalStatus?.planUpgrade || '').toLowerCase() === 'pending';
@@ -1506,6 +1633,7 @@ function App() {
 
   const AdminPanel = ({ onClose, onAdminLogout }) => {
     const adminImportRef = useRef(null);
+    const dictionaryImportRef = useRef(null);
     const [adminItemsPerPage] = useState(10);
     const [adminRoleMode, setAdminRoleMode] = useState(() => localStorage.getItem('adminRoleMode') || 'super-admin');
     const {
@@ -1583,6 +1711,8 @@ function App() {
     const [editingUserId, setEditingUserId] = useState('');
     const [dictEng, setDictEng] = useState('');
     const [dictHin, setDictHin] = useState('');
+    const [dictionaryApprovalEdits, setDictionaryApprovalEdits] = useState({});
+    const [dictionaryRequestView, setDictionaryRequestView] = useState('new');
     const [editUser, setEditUser] = useState({
       dealerCode: '',
       dealerName: '',
@@ -2150,6 +2280,7 @@ function App() {
       if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
       if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
       if (raw === 'planupgrade' || raw === 'plan' || raw === 'package') return 'planUpgrade';
+      if (raw === 'dictionary' || raw === 'dict' || raw === 'translationdictionary') return 'dictionary';
       return raw;
     };
 
@@ -2179,6 +2310,33 @@ function App() {
     });
     const combinedPendingApprovals = [...collectionPendingApprovals, ...fallbackPendingApprovals]
       .filter((approval) => !hiddenApprovalIds.includes(approval.id));
+    const dictionaryPendingApprovals = combinedPendingApprovals.filter((approval) => normalizeApprovalType(approval.type) === 'dictionary');
+    const nonDictionaryPendingApprovals = combinedPendingApprovals.filter((approval) => normalizeApprovalType(approval.type) !== 'dictionary');
+
+    const getDictionaryApprovalPayload = (approval) => ({
+      ...(approval?.payload || {}),
+      ...(dictionaryApprovalEdits[approval?.id] || {}),
+    });
+
+    const duplicateDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => {
+      const payload = getDictionaryApprovalPayload(approval);
+      return Boolean(getExistingDictionaryEntry(translationDictionary, payload?.englishWord || payload?.eng));
+    });
+    const newDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => {
+      const payload = getDictionaryApprovalPayload(approval);
+      return !getExistingDictionaryEntry(translationDictionary, payload?.englishWord || payload?.eng);
+    });
+
+    const updateDictionaryApprovalEdit = (approval, field, value) => {
+      const current = getDictionaryApprovalPayload(approval);
+      setDictionaryApprovalEdits((prev) => ({
+        ...prev,
+        [approval.id]: {
+          ...current,
+          [field]: value,
+        },
+      }));
+    };
 
     const approveUpdateRequest = async (approval, options = {}) => {
       if (!approval?.id) return;
@@ -2190,7 +2348,7 @@ function App() {
         header: 'hindiHeaderData',
       };
       const targetField = fieldByType[approvalType];
-      if (!targetField && approvalType !== 'planUpgrade') {
+      if (!targetField && approvalType !== 'planUpgrade' && approvalType !== 'dictionary') {
         alert(`Unsupported approval type: ${approval.type || 'unknown'}`);
         return;
       }
@@ -2215,7 +2373,41 @@ function App() {
         if (approvalType === 'header') {
           nextStatus.hindiHeaderData = 'approved';
         }
-        if (approvalType === 'planUpgrade') {
+        if (approvalType === 'dictionary') {
+          const dictionaryPayload = getDictionaryApprovalPayload(approval);
+          const englishWord = String(dictionaryPayload?.englishWord || dictionaryPayload?.eng || '').trim();
+          const hindiTranslation = String(dictionaryPayload?.hindiTranslation || dictionaryPayload?.hin || '').trim();
+          if (!englishWord || !hindiTranslation) {
+            alert('Dictionary request needs both English word and Hindi translation.');
+            return;
+          }
+          const nextDict = { ...translationDictionary, [englishWord]: hindiTranslation };
+          await setDoc(doc(db, 'settings', 'translationDictionary'), nextDict);
+          await setDoc(doc(db, 'translationDictionary', getDictionaryDocId(englishWord)), {
+            englishWord,
+            hindiTranslation,
+            dealerCode: approval.dealerCode || targetUser.dealerCode || '',
+            dealerName: approval.dealerName || targetUser.dealerName || '',
+            approvalId: approval.id || '',
+            status: 'approved',
+            approvedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          setTranslationDictionary(nextDict);
+          await updateDoc(doc(db, 'users', targetUser.id), {
+            dictionaryPendingCount: Math.max(0, Number(targetUser.dictionaryPendingCount || 0) - 1),
+            updatedAt: serverTimestamp(),
+          });
+          if (approval.source !== 'userDoc') {
+            try {
+              await updateDoc(doc(db, 'updateApprovals', approval.id), {
+                payload: { ...dictionaryPayload, englishWord, hindiTranslation },
+                status: 'approved',
+                approvedAt: serverTimestamp(),
+              });
+            } catch {}
+          }
+        } else if (approvalType === 'planUpgrade') {
           const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
           if (!nextPackage) {
             alert('Plan upgrade request has no selected package.');
@@ -2242,7 +2434,7 @@ function App() {
           updatedAt: serverTimestamp(),
           });
         }
-        if (approval.source !== 'userDoc') {
+        if (approval.source !== 'userDoc' && approvalType !== 'dictionary') {
           try {
             await updateDoc(doc(db, 'updateApprovals', approval.id), {
               status: 'approved',
@@ -2250,10 +2442,17 @@ function App() {
             });
           } catch {}
         }
+        setDictionaryApprovalEdits((prev) => {
+          const next = { ...prev };
+          delete next[approval.id];
+          return next;
+        });
         setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
         await loadData();
         logAdminActivity('update_approved', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
-        alert('Request approved successfully.');
+        if (!options.skipAlert) {
+          alert('Request approved successfully.');
+        }
       } catch {
         alert('Approval failed.');
       }
@@ -2280,12 +2479,19 @@ function App() {
           if (approvalType === 'header') {
             nextStatus.hindiHeaderData = 'rejected';
           }
-          await updateDoc(doc(db, 'users', targetUser.id), {
-            approvalStatus: nextStatus,
-            [`pendingUpdates.${approvalType}.status`]: 'rejected',
-            [`pendingUpdates.${approvalType}.rejectedAt`]: new Date().toISOString(),
-            updatedAt: serverTimestamp(),
-          });
+          if (approvalType === 'dictionary') {
+            await updateDoc(doc(db, 'users', targetUser.id), {
+              dictionaryPendingCount: Math.max(0, Number(targetUser.dictionaryPendingCount || 0) - 1),
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            await updateDoc(doc(db, 'users', targetUser.id), {
+              approvalStatus: nextStatus,
+              [`pendingUpdates.${approvalType}.status`]: 'rejected',
+              [`pendingUpdates.${approvalType}.rejectedAt`]: new Date().toISOString(),
+              updatedAt: serverTimestamp(),
+            });
+          }
         }
         if (approval.source !== 'userDoc') {
           try {
@@ -2295,6 +2501,11 @@ function App() {
             });
           } catch {}
         }
+        setDictionaryApprovalEdits((prev) => {
+          const next = { ...prev };
+          delete next[approval.id];
+          return next;
+        });
         setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
         await loadData();
         logAdminActivity('update_rejected', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
@@ -2464,10 +2675,22 @@ function App() {
         && matchesSubFilter
         && matchesAdminSearch([u.dealerCode, u.dealerName, u.mobile, u.email, u.package, u.pin, u.status, u.role]);
     });
-    const filteredApprovals = combinedPendingApprovals.filter((a) =>
+    const filteredApprovals = nonDictionaryPendingApprovals.filter((a) =>
       isWithinAdminDateRange(a.requestedAt || a.approvedAt || a.rejectedAt) &&
       (adminSubFilter === 'all' || normalizeApprovalType(a.type) === adminSubFilter) &&
       matchesAdminSearch([a.dealerCode, a.dealerName, a.type, a.requestedAt])
+    );
+    const activeDictionaryApprovals = dictionaryRequestView === 'duplicate' ? duplicateDictionaryApprovals : newDictionaryApprovals;
+    const filteredDictionaryApprovals = activeDictionaryApprovals.filter((a) =>
+      isWithinAdminDateRange(a.requestedAt || a.approvedAt || a.rejectedAt) &&
+      matchesAdminSearch([
+        a.dealerCode,
+        a.dealerName,
+        a.type,
+        a.requestedAt,
+        a.payload?.englishWord,
+        a.payload?.hindiTranslation,
+      ])
     );
     const filteredFeedback = feedback.filter((f) => {
       const priority = String(f.priority || 'medium').toLowerCase();
@@ -2488,6 +2711,8 @@ function App() {
           ? filteredFeedback
           : (activeAdminTab === 'active-user' || activeAdminTab === 'total-user')
             ? filteredUsersList
+            : activeAdminTab === 'dictionary'
+              ? filteredDictionaryApprovals
             : activeAdminTab === 'recycle-bin'
               ? deletedUsersBin
               : activeAdminTab === 'audit'
@@ -2497,12 +2722,14 @@ function App() {
     const pagedPendingRegistrationRequests = paginateAdminRows(filteredPendingRegistrationRequests, adminItemsPerPage, adminCurrentPage);
     const pagedUsersList = paginateAdminRows(filteredUsersList, adminItemsPerPage, adminCurrentPage);
     const pagedApprovals = paginateAdminRows(filteredApprovals, adminItemsPerPage, adminCurrentPage);
+    const pagedDictionaryApprovals = paginateAdminRows(filteredDictionaryApprovals, adminItemsPerPage, adminCurrentPage);
     const pagedFeedback = paginateAdminRows(filteredFeedback, adminItemsPerPage, adminCurrentPage);
     const pagedDeletedUsers = paginateAdminRows(deletedUsersBin, adminItemsPerPage, adminCurrentPage);
     const pagedAuditTrail = paginateAdminRows(auditTrail, adminItemsPerPage, adminCurrentPage);
     const notifications = [
       pendingCount > 0 ? { id: 'pending-requests', text: `${pendingCount} registration requests pending`, tone: 'blue' } : null,
-      combinedPendingApprovals.length > 0 ? { id: 'pending-approvals', text: `${combinedPendingApprovals.length} approval requests waiting`, tone: 'amber' } : null,
+      nonDictionaryPendingApprovals.length > 0 ? { id: 'pending-approvals', text: `${nonDictionaryPendingApprovals.length} approval requests waiting`, tone: 'amber' } : null,
+      dictionaryPendingApprovals.length > 0 ? { id: 'pending-dictionary', text: `${dictionaryPendingApprovals.length} dictionary requests waiting`, tone: 'blue' } : null,
       expiringUsers.length > 0 ? { id: 'expiring-users', text: `${expiringUsers.length} active users expiring within 7 days`, tone: 'rose' } : null,
       unreadFeedbackCount > 0 ? { id: 'unread-feedback', text: `${unreadFeedbackCount} unread feedback messages`, tone: 'green' } : null,
     ].filter(Boolean);
@@ -2540,7 +2767,8 @@ function App() {
     };
     const adminStats = [
       { label: 'Pending Registration', value: pendingCount, tone: 'blue' },
-      { label: 'Pending Approval', value: combinedPendingApprovals.length, tone: 'amber' },
+      { label: 'Pending Approval', value: nonDictionaryPendingApprovals.length, tone: 'amber' },
+      { label: 'Dictionary Requests', value: dictionaryPendingApprovals.length, tone: 'blue' },
       { label: 'Active Users', value: activeUsers, tone: 'green' },
       { label: 'Total Users', value: users.length, tone: 'navy' },
       { label: 'Disabled Users', value: disabledUsers, tone: 'slate' },
@@ -2565,9 +2793,9 @@ function App() {
     ];
     const adminTabs = [
       { key: 'dashboard', label: 'Dashboard', count: null },
-      { key: 'dictionary', label: 'Dictionary', count: Object.keys(translationDictionary).length },
+      { key: 'dictionary', label: 'Dictionary', count: dictionaryPendingApprovals.length },
       { key: 'pending-registration', label: 'Pending Registration', count: pendingCount },
-      { key: 'approval', label: 'Approval', count: combinedPendingApprovals.length },
+      { key: 'approval', label: 'Approval', count: nonDictionaryPendingApprovals.length },
       { key: 'active-user', label: 'Active User', count: activeUsersList.length },
       { key: 'total-user', label: 'Total User', count: users.length },
       { key: 'create-user', label: 'Create User', count: null },
@@ -2656,7 +2884,7 @@ function App() {
       },
       'dictionary': {
         title: 'Translation Dictionary',
-        subtitle: 'Manage English to Hindi word mappings to save API costs.',
+        subtitle: `${newDictionaryApprovals.length} new requests, ${duplicateDictionaryApprovals.length} duplicate requests waiting.`,
       },
       'recycle-bin': {
         title: 'Recycle Bin',
@@ -2716,6 +2944,28 @@ function App() {
       clearSelectedApprovalIds();
       alert(`${targets.length} requests rejected.`);
     };
+    const bulkApproveDictionaryRequests = async () => {
+      const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
+      if (targets.length === 0) return;
+      if (!confirmAdminAction(`Approve ${targets.length} selected dictionary requests?`)) return;
+      for (const item of targets) {
+        // eslint-disable-next-line no-await-in-loop
+        await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
+      }
+      clearSelectedApprovalIds();
+      alert(`${targets.length} dictionary requests approved.`);
+    };
+    const bulkRejectDictionaryRequests = async () => {
+      const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
+      if (targets.length === 0) return;
+      if (!confirmAdminAction(`Reject ${targets.length} selected dictionary requests?`)) return;
+      for (const item of targets) {
+        // eslint-disable-next-line no-await-in-loop
+        await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
+      }
+      clearSelectedApprovalIds();
+      alert(`${targets.length} dictionary requests rejected.`);
+    };
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
       if (targets.length === 0) return;
@@ -2754,9 +3004,65 @@ function App() {
       }
     };
 
+    const saveDictionaryRowsToFirebase = async (rows, source = 'admin') => {
+      const entries = rows
+        .map((row) => ({
+          englishWord: String(row.englishWord || row['English Word'] || row.English || row.english || row.Word || row.word || '').trim(),
+          hindiTranslation: String(row.hindiTranslation || row['Hindi Translation'] || row.Hindi || row.hindi || row.Translation || row.translation || '').trim(),
+        }))
+        .filter((row) => row.englishWord && row.hindiTranslation);
+
+      if (entries.length === 0) {
+        alert('No valid dictionary rows found. Use columns like English Word and Hindi Translation.');
+        return;
+      }
+
+      const nextDict = entries.reduce((acc, item) => {
+        acc[item.englishWord] = item.hindiTranslation;
+        return acc;
+      }, { ...translationDictionary });
+
+      await setDoc(doc(db, 'settings', 'translationDictionary'), nextDict);
+      await Promise.all(entries.map((item) => setDoc(doc(db, 'translationDictionary', getDictionaryDocId(item.englishWord)), {
+        englishWord: item.englishWord,
+        hindiTranslation: item.hindiTranslation,
+        source,
+        status: 'approved',
+        updatedAt: serverTimestamp(),
+      })));
+      setTranslationDictionary(nextDict);
+      logAdminActivity('dictionary_bulk_imported', { count: entries.length, source });
+      alert(`${entries.length} dictionary words saved to Firebase.`);
+    };
+
+    const handleDictionaryImport = async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const { default: XLSX } = await import('xlsx');
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(worksheet);
+            await saveDictionaryRowsToFirebase(rows, 'admin-excel');
+          } catch {
+            alert('Dictionary import failed.');
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } catch {
+        alert('Dictionary import failed.');
+      } finally {
+        event.target.value = null;
+      }
+    };
+
     useEffect(() => {
       setAdminNotifications(notifications);
-    }, [pendingCount, combinedPendingApprovals.length, expiringUsers.length, unreadFeedbackCount]);
+    }, [pendingCount, nonDictionaryPendingApprovals.length, dictionaryPendingApprovals.length, expiringUsers.length, unreadFeedbackCount]);
 
     useEffect(() => {
       setAdminCurrentPage((prev) => Math.min(prev, adminTotalPages));
@@ -2804,7 +3110,7 @@ function App() {
 
           <div className="admin-highlight">
             <div className="admin-highlight-title">Quick Snapshot</div>
-            <div className="admin-highlight-value">{pendingCount + combinedPendingApprovals.length}</div>
+            <div className="admin-highlight-value">{pendingCount + nonDictionaryPendingApprovals.length + dictionaryPendingApprovals.length}</div>
             <div className="admin-highlight-text">items need admin action right now</div>
           </div>
         </div>
@@ -2822,7 +3128,7 @@ function App() {
           <div className="admin-utility-card">
             <div className="admin-utility-head">
               <h3>Approval Summary</h3>
-              <span>{combinedPendingApprovals.length} pending</span>
+              <span>{nonDictionaryPendingApprovals.length} pending</span>
             </div>
             <div className="admin-mini-stats">
               {approvalSummaryCards.map((item) => (
@@ -2916,6 +3222,9 @@ function App() {
             )}
             {activeAdminTab === 'approval' && (
               <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('approvals.csv', filteredApprovals)}>Export CSV</button>
+            )}
+            {activeAdminTab === 'dictionary' && (
+              <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('dictionary-requests.csv', filteredDictionaryApprovals)}>Export CSV</button>
             )}
             {activeAdminTab === 'feedback' && (
               <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('feedback.csv', filteredFeedback)}>Export CSV</button>
@@ -3231,22 +3540,44 @@ function App() {
                       <td colSpan="6" className="admin-empty-cell">No approval requests match the current search.</td>
                     </tr>
                   ) : (
-                    pagedApprovals.map((a) => (
-                      <tr key={a.id}>
-                        <td><input type="checkbox" checked={selectedApprovalIds.includes(a.id)} onChange={() => toggleApprovalSelection(a.id)} /></td>
-                        <td>{a.dealerCode || '-'}</td>
-                        <td>{a.dealerName || '-'}</td>
-                        <td><span className="admin-status-chip admin-status-chip--amber">{a.type || '-'}</span></td>
-                        <td>{formatDisplayDate(a.requestedAt)}</td>
-                        <td>
-                          <div className="admin-actions">
-                            <button onClick={() => setViewApproval(a)}>View</button>
-                            <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
-                            <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    pagedApprovals.map((a) => {
+                      const approvalType = normalizeApprovalType(a.type);
+                      const dictionaryPayload = approvalType === 'dictionary' ? getDictionaryApprovalPayload(a) : null;
+                      return (
+                        <tr key={a.id}>
+                          <td><input type="checkbox" checked={selectedApprovalIds.includes(a.id)} onChange={() => toggleApprovalSelection(a.id)} /></td>
+                          <td>{a.dealerCode || '-'}</td>
+                          <td>{a.dealerName || '-'}</td>
+                          <td>
+                            <span className="admin-status-chip admin-status-chip--amber">{a.type || '-'}</span>
+                            {approvalType === 'dictionary' && (
+                              <div className="dictionary-approval-edit">
+                                <input
+                                  className="form-input"
+                                  value={dictionaryPayload?.englishWord || ''}
+                                  onChange={(e) => updateDictionaryApprovalEdit(a, 'englishWord', e.target.value)}
+                                  placeholder="English word"
+                                />
+                                <input
+                                  className="form-input"
+                                  value={dictionaryPayload?.hindiTranslation || ''}
+                                  onChange={(e) => updateDictionaryApprovalEdit(a, 'hindiTranslation', e.target.value)}
+                                  placeholder="Hindi translation"
+                                />
+                              </div>
+                            )}
+                          </td>
+                          <td>{formatDisplayDate(a.requestedAt)}</td>
+                          <td>
+                            <div className="admin-actions">
+                              <button onClick={() => setViewApproval({ ...a, payload: dictionaryPayload || a.payload })}>View</button>
+                              <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
+                              <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -3319,35 +3650,89 @@ function App() {
         {activeAdminTab === 'dictionary' && (
           <div className="admin-section">
             <div className="admin-bulk-bar">
-              <span>Manage Translation Dictionary</span>
+              <span>{selectedApprovalIds.length} dictionary request selected</span>
+              <div className="admin-bulk-actions">
+                <button
+                  className={`admin-ghost-btn ${dictionaryRequestView === 'new' ? 'dictionary-submenu-active' : ''}`}
+                  onClick={() => {
+                    setDictionaryRequestView('new');
+                    clearSelectedApprovalIds();
+                  }}
+                >
+                  Dictionary ({newDictionaryApprovals.length})
+                </button>
+                <button
+                  className={`admin-ghost-btn ${dictionaryRequestView === 'duplicate' ? 'dictionary-submenu-active' : ''}`}
+                  onClick={() => {
+                    setDictionaryRequestView('duplicate');
+                    clearSelectedApprovalIds();
+                  }}
+                >
+                  Dup-Dictonary ({duplicateDictionaryApprovals.length})
+                </button>
+                <button className="admin-ghost-btn" onClick={() => dictionaryImportRef.current?.click()} disabled={!canMutateAdminData}>Import Excel</button>
+                <input ref={dictionaryImportRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleDictionaryImport} />
+                <button className="admin-ghost-btn" onClick={() => setSelectedApprovalIds(filteredDictionaryApprovals.map((a) => a.id))}>Select All Requests</button>
+                <button className="admin-ghost-btn" onClick={bulkApproveDictionaryRequests} disabled={!canMutateAdminData}>Bulk Approve</button>
+                <button className="admin-ghost-btn" onClick={bulkRejectDictionaryRequests} disabled={!canMutateAdminData}>Bulk Reject</button>
+              </div>
             </div>
-            <div className="admin-form">
-               <input className="form-input" placeholder="English Word (e.g. Mr.)" value={dictEng} onChange={(e) => setDictEng(e.target.value)} />
-               <input className="form-input" placeholder="Hindi Translation (e.g. श्री)" value={dictHin} onChange={(e) => setDictHin(e.target.value)} />
-               <button onClick={handleAddDict} disabled={!canMutateAdminData}>Add Word</button>
-            </div>
-            <div className="admin-table-wrap" style={{ marginTop: '20px' }}>
+            <div className="admin-table-wrap" style={{ marginBottom: '20px' }}>
               <table className="admin-table">
                 <thead>
                   <tr>
+                    <th>Select</th>
+                    <th>Code</th>
+                    <th>Name</th>
                     <th>English Word</th>
+                    {dictionaryRequestView === 'duplicate' && <th>Existing Hindi</th>}
                     <th>Hindi Translation</th>
+                    <th>Date</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.keys(translationDictionary).length === 0 ? (
-                    <tr><td colSpan="3" className="admin-empty-cell">No dictionary words found.</td></tr>
+                  {pagedDictionaryApprovals.length === 0 ? (
+                    <tr><td colSpan={dictionaryRequestView === 'duplicate' ? 8 : 7} className="admin-empty-cell">No dictionary approval requests pending.</td></tr>
                   ) : (
-                    Object.entries(translationDictionary).map(([eng, hin]) => (
-                      <tr key={eng}>
-                        <td>{eng}</td>
-                        <td>{hin}</td>
-                        <td>
-                          <button className="feedback-delete-btn" onClick={() => handleDeleteDict(eng)} disabled={!canMutateAdminData}>Delete</button>
-                        </td>
-                      </tr>
-                    ))
+                    pagedDictionaryApprovals.map((a) => {
+                      const dictionaryPayload = getDictionaryApprovalPayload(a);
+                      const existingEntry = getExistingDictionaryEntry(translationDictionary, dictionaryPayload?.englishWord || dictionaryPayload?.eng);
+                      return (
+                        <tr key={a.id}>
+                          <td><input type="checkbox" checked={selectedApprovalIds.includes(a.id)} onChange={() => toggleApprovalSelection(a.id)} /></td>
+                          <td>{a.dealerCode || '-'}</td>
+                          <td>{a.dealerName || '-'}</td>
+                          <td>
+                            <input
+                              className="form-input"
+                              value={dictionaryPayload?.englishWord || ''}
+                              onChange={(e) => updateDictionaryApprovalEdit(a, 'englishWord', e.target.value)}
+                              placeholder="English word"
+                            />
+                          </td>
+                          {dictionaryRequestView === 'duplicate' && (
+                            <td className="dictionary-existing-value">{existingEntry?.hindiTranslation || '-'}</td>
+                          )}
+                          <td>
+                            <input
+                              className="form-input"
+                              value={dictionaryPayload?.hindiTranslation || ''}
+                              onChange={(e) => updateDictionaryApprovalEdit(a, 'hindiTranslation', e.target.value)}
+                              placeholder="Hindi translation"
+                            />
+                          </td>
+                          <td>{formatDisplayDate(a.requestedAt)}</td>
+                          <td>
+                            <div className="admin-actions">
+                              <button onClick={() => setViewApproval({ ...a, payload: dictionaryPayload })}>View</button>
+                              <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
+                              <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -3450,7 +3835,7 @@ function App() {
           </div>
         )}
 
-        {['pending-registration', 'approval', 'active-user', 'total-user', 'feedback', 'recycle-bin', 'audit'].includes(activeAdminTab) && adminTotalPages > 1 && (
+        {['pending-registration', 'approval', 'dictionary', 'active-user', 'total-user', 'feedback', 'recycle-bin', 'audit'].includes(activeAdminTab) && adminTotalPages > 1 && (
           <div className="admin-pagination">
             <button className="admin-ghost-btn" onClick={() => setAdminCurrentPage((prev) => Math.max(1, prev - 1))} disabled={adminCurrentPage === 1}>Previous</button>
             <span>Page {adminCurrentPage} of {adminTotalPages}</span>
@@ -5366,6 +5751,9 @@ function App() {
                   <div className="dropdown-menu">
                     <button onClick={handleUserProfile}>User Profile</button>
                     <button onClick={handleAboutOpen} disabled={isPlanExpired}>About</button>
+                    <button onClick={handleDictionaryOpen} disabled={isPlanExpired}>
+                      Dictionary ({Number(loggedInUser?.dictionaryPendingCount || 0)} pending)
+                    </button>
                     <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
                     <button onClick={handleContactOpen} disabled={isPlanExpired}>Contact</button>
                     <button onClick={handleProfileUpdate} disabled={isPlanExpired}>Profile Update</button>
@@ -5393,9 +5781,10 @@ function App() {
           </div>
         </nav>
       )}
-      {(showUpgradePlan || showUserProfile || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showContactForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
+          {showDictionaryForm && <DictionaryRequestForm onClose={navigateToHome} />}
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && (

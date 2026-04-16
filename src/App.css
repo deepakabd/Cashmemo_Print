@@ -231,6 +231,46 @@
   word-break: break-word;
 }
 
+.dictionary-request-panel {
+  max-width: 560px;
+  width: 100%;
+}
+
+.dictionary-pending-count {
+  display: inline-flex;
+  margin-bottom: 14px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #fff1da;
+  color: #995c00;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dictionary-approval-edit {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  min-width: 220px;
+}
+
+.dictionary-approval-edit .form-input {
+  min-height: 28px;
+  font-size: 11px;
+  padding: 5px 7px;
+}
+
+.dictionary-submenu-active {
+  background: #1f4fb2 !important;
+  color: #fff !important;
+  border-color: #1f4fb2 !important;
+}
+
+.dictionary-existing-value {
+  color: #b91c1c;
+  font-weight: 800;
+}
+
 .filters-shell {
   margin-top: 20px;
 }
