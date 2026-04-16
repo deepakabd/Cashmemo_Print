@@ -245,26 +245,39 @@ const PACKAGE_OPTIONS = [
   'Demo Package - 7 Days',
   'Premium Package - 30 Days',
   'Enterprise Package - 365 Days',
-  'Premium Package (हिंदी) - 365 Days',
+  'Enterprise Package with (हिंदी) - 365 Days',
 ];
 
 const PACKAGE_PRICING = {
   'Demo Package - 7 Days': 'Free',
   'Premium Package - 30 Days': 'Rs. 3000',
   'Enterprise Package - 365 Days': 'Rs. 7500',
+  'Enterprise Package with (हिंदी) - 365 Days': 'Rs. 10000',
+  'Premium Package with (हिंदी) - 365 Days': 'Rs. 10000',
   'Premium Package (हिंदी) - 365 Days': 'Rs. 10000',
 };
 
 const PAYMENT_UPI_ID = '8002074620@ybl';
+const HINDI_ENTERPRISE_PACKAGE_NAMES = [
+  'Enterprise Package with (हिंदी) - 365 Days',
+  'Premium Package with (हिंदी) - 365 Days',
+  'Premium Package (हिंदी) - 365 Days',
+];
 
 const getPackageValidityDays = (packageName = '') => {
   const normalized = String(packageName || '').toLowerCase();
   if (normalized.includes('demo')) return 7;
-  if (normalized.includes('premium package (हिंदी)')) return 365;
+  if (
+    normalized.includes('enterprise package with (हिंदी)') ||
+    normalized.includes('premium package with (हिंदी)') ||
+    normalized.includes('premium package (हिंदी)')
+  ) return 365;
   if (normalized.includes('premium')) return 30;
   if (normalized.includes('enterprise')) return 365;
   return 0;
 };
+
+const isHindiEnterprisePackage = (packageName = '') => HINDI_ENTERPRISE_PACKAGE_NAMES.includes(packageName);
 
 const computeValidityDates = (packageName = '', baseDate = new Date()) => {
   const days = getPackageValidityDays(packageName);
@@ -305,9 +318,18 @@ const getRemainingDays = (validTill) => {
 };
 
 const formatPackageNameForNavbar = (packageName = '') => {
-  const name = String(packageName || '').trim();
+  const name = String(packageName || '')
+    .trim()
+    .replace('Premium Package with (हिंदी)', 'Enterprise Package with (हिंदी)')
+    .replace('Premium Package (हिंदी)', 'Enterprise Package with (हिंदी)');
   if (!name) return 'N/A';
   return name.replace(/\s*-\s*\d+\s*Days?\s*$/i, '').trim();
+};
+
+const formatPackageOptionLabel = (packageName = '') => {
+  const days = getPackageValidityDays(packageName);
+  const validityText = days > 0 ? `${days} ${days === 1 ? 'Day' : 'Days'}` : 'N/A';
+  return `${formatPackageNameForNavbar(packageName)} - ${PACKAGE_PRICING[packageName] || '-'} - Validity: ${validityText}`;
 };
 
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS.filter((pkg) => !pkg.toLowerCase().includes('demo'));
@@ -1437,7 +1459,7 @@ function App() {
           >
             {PLAN_UPGRADE_OPTIONS.map((pkg) => (
               <option key={pkg} value={pkg}>
-                {`${formatPackageNameForNavbar(pkg)} - ${PACKAGE_PRICING[pkg] || '-'}`}
+                {formatPackageOptionLabel(pkg)}
               </option>
             ))}
           </select>
@@ -5342,7 +5364,7 @@ function App() {
                 </div>
                 {showUserMenu && (
                   <div className="dropdown-menu">
-                    <button onClick={handleUserProfile} disabled={isPlanExpired}>User Profile</button>
+                    <button onClick={handleUserProfile}>User Profile</button>
                     <button onClick={handleAboutOpen} disabled={isPlanExpired}>About</button>
                     <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
                     <button onClick={handleContactOpen} disabled={isPlanExpired}>Contact</button>
@@ -5350,7 +5372,7 @@ function App() {
                     <button onClick={handleBankDetails} disabled={isPlanExpired}>Bank Details</button>
                     <button onClick={handleRateUpdate} disabled={isPlanExpired}>Rate Update</button>
                     <button onClick={handleLabelUpdate} disabled={isPlanExpired}>Lebel Update</button>
-                    {loggedInUser?.package === 'Premium Package (हिंदी) - 365 Days' && (
+                    {isHindiEnterprisePackage(loggedInUser?.package) && (
                       <button onClick={handleHeaderUpdate} disabled={isPlanExpired}>Header Update</button>
                     )}
                     <button onClick={handleLogout}>Logout</button>
@@ -5371,7 +5393,7 @@ function App() {
           </div>
         </nav>
       )}
-      {(showUpgradePlan || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showUserProfile || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showContactForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showHomeInfo && <HomeInfo />}
@@ -5705,7 +5727,7 @@ function App() {
               </select>
             </div>
 
-            {loggedInUser?.package === 'Premium Package (हिंदी) - 365 Days' && (
+            {isHindiEnterprisePackage(loggedInUser?.package) && (
               <div className="table-control-group">
                 <label className="table-control-label" htmlFor="printLanguageSelect">Print Language</label>
                 <select className="table-select" id="printLanguageSelect" onChange={(e) => setPrintLanguage(e.target.value)} value={printLanguage}>
