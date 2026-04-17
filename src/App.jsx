@@ -356,6 +356,8 @@ const normalizePendingTypeLabel = (type) => {
   if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
   if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
   if (raw === 'planupgrade' || raw === 'plan' || raw === 'package') return 'plan upgrade';
+  if (raw === 'deliveryarea' || raw === 'delivery area') return 'Delivery Area';
+  if (raw === 'deliverystaff' || raw === 'delivery staff') return 'Delivery Staff';
   return raw;
 };
 
@@ -430,6 +432,7 @@ function App() {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
   const [showDictionaryForm, setShowDictionaryForm] = useState(false);
+  const [dictionaryFormMode, setDictionaryFormMode] = useState('default');
   const [showHomeInfo, setShowHomeInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(true);
   const [showInvoicePage, setShowInvoicePage] = useState(false);
@@ -1093,6 +1096,21 @@ function App() {
 
   const handleDictionaryOpen = () => {
     hideAllViews();
+    setDictionaryFormMode('default');
+    setShowDictionaryForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleDeliveryAreaUpdate = () => {
+    hideAllViews();
+    setDictionaryFormMode('deliveryArea');
+    setShowDictionaryForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleDeliveryStaffUpdate = () => {
+    hideAllViews();
+    setDictionaryFormMode('deliveryStaff');
     setShowDictionaryForm(true);
     setShowUserMenu(false);
   };
@@ -1442,9 +1460,40 @@ function App() {
     );
   };
 
-  const DictionaryRequestForm = ({ onClose }) => {
+  const DictionaryRequestForm = ({ mode = 'default', onClose }) => {
     const [form, setForm] = useState({ englishWord: '', hindiTranslation: '' });
+    const [entries, setEntries] = useState([{ englishWord: '', hindiTranslation: '' }]);
     const pendingCount = getPendingDictionaryRequestCount(loggedInUser);
+    const isDeliveryAreaMode = mode === 'deliveryArea';
+    const isDeliveryStaffMode = mode === 'deliveryStaff';
+    const title = isDeliveryAreaMode ? 'Delivery Area Update' : isDeliveryStaffMode ? 'Delivery Staff Update' : 'Dictionary';
+    const englishPlaceholder = isDeliveryAreaMode ? 'e.g. Khera Bazar' : isDeliveryStaffMode ? 'e.g. Rajesh' : 'e.g. Mr.';
+    const hindiPlaceholder = isDeliveryAreaMode ? 'उदा: खेरा बाजार' : isDeliveryStaffMode ? 'उदा: राजेश' : 'उदाहरण: श्री';
+
+    useEffect(() => {
+      if (isDeliveryAreaMode || isDeliveryStaffMode) {
+        setEntries(Array.from({ length: 5 }, () => ({ englishWord: '', hindiTranslation: '' })));
+      } else {
+        setEntries([{ englishWord: '', hindiTranslation: '' }]);
+        setForm({ englishWord: '', hindiTranslation: '' });
+      }
+    }, [mode, isDeliveryAreaMode, isDeliveryStaffMode]);
+
+    const updateEntry = (index, field, value) => {
+      setEntries((prev) => prev.map((entry, entryIndex) => (
+        entryIndex === index
+          ? { ...entry, [field]: value }
+          : entry
+      )));
+    };
+
+    const addEntry = () => {
+      setEntries((prev) => [...prev, { englishWord: '', hindiTranslation: '' }]);
+    };
+
+    const removeEntry = (index) => {
+      setEntries((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
+    };
 
     const handleChange = (e) => {
       const { name, value } = e.target;
@@ -1452,14 +1501,46 @@ function App() {
     };
 
     const submitDictionaryRequest = async () => {
+      const type = isDeliveryAreaMode ? 'deliveryArea' : isDeliveryStaffMode ? 'deliveryStaff' : 'dictionary';
+      const successMessage = isDeliveryAreaMode
+        ? 'Delivery area update request submitted. Your request is pending with admin for approval.'
+        : isDeliveryStaffMode
+        ? 'Delivery staff update request submitted. Your request is pending with admin for approval.'
+        : 'Dictionary request submitted. Your request is pending with admin for approval.';
+
+      if (!loggedInUser?.id) {
+        alert('Please login first.');
+        return;
+      }
+
+      if (isDeliveryAreaMode || isDeliveryStaffMode) {
+        const normalizedEntries = entries.map((entry) => ({
+          englishWord: String(entry.englishWord || '').trim(),
+          hindiTranslation: String(entry.hindiTranslation || '').trim(),
+        })).filter((entry) => entry.englishWord || entry.hindiTranslation);
+
+        if (normalizedEntries.length === 0 || normalizedEntries.some((entry) => !entry.englishWord || !entry.hindiTranslation)) {
+          alert('Har row mein English aur Hindi dono values bharen.');
+          return;
+        }
+
+        const ok = await submitUpdateApprovalRequest({
+          type,
+          payload: normalizedEntries,
+          localKey: type === 'deliveryArea' ? 'deliveryAreaUpdates' : 'deliveryStaffUpdates',
+          successMessage,
+        });
+        if (ok) {
+          setEntries([{ englishWord: '', hindiTranslation: '' }]);
+          onClose();
+        }
+        return;
+      }
+
       const englishWord = form.englishWord.trim();
       const hindiTranslation = form.hindiTranslation.trim();
       if (!englishWord || !hindiTranslation) {
         alert('English word aur Hindi translation required hai.');
-        return;
-      }
-      if (!loggedInUser?.id) {
-        alert('Please login first.');
         return;
       }
 
@@ -1538,25 +1619,68 @@ function App() {
 
     return (
       <div className="placeholder-container dictionary-request-panel">
-        <h2>Dictionary</h2>
-        <div className="dictionary-pending-count">{pendingCount} request pending</div>
+        <h2>{title}</h2>
+        {mode === 'default' ? (
+          <div className="dictionary-pending-count">{pendingCount} request pending</div>
+        ) : null}
         <div className="profile-form">
-          <span className="profile-label">English Word</span>
-          <input
-            className="form-input"
-            name="englishWord"
-            value={form.englishWord}
-            onChange={handleChange}
-            placeholder="e.g. Mr."
-          />
-          <span className="profile-label">Hindi Translation</span>
-          <input
-            className="form-input"
-            name="hindiTranslation"
-            value={form.hindiTranslation}
-            onChange={handleChange}
-            placeholder="e.g. श्री"
-          />
+          {isDeliveryAreaMode || isDeliveryStaffMode ? (
+            <>
+              <div className="dictionary-multi-header">
+                <span>Sr.</span>
+                <span>{isDeliveryAreaMode ? 'English Area' : 'English Staff'}</span>
+                <span>Hindi Translation</span>
+                <span>Action</span>
+              </div>
+              {entries.map((entry, index) => (
+                <div key={index} className="dictionary-multi-entry">
+                  <span>{index + 1}</span>
+                  <input
+                    className="form-input"
+                    value={entry.englishWord}
+                    onChange={(e) => updateEntry(index, 'englishWord', e.target.value)}
+                    placeholder={englishPlaceholder}
+                  />
+                  <input
+                    className="form-input"
+                    value={entry.hindiTranslation}
+                    onChange={(e) => updateEntry(index, 'hindiTranslation', e.target.value)}
+                    placeholder={hindiPlaceholder}
+                  />
+                  <button
+                    type="button"
+                    className="dictionary-row-remove"
+                    onClick={() => removeEntry(index)}
+                    disabled={entries.length <= 1}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button type="button" className="dictionary-request-add-row" onClick={addEntry}>
+                Add Another Row
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="profile-label">English Word</span>
+              <input
+                className="form-input"
+                name="englishWord"
+                value={form.englishWord}
+                onChange={handleChange}
+                placeholder={englishPlaceholder}
+              />
+              <span className="profile-label">Hindi Translation</span>
+              <input
+                className="form-input"
+                name="hindiTranslation"
+                value={form.hindiTranslation}
+                onChange={handleChange}
+                placeholder={hindiPlaceholder}
+              />
+            </>
+          )}
         </div>
         <div className="form-actions">
           <button onClick={submitDictionaryRequest}>Send Request</button>
@@ -2323,6 +2447,8 @@ function App() {
       if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
       if (raw === 'planupgrade' || raw === 'plan' || raw === 'package') return 'planUpgrade';
       if (raw === 'dictionary' || raw === 'dict' || raw === 'translationdictionary') return 'dictionary';
+      if (raw === 'deliveryarea' || raw === 'delivery area') return 'deliveryArea';
+      if (raw === 'deliverystaff' || raw === 'delivery staff') return 'deliveryStaff';
       return raw;
     };
 
@@ -2413,6 +2539,8 @@ function App() {
         bank: 'bankDetailsData',
         rates: 'ratesData',
         header: 'hindiHeaderData',
+        deliveryArea: 'deliveryAreaUpdates',
+        deliveryStaff: 'deliveryStaffUpdates',
       };
       const targetField = fieldByType[approvalType];
       if (!targetField && approvalType !== 'planUpgrade' && approvalType !== 'dictionary') {
@@ -2498,13 +2626,37 @@ function App() {
             [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
             updatedAt: serverTimestamp(),
           });
+        } else if (approvalType === 'deliveryArea' || approvalType === 'deliveryStaff') {
+          const existingUpdates = Array.isArray(targetUser[targetField]) ? targetUser[targetField] : [];
+          const incomingUpdates = Array.isArray(approval.payload) ? approval.payload : [approval.payload];
+          const nextUpdates = [...existingUpdates];
+
+          incomingUpdates.forEach((entry) => {
+            const english = String(entry.englishWord || entry.english || '').trim();
+            const hindi = String(entry.hindiTranslation || entry.hindi || '').trim();
+            if (!english || !hindi) return;
+            const existingIndex = nextUpdates.findIndex((current) => String(current?.englishWord || current?.english || '').trim().toLowerCase() === english.toLowerCase());
+            if (existingIndex >= 0) {
+              nextUpdates[existingIndex] = { englishWord: english, hindiTranslation: hindi };
+            } else {
+              nextUpdates.push({ englishWord: english, hindiTranslation: hindi });
+            }
+          });
+
+          await updateDoc(doc(db, 'users', targetUser.id), {
+            [targetField]: nextUpdates,
+            approvalStatus: nextStatus,
+            [`pendingUpdates.${approvalType}.status`]: 'approved',
+            [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
+            updatedAt: serverTimestamp(),
+          });
         } else {
           await updateDoc(doc(db, 'users', targetUser.id), {
-          [targetField]: approval.payload,
-          approvalStatus: nextStatus,
-          [`pendingUpdates.${approvalType}.status`]: 'approved',
-          [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
-          updatedAt: serverTimestamp(),
+            [targetField]: approval.payload,
+            approvalStatus: nextStatus,
+            [`pendingUpdates.${approvalType}.status`]: 'approved',
+            [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
+            updatedAt: serverTimestamp(),
           });
         }
         if (approval.source !== 'userDoc' && approvalType !== 'dictionary') {
@@ -4421,6 +4573,12 @@ function App() {
             if (customer['Address']) {
               translatedCustomer['Address Hindi'] = await transliterateText(customer['Address']);
             }
+            if (customer['Delivery Area']) {
+              translatedCustomer['Delivery Area'] = await transliterateText(customer['Delivery Area']);
+            }
+            if (customer['Delivery Man']) {
+              translatedCustomer['Delivery Man'] = await transliterateText(customer['Delivery Man']);
+            }
             return translatedCustomer;
           })
         );
@@ -5774,6 +5932,8 @@ function App() {
     .filter(([, status]) => status === 'pending')
     .map(([type]) => normalizePendingTypeLabel(type));
   const pendingUserApprovalTypes = Array.from(new Set([...pendingTypesFromUpdates, ...pendingTypesFromStatus]));
+  const deliveryAreaUpdates = Array.isArray(loggedInUser?.deliveryAreaUpdates) ? loggedInUser.deliveryAreaUpdates : [];
+  const deliveryStaffUpdates = Array.isArray(loggedInUser?.deliveryStaffUpdates) ? loggedInUser.deliveryStaffUpdates : [];
   const navbarPackageName = formatPackageNameForNavbar(loggedInUser?.package);
   const packageValidityText = loggedInUser?.validTill
     ? isPlanExpired
@@ -5842,9 +6002,33 @@ function App() {
                     <button onClick={handleRateUpdate} disabled={isPlanExpired}>Rate Update</button>
                     <button onClick={handleLabelUpdate} disabled={isPlanExpired}>Lebel Update</button>
                     {isHindiEnterprisePackage(loggedInUser?.package) && (
-                      <button onClick={handleHeaderUpdate} disabled={isPlanExpired}>Header Update</button>
+                      <>
+                        <button onClick={handleDeliveryAreaUpdate} disabled={isPlanExpired}>Delivery Area Update</button>
+                        <button onClick={handleDeliveryStaffUpdate} disabled={isPlanExpired}>Delivery Staff Update</button>
+                        <button onClick={handleHeaderUpdate} disabled={isPlanExpired}>Header Update</button>
+                      </>
                     )}
                     <button onClick={handleLogout}>Logout</button>
+                    {deliveryAreaUpdates.length > 0 && (
+                      <div className="dropdown-menu__section">
+                        <div className="dropdown-menu__title">Approved Delivery Areas</div>
+                        {deliveryAreaUpdates.map((item, index) => (
+                          <div key={`area-${index}`} className="dropdown-menu__item-text">
+                            {String(item.englishWord || item.english || '').trim() || '-'} / {String(item.hindiTranslation || item.hindi || '').trim() || '-'}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {deliveryStaffUpdates.length > 0 && (
+                      <div className="dropdown-menu__section">
+                        <div className="dropdown-menu__title">Approved Delivery Staff</div>
+                        {deliveryStaffUpdates.map((item, index) => (
+                          <div key={`staff-${index}`} className="dropdown-menu__item-text">
+                            {String(item.englishWord || item.english || '').trim() || '-'} / {String(item.hindiTranslation || item.hindi || '').trim() || '-'}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -5865,7 +6049,7 @@ function App() {
       {(showUpgradePlan || showUserProfile || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showContactForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
-          {showDictionaryForm && <DictionaryRequestForm onClose={navigateToHome} />}
+          {showDictionaryForm && <DictionaryRequestForm mode={dictionaryFormMode} onClose={navigateToHome} />}
           {showHomeInfo && <HomeInfo />}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && (

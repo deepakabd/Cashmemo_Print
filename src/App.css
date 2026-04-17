@@ -698,6 +698,76 @@
   background-color: #6c757d;
 }
 
+.dictionary-request-panel .profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dictionary-request-panel .dictionary-multi-header,
+.dictionary-request-panel .dictionary-multi-entry {
+  display: grid;
+  grid-template-columns: 50px minmax(200px, 1fr) minmax(200px, 1fr) 110px;
+  gap: 10px 12px;
+  align-items: center;
+}
+
+.dictionary-request-panel .dictionary-multi-header {
+  font-weight: 700;
+  color: #153251;
+  padding: 10px 12px;
+  border-bottom: 1px solid #d5dee9;
+  background: #f3f7fb;
+  border-radius: 12px;
+}
+
+.dictionary-request-panel .dictionary-multi-entry {
+  padding: 12px 12px 8px;
+  border: 1px solid #dde2ea;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.dictionary-request-panel .dictionary-multi-entry input {
+  width: 100%;
+}
+
+.dictionary-request-panel .dictionary-multi-entry button {
+  justify-self: start;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #6c757d;
+  color: #fff;
+  cursor: pointer;
+}
+
+.dictionary-request-panel .dictionary-multi-entry button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dictionary-request-panel .dictionary-request-add-row {
+  width: fit-content;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #0d6efd;
+  color: #fff;
+  cursor: pointer;
+}
+
+.dictionary-request-panel .dictionary-request-add-row:hover,
+.dictionary-request-panel .dictionary-multi-entry button:hover,
+.form-actions button:hover {
+  opacity: 0.9;
+}
+
+.dictionary-request-panel .dictionary-multi-entry + .dictionary-multi-entry {
+  margin-top: 8px;
+}
+
 .label-update-page {
   max-width: 1180px;
 }
