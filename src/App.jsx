@@ -2462,26 +2462,22 @@ function App() {
           });
           setTranslationDictionary(nextDict);
           const nextPendingDictionaryRequests = (Array.isArray(targetUser.pendingDictionaryRequests) ? targetUser.pendingDictionaryRequests : [])
-            .map((request) => {
+            .filter((request) => {
               const matchesRequest = request?.approvalId === approval.id
                 || request?.approvalId === approval.approvalId
                 || request?.id === dictionaryPayload?.clientRequestId
                 || request?.payload?.clientRequestId === dictionaryPayload?.clientRequestId;
-              return matchesRequest ? { ...request, status: 'approved', approvedAt: new Date().toISOString() } : request;
+              return !matchesRequest;
             });
           await updateDoc(doc(db, 'users', targetUser.id), {
-            dictionaryPendingCount: Math.max(0, Number(targetUser.dictionaryPendingCount || 0) - 1),
+            dictionaryPendingCount: Math.max(0, nextPendingDictionaryRequests.length),
             pendingDictionaryRequests: nextPendingDictionaryRequests,
             updatedAt: serverTimestamp(),
           });
           const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
           if (approvalDocId) {
             try {
-              await updateDoc(doc(db, 'updateApprovals', approvalDocId), {
-                payload: { ...dictionaryPayload, englishWord, hindiTranslation },
-                status: 'approved',
-                approvedAt: serverTimestamp(),
-              });
+              await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
             } catch {}
           }
         } else if (approvalType === 'planUpgrade') {
@@ -2559,15 +2555,15 @@ function App() {
           if (approvalType === 'dictionary') {
             const dictionaryPayload = getDictionaryApprovalPayload(approval);
             const nextPendingDictionaryRequests = (Array.isArray(targetUser.pendingDictionaryRequests) ? targetUser.pendingDictionaryRequests : [])
-              .map((request) => {
+              .filter((request) => {
                 const matchesRequest = request?.approvalId === approval.id
                   || request?.approvalId === approval.approvalId
                   || request?.id === dictionaryPayload?.clientRequestId
                   || request?.payload?.clientRequestId === dictionaryPayload?.clientRequestId;
-                return matchesRequest ? { ...request, status: 'rejected', rejectedAt: new Date().toISOString() } : request;
+                return !matchesRequest;
               });
             await updateDoc(doc(db, 'users', targetUser.id), {
-              dictionaryPendingCount: Math.max(0, Number(targetUser.dictionaryPendingCount || 0) - 1),
+              dictionaryPendingCount: Math.max(0, nextPendingDictionaryRequests.length),
               pendingDictionaryRequests: nextPendingDictionaryRequests,
               updatedAt: serverTimestamp(),
             });
@@ -2583,10 +2579,7 @@ function App() {
         const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
         if (approvalDocId) {
           try {
-            await updateDoc(doc(db, 'updateApprovals', approvalDocId), {
-              status: 'rejected',
-              rejectedAt: serverTimestamp(),
-            });
+            await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
           } catch {}
         }
         setDictionaryApprovalEdits((prev) => {
