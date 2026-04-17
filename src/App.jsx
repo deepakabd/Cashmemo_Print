@@ -278,6 +278,7 @@ const getPackageValidityDays = (packageName = '') => {
 };
 
 const isHindiEnterprisePackage = (packageName = '') => HINDI_ENTERPRISE_PACKAGE_NAMES.includes(packageName);
+const isEnterpriseHindiPackage = (packageName = '') => String(packageName || '').trim() === 'Enterprise Package with (हिंदी) - 365 Days';
 
 const computeValidityDates = (packageName = '', baseDate = new Date()) => {
   const days = getPackageValidityDays(packageName);
@@ -1469,6 +1470,39 @@ function App() {
     const title = isDeliveryAreaMode ? 'Delivery Area Update' : isDeliveryStaffMode ? 'Delivery Staff Update' : 'Dictionary';
     const englishPlaceholder = isDeliveryAreaMode ? 'e.g. Khera Bazar' : isDeliveryStaffMode ? 'e.g. Rajesh' : 'e.g. Mr.';
     const hindiPlaceholder = isDeliveryAreaMode ? 'उदा: खेरा बाजार' : isDeliveryStaffMode ? 'उदा: राजेश' : 'उदाहरण: श्री';
+    const [showApprovedList, setShowApprovedList] = useState(false);
+    const [approvedEditMode, setApprovedEditMode] = useState(false);
+    const approvalType = isDeliveryAreaMode ? 'deliveryArea' : isDeliveryStaffMode ? 'deliveryStaff' : 'dictionary';
+    const approvalLocalKey = isDeliveryAreaMode ? 'deliveryAreaUpdates' : isDeliveryStaffMode ? 'deliveryStaffUpdates' : '';
+    const approvedItems = isDeliveryAreaMode ? deliveryAreaUpdates : isDeliveryStaffMode ? deliveryStaffUpdates : [];
+    const approvedListTitle = isDeliveryAreaMode ? 'Approved Delivery Areas' : 'Approved Delivery Staff';
+
+    const editApprovedItem = (item) => {
+      setEntries([{ englishWord: item.englishWord || item.english || '', hindiTranslation: item.hindiTranslation || item.hindi || '' }]);
+      setShowApprovedList(false);
+      setApprovedEditMode(true);
+    };
+
+    const resendApprovedItem = async (item) => {
+      const payload = [{
+        englishWord: String(item.englishWord || item.english || '').trim(),
+        hindiTranslation: String(item.hindiTranslation || item.hindi || '').trim(),
+      }];
+      if (!payload[0].englishWord || !payload[0].hindiTranslation) {
+        alert('Approved item data incomplete. Please edit before sending request.');
+        return;
+      }
+      const ok = await submitUpdateApprovalRequest({
+        type: approvalType,
+        payload,
+        localKey: approvalLocalKey,
+        successMessage: 'Correction request submitted. Your request is pending with admin for approval.',
+      });
+      if (ok) {
+        setShowApprovedList(false);
+        setApprovedEditMode(false);
+      }
+    };
 
     useEffect(() => {
       if (isDeliveryAreaMode || isDeliveryStaffMode) {
@@ -1477,6 +1511,8 @@ function App() {
         setEntries([{ englishWord: '', hindiTranslation: '' }]);
         setForm({ englishWord: '', hindiTranslation: '' });
       }
+      setShowApprovedList(false);
+      setApprovedEditMode(false);
     }, [mode, isDeliveryAreaMode, isDeliveryStaffMode]);
 
     const updateEntry = (index, field, value) => {
@@ -1623,6 +1659,49 @@ function App() {
         {mode === 'default' ? (
           <div className="dictionary-pending-count">{pendingCount} request pending</div>
         ) : null}
+        {(isDeliveryAreaMode || isDeliveryStaffMode) && (
+          <div className="dictionary-approved-toggle">
+            <button
+              type="button"
+              className="dictionary-approved-toggle-button"
+              onClick={() => setShowApprovedList((prev) => !prev)}
+            >
+              {approvedListTitle}
+            </button>
+            {showApprovedList && (
+              <div className="dictionary-approved-list">
+                {approvedItems.length > 0 ? (
+                  approvedItems.map((item, index) => (
+                    <div key={`${mode}-approved-${index}`} className="dictionary-approved-item">
+                      <div>
+                        <strong>{String(item.englishWord || item.english || '').trim() || '-'}</strong>
+                        <span>{String(item.hindiTranslation || item.hindi || '').trim() || '-'}</span>
+                      </div>
+                      <div className="dictionary-approved-actions">
+                        <button
+                          type="button"
+                          className="dictionary-approved-action"
+                          onClick={() => editApprovedItem(item)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="dictionary-approved-action dictionary-approved-action--primary"
+                          onClick={() => resendApprovedItem(item)}
+                        >
+                          Re-send
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="dictionary-approved-empty">No approved items found yet.</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div className="profile-form">
           {isDeliveryAreaMode || isDeliveryStaffMode ? (
             <>
@@ -5992,9 +6071,11 @@ function App() {
                   <div className="dropdown-menu">
                     <button onClick={handleUserProfile}>User Profile</button>
                     <button onClick={handleAboutOpen} disabled={isPlanExpired}>About</button>
-                    <button onClick={handleDictionaryOpen} disabled={isPlanExpired}>
-                      Dictionary ({getPendingDictionaryRequestCount(loggedInUser)} pending)
-                    </button>
+                    {isEnterpriseHindiPackage(loggedInUser?.package) && (
+                      <button onClick={handleDictionaryOpen} disabled={isPlanExpired}>
+                        Dictionary ({getPendingDictionaryRequestCount(loggedInUser)} pending)
+                      </button>
+                    )}
                     <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
                     <button onClick={handleContactOpen} disabled={isPlanExpired}>Contact</button>
                     <button onClick={handleProfileUpdate} disabled={isPlanExpired}>Profile Update</button>
@@ -6009,26 +6090,6 @@ function App() {
                       </>
                     )}
                     <button onClick={handleLogout}>Logout</button>
-                    {deliveryAreaUpdates.length > 0 && (
-                      <div className="dropdown-menu__section">
-                        <div className="dropdown-menu__title">Approved Delivery Areas</div>
-                        {deliveryAreaUpdates.map((item, index) => (
-                          <div key={`area-${index}`} className="dropdown-menu__item-text">
-                            {String(item.englishWord || item.english || '').trim() || '-'} / {String(item.hindiTranslation || item.hindi || '').trim() || '-'}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {deliveryStaffUpdates.length > 0 && (
-                      <div className="dropdown-menu__section">
-                        <div className="dropdown-menu__title">Approved Delivery Staff</div>
-                        {deliveryStaffUpdates.map((item, index) => (
-                          <div key={`staff-${index}`} className="dropdown-menu__item-text">
-                            {String(item.englishWord || item.english || '').trim() || '-'} / {String(item.hindiTranslation || item.hindi || '').trim() || '-'}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
