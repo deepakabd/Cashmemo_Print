@@ -451,6 +451,12 @@ function App() {
     (String(loggedInUser?.status || '').toLowerCase() === 'expired' || isUserExpired(loggedInUser))
   );
 
+  const getPendingDictionaryRequestCount = (user) => (
+    Array.isArray(user?.pendingDictionaryRequests)
+      ? user.pendingDictionaryRequests.filter((req) => String(req?.status || 'pending').toLowerCase() === 'pending').length
+      : 0
+  );
+
   const userMenuRef = useRef(null);
 
   useEffect(() => {
@@ -484,7 +490,9 @@ function App() {
               nextDictionary[englishWord] = hindiTranslation;
             }
           });
-        } catch {}
+        } catch {
+          // User-document fallback below still lets admin see the request.
+        }
         setTranslationDictionary(nextDictionary);
       } catch (err) {
         console.error('Failed to load dictionary', err);
@@ -1436,7 +1444,7 @@ function App() {
 
   const DictionaryRequestForm = ({ onClose }) => {
     const [form, setForm] = useState({ englishWord: '', hindiTranslation: '' });
-    const pendingCount = Number(loggedInUser?.dictionaryPendingCount || 0);
+    const pendingCount = getPendingDictionaryRequestCount(loggedInUser);
 
     const handleChange = (e) => {
       const { name, value } = e.target;
@@ -1456,35 +1464,69 @@ function App() {
       }
 
       const nextPendingCount = pendingCount + 1;
+      const clientRequestId = `dict-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const payload = {
+        clientRequestId,
         englishWord,
         hindiTranslation,
         requestedBy: loggedInUser?.dealerCode || '',
         requestedAt: new Date().toISOString(),
       };
 
+      let approvalId = '';
+      let approvalSaved = false;
       try {
-        await addDoc(collection(db, 'updateApprovals'), {
-          userId: loggedInUser.id,
-          dealerCode: loggedInUser.dealerCode || '',
-          dealerName: loggedInUser.dealerName || '',
-          type: 'dictionary',
-          payload,
-          status: 'pending',
-          requestedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        try {
+          const approvalRef = await addDoc(collection(db, 'updateApprovals'), {
+            userId: loggedInUser.id,
+            dealerCode: loggedInUser.dealerCode || '',
+            dealerName: loggedInUser.dealerName || '',
+            type: 'dictionary',
+            payload,
+            status: 'pending',
+            requestedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          approvalId = approvalRef.id;
+          approvalSaved = true;
+        } catch {}
 
         try {
           await updateDoc(doc(db, 'users', loggedInUser.id), {
             dictionaryPendingCount: nextPendingCount,
+            pendingDictionaryRequests: arrayUnion({
+              id: clientRequestId,
+              approvalId,
+              status: 'pending',
+              payload,
+              dealerCode: loggedInUser.dealerCode || '',
+              dealerName: loggedInUser.dealerName || '',
+              requestedAt: payload.requestedAt,
+            }),
             updatedAt: serverTimestamp(),
           });
-        } catch {}
+        } catch {
+          if (!approvalSaved) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
+        }
 
         updateUserInStore(
           loggedInUser.id,
-          (user) => ({ ...user, dictionaryPendingCount: nextPendingCount }),
+          (user) => ({
+            ...user,
+            dictionaryPendingCount: nextPendingCount,
+            pendingDictionaryRequests: [
+              ...(Array.isArray(user.pendingDictionaryRequests) ? user.pendingDictionaryRequests : []),
+              {
+                id: clientRequestId,
+                approvalId,
+                status: 'pending',
+                payload,
+                dealerCode: loggedInUser.dealerCode || '',
+                dealerName: loggedInUser.dealerName || '',
+                requestedAt: payload.requestedAt,
+              },
+            ],
+          }),
           loggedInUser.dealerCode
         );
         setForm({ englishWord: '', hindiTranslation: '' });
@@ -2284,11 +2326,11 @@ function App() {
       return raw;
     };
 
-    const pendingApprovalRequests = updateApprovals.filter((r) => (r.status || 'pending') === 'pending');
+    const pendingApprovalRequests = updateApprovals.filter((r) => String(r.status || 'pending').toLowerCase() === 'pending');
     const fallbackPendingApprovals = users.flatMap((u) => {
       const pendingUpdates = u?.pendingUpdates || {};
-      return Object.entries(pendingUpdates)
-        .filter(([, v]) => (v?.status || 'pending') === 'pending')
+      const pendingUpdateApprovals = Object.entries(pendingUpdates)
+        .filter(([, v]) => String(v?.status || 'pending').toLowerCase() === 'pending')
         .map(([type, value]) => ({
           id: `userdoc-${u.id}-${type}`,
           source: 'userDoc',
@@ -2300,15 +2342,40 @@ function App() {
           payload: value?.payload ?? null,
           requestedAt: value?.requestedAt || '',
         }));
+      const pendingDictionaryApprovals = (Array.isArray(u?.pendingDictionaryRequests) ? u.pendingDictionaryRequests : [])
+        .filter((request) => String(request?.status || 'pending').toLowerCase() === 'pending')
+        .map((request, idx) => ({
+          id: `userdict-${u.id}-${request?.id || request?.approvalId || idx}`,
+          source: 'userDoc',
+          userId: u.id,
+          dealerCode: request?.dealerCode || u.dealerCode || '',
+          dealerName: request?.dealerName || u.dealerName || '',
+          type: 'dictionary',
+          status: request?.status || 'pending',
+          payload: request?.payload || request,
+          requestedAt: request?.requestedAt || request?.payload?.requestedAt || '',
+          approvalId: request?.approvalId || '',
+          clientRequestId: request?.id || request?.payload?.clientRequestId || '',
+        }));
+      return [...pendingUpdateApprovals, ...pendingDictionaryApprovals];
     });
     const collectionPendingApprovals = pendingApprovalRequests.filter((approval) => {
       const approvalType = normalizeApprovalType(approval.type);
       const user = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
       const pendingStatus = user?.pendingUpdates?.[approvalType]?.status;
       if (!pendingStatus) return true;
-      return pendingStatus === 'pending';
+      return String(pendingStatus).toLowerCase() === 'pending';
     });
-    const combinedPendingApprovals = [...collectionPendingApprovals, ...fallbackPendingApprovals]
+    const combinedApprovalMap = new Map();
+    [...collectionPendingApprovals, ...fallbackPendingApprovals].forEach((approval) => {
+      const key = approval.source === 'userDoc'
+        ? `${approval.type}-${approval.approvalId || approval.clientRequestId || approval.id}`
+        : `${approval.type}-${approval.id || approval?.payload?.clientRequestId}`;
+      if (!combinedApprovalMap.has(key)) {
+        combinedApprovalMap.set(key, approval);
+      }
+    });
+    const combinedPendingApprovals = Array.from(combinedApprovalMap.values())
       .filter((approval) => !hiddenApprovalIds.includes(approval.id));
     const dictionaryPendingApprovals = combinedPendingApprovals.filter((approval) => normalizeApprovalType(approval.type) === 'dictionary');
     const nonDictionaryPendingApprovals = combinedPendingApprovals.filter((approval) => normalizeApprovalType(approval.type) !== 'dictionary');
@@ -2394,13 +2461,23 @@ function App() {
             updatedAt: serverTimestamp(),
           });
           setTranslationDictionary(nextDict);
+          const nextPendingDictionaryRequests = (Array.isArray(targetUser.pendingDictionaryRequests) ? targetUser.pendingDictionaryRequests : [])
+            .map((request) => {
+              const matchesRequest = request?.approvalId === approval.id
+                || request?.approvalId === approval.approvalId
+                || request?.id === dictionaryPayload?.clientRequestId
+                || request?.payload?.clientRequestId === dictionaryPayload?.clientRequestId;
+              return matchesRequest ? { ...request, status: 'approved', approvedAt: new Date().toISOString() } : request;
+            });
           await updateDoc(doc(db, 'users', targetUser.id), {
             dictionaryPendingCount: Math.max(0, Number(targetUser.dictionaryPendingCount || 0) - 1),
+            pendingDictionaryRequests: nextPendingDictionaryRequests,
             updatedAt: serverTimestamp(),
           });
-          if (approval.source !== 'userDoc') {
+          const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
+          if (approvalDocId) {
             try {
-              await updateDoc(doc(db, 'updateApprovals', approval.id), {
+              await updateDoc(doc(db, 'updateApprovals', approvalDocId), {
                 payload: { ...dictionaryPayload, englishWord, hindiTranslation },
                 status: 'approved',
                 approvedAt: serverTimestamp(),
@@ -2480,8 +2557,18 @@ function App() {
             nextStatus.hindiHeaderData = 'rejected';
           }
           if (approvalType === 'dictionary') {
+            const dictionaryPayload = getDictionaryApprovalPayload(approval);
+            const nextPendingDictionaryRequests = (Array.isArray(targetUser.pendingDictionaryRequests) ? targetUser.pendingDictionaryRequests : [])
+              .map((request) => {
+                const matchesRequest = request?.approvalId === approval.id
+                  || request?.approvalId === approval.approvalId
+                  || request?.id === dictionaryPayload?.clientRequestId
+                  || request?.payload?.clientRequestId === dictionaryPayload?.clientRequestId;
+                return matchesRequest ? { ...request, status: 'rejected', rejectedAt: new Date().toISOString() } : request;
+              });
             await updateDoc(doc(db, 'users', targetUser.id), {
               dictionaryPendingCount: Math.max(0, Number(targetUser.dictionaryPendingCount || 0) - 1),
+              pendingDictionaryRequests: nextPendingDictionaryRequests,
               updatedAt: serverTimestamp(),
             });
           } else {
@@ -2493,9 +2580,10 @@ function App() {
             });
           }
         }
-        if (approval.source !== 'userDoc') {
+        const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
+        if (approvalDocId) {
           try {
-            await updateDoc(doc(db, 'updateApprovals', approval.id), {
+            await updateDoc(doc(db, 'updateApprovals', approvalDocId), {
               status: 'rejected',
               rejectedAt: serverTimestamp(),
             });
@@ -5752,7 +5840,7 @@ function App() {
                     <button onClick={handleUserProfile}>User Profile</button>
                     <button onClick={handleAboutOpen} disabled={isPlanExpired}>About</button>
                     <button onClick={handleDictionaryOpen} disabled={isPlanExpired}>
-                      Dictionary ({Number(loggedInUser?.dictionaryPendingCount || 0)} pending)
+                      Dictionary ({getPendingDictionaryRequestCount(loggedInUser)} pending)
                     </button>
                     <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
                     <button onClick={handleContactOpen} disabled={isPlanExpired}>Contact</button>
