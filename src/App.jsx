@@ -449,11 +449,17 @@ function App() {
   const [userPin, setUserPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [dealerWelcome, setDealerWelcome] = useState('');
+  const [sampleDataLoaded, setSampleDataLoaded] = useState(false);
+  const [sampleDataLoading, setSampleDataLoading] = useState(false);
+  const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const isPlanExpired = Boolean(
     isLoggedIn &&
     loggedInUser &&
     (String(loggedInUser?.status || '').toLowerCase() === 'expired' || isUserExpired(loggedInUser))
   );
+
+  const isTestUser = String(loggedInUser?.dealerCode || '').trim() === '41099999'
+    && String(loggedInUser?.pin || '').trim() === '0000';
 
   const getPendingDictionaryRequestCount = (user) => (
     Array.isArray(user?.pendingDictionaryRequests)
@@ -930,6 +936,9 @@ function App() {
     setLabelDraftSettings(mergeCashMemoLabelSettings(userLabelSettings));
     setLoggedInUser(localUser);
     setIsLoggedIn(true);
+    setSampleDataLoaded(false);
+    setSampleDataLoading(false);
+    setSampleDataAttempted(false);
     persistUserSession(localUser);
     setShowUserLogin(false);
     setShowAboutInfo(true);
@@ -948,6 +957,9 @@ function App() {
     setIsLoggedIn(false);
     setShowUserMenu(false);
     setLoggedInUser(null);
+    setSampleDataLoaded(false);
+    setSampleDataLoading(false);
+    setSampleDataAttempted(false);
     setShowAboutInfo(true);
     alert('Logged out successfully!');
   };
@@ -1024,6 +1036,33 @@ function App() {
       navigateToHome();
     }
   };
+
+  const loadTestSampleFile = async () => {
+    if (sampleDataLoaded || sampleDataLoading) return;
+    setSampleDataLoading(true);
+    try {
+      const response = await fetch(encodeURI('/Sample Excel.xlsx'));
+      if (!response.ok) throw new Error('Unable to load sample file');
+      const blob = await response.blob();
+      const file = new File([blob], 'Sample Excel.xlsx', {
+        type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      await handleFileUpload(file);
+      setSampleDataLoaded(true);
+    } catch (error) {
+      console.error('Sample file load failed:', error);
+      alert('Sample file load failed. Please use Upload Data manually.');
+    } finally {
+      setSampleDataLoading(false);
+      setSampleDataAttempted(true);
+    }
+  };
+
+  useEffect(() => {
+    if (isTestUser && !sampleDataLoaded && !sampleDataLoading && !sampleDataAttempted) {
+      loadTestSampleFile();
+    }
+  }, [isTestUser, sampleDataLoaded, sampleDataLoading, sampleDataAttempted]);
 
   useEffect(() => {
     try {
@@ -6027,6 +6066,11 @@ function App() {
             {isLoggedIn && !isPlanExpired && !showDataButton && (
               <button className="navbar-button" onClick={handleReUploadClick} disabled={isPlanExpired}>
                 Upload Data
+              </button>
+            )}
+            {isTestUser && !sampleDataLoaded && !sampleDataLoading && (
+              <button className="navbar-button" onClick={loadTestSampleFile}>
+                Load Sample Data
               </button>
             )}
             {isLoggedIn && !isPlanExpired && showDataButton && (
