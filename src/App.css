@@ -279,23 +279,40 @@
 }
 
 .dictionary-approved-list {
-  display: grid;
-  gap: 10px;
+  display: block;
   padding: 12px 14px;
   border: 1px solid #d5dee9;
   border-radius: 12px;
   background: #f8fbff;
+  overflow-x: auto;
+}
+
+.dictionary-approved-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+}
+
+.dictionary-approved-table th,
+.dictionary-approved-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #d5dee9;
+  vertical-align: middle;
+}
+
+.dictionary-approved-table th {
+  background: #eef4ff;
+  color: #12345b;
+  font-weight: 700;
+}
+
+.dictionary-approved-table tr:nth-child(even) {
+  background: #f7fbff;
 }
 
 .dictionary-approved-item {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: #ffffff;
-  border: 1px solid #e2e9f2;
+  display: none;
 }
 
 .dictionary-approved-item strong {
@@ -334,6 +351,40 @@
 
 .dictionary-approved-action--primary:hover {
   background: rgba(13, 110, 253, 0.08);
+}
+
+.dictionary-approved-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.contact-us-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.contact-us-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #d4d7df;
+  background: #fff;
+  color: #1f2937;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.contact-us-link:hover {
+  background: #eff6ff;
+}
+
+.contact-us-icon {
+  font-size: 1.1em;
 }
 
 .dictionary-approved-empty {
