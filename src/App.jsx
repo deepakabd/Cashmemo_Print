@@ -449,17 +449,90 @@ function App() {
   const [userPin, setUserPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [dealerWelcome, setDealerWelcome] = useState('');
+  const [sampleDataLoaded, setSampleDataLoaded] = useState(false);
+  const [sampleDataLoading, setSampleDataLoading] = useState(false);
+  const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const isPlanExpired = Boolean(
     isLoggedIn &&
     loggedInUser &&
     (String(loggedInUser?.status || '').toLowerCase() === 'expired' || isUserExpired(loggedInUser))
   );
 
+  const isTestUser = String(loggedInUser?.dealerCode || '').trim() === '41099999'
+    && String(loggedInUser?.pin || '').trim() === '0000';
+
   const getPendingDictionaryRequestCount = (user) => (
     Array.isArray(user?.pendingDictionaryRequests)
       ? user.pendingDictionaryRequests.filter((req) => String(req?.status || 'pending').toLowerCase() === 'pending').length
       : 0
   );
+
+  const readFeedbackDataFromStorage = () => {
+    try {
+      const raw = localStorage.getItem('feedbackData');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const readFeedbackRepliesFromStorage = () => {
+    try {
+      const raw = localStorage.getItem('feedbackReplies');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const readFeedbackReplyReadStatusFromStorage = () => {
+    try {
+      const raw = localStorage.getItem('feedbackRepliesRead');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const persistFeedbackReplyReadStatus = (nextStatus) => {
+    try {
+      localStorage.setItem('feedbackRepliesRead', JSON.stringify(nextStatus || {}));
+    } catch {}
+  };
+
+  const getUserContactReplies = () => {
+    if (!loggedInUser) return [];
+    const feedbackData = readFeedbackDataFromStorage();
+    const replyMap = readFeedbackRepliesFromStorage();
+    const replyReadStatus = readFeedbackReplyReadStatusFromStorage();
+    return feedbackData
+      .filter((item) => item.userId === loggedInUser?.id || item.dealerCode === loggedInUser?.dealerCode)
+      .map((item) => {
+        const idKey = item.id || item.clientFeedbackId || '';
+        const reply = replyMap[idKey] || '';
+        const read = Boolean(replyReadStatus[idKey]);
+        return { ...item, reply, read, replyId: idKey };
+      })
+      .filter((item) => item.reply);
+  };
+
+  const markUserContactRepliesAsRead = () => {
+    if (!loggedInUser) return;
+    const replies = getUserContactReplies();
+    if (replies.length === 0) return;
+    const readStatus = readFeedbackReplyReadStatusFromStorage();
+    const nextStatus = { ...readStatus };
+    replies.forEach((item) => {
+      if (item.replyId) nextStatus[item.replyId] = true;
+    });
+    persistFeedbackReplyReadStatus(nextStatus);
+  };
+
+  const contactReplyItems = getUserContactReplies();
+  const contactReplyCount = contactReplyItems.filter((item) => !item.read).length;
 
   const userMenuRef = useRef(null);
 
@@ -930,6 +1003,9 @@ function App() {
     setLabelDraftSettings(mergeCashMemoLabelSettings(userLabelSettings));
     setLoggedInUser(localUser);
     setIsLoggedIn(true);
+    setSampleDataLoaded(false);
+    setSampleDataLoading(false);
+    setSampleDataAttempted(false);
     persistUserSession(localUser);
     setShowUserLogin(false);
     setShowAboutInfo(true);
@@ -948,6 +1024,9 @@ function App() {
     setIsLoggedIn(false);
     setShowUserMenu(false);
     setLoggedInUser(null);
+    setSampleDataLoaded(false);
+    setSampleDataLoading(false);
+    setSampleDataAttempted(false);
     setShowAboutInfo(true);
     alert('Logged out successfully!');
   };
@@ -1025,6 +1104,33 @@ function App() {
     }
   };
 
+  const loadTestSampleFile = async () => {
+    if (sampleDataLoaded || sampleDataLoading) return;
+    setSampleDataLoading(true);
+    try {
+      const response = await fetch(encodeURI('/Sample Excel.xlsx'));
+      if (!response.ok) throw new Error('Unable to load sample file');
+      const blob = await response.blob();
+      const file = new File([blob], 'Sample Excel.xlsx', {
+        type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      await handleFileUpload(file);
+      setSampleDataLoaded(true);
+    } catch (error) {
+      console.error('Sample file load failed:', error);
+      alert('Sample file load failed. Please use Upload Data manually.');
+    } finally {
+      setSampleDataLoading(false);
+      setSampleDataAttempted(true);
+    }
+  };
+
+  useEffect(() => {
+    if (isTestUser && !sampleDataLoaded && !sampleDataLoading && !sampleDataAttempted) {
+      loadTestSampleFile();
+    }
+  }, [isTestUser, sampleDataLoaded, sampleDataLoading, sampleDataAttempted]);
+
   useEffect(() => {
     try {
       const rawSession = localStorage.getItem(USER_SESSION_STORAGE_KEY);
@@ -1091,6 +1197,7 @@ function App() {
 
   const handleContactOpen = () => {
     hideAllViews();
+    markUserContactRepliesAsRead();
     setShowContactForm(true);
     setShowUserMenu(false);
   };
@@ -1204,45 +1311,34 @@ function App() {
       };
       let requestRef = null;
       try {
+        const usersRef = collection(db, 'users');
+        const existingQuery = query(usersRef, where('dealerCode', '==', form.dealerCode.trim()));
+        const existing = await getDocs(existingQuery);
+        if (!existing.empty) {
+          alert('You have already a registered account, if you forget your Pin Kindly Contact Admin');
+          return;
+        }
+
         requestRef = await addDoc(collection(db, 'registrationRequests'), {
           ...request,
           createdAt: serverTimestamp(),
         });
 
-        const usersRef = collection(db, 'users');
-        const existingQuery = query(usersRef, where('dealerCode', '==', form.dealerCode.trim()));
-        const existing = await getDocs(existingQuery);
         const validity = computeValidityDates(form.package);
-        if (existing.empty) {
-          await addDoc(usersRef, {
-            dealerCode: form.dealerCode.trim(),
-            dealerName: form.dealerName.trim(),
-            mobile: form.mobile.trim(),
-            email: form.email.trim(),
-            pin: form.pin.trim(),
-            package: form.package,
-            packageDays: validity.packageDays,
-            validFrom: validity.validFrom,
-            validTill: validity.validTill,
-            role: 'operator',
-            status: 'pending',
-            createdAt: serverTimestamp(),
-          });
-        } else {
-          await updateDoc(existing.docs[0].ref, {
-            dealerName: form.dealerName.trim(),
-            mobile: form.mobile.trim(),
-            email: form.email.trim(),
-            pin: form.pin.trim(),
-            package: form.package,
-            packageDays: validity.packageDays,
-            validFrom: validity.validFrom,
-            validTill: validity.validTill,
-            role: 'operator',
-            status: 'pending',
-            updatedAt: serverTimestamp(),
-          });
-        }
+        await addDoc(usersRef, {
+          dealerCode: form.dealerCode.trim(),
+          dealerName: form.dealerName.trim(),
+          mobile: form.mobile.trim(),
+          email: form.email.trim(),
+          pin: form.pin.trim(),
+          package: form.package,
+          packageDays: validity.packageDays,
+          validFrom: validity.validFrom,
+          validTill: validity.validTill,
+          role: 'operator',
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        });
       } catch {
         alert('Registration save to Firebase failed. Check Firebase config.');
         return;
@@ -1344,6 +1440,10 @@ function App() {
       email: '',
       feedback: '',
     });
+    const [showAdminChatPopup, setShowAdminChatPopup] = useState(false);
+    const [activeReplyItem, setActiveReplyItem] = useState(null);
+    const [adminReplyMessage, setAdminReplyMessage] = useState('');
+    const [localFeedbackEntries, setLocalFeedbackEntries] = useState(() => readFeedbackDataFromStorage());
 
     useEffect(() => {
       setForm((prev) => ({
@@ -1353,6 +1453,93 @@ function App() {
         email: loggedInUser?.email || '',
       }));
     }, [loggedInUser]);
+
+    const storedFeedbackReplies = readFeedbackRepliesFromStorage();
+    const userReplies = loggedInUser
+      ? localFeedbackEntries
+          .filter((item) => item.userId === loggedInUser?.id || item.dealerCode === loggedInUser?.dealerCode)
+          .map((item) => {
+            const idKey = item.id || item.clientFeedbackId || '';
+            return { ...item, reply: storedFeedbackReplies[idKey] || '', replyId: idKey };
+          })
+          .filter((item) => item.reply)
+      : [];
+
+    useEffect(() => {
+      if (!showAdminChatPopup) return;
+      if (userReplies.length > 0) {
+        setActiveReplyItem((prev) => prev || userReplies[0]);
+      }
+    }, [showAdminChatPopup, userReplies]);
+
+    const handleOpenAdminChat = () => {
+      setShowAdminChatPopup(true);
+    };
+
+    const handleCloseAdminChat = () => {
+      setShowAdminChatPopup(false);
+      setAdminReplyMessage('');
+    };
+
+    const submitAdminChatReply = async () => {
+      if (!adminReplyMessage.trim()) {
+        alert('Please type your message before sending.');
+        return;
+      }
+      if (!loggedInUser && (!form.name.trim() || !form.mobile.trim())) {
+        alert('Name and mobile number are required to send a chat message.');
+        return;
+      }
+      const key = 'feedbackData';
+      const feedbackEntry = {
+        clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        userId: loggedInUser?.id || '',
+        name: loggedInUser?.dealerName || form.name.trim() || '',
+        mobile: loggedInUser?.mobile || form.mobile.trim() || '',
+        dealerCode: loggedInUser?.dealerCode || '',
+        dealerName: loggedInUser?.dealerName || form.name.trim() || '',
+        email: loggedInUser?.email || form.email.trim() || '',
+        text: adminReplyMessage.trim(),
+        parentFeedbackId: activeReplyItem?.id || activeReplyItem?.clientFeedbackId || '',
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+      let anySaved = false;
+      try {
+        await addDoc(collection(db, 'feedback'), {
+          ...feedbackEntry,
+          createdAt: serverTimestamp(),
+        });
+        anySaved = true;
+      } catch {}
+      if (loggedInUser?.id) {
+        try {
+          const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
+          updateUserInStore(
+            resolvedId,
+            (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
+            loggedInUser.dealerCode
+          );
+          anySaved = true;
+        } catch {}
+      }
+      try {
+        const existing = localStorage.getItem(key);
+        const arr = existing ? JSON.parse(existing) : [];
+        const next = Array.isArray(arr) ? arr : [];
+        next.push({ ...feedbackEntry, source: 'local' });
+        localStorage.setItem(key, JSON.stringify(next));
+        setLocalFeedbackEntries(next);
+        anySaved = true;
+      } catch {}
+
+      if (anySaved) {
+        alert('Your chat message has been sent. Admin will reply shortly.');
+        setAdminReplyMessage('');
+      } else {
+        alert('Unable to send your chat message. Please try again.');
+      }
+    };
 
     const handleChange = (e) => {
       const { name, value } = e.target;
@@ -1422,7 +1609,76 @@ function App() {
           <a className="contact-us-link" href="https://wa.me/918789358400" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp Us">
             <span className="contact-us-icon">💬</span> WhatsApp Us
           </a>
+          {loggedInUser && (
+            <button type="button" className="contact-us-link" onClick={handleOpenAdminChat}>
+              <span className="contact-us-icon">💬</span> Open Admin Replies Chat
+            </button>
+          )}
         </div>
+        {showAdminChatPopup && (
+          <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
+            <div className="admin-chat-popup">
+              <div className="admin-chat-popup-header">
+                <h3>Admin Chat</h3>
+                <button type="button" className="admin-chat-popup-close" onClick={handleCloseAdminChat}>Close</button>
+              </div>
+              <div className="admin-chat-popup-body">
+                <div className="admin-chat-sidebar">
+                  <h4>Conversations</h4>
+                  {userReplies.length === 0 ? (
+                    <p>No admin replies yet. Send a message below to start chat with admin.</p>
+                  ) : (
+                    <ul className="admin-chat-thread-list">
+                      {userReplies.map((replyItem) => (
+                        <li key={replyItem.id || replyItem.clientFeedbackId || `${replyItem.dealerCode}-${Math.random()}`}>
+                          <button
+                            type="button"
+                            className={`admin-chat-thread-button ${activeReplyItem?.replyId === replyItem.replyId ? 'active' : ''}`}
+                            onClick={() => setActiveReplyItem(replyItem)}
+                          >
+                            <strong>{replyItem.text?.slice(0, 40) || 'Your feedback'}</strong>
+                            <small>{(replyItem.reply || '').slice(0, 40)}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="admin-chat-content">
+                  {activeReplyItem ? (
+                    <>
+                      <div className="admin-chat-conversation">
+                        <div className="admin-chat-message user-message">
+                          <strong>You:</strong>
+                          <p>{activeReplyItem.text || activeReplyItem.feedback || 'No message content.'}</p>
+                        </div>
+                        <div className="admin-chat-message admin-message">
+                          <strong>Admin:</strong>
+                          <p>{activeReplyItem.reply}</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="admin-chat-empty">
+                      <p>Select a reply thread or type a new message below to chat with admin.</p>
+                    </div>
+                  )}
+                  <textarea
+                    className="form-input"
+                    rows="4"
+                    value={adminReplyMessage}
+                    onChange={(e) => setAdminReplyMessage(e.target.value)}
+                    placeholder="Type your message to admin here..."
+                  />
+                  <div className="admin-chat-actions">
+                    <button type="button" className="form-button" onClick={submitAdminChatReply}>Send</button>
+                    <button type="button" className="form-button secondary" onClick={handleCloseAdminChat}>Close</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="profile-form">
           <span className="profile-label">Name</span>
           <input
@@ -1975,6 +2231,40 @@ function App() {
         ifsc: '',
       },
     });
+    const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
+    const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
+    const [adminReplyDraft, setAdminReplyDraft] = useState('');
+
+    const openAdminReplyPopup = (item) => {
+      if (!item) return;
+      const key = item.id || item.clientFeedbackId || '';
+      const currentReply = feedbackReplies?.[item.id] || feedbackReplies?.[item.clientFeedbackId] || '';
+      setActiveAdminFeedback(item);
+      setAdminReplyDraft(currentReply);
+      setShowAdminReplyPopup(true);
+    };
+
+    const closeAdminReplyPopup = () => {
+      setShowAdminReplyPopup(false);
+      setActiveAdminFeedback(null);
+      setAdminReplyDraft('');
+    };
+
+    const submitAdminReply = () => {
+      if (!activeAdminFeedback) return;
+      if (!adminReplyDraft.trim()) {
+        alert('Please enter a reply before saving.');
+        return;
+      }
+      const key = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
+      const nextReplies = {
+        ...feedbackReplies,
+        [key]: adminReplyDraft.trim(),
+      };
+      persistFeedbackReplies(nextReplies);
+      logAdminActivity('feedback_reply_saved', { id: key, dealerCode: activeAdminFeedback.dealerCode || '' });
+      closeAdminReplyPopup();
+    };
 
     const loadData = async () => {
       try {
@@ -3914,7 +4204,21 @@ function App() {
                         <td>{f.dealerCode || '-'}</td>
                         <td>{f.dealerName || '-'}</td>
                         <td>{f.email || '-'}</td>
-                        <td>{f.text || '-'}</td>
+                        <td>
+                          <div>{f.text || '-'}</div>
+                          {feedbackReplies && (feedbackReplies[f.id] || feedbackReplies[f.clientFeedbackId]) && (
+                            <div className="admin-feedback-chat">
+                              <div className="admin-feedback-chat-message user-message">
+                                <strong>User:</strong>
+                                <span>{f.text || '-'}</span>
+                              </div>
+                              <div className="admin-feedback-chat-message admin-message">
+                                <strong>Admin:</strong>
+                                <span>{feedbackReplies[f.id] || feedbackReplies[f.clientFeedbackId]}</span>
+                              </div>
+                            </div>
+                          )}
+                        </td>
                         <td>
                           <div className="feedback-status-stack">
                             <span className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</span>
@@ -3935,7 +4239,9 @@ function App() {
                             <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
                               {f.read ? 'Mark Unread' : 'Mark Read'}
                             </button>
-                            <button className="admin-ghost-btn" onClick={() => sendFeedbackReply(f)}>Reply</button>
+                            <button className="admin-ghost-btn" onClick={() => openAdminReplyPopup(f)} disabled={!canMutateAdminData}>
+                              Reply
+                            </button>
                             <button className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
                               Delete
                             </button>
@@ -3947,6 +4253,41 @@ function App() {
                 </tbody>
               </table>
             </div>
+            {showAdminReplyPopup && (
+              <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
+                <div className="admin-chat-popup">
+                  <div className="admin-chat-popup-header">
+                    <h3>Reply to User Feedback</h3>
+                    <button type="button" className="admin-chat-popup-close" onClick={closeAdminReplyPopup}>Close</button>
+                  </div>
+                  <div className="admin-chat-popup-body">
+                    <div className="admin-chat-content" style={{ width: '100%' }}>
+                      <div className="admin-chat-conversation">
+                        <div className="admin-chat-message user-message">
+                          <strong>User:</strong>
+                          <p>{activeAdminFeedback?.text || activeAdminFeedback?.feedback || 'No message available.'}</p>
+                        </div>
+                        <div className="admin-chat-message admin-message">
+                          <strong>Your reply:</strong>
+                          <p>{feedbackReplies?.[activeAdminFeedback?.id] || feedbackReplies?.[activeAdminFeedback?.clientFeedbackId] || 'No reply yet.'}</p>
+                        </div>
+                      </div>
+                      <textarea
+                        className="form-input"
+                        rows="5"
+                        value={adminReplyDraft}
+                        onChange={(e) => setAdminReplyDraft(e.target.value)}
+                        placeholder="Type your reply here"
+                      />
+                      <div className="admin-chat-actions">
+                        <button type="button" className="form-button" onClick={submitAdminReply}>Send Reply</button>
+                        <button type="button" className="form-button secondary" onClick={closeAdminReplyPopup}>Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -4091,7 +4432,35 @@ function App() {
                         <td>{user.dealerCode || '-'}</td>
                         <td>{user.dealerName || '-'}</td>
                         <td>{formatDisplayDate(user.deletedAt)}</td>
-                        <td><button className="admin-ghost-btn" onClick={() => restoreDeletedUser(user)} disabled={!canMutateAdminData}>Restore</button></td>
+                        <td>
+                          <div className="admin-actions">
+                            <button
+                              type="button"
+                              onClick={() => restoreDeletedUser(
+                                user,
+                                confirmAdminAction,
+                                deletedUsersBin,
+                                users,
+                                writeUsersLocal,
+                                persistDeletedUsersBin,
+                                logAdminActivity,
+                                loadData,
+                              )}
+                              disabled={!canMutateAdminData}
+                            >Restore</button>
+                            <button
+                              type="button"
+                              onClick={() => permanentlyDeleteBinItem(
+                                user,
+                                confirmAdminAction,
+                                deletedUsersBin,
+                                persistDeletedUsersBin,
+                                logAdminActivity,
+                              )}
+                              disabled={!canMutateAdminData}
+                            >Permanently Delete</button>
+                          </div>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -5349,23 +5718,98 @@ function App() {
       }
     };
 
-    const restoreDeletedUser = async (item) => {
+    const restoreDeletedUser = async (
+      item,
+      confirmFn,
+      currentDeletedUsersBin,
+      currentUsers,
+      writeUsersLocalFn,
+      persistDeletedUsersBinFn,
+      logAdminActivityFn,
+      loadDataFn,
+    ) => {
       if (!item) return;
-      if (!confirmAdminAction(`Restore ${item.dealerCode || 'this user'} from recycle bin?`)) return;
+      const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
+      if (!confirmAction(`Restore ${item.dealerCode || 'this user'} from recycle bin?`)) return;
+
+      const nextBin = (Array.isArray(currentDeletedUsersBin) ? currentDeletedUsersBin : []).filter(
+        (user) => !(user.id === item.id && user.dealerCode === item.dealerCode),
+      );
+      const restoredUser = { ...item, status: item.status || 'active' };
+      delete restoredUser.deletedAt;
+
       try {
+        const userData = { ...restoredUser };
+        delete userData.id;
+
         if (item.id) {
+          await setDoc(doc(db, 'users', item.id), {
+            ...userData,
+            restoredAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
           await addDoc(collection(db, 'users'), {
-            ...item,
+            ...userData,
             restoredAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
         }
-      } catch {}
-      const nextUsers = [...users, { ...item, status: item.status || 'active' }];
-      writeUsersLocal(nextUsers);
-      const nextBin = deletedUsersBin.filter((user) => !(user.id === item.id && user.dealerCode === item.dealerCode));
-      persistDeletedUsersBin(nextBin);
-      logAdminActivity('user_restored', { dealerCode: item.dealerCode || '' });
+
+        if (typeof loadDataFn === 'function') {
+          await loadDataFn();
+        }
+      } catch (error) {
+        console.error('Restore failed, falling back to local restore:', error);
+        const nextUsers = item.id
+          ? [...(Array.isArray(currentUsers) ? currentUsers.filter((u) => u.id !== item.id) : []), restoredUser]
+          : [...(Array.isArray(currentUsers) ? currentUsers : []), restoredUser];
+        if (typeof writeUsersLocalFn === 'function') {
+          writeUsersLocalFn(nextUsers);
+        }
+        alert(`Restore failed in Firestore, restored locally for ${item.dealerCode || 'user'}.`);
+      } finally {
+        if (typeof persistDeletedUsersBinFn === 'function') {
+          persistDeletedUsersBinFn(nextBin);
+        }
+      }
+
+      if (typeof logAdminActivityFn === 'function') {
+        logAdminActivityFn('user_restored', { dealerCode: item.dealerCode || '' });
+      }
+      alert(`${item.dealerCode || 'User'} restored from recycle bin.`);
+    };
+
+    const permanentlyDeleteBinItem = async (
+      item,
+      confirmFn,
+      currentDeletedUsersBin,
+      persistDeletedUsersBinFn,
+      logAdminActivityFn,
+    ) => {
+      if (!item) return;
+      const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
+      if (!confirmAction(`Permanently remove ${item.dealerCode || 'this deleted user'} from recycle bin?`)) return;
+
+      const nextBin = (Array.isArray(currentDeletedUsersBin) ? currentDeletedUsersBin : []).filter(
+        (user) => !(user.id === item.id && user.dealerCode === item.dealerCode),
+      );
+      try {
+        if (item.id) {
+          await deleteDoc(doc(db, 'users', item.id));
+        }
+      } catch (error) {
+        console.error('Permanent delete failed for Firestore user:', error);
+      } finally {
+        if (typeof persistDeletedUsersBinFn === 'function') {
+          persistDeletedUsersBinFn(nextBin);
+        }
+      }
+
+      if (typeof logAdminActivityFn === 'function') {
+        logAdminActivityFn('user_deleted_permanently', { dealerCode: item.dealerCode || '' });
+      }
+      alert(`${item.dealerCode || 'Deleted user'} removed permanently.`);
     };
 
     const saveCurrentAdminView = () => {
@@ -5395,13 +5839,18 @@ function App() {
       logAdminActivity('saved_view_applied', { label: view.label || '' });
     };
 
-    const sendFeedbackReply = (item) => {
-      const currentReply = feedbackReplies[item.id] || '';
+    const sendFeedbackReply = (item, currentFeedbackReplies = {}, persistFeedbackRepliesFn, logAdminActivityFn) => {
+      if (!item) return;
+      const currentReply = currentFeedbackReplies[item.id] || '';
       const draft = window.prompt(`Reply for ${item.dealerCode || 'user'}`, currentReply);
       if (draft === null) return;
-      const nextReplies = { ...feedbackReplies, [item.id]: draft };
-      persistFeedbackReplies(nextReplies);
-      logAdminActivity('feedback_reply_saved', { id: item.id, dealerCode: item.dealerCode || '' });
+      const nextReplies = { ...currentFeedbackReplies, [item.id]: draft };
+      if (typeof persistFeedbackRepliesFn === 'function') {
+        persistFeedbackRepliesFn(nextReplies);
+      }
+      if (typeof logAdminActivityFn === 'function') {
+        logAdminActivityFn('feedback_reply_saved', { id: item.id, dealerCode: item.dealerCode || '' });
+      }
     };
 
     const handleAdminImport = async (event) => {
@@ -6018,7 +6467,9 @@ function App() {
         <nav className="navbar">
           <div className="navbar-left">
             <button className="navbar-button" onClick={handleHomeOpen} disabled={isPlanExpired}>Home</button>
-            <button className="navbar-button" onClick={handleContactOpen}>Contact Us</button>
+            <button className="navbar-button" onClick={handleContactOpen}>
+              Contact Us{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
+            </button>
             {isPlanExpired && (
               <button className="navbar-button upgrade-plan-button" onClick={handleUpgradePlanOpen}>
                 Upgrade Plan
@@ -6027,6 +6478,11 @@ function App() {
             {isLoggedIn && !isPlanExpired && !showDataButton && (
               <button className="navbar-button" onClick={handleReUploadClick} disabled={isPlanExpired}>
                 Upload Data
+              </button>
+            )}
+            {isTestUser && !sampleDataLoaded && !sampleDataLoading && (
+              <button className="navbar-button" onClick={loadTestSampleFile}>
+                Load Sample Data
               </button>
             )}
             {isLoggedIn && !isPlanExpired && showDataButton && (
