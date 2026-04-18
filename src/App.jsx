@@ -1414,7 +1414,15 @@ function App() {
     };
     return (
       <div className="placeholder-container">
-        <h2>Contact</h2>
+        <h2>Contact Us</h2>
+        <div className="contact-us-links">
+          <a className="contact-us-link" href="mailto:deepak.youvi@gmail.com" aria-label="Email Us">
+            <span className="contact-us-icon">📧</span> Email Us
+          </a>
+          <a className="contact-us-link" href="https://wa.me/918789358400" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp Us">
+            <span className="contact-us-icon">💬</span> WhatsApp Us
+          </a>
+        </div>
         <div className="profile-form">
           <span className="profile-label">Name</span>
           <input
@@ -1481,27 +1489,6 @@ function App() {
       setEntries([{ englishWord: item.englishWord || item.english || '', hindiTranslation: item.hindiTranslation || item.hindi || '' }]);
       setShowApprovedList(false);
       setApprovedEditMode(true);
-    };
-
-    const resendApprovedItem = async (item) => {
-      const payload = [{
-        englishWord: String(item.englishWord || item.english || '').trim(),
-        hindiTranslation: String(item.hindiTranslation || item.hindi || '').trim(),
-      }];
-      if (!payload[0].englishWord || !payload[0].hindiTranslation) {
-        alert('Approved item data incomplete. Please edit before sending request.');
-        return;
-      }
-      const ok = await submitUpdateApprovalRequest({
-        type: approvalType,
-        payload,
-        localKey: approvalLocalKey,
-        successMessage: 'Correction request submitted. Your request is pending with admin for approval.',
-      });
-      if (ok) {
-        setShowApprovedList(false);
-        setApprovedEditMode(false);
-      }
     };
 
     useEffect(() => {
@@ -1671,30 +1658,34 @@ function App() {
             {showApprovedList && (
               <div className="dictionary-approved-list">
                 {approvedItems.length > 0 ? (
-                  approvedItems.map((item, index) => (
-                    <div key={`${mode}-approved-${index}`} className="dictionary-approved-item">
-                      <div>
-                        <strong>{String(item.englishWord || item.english || '').trim() || '-'}</strong>
-                        <span>{String(item.hindiTranslation || item.hindi || '').trim() || '-'}</span>
-                      </div>
-                      <div className="dictionary-approved-actions">
-                        <button
-                          type="button"
-                          className="dictionary-approved-action"
-                          onClick={() => editApprovedItem(item)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="dictionary-approved-action dictionary-approved-action--primary"
-                          onClick={() => resendApprovedItem(item)}
-                        >
-                          Re-send
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                  <table className="dictionary-approved-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{isDeliveryAreaMode ? 'Approved Area' : 'Approved Staff'}</th>
+                        <th>Hindi Translation</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {approvedItems.map((item, index) => (
+                        <tr key={`${mode}-approved-${index}`}>
+                          <td>{index + 1}</td>
+                          <td>{String(item.englishWord || item.english || '').trim() || '-'}</td>
+                          <td>{String(item.hindiTranslation || item.hindi || '').trim() || '-'}</td>
+                          <td className="dictionary-approved-actions">
+                            <button
+                              type="button"
+                              className="dictionary-approved-action"
+                              onClick={() => editApprovedItem(item)}
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 ) : (
                   <div className="dictionary-approved-empty">No approved items found yet.</div>
                 )}
@@ -4227,8 +4218,8 @@ function App() {
         <div className="home-section">
           <h3>स्वागत संदेश</h3>
           <p>HPCL LPG Distributor Dashboard में आपका स्वागत है।</p>
-          <p>यहाँ से आप डेटा अपलोड, फ़िल्टर, रिपोर्ट, Cashmemo Print, Tax Invoice और update requests एक ही जगह से manage कर सकते हैं।</p>
-          <p>यह सेक्शन आपके daily workflow को आसान, तेज़ और ज्यादा व्यवस्थित रखने के लिए तैयार किया गया है।</p>
+          <p>यहाँ से आप cDCMS से Pending Booking डेटा upload करके, उसे validate और review करके, Cashmemo और Tax Invoice print कर सकते हैं।</p>
+          <p>इसके साथ ही आप Profile, Bank, Rate, Delivery Area और Delivery Staff update requests भेज सकते हैं तथा approval workflow को ट्रैक कर सकते हैं।</p>
         </div>
 
         <div className="home-hero-grid">
@@ -4291,19 +4282,19 @@ function App() {
       {
         title: 'मुख्य मॉड्यूल',
         items: [
-          'Data Upload और Parsing Engine',
-          'Report, Filter और Search System',
-          'Cashmemo Printing और Tax Invoice Module',
-          'Profile / Bank / Rate Update Requests',
-          'Admin Approval और User Management Panel',
+          'Pending Booking डेटा upload और parsing engine',
+          'Report cards, filters और searchable data grid',
+          'Cashmemo Print और GST Tax Invoice generation',
+          'Profile / Bank / Rate / Delivery update requests',
+          'Admin approval workflow और user control dashboard',
         ],
       },
       {
         title: 'डेटा और अपलोड सिस्टम',
         items: [
-          'CSV और XLSX upload support',
-          'Excel date और mixed format normalization',
-          'Dynamic column handling और visible column control',
+          'CSV / XLSX upload support और dynamic column mapping',
+          'Excel dates, mixed formats और numeric normalization',
+          'Top Navbar से re-upload, show data और data visibility control',
           'Firebase primary storage के साथ local fallback backup',
         ],
       },
@@ -4313,7 +4304,7 @@ function App() {
           'Pending booking analysis और clickable report cards',
           'eKYC, area, order type, status और date range filters',
           'Cascading filters जो available data के हिसाब से options दिखाते हैं',
-          'Printable table view और record-level verification flow',
+          'Printable table view, selected rows verify और bulk actions',
         ],
       },
       {
@@ -4322,15 +4313,15 @@ function App() {
           'Bulk cashmemo print और multiple layout modes',
           'Online paid और regular booking handling',
           'GST invoice generation, round-off और amount in words',
-          'Print-friendly invoice rendering और declaration section',
+          'Print-friendly invoice rendering, declaration और signature section',
         ],
       },
       {
         title: 'Admin कंट्रोल और गवर्नेंस',
         items: [
-          'Pending registration approval / rejection workflow',
+          'Pending registration और approval request workflow',
           'User creation, package control और account status management',
-          'Profile / Bank / Rates approval queue',
+          'Dictionary, delivery area/staff और profile approval queue',
           'Feedback handling, audit trail, recycle bin और CSV export tools',
         ],
       },
@@ -4339,7 +4330,7 @@ function App() {
         items: [
           'Dealer Code + PIN based user login',
           'Package validity, pending, active, disabled और expired access control',
-          'Saved views, bulk actions, quick summaries और expiry alerts',
+          'Saved views, quick summaries और expiry alerts',
           'Daily distributor operations को fast और structured रखने वाला workflow',
         ],
       },
@@ -4357,12 +4348,12 @@ function App() {
           <p><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</strong></p>
         </div>
         <p>
-          यह प्लेटफ़ॉर्म LPG Distributor के पूरे daily workflow को एक जगह संभालने के लिए बनाया गया है।
-          Upload, filtering, reporting, printing, approval और admin control जैसी सभी जरूरी सुविधाएँ इसमें integrated हैं।
+          यह प्लेटफ़ॉर्म LPG Distributor के daily workflow को end-to-end संभालने के लिए बनाया गया है।
+          cDCMS की Pending Booking फ़ाइल upload करना, डेटा को verify करना, filter करना और रिपोर्ट करना यहाँ मुख्य काम हैं।
         </p>
         <p>
-          इसका उद्देश्य daily distributor work को तेज, व्यवस्थित, searchable और कम error-prone बनाना है,
-          ताकि operational decisions और print workflow दोनों आसानी से manage हो सकें।
+          इसके बाद Cashmemo / Tax Invoice print करना, update requests भेजना और admin approval स्टेटस देखना आसान रहता है।
+          यह सिस्टम आपकी daily operations को तेज, structured और error-prone कम करने के लिए डिज़ाइन किया गया है।
         </p>
 
         <div className="about-summary-grid">
@@ -6027,6 +6018,7 @@ function App() {
         <nav className="navbar">
           <div className="navbar-left">
             <button className="navbar-button" onClick={handleHomeOpen} disabled={isPlanExpired}>Home</button>
+            <button className="navbar-button" onClick={handleContactOpen}>Contact Us</button>
             {isPlanExpired && (
               <button className="navbar-button upgrade-plan-button" onClick={handleUpgradePlanOpen}>
                 Upgrade Plan
@@ -6077,7 +6069,6 @@ function App() {
                       </button>
                     )}
                     <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
-                    <button onClick={handleContactOpen} disabled={isPlanExpired}>Contact</button>
                     <button onClick={handleProfileUpdate} disabled={isPlanExpired}>Profile Update</button>
                     <button onClick={handleBankDetails} disabled={isPlanExpired}>Bank Details</button>
                     <button onClick={handleRateUpdate} disabled={isPlanExpired}>Rate Update</button>
