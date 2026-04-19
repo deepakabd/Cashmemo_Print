@@ -2234,6 +2234,20 @@ function App() {
     const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
     const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
     const [adminReplyDraft, setAdminReplyDraft] = useState('');
+    const [allFeedbackEntries, setAllFeedbackEntries] = useState([]);
+
+    const getConversationKey = (item) => {
+      if (!item) return '';
+      return item.userId || item.dealerCode || item.email || item.clientFeedbackId || item.id || '';
+    };
+
+    const getConversationHistory = (item) => {
+      const conversationKey = getConversationKey(item);
+      if (!conversationKey) return [];
+      return allFeedbackEntries
+        .filter((entry) => getConversationKey(entry) === conversationKey)
+        .sort((a, b) => new Date(a.createdAt || a.date || '').getTime() - new Date(b.createdAt || b.date || '').getTime());
+    };
 
     const openAdminReplyPopup = (item) => {
       if (!item) return;
@@ -2352,23 +2366,50 @@ function App() {
             mergedFeedbackMap.set(key, f);
           }
         });
-        const mergedFeedback = Array.from(mergedFeedbackMap.values()).map((item) => {
-          const override = feedbackMetaOverrides[item.id] || {};
-          return {
-            priority: 'medium',
-            resolved: false,
-            ...item,
-            ...override,
-          };
+
+        const latestFeedbackByUser = new Map();
+        Array.from(mergedFeedbackMap.values()).forEach((item) => {
+          const userKey = item.dealerCode || item.email || item.userId || item.id || `unknown-${item.clientFeedbackId || ''}`;
+          const itemTimestamp = new Date(item.createdAt || item.date || '').getTime() || 0;
+          const existing = latestFeedbackByUser.get(userKey);
+          const existingTimestamp = existing ? new Date(existing.createdAt || existing.date || '').getTime() || 0 : 0;
+          if (!existing || itemTimestamp >= existingTimestamp) {
+            latestFeedbackByUser.set(userKey, item);
+          }
         });
+
+        const fullFeedbackEntries = Array.from(mergedFeedbackMap.values())
+          .map((item) => {
+            const override = feedbackMetaOverrides[item.id] || {};
+            return {
+              priority: 'medium',
+              resolved: false,
+              ...item,
+              ...override,
+            };
+          })
+          .sort((a, b) => new Date(a.createdAt || a.date || '').getTime() - new Date(b.createdAt || b.date || '').getTime());
+
+        const mergedFeedback = Array.from(latestFeedbackByUser.values())
+          .map((item) => {
+            const override = feedbackMetaOverrides[item.id] || {};
+            return {
+              priority: 'medium',
+              resolved: false,
+              ...item,
+              ...override,
+            };
+          })
+          .sort((a, b) => new Date(b.createdAt || b.date || '').getTime() - new Date(a.createdAt || a.date || '').getTime());
 
         setRequests(reqWithOverrides);
         setUsers(firebaseUsers);
         setUpdateApprovals(firebaseApprovals);
         setFeedback(mergedFeedback);
+        setAllFeedbackEntries(fullFeedbackEntries);
         localStorage.setItem('registrationRequests', JSON.stringify(reqWithOverrides));
         localStorage.setItem('usersData', JSON.stringify(firebaseUsers));
-        localStorage.setItem('feedbackData', JSON.stringify(mergedFeedback));
+        localStorage.setItem('feedbackData', JSON.stringify(fullFeedbackEntries));
         setAdminDataHealth({
           source: firebaseUsers.length > 0 || firebaseRequests.length > 0 || firebaseApprovals.length > 0 || firebaseFeedback.length > 0 ? 'firebase+local' : 'local',
           lastSyncAt: new Date().toISOString(),
@@ -4262,15 +4303,37 @@ function App() {
                   </div>
                   <div className="admin-chat-popup-body">
                     <div className="admin-chat-content" style={{ width: '100%' }}>
-                      <div className="admin-chat-conversation">
-                        <div className="admin-chat-message user-message">
-                          <strong>User:</strong>
-                          <p>{activeAdminFeedback?.text || activeAdminFeedback?.feedback || 'No message available.'}</p>
-                        </div>
-                        <div className="admin-chat-message admin-message">
-                          <strong>Your reply:</strong>
-                          <p>{feedbackReplies?.[activeAdminFeedback?.id] || feedbackReplies?.[activeAdminFeedback?.clientFeedbackId] || 'No reply yet.'}</p>
-                        </div>
+                      <div className="admin-chat-conversation" style={{ flexDirection: 'column', gap: '12px' }}>
+                        <h4>Chat History</h4>
+                        {getConversationHistory(activeAdminFeedback).map((historyItem) => {
+                          const replyText = feedbackReplies?.[historyItem.id] || feedbackReplies?.[historyItem.clientFeedbackId];
+                          const isSelected = activeAdminFeedback && (historyItem.id === activeAdminFeedback.id || historyItem.clientFeedbackId === activeAdminFeedback.clientFeedbackId);
+                          return (
+                            <div key={historyItem.id || historyItem.clientFeedbackId || `${historyItem.dealerCode}-${historyItem.createdAt}`}
+                              className={`admin-feedback-chat ${isSelected ? 'admin-feedback-chat-selected' : ''}`}
+                              style={{ padding: '12px', borderRadius: '8px', background: isSelected ? '#eef6ff' : '#f8f8f8' }}>
+                              <div className="admin-feedback-chat-message user-message">
+                                <strong>User:</strong>
+                                <span>{historyItem.text || historyItem.feedback || 'No message content.'}</span>
+                                <small>{formatDisplayDate(historyItem.createdAt || historyItem.date)}</small>
+                              </div>
+                              <div className="admin-feedback-chat-message admin-message">
+                                <strong>Admin:</strong>
+                                <span>{replyText || 'No reply yet.'}</span>
+                              </div>
+                              <div style={{ marginTop: '8px' }}>
+                                <button
+                                  type="button"
+                                  className="form-button admin-chat-history-select"
+                                  onClick={() => openAdminReplyPopup(historyItem)}
+                                  disabled={isSelected}
+                                >
+                                  {isSelected ? 'Selected' : 'Reply to this message'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                       <textarea
                         className="form-input"
