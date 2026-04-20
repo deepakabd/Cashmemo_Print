@@ -1,5 +1,5 @@
-﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef } from 'react';
-import { lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -491,16 +491,6 @@ function App() {
     }
   };
 
-  const readApprovalRepliesFromStorage = () => {
-    try {
-      const raw = localStorage.getItem('approvalReplies');
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-
   const readFeedbackReplyReadStatusFromStorage = () => {
     try {
       const raw = localStorage.getItem('feedbackRepliesRead');
@@ -514,7 +504,9 @@ function App() {
   const persistFeedbackReplyReadStatus = (nextStatus) => {
     try {
       localStorage.setItem('feedbackRepliesRead', JSON.stringify(nextStatus || {}));
-    } catch {}
+    } catch (error) {
+      void error;
+    }
   };
 
   const getUserContactReplies = () => {
@@ -747,7 +739,6 @@ function App() {
       if (loggedInUser?.profileData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     const handleChange = (e) => {
       const { name, value } = e.target;
@@ -802,7 +793,6 @@ function App() {
       if (loggedInUser?.bankDetailsData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleChange = (e) => {
@@ -856,7 +846,6 @@ function App() {
       if (loggedInUser?.hindiHeaderData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.hindiHeaderData }));
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleChange = (e) => {
@@ -1131,34 +1120,6 @@ function App() {
     }
   };
 
-  const loadTestSampleFile = async () => {
-    if (sampleDataLoaded || sampleDataLoading) return;
-    setSampleDataLoading(true);
-    try {
-      const response = await fetch(encodeURI('/Sample Excel.xlsx'));
-      if (!response.ok) throw new Error('Unable to load sample file');
-      const blob = await response.blob();
-      const file = new File([blob], 'Sample Excel.xlsx', {
-        type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      await handleFileUpload(file);
-      setSampleDataLoaded(true);
-    } catch (error) {
-      console.error('Sample file load failed:', error);
-      alert('Sample file load failed. Please use Upload Data manually.');
-    } finally {
-      setSampleDataLoading(false);
-      setSampleDataAttempted(true);
-    }
-  };
-
-  useEffect(() => {
-    if (isTestUser && !sampleDataLoaded && !sampleDataLoading && !sampleDataAttempted) {
-      loadTestSampleFile();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTestUser, sampleDataLoaded, sampleDataLoading, sampleDataAttempted]);
-
   useEffect(() => {
     try {
       const rawSession = localStorage.getItem(USER_SESSION_STORAGE_KEY);
@@ -1252,22 +1213,6 @@ function App() {
   };
 
   const handleUpgradePlanOpen = () => {
-    const submitAdminReply = () => {
-      if (!activeAdminFeedback) return;
-      if (!adminReplyDraft.trim()) {
-        alert('Please enter a reply before saving.');
-        return;
-      }
-      const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
-      const nextReplies = {
-        ...feedbackReplies,
-        [replyKey]: adminReplyDraft.trim(),
-      };
-      persistFeedbackReplies(nextReplies);
-      logAdminActivity('feedback_reply_saved', { id: replyKey, dealerCode: activeAdminFeedback.dealerCode || '' });
-      closeAdminReplyPopup();
-    };
-
     hideAllViews();
     setShowUpgradePlan(true);
     setShowUserMenu(false);
@@ -1431,7 +1376,6 @@ function App() {
       } else {
         setData(null);
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const currentPackage = loggedInUser?.package || '-';
@@ -1491,7 +1435,6 @@ function App() {
         mobile: loggedInUser?.mobile || '',
         email: loggedInUser?.email || '',
       }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const storedFeedbackReplies = readFeedbackRepliesFromStorage();
@@ -1503,7 +1446,7 @@ function App() {
             return { ...item, reply: storedFeedbackReplies[idKey] || '', replyId: idKey };
           })
           .filter((item) => item.reply)
-      : [], [loggedInUser, localFeedbackEntries, storedFeedbackReplies]);
+      : [], [localFeedbackEntries, storedFeedbackReplies]);
 
     useEffect(() => {
       if (!showAdminChatPopup) return;
@@ -1630,7 +1573,9 @@ function App() {
         next.push({ ...feedbackEntry, source: 'local' });
         localStorage.setItem(key, JSON.stringify(next));
         anySaved = true;
-      } catch {}
+      } catch (error) {
+        void error;
+      }
 
       if (anySaved) {
         alert('Feedback submitted. Thank you!');
@@ -2238,8 +2183,6 @@ function App() {
       role: 'operator',
     });
     const [editingUserId, setEditingUserId] = useState('');
-    const [dictEng, setDictEng] = useState('');
-    const [dictHin, setDictHin] = useState('');
     const [dictionaryApprovalEdits, setDictionaryApprovalEdits] = useState({});
     const [dictionaryRequestView, setDictionaryRequestView] = useState('new');
     const [editUser, setEditUser] = useState({
@@ -2288,7 +2231,6 @@ function App() {
 
     const openAdminReplyPopup = (item) => {
       if (!item) return;
-      const key = item.id || item.clientFeedbackId || '';
       const currentReply = feedbackReplies?.[item.id] || feedbackReplies?.[item.clientFeedbackId] || '';
       setActiveAdminFeedback(item);
       setAdminReplyDraft(currentReply);
@@ -2299,6 +2241,22 @@ function App() {
       setShowAdminReplyPopup(false);
       setActiveAdminFeedback(null);
       setAdminReplyDraft('');
+    };
+
+    const submitAdminReply = () => {
+      if (!activeAdminFeedback) return;
+      if (!adminReplyDraft.trim()) {
+        alert('Please enter a reply before saving.');
+        return;
+      }
+      const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
+      const nextReplies = {
+        ...feedbackReplies,
+        [replyKey]: adminReplyDraft.trim(),
+      };
+      persistFeedbackReplies(nextReplies);
+      logAdminActivity('feedback_reply_saved', { id: replyKey, dealerCode: activeAdminFeedback.dealerCode || '' });
+      closeAdminReplyPopup();
     };
 
     const getApprovalReplyKey = (approval) => {
@@ -2570,6 +2528,70 @@ function App() {
     const persistSavedAdminViews = (nextViews) => {
       setSavedAdminViews(nextViews);
       localStorage.setItem('savedAdminViews', JSON.stringify(nextViews));
+    };
+
+    const saveCurrentAdminView = () => {
+      const label = window.prompt('Saved view name?');
+      if (!label) return;
+      const nextViews = [
+        {
+          id: `view-${Date.now()}`,
+          label,
+          activeAdminTab,
+          adminSearchTerm,
+          adminDateRange,
+          adminSubFilter,
+        },
+        ...savedAdminViews,
+      ].slice(0, 20);
+      persistSavedAdminViews(nextViews);
+      logAdminActivity('saved_view_created', { label });
+    };
+
+    const applySavedAdminView = (view) => {
+      if (!view) return;
+      setActiveAdminTab(view.activeAdminTab || 'dashboard');
+      setAdminSearchTerm(view.adminSearchTerm || '');
+      setAdminDateRange(view.adminDateRange || 'all');
+      setAdminSubFilter(view.adminSubFilter || 'all');
+      logAdminActivity('saved_view_applied', { label: view.label || '' });
+    };
+
+    const handleAdminImport = async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const { default: XLSX } = await import('xlsx');
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(worksheet);
+          const importedUsers = rows.map((row) => ({
+            dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
+            dealerName: String(row.dealerName || row['Dealer Name'] || '').trim(),
+            mobile: String(row.mobile || row.Mobile || '').trim(),
+            email: String(row.email || row.Email || '').trim(),
+            package: String(row.package || row.Package || '').trim(),
+            pin: String(row.pin || row.PIN || '').trim(),
+            role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
+            status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
+            validFrom: toIsoDate(row.validFrom || row['Valid From']) || new Date().toISOString(),
+            validTill: toIsoDate(row.validTill || row['Valid Till']) || computeValidityDates(String(row.package || row.Package || '')).validTill,
+          })).filter((row) => row.dealerCode && row.dealerName && row.package && row.pin);
+          const nextUsers = [...users, ...importedUsers];
+          writeUsersLocal(nextUsers);
+          logAdminActivity('bulk_users_imported', { count: importedUsers.length });
+          alert(`${importedUsers.length} users imported locally.`);
+        };
+        reader.readAsArrayBuffer(file);
+      } catch (error) {
+        void error;
+        alert('Import failed.');
+      } finally {
+        event.target.value = null;
+      }
     };
 
     const persistDeletedUsersBin = (nextBin) => {
@@ -3083,7 +3105,9 @@ function App() {
           if (approvalDocId) {
             try {
               await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
-            } catch {}
+            } catch (error) {
+              void error;
+            }
           }
         } else if (approvalType === 'planUpgrade') {
           const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
@@ -3209,7 +3233,9 @@ function App() {
         if (approvalDocId) {
           try {
             await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
-          } catch {}
+          } catch (error) {
+            void error;
+          }
         }
         setDictionaryApprovalEdits((prev) => {
           const next = { ...prev };
@@ -3225,7 +3251,7 @@ function App() {
     };
 
     const toggleFeedbackRead = async (item) => {
-      const nextRead = !Boolean(item?.read);
+      const nextRead = !item?.read;
       try {
         if (item?.id) {
           try {
@@ -3305,7 +3331,7 @@ function App() {
     };
 
     const toggleFeedbackResolved = async (item) => {
-      const resolved = !Boolean(item?.resolved);
+      const resolved = !item?.resolved;
       await updateFeedbackMeta(item, { resolved });
       logAdminActivity('feedback_resolved', { id: item.id, resolved });
     };
@@ -4898,21 +4924,8 @@ function App() {
     }
   });
   const [labelDraftSettings, setLabelDraftSettings] = useState(() => createDefaultCashMemoLabelSettings());
-  const [customersToPrint, setCustomersToPrint] = useState([]); // New state to hold multiple customers for printing
+  const [customersToPrint] = useState([]); // New state to hold multiple customers for printing
   const cashMemoRef = useRef(); // Ref for the cash memo component
-
-  // Sample Dealer Details (to be updated by user registration later)
-  const sampleDealerDetails = {
-    name: '',
-    gstn: '',
-    address: {
-      plotNo: '',
-    },
-    contact: {
-      email: '',
-      telephone: '',
-    },
-  };
 
   const defaultVisibleHeaders = [
     'Consumer No.',
@@ -4996,6 +5009,32 @@ function App() {
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
   };
+
+  const loadTestSampleFile = useCallback(async () => {
+    if (sampleDataLoaded || sampleDataLoading) return;
+    setSampleDataLoading(true);
+    try {
+      const response = await fetch(encodeURI('/Sample Excel.xlsx'));
+      if (!response.ok) throw new Error('Unable to load sample file');
+      const blob = await response.blob();
+      const file = new File([blob], 'Sample Excel.xlsx', {
+        type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      await handleFileUpload(file);
+      setSampleDataLoaded(true);
+    } catch (error) {
+      console.error('Sample file load failed:', error);
+      alert('Sample file load failed. Please use Upload Data manually.');
+    } finally {
+      setSampleDataLoading(false);
+      setSampleDataAttempted(true);
+    }
+  }, [handleFileUpload, sampleDataLoaded, sampleDataLoading]);
+
+  useEffect(() => {
+    if (!isTestUser || sampleDataLoaded || sampleDataLoading || sampleDataAttempted) return;
+    loadTestSampleFile();
+  }, [isTestUser, loadTestSampleFile, sampleDataAttempted, sampleDataLoaded, sampleDataLoading]);
 
   const handleResetAllFilters = () => {
     handleResetFilters();
@@ -5242,7 +5281,9 @@ function App() {
                 processedCustomer['Total Amount (₹)'] = rsp;
               }
           }
-        } catch {}
+        } catch (error) {
+          void error;
+        }
 
         const cashMemoHtml = renderToString(
           <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} labelSettings={cashMemoLabelSettings[pageType]} />
@@ -5945,69 +5986,6 @@ function App() {
         logAdminActivityFn('user_deleted_permanently', { dealerCode: item.dealerCode || '' });
       }
       alert(`${item.dealerCode || 'Deleted user'} removed permanently.`);
-    };
-
-    const saveCurrentAdminView = () => {
-      const label = window.prompt('Saved view name?');
-      if (!label) return;
-      const nextViews = [
-        {
-          id: `view-${Date.now()}`,
-          label,
-          activeAdminTab,
-          adminSearchTerm,
-          adminDateRange,
-          adminSubFilter,
-        },
-        ...savedAdminViews,
-      ].slice(0, 20);
-      persistSavedAdminViews(nextViews);
-      logAdminActivity('saved_view_created', { label });
-    };
-
-    const applySavedAdminView = (view) => {
-      if (!view) return;
-      setActiveAdminTab(view.activeAdminTab || 'dashboard');
-      setAdminSearchTerm(view.adminSearchTerm || '');
-      setAdminDateRange(view.adminDateRange || 'all');
-      setAdminSubFilter(view.adminSubFilter || 'all');
-      logAdminActivity('saved_view_applied', { label: view.label || '' });
-    };
-
-    const handleAdminImport = async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      try {
-        const { default: XLSX } = await import('xlsx');
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const rows = XLSX.utils.sheet_to_json(worksheet);
-          const importedUsers = rows.map((row) => ({
-            dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
-            dealerName: String(row.dealerName || row['Dealer Name'] || '').trim(),
-            mobile: String(row.mobile || row.Mobile || '').trim(),
-            email: String(row.email || row.Email || '').trim(),
-            package: String(row.package || row.Package || '').trim(),
-            pin: String(row.pin || row.PIN || '').trim(),
-            role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
-            status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
-            validFrom: toIsoDate(row.validFrom || row['Valid From']) || new Date().toISOString(),
-            validTill: toIsoDate(row.validTill || row['Valid Till']) || computeValidityDates(String(row.package || row.Package || '')).validTill,
-          })).filter((row) => row.dealerCode && row.dealerName && row.package && row.pin);
-          const nextUsers = [...users, ...importedUsers];
-          writeUsersLocal(nextUsers);
-          logAdminActivity('bulk_users_imported', { count: importedUsers.length });
-          alert(`${importedUsers.length} users imported locally.`);
-        };
-        reader.readAsArrayBuffer(file);
-      } catch {
-        alert('Import failed.');
-      } finally {
-        event.target.value = null;
-      }
     };
 
   const matchesReportFilter = (row, reportKey) => {
