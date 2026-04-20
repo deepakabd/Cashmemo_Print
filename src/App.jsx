@@ -452,6 +452,10 @@ function App() {
   const [sampleDataLoaded, setSampleDataLoaded] = useState(false);
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
+  const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
+  const [adminReplyDraft, setAdminReplyDraft] = useState('');
+  const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
   const isPlanExpired = Boolean(
     isLoggedIn &&
     loggedInUser &&
@@ -480,6 +484,16 @@ function App() {
   const readFeedbackRepliesFromStorage = () => {
     try {
       const raw = localStorage.getItem('feedbackReplies');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const readApprovalRepliesFromStorage = () => {
+    try {
+      const raw = localStorage.getItem('approvalReplies');
       const parsed = raw ? JSON.parse(raw) : {};
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
@@ -632,7 +646,7 @@ function App() {
       try {
         await updateDoc(doc(db, 'users', userId), payload);
         return userId;
-      } catch {}
+      } catch (e) { void e; }
     }
 
     if (dealerCode) {
@@ -683,7 +697,7 @@ function App() {
           });
         }
         approvalSaved = true;
-      } catch {}
+      } catch (e) { void e; }
 
       const pendingUpdatePatch = {
         approvalStatus: nextApprovalStatus,
@@ -733,7 +747,8 @@ function App() {
       if (loggedInUser?.profileData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
       }
-    }, [loggedInUser?.profileData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const handleChange = (e) => {
       const { name, value } = e.target;
       setFormData((prev) => ({ ...prev, [name]: value }));
@@ -787,7 +802,8 @@ function App() {
       if (loggedInUser?.bankDetailsData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
       }
-    }, [loggedInUser?.bankDetailsData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleChange = (e) => {
       const { name, value } = e.target;
@@ -840,7 +856,8 @@ function App() {
       if (loggedInUser?.hindiHeaderData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.hindiHeaderData }));
       }
-    }, [loggedInUser?.hindiHeaderData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleChange = (e) => {
       const { name, value } = e.target;
@@ -966,7 +983,7 @@ function App() {
           status: 'expired',
           updatedAt: serverTimestamp(),
         });
-      } catch {}
+      } catch (e) { void e; }
       firestoreUser.status = 'expired';
     }
 
@@ -1012,6 +1029,16 @@ function App() {
     setUserDealerCode('');
     setUserPin('');
     if (String(localUser.status || '').toLowerCase() === 'expired') {
+      // Check for admin reply to plan upgrade request
+      // const approvalReplies = readApprovalRepliesFromStorage();
+      // const userApprovals = [].filter(a => a.userId === localUser.id && a.type === 'planUpgrade');
+      // const latestApproval = userApprovals.sort((a, b) => new Date(b.requestedAt || '').getTime() - new Date(a.requestedAt || '').getTime())[0];
+      // if (latestApproval && approvalReplies[latestApproval.id]) {
+      //   setAdminFlashMessage({
+      //     message: approvalReplies[latestApproval.id],
+      //     approvalId: latestApproval.id,
+      //   });
+      // }
       alert('Logged in successfully. Plan Expired, Please contact Admin or Upgrade Plan');
     } else {
       alert('Logged in successfully!');
@@ -1129,6 +1156,7 @@ function App() {
     if (isTestUser && !sampleDataLoaded && !sampleDataLoading && !sampleDataAttempted) {
       loadTestSampleFile();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestUser, sampleDataLoaded, sampleDataLoading, sampleDataAttempted]);
 
   useEffect(() => {
@@ -1224,14 +1252,24 @@ function App() {
   };
 
   const handleUpgradePlanOpen = () => {
+    const submitAdminReply = () => {
+      if (!activeAdminFeedback) return;
+      if (!adminReplyDraft.trim()) {
+        alert('Please enter a reply before saving.');
+        return;
+      }
+      const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
+      const nextReplies = {
+        ...feedbackReplies,
+        [replyKey]: adminReplyDraft.trim(),
+      };
+      persistFeedbackReplies(nextReplies);
+      logAdminActivity('feedback_reply_saved', { id: replyKey, dealerCode: activeAdminFeedback.dealerCode || '' });
+      closeAdminReplyPopup();
+    };
+
     hideAllViews();
     setShowUpgradePlan(true);
-    setShowUserMenu(false);
-  };
-
-  const handleAdminPanel = () => {
-    hideAllViews();
-    setShowAdminPanel(true);
     setShowUserMenu(false);
   };
 
@@ -1244,7 +1282,7 @@ function App() {
   const handleAdminLogout = async () => {
     try {
       await signOut(auth);
-    } catch {}
+    } catch (e) { void e; }
     hideAllViews();
     setShowAboutInfo(true);
     setAdminLoginId('');
@@ -1393,7 +1431,8 @@ function App() {
       } else {
         setData(null);
       }
-    }, [loggedInUser?.profileData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const currentPackage = loggedInUser?.package || '-';
     const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
@@ -1452,10 +1491,11 @@ function App() {
         mobile: loggedInUser?.mobile || '',
         email: loggedInUser?.email || '',
       }));
-    }, [loggedInUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const storedFeedbackReplies = readFeedbackRepliesFromStorage();
-    const userReplies = loggedInUser
+    const userReplies = useMemo(() => loggedInUser
       ? localFeedbackEntries
           .filter((item) => item.userId === loggedInUser?.id || item.dealerCode === loggedInUser?.dealerCode)
           .map((item) => {
@@ -1463,7 +1503,7 @@ function App() {
             return { ...item, reply: storedFeedbackReplies[idKey] || '', replyId: idKey };
           })
           .filter((item) => item.reply)
-      : [];
+      : [], [loggedInUser, localFeedbackEntries, storedFeedbackReplies]);
 
     useEffect(() => {
       if (!showAdminChatPopup) return;
@@ -1511,7 +1551,7 @@ function App() {
           createdAt: serverTimestamp(),
         });
         anySaved = true;
-      } catch {}
+      } catch (e) { void e; }
       if (loggedInUser?.id) {
         try {
           const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
@@ -1521,7 +1561,7 @@ function App() {
             loggedInUser.dealerCode
           );
           anySaved = true;
-        } catch {}
+        } catch (e) { void e; }
       }
       try {
         const existing = localStorage.getItem(key);
@@ -1531,7 +1571,7 @@ function App() {
         localStorage.setItem(key, JSON.stringify(next));
         setLocalFeedbackEntries(next);
         anySaved = true;
-      } catch {}
+      } catch (e) { void e; }
 
       if (anySaved) {
         alert('Your chat message has been sent. Admin will reply shortly.');
@@ -1571,7 +1611,7 @@ function App() {
           createdAt: serverTimestamp(),
         });
         anySaved = true;
-      } catch {}
+      } catch (e) { void e; }
       if (loggedInUser?.id) {
         try {
           const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
@@ -1581,7 +1621,7 @@ function App() {
             loggedInUser.dealerCode
           );
           anySaved = true;
-        } catch {}
+        } catch (e) { void e; }
       }
       try {
         const existing = localStorage.getItem(key);
@@ -1714,7 +1754,7 @@ function App() {
             rows="5"
             value={form.feedback}
             onChange={handleChange}
-            placeholder="Kindly provide your feedback here"
+            placeholder="Kindly provide your feedback or Suggestion here"
           />
         </div>
         <div className="form-actions">
@@ -1735,16 +1775,12 @@ function App() {
     const englishPlaceholder = isDeliveryAreaMode ? 'e.g. Khera Bazar' : isDeliveryStaffMode ? 'e.g. Rajesh' : 'e.g. Mr.';
     const hindiPlaceholder = isDeliveryAreaMode ? 'उदा: खेरा बाजार' : isDeliveryStaffMode ? 'उदा: राजेश' : 'उदाहरण: श्री';
     const [showApprovedList, setShowApprovedList] = useState(false);
-    const [approvedEditMode, setApprovedEditMode] = useState(false);
-    const approvalType = isDeliveryAreaMode ? 'deliveryArea' : isDeliveryStaffMode ? 'deliveryStaff' : 'dictionary';
-    const approvalLocalKey = isDeliveryAreaMode ? 'deliveryAreaUpdates' : isDeliveryStaffMode ? 'deliveryStaffUpdates' : '';
     const approvedItems = isDeliveryAreaMode ? deliveryAreaUpdates : isDeliveryStaffMode ? deliveryStaffUpdates : [];
     const approvedListTitle = isDeliveryAreaMode ? 'Approved Delivery Areas' : 'Approved Delivery Staff';
 
     const editApprovedItem = (item) => {
       setEntries([{ englishWord: item.englishWord || item.english || '', hindiTranslation: item.hindiTranslation || item.hindi || '' }]);
       setShowApprovedList(false);
-      setApprovedEditMode(true);
     };
 
     useEffect(() => {
@@ -1755,7 +1791,6 @@ function App() {
         setForm({ englishWord: '', hindiTranslation: '' });
       }
       setShowApprovedList(false);
-      setApprovedEditMode(false);
     }, [mode, isDeliveryAreaMode, isDeliveryStaffMode]);
 
     const updateEntry = (index, field, value) => {
@@ -1849,7 +1884,7 @@ function App() {
           });
           approvalId = approvalRef.id;
           approvalSaved = true;
-        } catch {}
+        } catch (e) { void e; }
 
         try {
           await updateDoc(doc(db, 'users', loggedInUser.id), {
@@ -2037,7 +2072,7 @@ function App() {
         return;
       }
       if (!paymentDetails.utr.trim() || !paymentDetails.paymentDate) {
-        alert('UTR number aur payment date required hai.');
+        alert('UTR number & payment date required.');
         return;
       }
       const payload = {
@@ -2161,6 +2196,8 @@ function App() {
       setFeedbackMetaOverrides,
       feedbackReplies,
       setFeedbackReplies,
+      approvalReplies,
+      setApprovalReplies,
       savedAdminViews,
       setSavedAdminViews,
       deletedUsersBin,
@@ -2231,9 +2268,9 @@ function App() {
         ifsc: '',
       },
     });
-    const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
-    const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
-    const [adminReplyDraft, setAdminReplyDraft] = useState('');
+    const [showApprovalReplyPopup, setShowApprovalReplyPopup] = useState(false);
+    const [activeApprovalReply, setActiveApprovalReply] = useState(null);
+    const [approvalReplyDraft, setApprovalReplyDraft] = useState('');
     const [allFeedbackEntries, setAllFeedbackEntries] = useState([]);
 
     const getConversationKey = (item) => {
@@ -2264,20 +2301,40 @@ function App() {
       setAdminReplyDraft('');
     };
 
-    const submitAdminReply = () => {
-      if (!activeAdminFeedback) return;
-      if (!adminReplyDraft.trim()) {
+    const getApprovalReplyKey = (approval) => {
+      if (!approval) return '';
+      return approval.id || approval.approvalId || approval.clientRequestId || `${approval.type}-${approval.userId || approval.dealerCode || approval.dealerName || ''}`;
+    };
+
+    const openApprovalReplyPopup = (item) => {
+      if (!item) return;
+      const replyKey = getApprovalReplyKey(item);
+      const currentReply = approvalReplies?.[replyKey] || '';
+      setActiveApprovalReply({ ...item, replyKey });
+      setApprovalReplyDraft(currentReply);
+      setShowApprovalReplyPopup(true);
+    };
+
+    const closeApprovalReplyPopup = () => {
+      setShowApprovalReplyPopup(false);
+      setActiveApprovalReply(null);
+      setApprovalReplyDraft('');
+    };
+
+    const submitApprovalReply = () => {
+      if (!activeApprovalReply) return;
+      if (!approvalReplyDraft.trim()) {
         alert('Please enter a reply before saving.');
         return;
       }
-      const key = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
+      const key = activeApprovalReply.replyKey || getApprovalReplyKey(activeApprovalReply);
       const nextReplies = {
-        ...feedbackReplies,
-        [key]: adminReplyDraft.trim(),
+        ...approvalReplies,
+        [key]: approvalReplyDraft.trim(),
       };
-      persistFeedbackReplies(nextReplies);
-      logAdminActivity('feedback_reply_saved', { id: key, dealerCode: activeAdminFeedback.dealerCode || '' });
-      closeAdminReplyPopup();
+      persistApprovalReplies(nextReplies);
+      logAdminActivity('approval_reply_saved', { id: key, dealerCode: activeApprovalReply.dealerCode || '' });
+      closeApprovalReplyPopup();
     };
 
     const loadData = async () => {
@@ -2295,12 +2352,12 @@ function App() {
             createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
             approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
           }));
-        } catch {}
+        } catch (e) { void e; }
 
         try {
           const userSnap = await getDocs(collection(db, 'users'));
           firebaseUsers = userSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        } catch {}
+        } catch (e) { void e; }
 
         try {
           const approvalSnap = await getDocs(collection(db, 'updateApprovals'));
@@ -2311,7 +2368,7 @@ function App() {
             approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
             rejectedAt: d.data()?.rejectedAt?.toDate?.()?.toISOString?.() || d.data()?.rejectedAt || '',
           }));
-        } catch {}
+        } catch (e) { void e; }
 
         try {
           const feedbackSnap = await getDocs(collection(db, 'feedback'));
@@ -2320,7 +2377,7 @@ function App() {
             ...d.data(),
             createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
           }));
-        } catch {}
+        } catch (e) { void e; }
 
         if (firebaseRequests.length === 0) {
           const reqRaw = localStorage.getItem('registrationRequests');
@@ -2505,6 +2562,11 @@ function App() {
       localStorage.setItem('feedbackReplies', JSON.stringify(nextReplies));
     };
 
+    const persistApprovalReplies = (nextReplies) => {
+      setApprovalReplies(nextReplies);
+      localStorage.setItem('approvalReplies', JSON.stringify(nextReplies));
+    };
+
     const persistSavedAdminViews = (nextViews) => {
       setSavedAdminViews(nextViews);
       localStorage.setItem('savedAdminViews', JSON.stringify(nextViews));
@@ -2547,6 +2609,7 @@ function App() {
 
     useEffect(() => {
       loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -2554,6 +2617,7 @@ function App() {
       if (!canAccessTab(activeAdminTab)) {
         setActiveAdminTab('dashboard');
       }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [adminRoleMode, activeAdminTab]);
 
     useEffect(() => {
@@ -2561,6 +2625,7 @@ function App() {
       setAdminSearchTerm('');
       clearAllSelections();
       setAdminCurrentPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeAdminTab]);
 
     const approveRequest = async (id, options = {}) => {
@@ -2893,11 +2958,22 @@ function App() {
       if (!pendingStatus) return true;
       return String(pendingStatus).toLowerCase() === 'pending';
     });
+    const getApprovalKey = (approval) => {
+      if (!approval) return '';
+      const approvalType = normalizeApprovalType(approval.type);
+      if (approvalType === 'dictionary') {
+        return `${approvalType}-${approval.approvalId || approval.clientRequestId || approval.id || approval.userId || approval.dealerCode || ''}`;
+      }
+      const userKey = approval.userId || approval.dealerCode || approval.dealerName || '';
+      if (userKey) {
+        return `${approvalType}-${userKey}`;
+      }
+      return `${approvalType}-${approval.id || approval?.payload?.clientRequestId || ''}`;
+    };
+
     const combinedApprovalMap = new Map();
     [...collectionPendingApprovals, ...fallbackPendingApprovals].forEach((approval) => {
-      const key = approval.source === 'userDoc'
-        ? `${approval.type}-${approval.approvalId || approval.clientRequestId || approval.id}`
-        : `${approval.type}-${approval.id || approval?.payload?.clientRequestId}`;
+      const key = getApprovalKey(approval);
       if (!combinedApprovalMap.has(key)) {
         combinedApprovalMap.set(key, approval);
       }
@@ -3066,7 +3142,7 @@ function App() {
               status: 'approved',
               approvedAt: serverTimestamp(),
             });
-          } catch {}
+        } catch (e) { void e; }
         }
         setDictionaryApprovalEdits((prev) => {
           const next = { ...prev };
@@ -3157,7 +3233,7 @@ function App() {
               read: nextRead,
               updatedAt: serverTimestamp(),
             });
-          } catch {}
+        } catch (e) { void e; }
         }
         const nextFeedback = feedback.map((f) => (f.id === item.id ? { ...f, read: nextRead } : f));
         setFeedback(nextFeedback);
@@ -3175,7 +3251,7 @@ function App() {
         if (item?.source !== 'userDoc' && item?.id && !String(item.id).startsWith('userfb-')) {
           try {
             await deleteDoc(doc(db, 'feedback', item.id));
-          } catch {}
+          } catch (e) { void e; }
         }
 
         if (targetUser?.id) {
@@ -3191,7 +3267,7 @@ function App() {
               feedbackEntries: filteredEntries,
               updatedAt: serverTimestamp(),
             });
-          } catch {}
+          } catch (e) { void e; }
           const nextUsers = users.map((u) => (u.id === targetUser.id ? { ...u, feedbackEntries: filteredEntries } : u));
           writeUsersLocal(nextUsers);
         }
@@ -3220,7 +3296,7 @@ function App() {
         if (item?.id && item?.source !== 'userDoc' && !String(item.id).startsWith('userfb-')) {
           await updateDoc(doc(db, 'feedback', item.id), { ...patch, updatedAt: serverTimestamp() });
         }
-      } catch {}
+      } catch (e) { void e; }
     };
 
     const setFeedbackPriority = async (item, priority) => {
@@ -3542,7 +3618,6 @@ function App() {
       if (selectedRequestIds.length === 0) return;
       if (!confirmAdminAction(`Approve ${selectedRequestIds.length} selected registration requests?`)) return;
       for (const id of selectedRequestIds) {
-        // eslint-disable-next-line no-await-in-loop
         await approveRequest(id, { skipConfirm: true });
       }
       clearSelectedRequestIds();
@@ -3551,7 +3626,6 @@ function App() {
       if (selectedRequestIds.length === 0) return;
       if (!confirmAdminAction(`Reject ${selectedRequestIds.length} selected registration requests?`)) return;
       for (const id of selectedRequestIds) {
-        // eslint-disable-next-line no-await-in-loop
         await rejectRequest(id, { skipConfirm: true });
       }
       clearSelectedRequestIds();
@@ -3561,7 +3635,6 @@ function App() {
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Approve ${targets.length} selected update requests?`)) return;
       for (const item of targets) {
-        // eslint-disable-next-line no-await-in-loop
         await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
@@ -3572,7 +3645,6 @@ function App() {
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Reject ${targets.length} selected update requests?`)) return;
       for (const item of targets) {
-        // eslint-disable-next-line no-await-in-loop
         await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
@@ -3583,7 +3655,6 @@ function App() {
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Approve ${targets.length} selected dictionary requests?`)) return;
       for (const item of targets) {
-        // eslint-disable-next-line no-await-in-loop
         await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
@@ -3594,7 +3665,6 @@ function App() {
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Reject ${targets.length} selected dictionary requests?`)) return;
       for (const item of targets) {
-        // eslint-disable-next-line no-await-in-loop
         await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
@@ -3605,37 +3675,9 @@ function App() {
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Toggle status for ${targets.length} selected users?`)) return;
       for (const item of targets) {
-        // eslint-disable-next-line no-await-in-loop
         await toggleUserStatus(item, { skipConfirm: true });
       }
       clearSelectedUserTokens();
-    };
-
-    const handleAddDict = async () => {
-      if (!dictEng.trim() || !dictHin.trim()) return;
-      const newDict = { ...translationDictionary, [dictEng.trim()]: dictHin.trim() };
-      setTranslationDictionary(newDict);
-      try {
-        await setDoc(doc(db, 'settings', 'translationDictionary'), newDict);
-        logAdminActivity('dictionary_updated', { word: dictEng.trim() });
-        setDictEng('');
-        setDictHin('');
-      } catch (err) {
-        alert('Failed to save dictionary to Firebase.');
-      }
-    };
-
-    const handleDeleteDict = async (key) => {
-      if (!confirmAdminAction(`Delete mapping for ${key}?`)) return;
-      const newDict = { ...translationDictionary };
-      delete newDict[key];
-      setTranslationDictionary(newDict);
-      try {
-        await setDoc(doc(db, 'settings', 'translationDictionary'), newDict);
-        logAdminActivity('dictionary_deleted', { word: key });
-      } catch (err) {
-        alert('Failed to delete mapping from Firebase.');
-      }
     };
 
     const saveDictionaryRowsToFirebase = async (rows, source = 'admin') => {
@@ -3696,10 +3738,12 @@ function App() {
 
     useEffect(() => {
       setAdminNotifications(notifications);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pendingCount, nonDictionaryPendingApprovals.length, dictionaryPendingApprovals.length, expiringUsers.length, unreadFeedbackCount]);
 
     useEffect(() => {
       setAdminCurrentPage((prev) => Math.min(prev, adminTotalPages));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [adminTotalPages]);
 
     return (
@@ -4204,9 +4248,14 @@ function App() {
                           <td>{formatDisplayDate(a.requestedAt)}</td>
                           <td>
                             <div className="admin-actions">
-                              <button onClick={() => setViewApproval({ ...a, payload: dictionaryPayload || a.payload })}>View</button>
-                              <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
-                              <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
+                              <button type="button" onClick={() => setViewApproval({ ...a, payload: dictionaryPayload || a.payload })}>View</button>
+                              <button type="button" onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
+                              <button type="button" onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
+                              {approvalType === 'planUpgrade' && (
+                                <button type="button" className="admin-ghost-btn" onClick={(e) => { e.preventDefault(); openApprovalReplyPopup(a); }} disabled={!canMutateAdminData}>
+                                  Reply
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -4345,6 +4394,42 @@ function App() {
                       <div className="admin-chat-actions">
                         <button type="button" className="form-button" onClick={submitAdminReply}>Send Reply</button>
                         <button type="button" className="form-button secondary" onClick={closeAdminReplyPopup}>Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showApprovalReplyPopup && (
+              <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
+                <div className="admin-chat-popup">
+                  <div className="admin-chat-popup-header">
+                    <h3>Reply to Plan Upgrade Request</h3>
+                    <button type="button" className="admin-chat-popup-close" onClick={closeApprovalReplyPopup}>Close</button>
+                  </div>
+                  <div className="admin-chat-popup-body">
+                    <div className="admin-chat-content" style={{ width: '100%' }}>
+                      <div className="admin-chat-conversation">
+                        <div className="admin-chat-message user-message">
+                          <strong>User Request:</strong>
+                          <p>Plan upgrade request from {activeApprovalReply?.dealerCode || 'user'} - {activeApprovalReply?.payload?.plan || 'unknown plan'}</p>
+                        </div>
+                        <div className="admin-chat-message admin-message">
+                          <strong>Your reply:</strong>
+                          <p>{approvalReplies?.[activeApprovalReply?.replyKey] || 'No reply yet.'}</p>
+                        </div>
+                      </div>
+                      <textarea
+                        className="form-input"
+                        rows="5"
+                        value={approvalReplyDraft}
+                        onChange={(e) => setApprovalReplyDraft(e.target.value)}
+                        placeholder="Type your reply here"
+                      />
+                      <div className="admin-chat-actions">
+                        <button type="button" className="form-button" onClick={submitApprovalReply}>Send Reply</button>
+                        <button type="button" className="form-button secondary" onClick={closeApprovalReplyPopup}>Cancel</button>
                       </div>
                     </div>
                   </div>
@@ -4899,19 +4984,6 @@ function App() {
     setDeliveryManFilter,
     isRegMobileFilter,
     setIsRegMobileFilter,
-    uniqueEkycStatuses,
-    uniqueAreas,
-    uniqueNatures,
-    uniqueMobileStatuses,
-    uniqueConsumerStatuses,
-    uniqueConnectionTypes,
-    uniqueOnlineRefillPaymentStatuses,
-    uniqueOrderStatuses,
-    uniqueOrderSources,
-    uniqueOrderTypes,
-    uniqueCashMemoStatuses,
-    uniqueDeliveryMen,
-    uniqueIsRegMobileStatuses,
     handleFileUpload,
     handleResetFilters,
   } = useParsedDataFilters({
@@ -5021,6 +5093,7 @@ function App() {
       if (isHindiPrint) {
         const transliterateText = async (text) => {
           if (!text) return '';
+          let processedText = text;
           try {
             const localCacheKey = `transCache_${text.toLowerCase().trim()}`;
             const cached = localStorage.getItem(localCacheKey);
@@ -5029,7 +5102,6 @@ function App() {
             const exactMatch = Object.keys(translationDictionary).find(k => k.toLowerCase() === text.toLowerCase().trim());
             if (exactMatch) return translationDictionary[exactMatch];
 
-            let processedText = text;
             const sortedKeys = Object.keys(translationDictionary).sort((a, b) => b.length - a.length);
             sortedKeys.forEach(engWord => {
               const escapedWord = engWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -5902,20 +5974,6 @@ function App() {
       logAdminActivity('saved_view_applied', { label: view.label || '' });
     };
 
-    const sendFeedbackReply = (item, currentFeedbackReplies = {}, persistFeedbackRepliesFn, logAdminActivityFn) => {
-      if (!item) return;
-      const currentReply = currentFeedbackReplies[item.id] || '';
-      const draft = window.prompt(`Reply for ${item.dealerCode || 'user'}`, currentReply);
-      if (draft === null) return;
-      const nextReplies = { ...currentFeedbackReplies, [item.id]: draft };
-      if (typeof persistFeedbackRepliesFn === 'function') {
-        persistFeedbackRepliesFn(nextReplies);
-      }
-      if (typeof logAdminActivityFn === 'function') {
-        logAdminActivityFn('feedback_reply_saved', { id: item.id, dealerCode: item.dealerCode || '' });
-      }
-    };
-
     const handleAdminImport = async (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
@@ -6136,6 +6194,7 @@ function App() {
 
   const baseFilteredData = useMemo(() => {
     return sortRows(applyStructuredFilters(parsedData, ['activeReportFilter']));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     parsedData,
     searchTerm,
@@ -6260,6 +6319,7 @@ function App() {
     setTimeout(() => {
       setCurrentPage(1);
     }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     searchTerm,
     eKycFilter,
@@ -6332,18 +6392,31 @@ function App() {
     { key: 'pendingAbove21Days', label: '> 21 Days', value: bookingReport.metrics.pendingAbove21Days },
   ];
   const reportFilterOptions = reportCards.filter((card) => card.key !== 'totalPendingBooking');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableEkycOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['eKycFilter']).map(row => row['EKYC Status'])), [parsedData, searchTerm, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableAreaOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['areaFilter']).map(row => row['Delivery Area'])), [parsedData, searchTerm, eKycFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableNatureOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['natureFilter']).map(row => row['Consumer Nature'])), [parsedData, searchTerm, eKycFilter, areaFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableMobileStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['mobileStatusFilter']).map(row => (row['Mobile No.'] && row['Mobile No.'] !== '' ? 'Available' : 'Not Available'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableConsumerStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['consumerStatusFilter']).map(row => row['Consumer Type'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableConnectionTypeOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['connectionTypeFilter']).map(row => row['Consumer Package'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableOnlinePaymentOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['onlineRefillPaymentStatusFilter']).map(row => row['Online Refill Payment status'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableOrderStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['orderStatusFilter']).map(row => row['Order Status'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableOrderSourceOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['orderSourceFilter']).map(row => row['Order Source'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableOrderTypeOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['orderTypeFilter']).map(row => row['Order Type'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableCashMemoStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['cashMemoStatusFilter']).map(row => row['Cash Memo Status'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableDeliveryManOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['deliveryManFilter']).map(row => row['Delivery Man'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableIsRegMobileOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['isRegMobileFilter']).map(row => (row['Is Reg Mobile'] && row['Is Reg Mobile'] !== '' ? 'Yes' : 'No'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
 
   useEffect(() => {
@@ -6360,15 +6433,8 @@ function App() {
     if (cashMemoStatusFilter !== 'All' && !availableCashMemoStatusOptions.includes(cashMemoStatusFilter)) setCashMemoStatusFilter('All');
     if (deliveryManFilter !== 'All' && !availableDeliveryManOptions.includes(deliveryManFilter)) setDeliveryManFilter('All');
     if (isRegMobileFilter !== 'All' && !availableIsRegMobileOptions.includes(isRegMobileFilter)) setIsRegMobileFilter('All');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, availableEkycOptions, availableAreaOptions, availableNatureOptions, availableMobileStatusOptions, availableConsumerStatusOptions, availableConnectionTypeOptions, availableOnlinePaymentOptions, availableOrderStatusOptions, availableOrderSourceOptions, availableOrderTypeOptions, availableCashMemoStatusOptions, availableDeliveryManOptions, availableIsRegMobileOptions]);
-
-  const handleNextPage = () => {
-    setCurrentPage(prev => Math.min(prev + 1, totalPages));
-  };
-
-  const handlePrevPage = () => {
-    setCurrentPage(prev => Math.max(prev - 1, 1));
-  };
 
   const addColumn = (header) => {
     if (!visibleHeaders.includes(header)) {
@@ -6634,10 +6700,17 @@ function App() {
           {showAdminLogin && (
             <div className="placeholder-container admin-login-panel">
               <h2>Admin Login</h2>
-              <div className="register-form">
+              <form
+                className="register-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleAdminLoginSubmit();
+                }}
+              >
                 <input
                   className="form-input"
                   placeholder="Admin Email"
+                  autoComplete="username"
                   value={adminLoginId}
                   onChange={(e) => setAdminLoginId(e.target.value)}
                 />
@@ -6645,15 +6718,13 @@ function App() {
                   className="form-input"
                   type="password"
                   placeholder="Password"
+                  autoComplete="current-password"
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAdminLoginSubmit();
-                  }}
                 />
-              </div>
+              </form>
               <div className="form-actions">
-                <button onClick={handleAdminLoginSubmit}>Login</button>
+                <button onClick={handleAdminLoginSubmit} type="button">Login</button>
                 <button onClick={navigateToHome}>Close</button>
               </div>
             </div>
@@ -6661,10 +6732,17 @@ function App() {
           {showUserLogin && (
             <div className="placeholder-container admin-login-panel">
               <h2>User Login</h2>
-              <div className="register-form">
+              <form
+                className="register-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleUserLoginSubmit();
+                }}
+              >
                 <input
                   className="form-input"
                   placeholder="Dealer Code"
+                  autoComplete="username"
                   value={userDealerCode}
                   onChange={(e) => setUserDealerCode(e.target.value)}
                 />
@@ -6672,15 +6750,13 @@ function App() {
                   className="form-input"
                   type="password"
                   placeholder="PIN"
+                  autoComplete="current-password"
                   value={userPin}
                   onChange={(e) => setUserPin(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleUserLoginSubmit();
-                  }}
                 />
-              </div>
+              </form>
               <div className="form-actions">
-                <button onClick={handleUserLoginSubmit}>Login</button>
+                <button onClick={handleUserLoginSubmit} type="button">Login</button>
                 <button onClick={navigateToHome}>Close</button>
               </div>
             </div>
@@ -7060,6 +7136,23 @@ function App() {
                   <CashMemoEnglish customerData={item.customer} />
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {adminFlashMessage && (
+        <div className="admin-flash-message-overlay" onClick={() => setAdminFlashMessage(null)}>
+          <div className="admin-flash-message" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-flash-message-header">
+              <h3>Admin Reply</h3>
+              <button type="button" className="admin-flash-message-close" onClick={() => setAdminFlashMessage(null)}>×</button>
+            </div>
+            <div className="admin-flash-message-body">
+              <p>{adminFlashMessage.message}</p>
+            </div>
+            <div className="admin-flash-message-actions">
+              <button onClick={() => setAdminFlashMessage(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}

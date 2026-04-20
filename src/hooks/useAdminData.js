@@ -38,6 +38,10 @@ export const useAdminData = () => {
     const parsed = readStorageValue('feedbackReplies', {});
     return parsed && typeof parsed === 'object' ? parsed : {};
   });
+  const [approvalReplies, setApprovalReplies] = useState(() => {
+    const parsed = readStorageValue('approvalReplies', {});
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  });
   const [savedAdminViews, setSavedAdminViews] = useState(() => {
     const parsed = readStorageValue('savedAdminViews', []);
     return Array.isArray(parsed) ? parsed : [];
@@ -94,6 +98,8 @@ export const useAdminData = () => {
     setFeedbackMetaOverrides,
     feedbackReplies,
     setFeedbackReplies,
+    approvalReplies,
+    setApprovalReplies,
     savedAdminViews,
     setSavedAdminViews,
     deletedUsersBin,
