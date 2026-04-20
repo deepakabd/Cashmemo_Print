@@ -107,6 +107,11 @@
   background-color: #777;
 }
 
+.user-icon:focus-visible {
+  outline: 2px solid #9cc3ff;
+  outline-offset: 2px;
+}
+
 .user-icon-badge {
   position: absolute;
   top: -5px;
@@ -175,6 +180,71 @@
   font-size: 0.78rem;
 }
 
+.dropdown-menu__summary-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dropdown-menu__summary-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.dropdown-menu__summary-pill--pending {
+  background: rgba(255, 176, 32, 0.18);
+  color: #ffd37a;
+}
+
+.dropdown-menu__summary-pill--approved {
+  background: rgba(52, 199, 89, 0.18);
+  color: #9bf0b3;
+}
+
+.dropdown-menu__summary-pill--rejected {
+  background: rgba(255, 77, 79, 0.18);
+  color: #ffb0b1;
+}
+
+.dropdown-menu__summary-pill--unread {
+  background: rgba(13, 110, 253, 0.22);
+  color: #dbe8ff;
+}
+
+.dropdown-menu__summary-note {
+  margin-top: 10px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #dbe7ff;
+}
+
+.dropdown-menu__quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dropdown-menu__quick-action {
+  padding: 9px 12px !important;
+  border-radius: 8px !important;
+  background: rgba(255,255,255,0.08) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  font-size: 0.84rem !important;
+  font-weight: 700;
+  text-align: center !important;
+}
+
+.dropdown-menu__quick-action:hover {
+  background: rgba(255,255,255,0.14) !important;
+}
+
 .dropdown-menu__section {
   padding: 10px 0 6px;
   border-top: 1px solid rgba(255,255,255,0.1);
@@ -192,6 +262,13 @@
 
 .dropdown-menu__button {
   padding: 10px 16px !important;
+}
+
+.dropdown-menu__button:focus-visible,
+.dropdown-menu__logout:focus-visible,
+.dropdown-menu__quick-action:focus-visible {
+  outline: 2px solid #9cc3ff;
+  outline-offset: -2px;
 }
 
 .dropdown-menu__button-row {
