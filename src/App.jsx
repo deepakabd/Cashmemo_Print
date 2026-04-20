@@ -2,6 +2,7 @@
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
+import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, getDoc, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
@@ -43,6 +44,17 @@ const formatDateToDDMMYYYY = (date) => {
   const year = date.getFullYear();
   return `${day}-${month}-${year}`;
 };
+
+const readImageFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+  if (!(file instanceof File)) {
+    reject(new Error('Invalid file.'));
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+  reader.onerror = () => reject(new Error('Image read failed.'));
+  reader.readAsDataURL(file);
+});
 
 const createValidatedDate = (year, month, day, hour = 0, minute = 0, second = 0) => {
   const date = new Date(
@@ -553,6 +565,10 @@ function App() {
 
   const contactReplyItems = getUserContactReplies();
   const contactReplyCount = contactReplyItems.filter((item) => !item.read).length;
+  const ADMIN_CONTACTS = {
+    email: 'deepak.youvi@gmail.com',
+    whatsapp: 'https://wa.me/918789358400',
+  };
 
   const userMenuRef = useRef(null);
   const userMenuButtonRef = useRef(null);
@@ -770,6 +786,7 @@ function App() {
       email: '',
       gst: '',
       address: '',
+      photoDataUrl: '',
     });
     useEffect(() => {
       if (loggedInUser?.profileData) {
@@ -779,6 +796,27 @@ function App() {
     const handleChange = (e) => {
       const { name, value } = e.target;
       setFormData((prev) => ({ ...prev, [name]: value }));
+    };
+    const handlePhotoChange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        alert('Please choose an image file.');
+        return;
+      }
+      if (file.size > 1024 * 1024) {
+        alert('Profile photo must be under 1 MB.');
+        return;
+      }
+      try {
+        const photoDataUrl = await readImageFileAsDataUrl(file);
+        setFormData((prev) => ({ ...prev, photoDataUrl }));
+      } catch {
+        alert('Photo upload failed. Please try another image.');
+      }
+    };
+    const handlePhotoRemove = () => {
+      setFormData((prev) => ({ ...prev, photoDataUrl: '' }));
     };
     const handleSave = async () => {
       const ok = await submitUpdateApprovalRequest({
@@ -795,6 +833,20 @@ function App() {
       <div className="placeholder-container">
         <h2>Profile Update</h2>
         <div className="profile-form">
+          <span className="profile-label">Profile Photo</span>
+          <div className="profile-photo-field">
+            {formData.photoDataUrl ? (
+              <img className="profile-photo-preview" src={formData.photoDataUrl} alt="Profile preview" />
+            ) : (
+              <div className="profile-photo-placeholder">No photo selected</div>
+            )}
+            <div className="profile-photo-actions">
+              <input className="form-input" type="file" accept="image/*" onChange={handlePhotoChange} />
+              {formData.photoDataUrl && (
+                <button type="button" className="profile-photo-remove" onClick={handlePhotoRemove}>Remove Photo</button>
+              )}
+            </div>
+          </div>
           <span className="profile-label">Distributor Code</span>
           <input className="form-input" name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
           <span className="profile-label">Distributor Name</span>
@@ -1092,6 +1144,11 @@ function App() {
     setSampleDataAttempted(false);
     setShowAboutInfo(true);
     alert('Logged out successfully!');
+  };
+
+  const handleLogoutWithConfirm = () => {
+    if (!window.confirm('Are you sure you want to log out from this account?')) return;
+    handleLogout();
   };
 
   const hideAllViews = () => {
@@ -1435,6 +1492,7 @@ function App() {
 
     const currentPackage = loggedInUser?.package || '-';
     const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
+    const profilePhotoDataUrl = data?.photoDataUrl || '';
     const summaryItems = [
       { label: 'Distributor Name', value: loggedInUser?.profileData?.distributorName || '-' },
       { label: 'Bank Details', value: loggedInUser?.bankDetailsData?.bankName ? 'Available' : 'Missing' },
@@ -1465,6 +1523,11 @@ function App() {
     return (
       <div className="placeholder-container">
         <h2>User Profile</h2>
+        {profilePhotoDataUrl && (
+          <div className="user-profile-photo-wrap">
+            <img className="user-profile-photo" src={profilePhotoDataUrl} alt="User profile" />
+          </div>
+        )}
         <div className="home-account-grid user-profile-summary-grid">
           {summaryItems.map((item) => (
             <div key={item.label} className="home-account-item">
@@ -2313,6 +2376,7 @@ function App() {
         email: '',
         gst: '',
         address: '',
+        photoDataUrl: '',
       },
       bankDetailsData: {
         bankName: '',
@@ -3025,6 +3089,7 @@ function App() {
           email: u.profileData?.email || '',
           gst: u.profileData?.gst || '',
           address: u.profileData?.address || '',
+          photoDataUrl: u.profileData?.photoDataUrl || '',
         },
         bankDetailsData: {
           bankName: u.bankDetailsData?.bankName || '',
@@ -4379,6 +4444,7 @@ function App() {
               <input className="form-input" placeholder="Profile Email" value={editUser.profileData.email} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, email: e.target.value } }))} />
               <input className="form-input" placeholder="Profile GST" value={editUser.profileData.gst} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, gst: e.target.value } }))} />
               <input className="form-input" placeholder="Profile Address" value={editUser.profileData.address} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, address: e.target.value } }))} />
+              <input className="form-input" placeholder="Profile Photo Data URL" value={editUser.profileData.photoDataUrl} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, photoDataUrl: e.target.value } }))} />
             </div>
             <div className="admin-edit-grid admin-edit-grid-bank">
               <input className="form-input" placeholder="Bank Name" value={editUser.bankDetailsData.bankName} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, bankName: e.target.value } }))} />
@@ -6773,6 +6839,7 @@ function App() {
   const currentUserView = showUpgradePlan ? 'upgradePlan'
     : showUserProfile ? 'userProfile'
     : showContactForm ? 'support'
+    : showParsedData ? 'dataUpload'
     : showProfileUpdate ? 'profileUpdate'
     : showRateUpdate ? 'rateUpdate'
     : showBankDetails ? 'bankUpdate'
@@ -6803,6 +6870,78 @@ function App() {
   ];
   const incompleteProfileAreas = profileCompletenessChecks.filter((item) => !item.complete);
   const profileCompletenessLabel = `${profileCompletenessChecks.length - incompleteProfileAreas.length}/${profileCompletenessChecks.length} complete`;
+  const profileCompletionPercent = Math.round(((profileCompletenessChecks.length - incompleteProfileAreas.length) / profileCompletenessChecks.length) * 100);
+  const userAvatarLabel = (() => {
+    const source = String(loggedInUser?.dealerName || loggedInUser?.dealerCode || 'U').trim();
+    if (!source) return 'U';
+    const words = source.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      return `${words[0][0] || ''}${words[1][0] || ''}`.toUpperCase();
+    }
+    return source.slice(0, 2).toUpperCase();
+  })();
+  const userAvatarImage = profileData.photoDataUrl || '';
+  const userMenuPackageTips = isHindiEnterprisePackage(loggedInUser?.package)
+    ? [
+        {
+          text: 'Hindi package active: dictionary, delivery area/staff, and header tools are available.',
+          actionLabel: 'Open Hindi Tools',
+          onClick: handleDictionaryOpen,
+          viewKey: 'dictionaryUpdate',
+          disabled: isPlanExpired || !isEnterpriseHindiPackage(loggedInUser?.package),
+        },
+        {
+          text: 'Use approval badges to quickly track pending Hindi updates.',
+          actionLabel: 'Open Request History',
+          onClick: handleRequestHistoryOpen,
+          beforeOpen: () => setUserProfileInitialSection('history'),
+          viewKey: 'userProfile',
+          allowSameView: true,
+        },
+      ]
+    : String(loggedInUser?.package || '').toLowerCase().includes('premium')
+      ? [
+          {
+            text: 'Review rates, labels, and invoice workflow regularly with your Premium package.',
+            actionLabel: 'Open Work Tools',
+            onClick: hasWorkingData ? handleInvoiceOpen : handleReUploadClick,
+            viewKey: hasWorkingData ? 'invoice' : 'dataUpload',
+            disabled: isPlanExpired && hasWorkingData,
+          },
+          {
+            text: 'Use support replies and request history to track approvals.',
+            actionLabel: 'Track Updates',
+            onClick: contactReplyCount > 0 ? handleContactOpen : handleRequestHistoryOpen,
+            beforeOpen: contactReplyCount > 0 ? undefined : () => setUserProfileInitialSection('history'),
+            viewKey: contactReplyCount > 0 ? 'support' : 'userProfile',
+            allowSameView: true,
+          },
+        ]
+      : [
+          {
+            text: 'Complete your profile and bank details to speed up onboarding on the Demo package.',
+            actionLabel: incompleteProfileAreas.some((item) => item.key === 'profile') ? 'Complete Profile' : 'Update Bank',
+            onClick: incompleteProfileAreas.some((item) => item.key === 'profile') ? handleProfileUpdate : handleBankDetails,
+            viewKey: incompleteProfileAreas.some((item) => item.key === 'profile') ? 'profileUpdate' : 'bankUpdate',
+            disabled: isPlanExpired,
+          },
+          {
+            text: 'Renew your plan to unlock full work tools and advanced updates.',
+            actionLabel: 'Open Renewal',
+            onClick: handleUpgradePlanOpen,
+            viewKey: 'upgradePlan',
+            requiresConfirm: isPlanExpired,
+            confirmMessage: 'Do you want to open the renewal form now?',
+          },
+        ];
+  const hasWorkingData = Array.isArray(parsedData) && parsedData.length > 0;
+  const collectMenuNames = (labels = [], predicate) => labels.filter((label) => {
+    try {
+      return Boolean(predicate(label));
+    } catch {
+      return false;
+    }
+  });
   const menuAccessRules = {
     profileOverview: () => true,
     requestHistory: () => true,
@@ -6846,6 +6985,27 @@ function App() {
     }
     return null;
   };
+
+  const unreadMenuItems = new Set([
+    ...(contactReplyCount > 0 ? ['Open Support & Replies'] : []),
+    ...(planUpgradeReplyText ? ['Open Renewal'] : []),
+    ...collectMenuNames(
+      ['Update Profile', 'Update Bank Details', 'Update Rates', 'Update Dictionary', 'Update Delivery Area', 'Update Delivery Staff', 'Update Header'],
+      (label) => {
+        const lookup = {
+          'Update Profile': 'profile',
+          'Update Bank Details': 'bank',
+          'Update Rates': 'rates',
+          'Update Dictionary': 'dictionary',
+          'Update Delivery Area': 'deliveryArea',
+          'Update Delivery Staff': 'deliveryStaff',
+          'Update Header': 'header',
+        };
+        const tone = getRequestBadge(lookup[label])?.tone;
+        return tone === 'pending' || tone === 'reply';
+      },
+    ),
+  ]);
 
   const getRequestActivityText = (type) => {
     const pendingUpdate = loggedInUser?.pendingUpdates?.[type];
@@ -6921,6 +7081,7 @@ function App() {
   const runUserMenuItem = (item) => () => {
     closeUserMenu(false);
     if (item?.viewKey && item.viewKey === currentUserView && !item?.allowSameView) return;
+    if (item?.requiresConfirm && !window.confirm(item.confirmMessage || `Open ${item.label}?`)) return;
     if (typeof item?.beforeOpen === 'function') {
       item.beforeOpen();
     }
@@ -6941,6 +7102,13 @@ function App() {
     : !bankDetailsData.bankName
       ? { label: 'Update Bank', onClick: handleBankDetails, viewKey: 'bankUpdate' }
       : { label: 'Open Support', onClick: handleContactOpen, viewKey: 'support' };
+  const userMenuEmptyGuidance = isPlanExpired
+    ? 'Renew your plan to restore uploads, invoice tools, and update requests.'
+    : !hasWorkingData
+      ? 'No working data has been uploaded yet. Start with Upload Data.'
+      : updateInboxCount === 0 && incompleteProfileAreas.length === 0
+        ? 'Everything looks up to date. You can open Data View or Invoice tools next.'
+        : 'Use the quick actions to complete the next best step.';
   const profileCompletenessActions = {
     profile: {
       label: 'Complete Profile',
@@ -6973,20 +7141,21 @@ function App() {
 
   const userMenuConfig = [
     {
-      title: 'Account',
+      title: 'Updates',
       items: [
-        { label: 'View Profile', onClick: handleUserProfile, viewKey: 'userProfile', allowSameView: true, hint: 'View account details, package info, and profile summary.' },
-        { label: 'Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true, hint: pendingRequestCount > 0 ? `${pendingRequestCount} request pending or recently updated.` : 'See past approval and request activity.' },
-        { label: 'Open About', onClick: handleAboutOpen, viewKey: 'about', disabled: !canAccessMenuFeature('about'), reason: getDisabledReason('about') },
-        { label: 'Open Invoice', onClick: handleInvoiceOpen, viewKey: 'invoice', disabled: !canAccessMenuFeature('invoice'), reason: getDisabledReason('invoice') },
+        { label: 'View Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true, hint: pendingRequestCount > 0 ? `${pendingRequestCount} request pending or recently updated.` : 'See past approval and request activity.' },
+        { label: 'Open Support & Replies', onClick: handleContactOpen, viewKey: 'support', badge: contactReplyCount > 0 ? { label: contactReplyCount > 9 ? '9+' : String(contactReplyCount), tone: 'unread' } : null, hint: contactReplyCount > 0 ? `${contactReplyCount} unread admin repl${contactReplyCount > 1 ? 'ies are' : 'y is'} waiting.` : 'Open support chat and reply history.' },
+        { label: 'Open Renewal', onClick: handleUpgradePlanOpen, viewKey: 'upgradePlan', badge: getRequestBadge('planUpgrade'), hint: getRequestHint('planUpgrade', isPlanExpired ? 'Renew your plan to restore full access.' : 'Review renewal options before expiry.'), requiresConfirm: isPlanExpired, confirmMessage: 'Do you want to open the renewal form now?' },
       ],
     },
     {
-      title: 'Requests',
+      title: 'Work',
       items: [
         { label: 'Update Profile', onClick: handleProfileUpdate, viewKey: 'profileUpdate', disabled: !canAccessMenuFeature('profileUpdate'), reason: getDisabledReason('profileUpdate'), badge: getRequestBadge('profile'), hint: getRequestHint('profile', 'Update distributor profile details.') },
         { label: 'Update Bank Details', onClick: handleBankDetails, viewKey: 'bankUpdate', disabled: !canAccessMenuFeature('bankUpdate'), reason: getDisabledReason('bankUpdate'), badge: getRequestBadge('bank'), hint: getRequestHint('bank', 'Update bank details for records and billing.') },
         { label: 'Update Rates', onClick: handleRateUpdate, viewKey: 'rateUpdate', disabled: !canAccessMenuFeature('rateUpdate'), reason: getDisabledReason('rateUpdate'), badge: getRequestBadge('rates'), hint: getRequestHint('rates', 'Send revised rate data for approval.') },
+        { label: showParsedData ? 'Open Data View' : 'Upload Data', onClick: showParsedData ? handleShowData : handleReUploadClick, viewKey: 'dataUpload', disabled: isPlanExpired, reason: isPlanExpired ? 'Renew plan to upload and manage working data again.' : '', hint: showParsedData ? `Return to your uploaded data view${hasWorkingData ? ` (${parsedData.length} rows loaded)` : ''}.` : 'Upload distributor working data.' },
+        { label: 'Open Invoice', onClick: handleInvoiceOpen, viewKey: 'invoice', disabled: !canAccessMenuFeature('invoice'), reason: getDisabledReason('invoice'), hint: isPlanExpired ? getDisabledReason('invoice') : 'Open invoice tools and exports.' },
         { label: 'Update Labels', onClick: handleLabelUpdate, viewKey: 'labelUpdate', disabled: !canAccessMenuFeature('labelUpdate'), reason: getDisabledReason('labelUpdate'), hint: isPlanExpired ? getDisabledReason('labelUpdate') : 'Adjust print layout labels for cashmemo output.' },
         {
           label: 'Update Dictionary',
@@ -7038,15 +7207,10 @@ function App() {
       ],
     },
     {
-      title: 'Support',
+      title: 'Account',
       items: [
-        {
-          label: 'Open Support & Replies',
-          onClick: handleContactOpen,
-          viewKey: 'support',
-          badge: contactReplyCount > 0 ? { label: contactReplyCount > 9 ? '9+' : String(contactReplyCount), tone: 'unread' } : null,
-          hint: contactReplyCount > 0 ? `${contactReplyCount} unread admin repl${contactReplyCount > 1 ? 'ies are' : 'y is'} waiting.` : 'Open support chat and reply history.',
-        },
+        { label: 'View Profile', onClick: handleUserProfile, viewKey: 'userProfile', allowSameView: true, hint: 'View account details, package info, and profile summary.' },
+        { label: 'Open About', onClick: handleAboutOpen, viewKey: 'about', disabled: !canAccessMenuFeature('about'), reason: getDisabledReason('about') },
       ],
     },
   ];
@@ -7054,7 +7218,17 @@ function App() {
   const userMenuSections = userMenuConfig
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => item.show !== false),
+      items: section.items
+        .filter((item) => item.show !== false)
+        .map((item) => ({
+          ...item,
+          unread: unreadMenuItems.has(item.label),
+          active: item.viewKey === 'userProfile'
+            ? (currentUserView === 'userProfile'
+              && ((item.beforeOpen && userProfileInitialSection === 'history')
+                || (!item.beforeOpen && userProfileInitialSection !== 'history')))
+            : item.viewKey === currentUserView,
+        })),
     }))
     .filter((section) => section.items.length > 0);
 
@@ -7119,104 +7293,47 @@ function App() {
                   aria-expanded={showUserMenu}
                   aria-controls="user-menu-dropdown"
                 >
-                  &#128100; {/* User icon */}
+                  {userAvatarImage ? (
+                    <img className="user-icon__photo" src={userAvatarImage} alt="Profile" />
+                  ) : (
+                    <span className="user-icon__avatar">{userAvatarLabel}</span>
+                  )}
                   {userMenuBadgeCount && (
-                    <span className="user-icon-badge">
+                    <span className="user-icon-badge user-icon-badge--pulse">
                       {userMenuBadgeCount}
                     </span>
                   )}
                 </button>
                 {showUserMenu && (
-                  <div className="dropdown-menu" id="user-menu-dropdown" role="menu" aria-label="User menu">
-                    <div className="dropdown-menu__topbar">
-                      <button type="button" className="dropdown-menu__logout dropdown-menu__logout--top" onClick={closeUserMenuAndRun(handleLogout)} role="menuitem">
-                        Logout
-                      </button>
-                    </div>
-                    <div className="dropdown-menu__summary">
-                      <div className="dropdown-menu__summary-name">{dealerWelcome || loggedInUser?.dealerCode || 'User'}</div>
-                      <div className="dropdown-menu__summary-meta">
-                        <span>Package: {navbarPackageName}</span>
-                        <span>Valid Till: {formatDisplayDate(loggedInUser?.validTill) || '-'}</span>
-                        <span>Status: {userMenuStatusText}</span>
-                      </div>
-                      <div className="dropdown-menu__summary-pills">
-                        {userMenuSummaryPills.map((pill) => (
-                          <span key={pill.label} className={`dropdown-menu__summary-pill dropdown-menu__summary-pill--${pill.tone}`}>
-                            {pill.label}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="dropdown-menu__summary-note dropdown-menu__summary-note--secondary">
-                        Role: {userRole} | Missing: {incompleteProfileAreas.length > 0 ? incompleteProfileAreas.map((item) => item.label).join(', ') : 'None'}
-                      </div>
-                      {incompleteProfileActionItems.length > 0 && (
-                        <div className="dropdown-menu__summary-actions">
-                          {incompleteProfileActionItems.map((item) => (
-                            <button
-                              key={item.key}
-                              type="button"
-                              className="dropdown-menu__summary-action"
-                              onClick={runUserMenuItem(item)}
-                              disabled={item.disabled}
-                              title={item.disabled ? getDisabledReason(item.viewKey) : `Open ${item.label}`}
-                              role="menuitem"
-                            >
-                              {item.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {(isPlanExpired || pendingRequestCount > 0 || contactReplyCount > 0) && (
-                        <div className="dropdown-menu__summary-note">
-                          {isPlanExpired
-                            ? 'Plan renew karte hi uploads, invoice aur requests dobara active ho jayenge.'
-                            : [
-                                pendingRequestCount > 0 ? `${pendingRequestCount} request pending` : '',
-                                contactReplyCount > 0 ? `${contactReplyCount} unread reply` : '',
-                                updateInboxCount > 0 ? `${updateInboxCount} total updates` : '',
-                              ].filter(Boolean).join(' | ')}
-                        </div>
-                      )}
-                      <div className="dropdown-menu__quick-actions">
-                        <button type="button" className="dropdown-menu__quick-action" onClick={runUserMenuItem(primaryQuickAction)} role="menuitem">
-                          {primaryQuickAction.label}
-                        </button>
-                        <button type="button" className="dropdown-menu__quick-action" onClick={runUserMenuItem(secondaryQuickAction)} role="menuitem">
-                          {secondaryQuickAction.label}
-                        </button>
-                      </div>
-                    </div>
-                    {userMenuSections.map((section) => (
-                      <div key={section.title} className="dropdown-menu__section">
-                        <div className="dropdown-menu__section-title">{section.title}</div>
-                        {section.items.map((item, itemIndex) => (
-                          <button
-                            key={item.label}
-                            type="button"
-                            className="dropdown-menu__button"
-                            ref={itemIndex === 0 && section.title === userMenuSections[0]?.title ? firstUserMenuActionRef : null}
-                            onClick={runUserMenuItem(item)}
-                            disabled={item.disabled}
-                            title={item.reason || item.hint || ''}
-                            role="menuitem"
-                          >
-                            <span className="dropdown-menu__button-row">
-                              <span>{item.label}</span>
-                              <span className="dropdown-menu__badges">
-                                {item.badge && <span className={`dropdown-menu__badge dropdown-menu__badge--${item.badge.tone}`}>{item.badge.label}</span>}
-                              </span>
-                            </span>
-                            {(item.reason || item.hint) && (
-                              <span className="dropdown-menu__button-subtext">
-                                {item.reason || item.hint}
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
+                  <UserMenuDropdown
+                    dealerWelcome={dealerWelcome}
+                    loggedInUser={loggedInUser}
+                    userAvatarLabel={userAvatarLabel}
+                    userAvatarImage={userAvatarImage}
+                    navbarPackageName={navbarPackageName}
+                    userMenuStatusText={userMenuStatusText}
+                    userMenuSummaryPills={userMenuSummaryPills}
+                    profileCompletionPercent={profileCompletionPercent}
+                    userRole={userRole}
+                    userMenuPackageTips={userMenuPackageTips}
+                    userMenuEmptyGuidance={userMenuEmptyGuidance}
+                    incompleteProfileAreas={incompleteProfileAreas}
+                    incompleteProfileActionItems={incompleteProfileActionItems}
+                    runUserMenuItem={runUserMenuItem}
+                    getDisabledReason={getDisabledReason}
+                    isPlanExpired={isPlanExpired}
+                    pendingRequestCount={pendingRequestCount}
+                    contactReplyCount={contactReplyCount}
+                    updateInboxCount={updateInboxCount}
+                    primaryQuickAction={primaryQuickAction}
+                    secondaryQuickAction={secondaryQuickAction}
+                    userMenuSections={userMenuSections}
+                    adminContacts={ADMIN_CONTACTS}
+                    handleLogout={handleLogoutWithConfirm}
+                    closeUserMenuAndRun={closeUserMenuAndRun}
+                    firstUserMenuActionRef={firstUserMenuActionRef}
+                    formatDisplayDate={formatDisplayDate}
+                  />
                 )}
               </div>
             ) : (
