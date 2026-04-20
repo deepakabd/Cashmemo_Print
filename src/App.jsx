@@ -459,9 +459,6 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
-  const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
-  const [adminReplyDraft, setAdminReplyDraft] = useState('');
-  const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
   const isPlanExpired = Boolean(
     isLoggedIn &&
     loggedInUser &&
@@ -2216,6 +2213,9 @@ function App() {
     const [editingUserId, setEditingUserId] = useState('');
     const [dictionaryApprovalEdits, setDictionaryApprovalEdits] = useState({});
     const [dictionaryRequestView, setDictionaryRequestView] = useState('new');
+    const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
+    const [adminReplyDraft, setAdminReplyDraft] = useState('');
+    const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
     const [editUser, setEditUser] = useState({
       dealerCode: '',
       dealerName: '',
