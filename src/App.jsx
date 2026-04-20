@@ -561,9 +561,16 @@ function App() {
         setShowUserMenu(false);
       }
     };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setShowUserMenu(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
     };
   }, []);
 
@@ -6676,6 +6683,95 @@ function App() {
       ? `& Expired on ${formatDisplayDate(loggedInUser.validTill)}`
       : `& It will expire in ${getRemainingDays(loggedInUser.validTill)} Days`
     : '';
+  const approvalReplyMap = readApprovalRepliesFromStorage();
+  const planUpgradeReplyKey = getPlanUpgradeReplyStorageKey({
+    userId: loggedInUser?.id,
+    dealerCode: loggedInUser?.dealerCode,
+    dealerName: loggedInUser?.dealerName,
+  });
+  const planUpgradeReplyText = String(
+    loggedInUser?.pendingUpdates?.planUpgrade?.adminReply
+    || approvalReplyMap[planUpgradeReplyKey]
+    || ''
+  ).trim();
+  const userMenuStatusText = isPlanExpired ? 'Expired' : (loggedInUser?.status || 'Active');
+  const menuDisabledReason = isPlanExpired ? 'Available after plan renewal' : '';
+  const getRequestBadge = (type) => {
+    const pendingUpdate = loggedInUser?.pendingUpdates?.[type];
+    const approvalStatus = String(loggedInUser?.approvalStatus?.[type] || '').toLowerCase();
+    const pendingStatus = String(pendingUpdate?.status || approvalStatus || '').toLowerCase();
+
+    if (type === 'planUpgrade' && planUpgradeReplyText) {
+      return { label: 'Reply', tone: 'reply' };
+    }
+    if (pendingStatus === 'pending') {
+      return { label: 'Pending', tone: 'pending' };
+    }
+    if (approvalStatus === 'approved') {
+      return { label: 'Approved', tone: 'approved' };
+    }
+    if (approvalStatus === 'rejected') {
+      return { label: 'Rejected', tone: 'rejected' };
+    }
+    return null;
+  };
+  const closeUserMenuAndRun = (action) => () => {
+    setShowUserMenu(false);
+    if (typeof action === 'function') action();
+  };
+  const userMenuSections = [
+    {
+      title: 'Account',
+      items: [
+        { label: 'User Profile', onClick: handleUserProfile },
+        { label: 'About', onClick: handleAboutOpen, disabled: isPlanExpired, reason: menuDisabledReason },
+        { label: 'Invoice', onClick: handleInvoiceOpen, disabled: isPlanExpired, reason: menuDisabledReason },
+      ],
+    },
+    {
+      title: 'Requests',
+      items: [
+        { label: 'Profile Update', onClick: handleProfileUpdate, disabled: isPlanExpired, reason: menuDisabledReason, badge: getRequestBadge('profile') },
+        { label: 'Bank Details', onClick: handleBankDetails, disabled: isPlanExpired, reason: menuDisabledReason, badge: getRequestBadge('bank') },
+        { label: 'Rate Update', onClick: handleRateUpdate, disabled: isPlanExpired, reason: menuDisabledReason, badge: getRequestBadge('rates') },
+        { label: 'Lebel Update', onClick: handleLabelUpdate, disabled: isPlanExpired, reason: menuDisabledReason },
+        {
+          label: 'Upgrade Plan',
+          onClick: handleUpgradePlanOpen,
+          disabled: !isPlanExpired && !planUpgradeReplyText && !getRequestBadge('planUpgrade'),
+          reason: !isPlanExpired && !planUpgradeReplyText && !getRequestBadge('planUpgrade') ? 'Available when plan expires' : '',
+          badge: getRequestBadge('planUpgrade'),
+        },
+      ],
+    },
+    {
+      title: 'Support',
+      items: [
+        {
+          label: 'Support & Replies',
+          onClick: handleContactOpen,
+          badge: contactReplyCount > 0 ? { label: contactReplyCount > 9 ? '9+' : String(contactReplyCount), tone: 'unread' } : null,
+          hint: contactReplyCount > 0 ? 'Unread admin replies' : 'Open support chat and reply history',
+        },
+      ],
+    },
+  ];
+  if (isEnterpriseHindiPackage(loggedInUser?.package)) {
+    userMenuSections[1].items.splice(4, 0, {
+      label: 'Dictionary',
+      onClick: handleDictionaryOpen,
+      disabled: isPlanExpired,
+      reason: menuDisabledReason,
+      badge: getPendingDictionaryRequestCount(loggedInUser) > 0 ? { label: String(getPendingDictionaryRequestCount(loggedInUser)), tone: 'pending' } : null,
+    });
+  }
+  if (isHindiEnterprisePackage(loggedInUser?.package)) {
+    userMenuSections[1].items.push(
+      { label: 'Delivery Area Update', onClick: handleDeliveryAreaUpdate, disabled: isPlanExpired, reason: menuDisabledReason },
+      { label: 'Delivery Staff Update', onClick: handleDeliveryStaffUpdate, disabled: isPlanExpired, reason: menuDisabledReason },
+      { label: 'Header Update', onClick: handleHeaderUpdate, disabled: isPlanExpired, reason: menuDisabledReason },
+    );
+  }
 
   return (
     <>
@@ -6729,31 +6825,56 @@ function App() {
                     Your {pendingUserApprovalTypes.join(', ')} request is pending with admin for approval.
                   </span>
                 )}
-                <div className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)}>
+                <button type="button" className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)} aria-label="Open user menu">
                   &#128100; {/* User icon */}
-                </div>
+                  {(contactReplyCount > 0 || planUpgradeReplyText) && (
+                    <span className="user-icon-badge">
+                      {contactReplyCount > 0 ? (contactReplyCount > 9 ? '9+' : contactReplyCount) : '!'}
+                    </span>
+                  )}
+                </button>
                 {showUserMenu && (
                   <div className="dropdown-menu">
-                    <button onClick={handleUserProfile}>User Profile</button>
-                    <button onClick={handleAboutOpen} disabled={isPlanExpired}>About</button>
-                    {isEnterpriseHindiPackage(loggedInUser?.package) && (
-                      <button onClick={handleDictionaryOpen} disabled={isPlanExpired}>
-                        Dictionary ({getPendingDictionaryRequestCount(loggedInUser)} pending)
+                    <div className="dropdown-menu__summary">
+                      <div className="dropdown-menu__summary-name">{dealerWelcome || loggedInUser?.dealerCode || 'User'}</div>
+                      <div className="dropdown-menu__summary-meta">
+                        <span>Package: {navbarPackageName}</span>
+                        <span>Valid Till: {formatDisplayDate(loggedInUser?.validTill) || '-'}</span>
+                        <span>Status: {userMenuStatusText}</span>
+                      </div>
+                    </div>
+                    {userMenuSections.map((section) => (
+                      <div key={section.title} className="dropdown-menu__section">
+                        <div className="dropdown-menu__section-title">{section.title}</div>
+                        {section.items.map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            className="dropdown-menu__button"
+                            onClick={closeUserMenuAndRun(item.onClick)}
+                            disabled={item.disabled}
+                            title={item.reason || item.hint || ''}
+                          >
+                            <span className="dropdown-menu__button-row">
+                              <span>{item.label}</span>
+                              <span className="dropdown-menu__badges">
+                                {item.badge && <span className={`dropdown-menu__badge dropdown-menu__badge--${item.badge.tone}`}>{item.badge.label}</span>}
+                              </span>
+                            </span>
+                            {(item.reason || item.hint) && (
+                              <span className="dropdown-menu__button-subtext">
+                                {item.reason || item.hint}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                    <div className="dropdown-menu__footer">
+                      <button type="button" className="dropdown-menu__logout" onClick={closeUserMenuAndRun(handleLogout)}>
+                        Logout
                       </button>
-                    )}
-                    <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
-                    <button onClick={handleProfileUpdate} disabled={isPlanExpired}>Profile Update</button>
-                    <button onClick={handleBankDetails} disabled={isPlanExpired}>Bank Details</button>
-                    <button onClick={handleRateUpdate} disabled={isPlanExpired}>Rate Update</button>
-                    <button onClick={handleLabelUpdate} disabled={isPlanExpired}>Lebel Update</button>
-                    {isHindiEnterprisePackage(loggedInUser?.package) && (
-                      <>
-                        <button onClick={handleDeliveryAreaUpdate} disabled={isPlanExpired}>Delivery Area Update</button>
-                        <button onClick={handleDeliveryStaffUpdate} disabled={isPlanExpired}>Delivery Staff Update</button>
-                        <button onClick={handleHeaderUpdate} disabled={isPlanExpired}>Header Update</button>
-                      </>
-                    )}
-                    <button onClick={handleLogout}>Logout</button>
+                    </div>
                   </div>
                 )}
               </div>
