@@ -240,6 +240,12 @@ const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
 );
 
 const USER_SESSION_STORAGE_KEY = 'cashmemoUserSession';
+const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
+
+const getPlanUpgradeReplyStorageKey = ({ userId = '', dealerCode = '', dealerName = '' } = {}) => {
+  const userKey = String(userId || dealerCode || dealerName || '').trim();
+  return userKey ? `planUpgrade-${userKey}` : 'planUpgrade';
+};
 
 const PACKAGE_OPTIONS = [
   'Demo Package - 7 Days',
@@ -509,6 +515,16 @@ function App() {
     }
   };
 
+  const readApprovalRepliesFromStorage = () => {
+    try {
+      const raw = localStorage.getItem(APPROVAL_REPLIES_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
   const getUserContactReplies = () => {
     if (!loggedInUser) return [];
     const feedbackData = readFeedbackDataFromStorage();
@@ -691,15 +707,17 @@ function App() {
         approvalSaved = true;
       } catch (e) { void e; }
 
-      const pendingUpdatePatch = {
-        approvalStatus: nextApprovalStatus,
-        [`pendingUpdates.${type}`]: {
-          status: 'pending',
-          payload,
-          requestedAt: new Date().toISOString(),
-        },
-        lastApprovalStorage: approvalSaved ? 'collection' : 'userDoc',
-      };
+    const pendingUpdatePatch = {
+      approvalStatus: nextApprovalStatus,
+      [`pendingUpdates.${type}`]: {
+        status: 'pending',
+        payload,
+        requestedAt: new Date().toISOString(),
+        adminReply: '',
+        adminReplyAt: '',
+      },
+      lastApprovalStorage: approvalSaved ? 'collection' : 'userDoc',
+    };
       const resolvedId = await updateUserInFirebase(loggedInUser.id, pendingUpdatePatch, loggedInUser.dealerCode);
       updateUserInStore(
         resolvedId,
@@ -712,6 +730,8 @@ function App() {
               status: 'pending',
               payload,
               requestedAt: new Date().toISOString(),
+              adminReply: '',
+              adminReplyAt: '',
             },
           },
           id: resolvedId,
@@ -1018,18 +1038,29 @@ function App() {
     setUserDealerCode('');
     setUserPin('');
     if (String(localUser.status || '').toLowerCase() === 'expired') {
-      // Check for admin reply to plan upgrade request
-      // const approvalReplies = readApprovalRepliesFromStorage();
-      // const userApprovals = [].filter(a => a.userId === localUser.id && a.type === 'planUpgrade');
-      // const latestApproval = userApprovals.sort((a, b) => new Date(b.requestedAt || '').getTime() - new Date(a.requestedAt || '').getTime())[0];
-      // if (latestApproval && approvalReplies[latestApproval.id]) {
-      //   setAdminFlashMessage({
-      //     message: approvalReplies[latestApproval.id],
-      //     approvalId: latestApproval.id,
-      //   });
-      // }
+      const replyMap = readApprovalRepliesFromStorage();
+      const pendingPlanUpgrade = localUser?.pendingUpdates?.planUpgrade || {};
+      const storedReplyKey = getPlanUpgradeReplyStorageKey({
+        userId: localUser?.id,
+        dealerCode: localUser?.dealerCode,
+        dealerName: localUser?.dealerName,
+      });
+      const latestReply = String(
+        pendingPlanUpgrade?.adminReply
+        || replyMap[storedReplyKey]
+        || ''
+      ).trim();
+      if (latestReply) {
+        setAdminFlashMessage({
+          message: latestReply,
+          approvalId: storedReplyKey,
+        });
+      } else {
+        setAdminFlashMessage(null);
+      }
       alert('Logged in successfully. Plan Expired, Please contact Admin or Upgrade Plan');
     } else {
+      setAdminFlashMessage(null);
       alert('Logged in successfully!');
     }
   };
@@ -2261,14 +2292,34 @@ function App() {
 
     const getApprovalReplyKey = (approval) => {
       if (!approval) return '';
+      const approvalType = normalizeApprovalType(approval.type);
+      if (approvalType === 'planUpgrade') {
+        return getPlanUpgradeReplyStorageKey({
+          userId: approval.userId,
+          dealerCode: approval.dealerCode,
+          dealerName: approval.dealerName,
+        });
+      }
       return approval.id || approval.approvalId || approval.clientRequestId || `${approval.type}-${approval.userId || approval.dealerCode || approval.dealerName || ''}`;
+    };
+
+    const getApprovalReplyMessage = (approval) => {
+      if (!approval) return '';
+      const replyKey = getApprovalReplyKey(approval);
+      return String(
+        approvalReplies?.[replyKey]
+        || approval?.payload?.adminReply
+        || approval?.adminReply
+        || approval?.pendingReply
+        || ''
+      ).trim();
     };
 
     const openApprovalReplyPopup = (item) => {
       if (!item) return;
       const replyKey = getApprovalReplyKey(item);
-      const currentReply = approvalReplies?.[replyKey] || '';
-      setActiveApprovalReply({ ...item, replyKey });
+      const currentReply = getApprovalReplyMessage(item);
+      setActiveApprovalReply({ ...item, replyKey, pendingReply: currentReply });
       setApprovalReplyDraft(currentReply);
       setShowApprovalReplyPopup(true);
     };
@@ -2279,19 +2330,64 @@ function App() {
       setApprovalReplyDraft('');
     };
 
-    const submitApprovalReply = () => {
+    const submitApprovalReply = async () => {
       if (!activeApprovalReply) return;
       if (!approvalReplyDraft.trim()) {
         alert('Please enter a reply before saving.');
         return;
       }
+      const replyMessage = approvalReplyDraft.trim();
       const key = activeApprovalReply.replyKey || getApprovalReplyKey(activeApprovalReply);
       const nextReplies = {
         ...approvalReplies,
-        [key]: approvalReplyDraft.trim(),
+        [key]: replyMessage,
       };
+      const replyTimestamp = new Date().toISOString();
+
+      try {
+        const approvalDocId = activeApprovalReply.source === 'userDoc'
+          ? activeApprovalReply.approvalId
+          : activeApprovalReply.id;
+        if (approvalDocId && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
+          try {
+            const approvalRef = doc(db, 'updateApprovals', approvalDocId);
+            const existingPayload = activeApprovalReply.payload || {};
+            await updateDoc(approvalRef, {
+              payload: {
+                ...existingPayload,
+                adminReply: replyMessage,
+                adminReplyAt: replyTimestamp,
+              },
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error) {
+            void error;
+          }
+        }
+
+        const targetUser = users.find((u) => (
+          u.id === activeApprovalReply.userId
+          || String(u?.dealerCode || '').trim() === String(activeApprovalReply?.dealerCode || '').trim()
+        ));
+
+        if (targetUser?.id && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
+          try {
+            await updateDoc(doc(db, 'users', targetUser.id), {
+              'pendingUpdates.planUpgrade.adminReply': replyMessage,
+              'pendingUpdates.planUpgrade.adminReplyAt': replyTimestamp,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error) {
+            void error;
+          }
+        }
+      } catch (error) {
+        void error;
+      }
+
       persistApprovalReplies(nextReplies);
       logAdminActivity('approval_reply_saved', { id: key, dealerCode: activeApprovalReply.dealerCode || '' });
+      await loadData();
       closeApprovalReplyPopup();
     };
 
@@ -2522,7 +2618,7 @@ function App() {
 
     const persistApprovalReplies = (nextReplies) => {
       setApprovalReplies(nextReplies);
-      localStorage.setItem('approvalReplies', JSON.stringify(nextReplies));
+      localStorage.setItem(APPROVAL_REPLIES_STORAGE_KEY, JSON.stringify(nextReplies));
     };
 
     const persistSavedAdminViews = (nextViews) => {
@@ -2955,6 +3051,8 @@ function App() {
           status: value?.status || 'pending',
           payload: value?.payload ?? null,
           requestedAt: value?.requestedAt || '',
+          adminReply: value?.adminReply || '',
+          adminReplyAt: value?.adminReplyAt || '',
         }));
       const pendingDictionaryApprovals = (Array.isArray(u?.pendingDictionaryRequests) ? u.pendingDictionaryRequests : [])
         .filter((request) => String(request?.status || 'pending').toLowerCase() === 'pending')
@@ -4278,8 +4376,8 @@ function App() {
                               <button type="button" onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
                               <button type="button" onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
                               {approvalType === 'planUpgrade' && (
-                                <button type="button" className="admin-ghost-btn" onClick={(e) => { e.preventDefault(); openApprovalReplyPopup(a); }} disabled={!canMutateAdminData}>
-                                  Reply
+                              <button type="button" className="admin-ghost-btn" onClick={(e) => { e.preventDefault(); openApprovalReplyPopup(a); }} disabled={!canMutateAdminData}>
+                                  Approval Reply
                                 </button>
                               )}
                             </div>
@@ -4290,6 +4388,44 @@ function App() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {showApprovalReplyPopup && (
+          <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
+            <div className="admin-chat-popup">
+              <div className="admin-chat-popup-header">
+                <h3>Approval Reply</h3>
+                <button type="button" className="admin-chat-popup-close" onClick={closeApprovalReplyPopup}>Close</button>
+              </div>
+              <div className="admin-chat-popup-body">
+                <div className="admin-chat-content" style={{ width: '100%' }}>
+                  <div className="admin-chat-conversation">
+                    <div className="admin-chat-message user-message">
+                      <strong>User Request:</strong>
+                      <p>
+                        Plan upgrade request from {activeApprovalReply?.dealerCode || 'user'} - {activeApprovalReply?.payload?.package || activeApprovalReply?.payload?.selectedPackage || 'unknown plan'}
+                      </p>
+                    </div>
+                    <div className="admin-chat-message admin-message">
+                      <strong>Approval Reply:</strong>
+                      <p>{getApprovalReplyMessage(activeApprovalReply) || 'No reply yet.'}</p>
+                    </div>
+                  </div>
+                  <textarea
+                    className="form-input"
+                    rows="5"
+                    value={approvalReplyDraft}
+                    onChange={(e) => setApprovalReplyDraft(e.target.value)}
+                    placeholder="Type approval reply here"
+                  />
+                  <div className="admin-chat-actions">
+                    <button type="button" className="form-button" onClick={submitApprovalReply}>Send Approval Reply</button>
+                    <button type="button" className="form-button secondary" onClick={closeApprovalReplyPopup}>Cancel</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -4349,16 +4485,25 @@ function App() {
                               <option value="medium">Medium</option>
                               <option value="low">Low</option>
                             </select>
-                            <button className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
+                            <button type="button" className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
                               {f.resolved ? 'Reopen' : 'Resolve'}
                             </button>
-                            <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
+                            <button type="button" className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
                               {f.read ? 'Mark Unread' : 'Mark Read'}
                             </button>
-                            <button className="admin-ghost-btn" onClick={() => openAdminReplyPopup(f)} disabled={!canMutateAdminData}>
-                              Reply
+                            <button
+                              type="button"
+                              className="admin-ghost-btn"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openAdminReplyPopup(f);
+                              }}
+                              disabled={!canMutateAdminData}
+                            >
+                              Feedback Reply
                             </button>
-                            <button className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
+                            <button type="button" className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
                               Delete
                             </button>
                           </div>
@@ -4373,7 +4518,7 @@ function App() {
               <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
                 <div className="admin-chat-popup">
                   <div className="admin-chat-popup-header">
-                    <h3>Reply to User Feedback</h3>
+                    <h3>Feedback Reply</h3>
                     <button type="button" className="admin-chat-popup-close" onClick={closeAdminReplyPopup}>Close</button>
                   </div>
                   <div className="admin-chat-popup-body">
@@ -4403,7 +4548,7 @@ function App() {
                                   onClick={() => openAdminReplyPopup(historyItem)}
                                   disabled={isSelected}
                                 >
-                                  {isSelected ? 'Selected' : 'Reply to this message'}
+                                  {isSelected ? 'Selected' : 'Feedback Reply'}
                                 </button>
                               </div>
                             </div>
@@ -4415,10 +4560,10 @@ function App() {
                         rows="5"
                         value={adminReplyDraft}
                         onChange={(e) => setAdminReplyDraft(e.target.value)}
-                        placeholder="Type your reply here"
+                        placeholder="Type feedback reply here"
                       />
                       <div className="admin-chat-actions">
-                        <button type="button" className="form-button" onClick={submitAdminReply}>Send Reply</button>
+                        <button type="button" className="form-button" onClick={submitAdminReply}>Send Feedback Reply</button>
                         <button type="button" className="form-button secondary" onClick={closeAdminReplyPopup}>Cancel</button>
                       </div>
                     </div>
@@ -4427,41 +4572,6 @@ function App() {
               </div>
             )}
 
-            {showApprovalReplyPopup && (
-              <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
-                <div className="admin-chat-popup">
-                  <div className="admin-chat-popup-header">
-                    <h3>Reply to Plan Upgrade Request</h3>
-                    <button type="button" className="admin-chat-popup-close" onClick={closeApprovalReplyPopup}>Close</button>
-                  </div>
-                  <div className="admin-chat-popup-body">
-                    <div className="admin-chat-content" style={{ width: '100%' }}>
-                      <div className="admin-chat-conversation">
-                        <div className="admin-chat-message user-message">
-                          <strong>User Request:</strong>
-                          <p>Plan upgrade request from {activeApprovalReply?.dealerCode || 'user'} - {activeApprovalReply?.payload?.plan || 'unknown plan'}</p>
-                        </div>
-                        <div className="admin-chat-message admin-message">
-                          <strong>Your reply:</strong>
-                          <p>{approvalReplies?.[activeApprovalReply?.replyKey] || 'No reply yet.'}</p>
-                        </div>
-                      </div>
-                      <textarea
-                        className="form-input"
-                        rows="5"
-                        value={approvalReplyDraft}
-                        onChange={(e) => setApprovalReplyDraft(e.target.value)}
-                        placeholder="Type your reply here"
-                      />
-                      <div className="admin-chat-actions">
-                        <button type="button" className="form-button" onClick={submitApprovalReply}>Send Reply</button>
-                        <button type="button" className="form-button secondary" onClick={closeApprovalReplyPopup}>Cancel</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -6661,7 +6771,7 @@ function App() {
           </div>
         </nav>
       )}
-      {(showUpgradePlan || showUserProfile || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showContactForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && <DictionaryRequestForm mode={dictionaryFormMode} onClose={navigateToHome} />}
