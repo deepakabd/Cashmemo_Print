@@ -1,5 +1,5 @@
-﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef } from 'react';
-import { lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -240,6 +240,12 @@ const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
 );
 
 const USER_SESSION_STORAGE_KEY = 'cashmemoUserSession';
+const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
+
+const getPlanUpgradeReplyStorageKey = ({ userId = '', dealerCode = '', dealerName = '' } = {}) => {
+  const userKey = String(userId || dealerCode || dealerName || '').trim();
+  return userKey ? `planUpgrade-${userKey}` : 'planUpgrade';
+};
 
 const PACKAGE_OPTIONS = [
   'Demo Package - 7 Days',
@@ -453,9 +459,6 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
-  const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
-  const [adminReplyDraft, setAdminReplyDraft] = useState('');
-  const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
   const isPlanExpired = Boolean(
     isLoggedIn &&
     loggedInUser &&
@@ -491,16 +494,6 @@ function App() {
     }
   };
 
-  const readApprovalRepliesFromStorage = () => {
-    try {
-      const raw = localStorage.getItem('approvalReplies');
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-
   const readFeedbackReplyReadStatusFromStorage = () => {
     try {
       const raw = localStorage.getItem('feedbackRepliesRead');
@@ -514,7 +507,19 @@ function App() {
   const persistFeedbackReplyReadStatus = (nextStatus) => {
     try {
       localStorage.setItem('feedbackRepliesRead', JSON.stringify(nextStatus || {}));
-    } catch {}
+    } catch (error) {
+      void error;
+    }
+  };
+
+  const readApprovalRepliesFromStorage = () => {
+    try {
+      const raw = localStorage.getItem(APPROVAL_REPLIES_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
   };
 
   const getUserContactReplies = () => {
@@ -549,6 +554,8 @@ function App() {
   const contactReplyCount = contactReplyItems.filter((item) => !item.read).length;
 
   const userMenuRef = useRef(null);
+  const userMenuButtonRef = useRef(null);
+  const firstUserMenuActionRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -556,11 +563,27 @@ function App() {
         setShowUserMenu(false);
       }
     };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setShowUserMenu(false);
+        window.requestAnimationFrame(() => {
+          userMenuButtonRef.current?.focus();
+        });
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
     };
   }, []);
+
+  useEffect(() => {
+    if (showUserMenu) {
+      firstUserMenuActionRef.current?.focus();
+    }
+  }, [showUserMenu]);
 
   useEffect(() => {
     const loadDict = async () => {
@@ -699,15 +722,17 @@ function App() {
         approvalSaved = true;
       } catch (e) { void e; }
 
-      const pendingUpdatePatch = {
-        approvalStatus: nextApprovalStatus,
-        [`pendingUpdates.${type}`]: {
-          status: 'pending',
-          payload,
-          requestedAt: new Date().toISOString(),
-        },
-        lastApprovalStorage: approvalSaved ? 'collection' : 'userDoc',
-      };
+    const pendingUpdatePatch = {
+      approvalStatus: nextApprovalStatus,
+      [`pendingUpdates.${type}`]: {
+        status: 'pending',
+        payload,
+        requestedAt: new Date().toISOString(),
+        adminReply: '',
+        adminReplyAt: '',
+      },
+      lastApprovalStorage: approvalSaved ? 'collection' : 'userDoc',
+    };
       const resolvedId = await updateUserInFirebase(loggedInUser.id, pendingUpdatePatch, loggedInUser.dealerCode);
       updateUserInStore(
         resolvedId,
@@ -720,6 +745,8 @@ function App() {
               status: 'pending',
               payload,
               requestedAt: new Date().toISOString(),
+              adminReply: '',
+              adminReplyAt: '',
             },
           },
           id: resolvedId,
@@ -747,7 +774,6 @@ function App() {
       if (loggedInUser?.profileData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     const handleChange = (e) => {
       const { name, value } = e.target;
@@ -802,7 +828,6 @@ function App() {
       if (loggedInUser?.bankDetailsData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleChange = (e) => {
@@ -856,7 +881,6 @@ function App() {
       if (loggedInUser?.hindiHeaderData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.hindiHeaderData }));
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleChange = (e) => {
@@ -1029,18 +1053,29 @@ function App() {
     setUserDealerCode('');
     setUserPin('');
     if (String(localUser.status || '').toLowerCase() === 'expired') {
-      // Check for admin reply to plan upgrade request
-      // const approvalReplies = readApprovalRepliesFromStorage();
-      // const userApprovals = [].filter(a => a.userId === localUser.id && a.type === 'planUpgrade');
-      // const latestApproval = userApprovals.sort((a, b) => new Date(b.requestedAt || '').getTime() - new Date(a.requestedAt || '').getTime())[0];
-      // if (latestApproval && approvalReplies[latestApproval.id]) {
-      //   setAdminFlashMessage({
-      //     message: approvalReplies[latestApproval.id],
-      //     approvalId: latestApproval.id,
-      //   });
-      // }
+      const replyMap = readApprovalRepliesFromStorage();
+      const pendingPlanUpgrade = localUser?.pendingUpdates?.planUpgrade || {};
+      const storedReplyKey = getPlanUpgradeReplyStorageKey({
+        userId: localUser?.id,
+        dealerCode: localUser?.dealerCode,
+        dealerName: localUser?.dealerName,
+      });
+      const latestReply = String(
+        pendingPlanUpgrade?.adminReply
+        || replyMap[storedReplyKey]
+        || ''
+      ).trim();
+      if (latestReply) {
+        setAdminFlashMessage({
+          message: latestReply,
+          approvalId: storedReplyKey,
+        });
+      } else {
+        setAdminFlashMessage(null);
+      }
       alert('Logged in successfully. Plan Expired, Please contact Admin or Upgrade Plan');
     } else {
+      setAdminFlashMessage(null);
       alert('Logged in successfully!');
     }
   };
@@ -1130,34 +1165,6 @@ function App() {
       navigateToHome();
     }
   };
-
-  const loadTestSampleFile = async () => {
-    if (sampleDataLoaded || sampleDataLoading) return;
-    setSampleDataLoading(true);
-    try {
-      const response = await fetch(encodeURI('/Sample Excel.xlsx'));
-      if (!response.ok) throw new Error('Unable to load sample file');
-      const blob = await response.blob();
-      const file = new File([blob], 'Sample Excel.xlsx', {
-        type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      await handleFileUpload(file);
-      setSampleDataLoaded(true);
-    } catch (error) {
-      console.error('Sample file load failed:', error);
-      alert('Sample file load failed. Please use Upload Data manually.');
-    } finally {
-      setSampleDataLoading(false);
-      setSampleDataAttempted(true);
-    }
-  };
-
-  useEffect(() => {
-    if (isTestUser && !sampleDataLoaded && !sampleDataLoading && !sampleDataAttempted) {
-      loadTestSampleFile();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTestUser, sampleDataLoaded, sampleDataLoading, sampleDataAttempted]);
 
   useEffect(() => {
     try {
@@ -1252,22 +1259,6 @@ function App() {
   };
 
   const handleUpgradePlanOpen = () => {
-    const submitAdminReply = () => {
-      if (!activeAdminFeedback) return;
-      if (!adminReplyDraft.trim()) {
-        alert('Please enter a reply before saving.');
-        return;
-      }
-      const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
-      const nextReplies = {
-        ...feedbackReplies,
-        [replyKey]: adminReplyDraft.trim(),
-      };
-      persistFeedbackReplies(nextReplies);
-      logAdminActivity('feedback_reply_saved', { id: replyKey, dealerCode: activeAdminFeedback.dealerCode || '' });
-      closeAdminReplyPopup();
-    };
-
     hideAllViews();
     setShowUpgradePlan(true);
     setShowUserMenu(false);
@@ -1431,7 +1422,6 @@ function App() {
       } else {
         setData(null);
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const currentPackage = loggedInUser?.package || '-';
@@ -1491,7 +1481,6 @@ function App() {
         mobile: loggedInUser?.mobile || '',
         email: loggedInUser?.email || '',
       }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const storedFeedbackReplies = readFeedbackRepliesFromStorage();
@@ -1503,7 +1492,7 @@ function App() {
             return { ...item, reply: storedFeedbackReplies[idKey] || '', replyId: idKey };
           })
           .filter((item) => item.reply)
-      : [], [loggedInUser, localFeedbackEntries, storedFeedbackReplies]);
+      : [], [localFeedbackEntries, storedFeedbackReplies]);
 
     useEffect(() => {
       if (!showAdminChatPopup) return;
@@ -1630,7 +1619,9 @@ function App() {
         next.push({ ...feedbackEntry, source: 'local' });
         localStorage.setItem(key, JSON.stringify(next));
         anySaved = true;
-      } catch {}
+      } catch (error) {
+        void error;
+      }
 
       if (anySaved) {
         alert('Feedback submitted. Thank you!');
@@ -2238,10 +2229,11 @@ function App() {
       role: 'operator',
     });
     const [editingUserId, setEditingUserId] = useState('');
-    const [dictEng, setDictEng] = useState('');
-    const [dictHin, setDictHin] = useState('');
     const [dictionaryApprovalEdits, setDictionaryApprovalEdits] = useState({});
     const [dictionaryRequestView, setDictionaryRequestView] = useState('new');
+    const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
+    const [adminReplyDraft, setAdminReplyDraft] = useState('');
+    const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
     const [editUser, setEditUser] = useState({
       dealerCode: '',
       dealerName: '',
@@ -2288,7 +2280,6 @@ function App() {
 
     const openAdminReplyPopup = (item) => {
       if (!item) return;
-      const key = item.id || item.clientFeedbackId || '';
       const currentReply = feedbackReplies?.[item.id] || feedbackReplies?.[item.clientFeedbackId] || '';
       setActiveAdminFeedback(item);
       setAdminReplyDraft(currentReply);
@@ -2301,16 +2292,52 @@ function App() {
       setAdminReplyDraft('');
     };
 
+    const submitAdminReply = () => {
+      if (!activeAdminFeedback) return;
+      if (!adminReplyDraft.trim()) {
+        alert('Please enter a reply before saving.');
+        return;
+      }
+      const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
+      const nextReplies = {
+        ...feedbackReplies,
+        [replyKey]: adminReplyDraft.trim(),
+      };
+      persistFeedbackReplies(nextReplies);
+      logAdminActivity('feedback_reply_saved', { id: replyKey, dealerCode: activeAdminFeedback.dealerCode || '' });
+      closeAdminReplyPopup();
+    };
+
     const getApprovalReplyKey = (approval) => {
       if (!approval) return '';
+      const approvalType = normalizeApprovalType(approval.type);
+      if (approvalType === 'planUpgrade') {
+        return getPlanUpgradeReplyStorageKey({
+          userId: approval.userId,
+          dealerCode: approval.dealerCode,
+          dealerName: approval.dealerName,
+        });
+      }
       return approval.id || approval.approvalId || approval.clientRequestId || `${approval.type}-${approval.userId || approval.dealerCode || approval.dealerName || ''}`;
+    };
+
+    const getApprovalReplyMessage = (approval) => {
+      if (!approval) return '';
+      const replyKey = getApprovalReplyKey(approval);
+      return String(
+        approvalReplies?.[replyKey]
+        || approval?.payload?.adminReply
+        || approval?.adminReply
+        || approval?.pendingReply
+        || ''
+      ).trim();
     };
 
     const openApprovalReplyPopup = (item) => {
       if (!item) return;
       const replyKey = getApprovalReplyKey(item);
-      const currentReply = approvalReplies?.[replyKey] || '';
-      setActiveApprovalReply({ ...item, replyKey });
+      const currentReply = getApprovalReplyMessage(item);
+      setActiveApprovalReply({ ...item, replyKey, pendingReply: currentReply });
       setApprovalReplyDraft(currentReply);
       setShowApprovalReplyPopup(true);
     };
@@ -2321,19 +2348,64 @@ function App() {
       setApprovalReplyDraft('');
     };
 
-    const submitApprovalReply = () => {
+    const submitApprovalReply = async () => {
       if (!activeApprovalReply) return;
       if (!approvalReplyDraft.trim()) {
         alert('Please enter a reply before saving.');
         return;
       }
+      const replyMessage = approvalReplyDraft.trim();
       const key = activeApprovalReply.replyKey || getApprovalReplyKey(activeApprovalReply);
       const nextReplies = {
         ...approvalReplies,
-        [key]: approvalReplyDraft.trim(),
+        [key]: replyMessage,
       };
+      const replyTimestamp = new Date().toISOString();
+
+      try {
+        const approvalDocId = activeApprovalReply.source === 'userDoc'
+          ? activeApprovalReply.approvalId
+          : activeApprovalReply.id;
+        if (approvalDocId && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
+          try {
+            const approvalRef = doc(db, 'updateApprovals', approvalDocId);
+            const existingPayload = activeApprovalReply.payload || {};
+            await updateDoc(approvalRef, {
+              payload: {
+                ...existingPayload,
+                adminReply: replyMessage,
+                adminReplyAt: replyTimestamp,
+              },
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error) {
+            void error;
+          }
+        }
+
+        const targetUser = users.find((u) => (
+          u.id === activeApprovalReply.userId
+          || String(u?.dealerCode || '').trim() === String(activeApprovalReply?.dealerCode || '').trim()
+        ));
+
+        if (targetUser?.id && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
+          try {
+            await updateDoc(doc(db, 'users', targetUser.id), {
+              'pendingUpdates.planUpgrade.adminReply': replyMessage,
+              'pendingUpdates.planUpgrade.adminReplyAt': replyTimestamp,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error) {
+            void error;
+          }
+        }
+      } catch (error) {
+        void error;
+      }
+
       persistApprovalReplies(nextReplies);
       logAdminActivity('approval_reply_saved', { id: key, dealerCode: activeApprovalReply.dealerCode || '' });
+      await loadData();
       closeApprovalReplyPopup();
     };
 
@@ -2564,12 +2636,76 @@ function App() {
 
     const persistApprovalReplies = (nextReplies) => {
       setApprovalReplies(nextReplies);
-      localStorage.setItem('approvalReplies', JSON.stringify(nextReplies));
+      localStorage.setItem(APPROVAL_REPLIES_STORAGE_KEY, JSON.stringify(nextReplies));
     };
 
     const persistSavedAdminViews = (nextViews) => {
       setSavedAdminViews(nextViews);
       localStorage.setItem('savedAdminViews', JSON.stringify(nextViews));
+    };
+
+    const saveCurrentAdminView = () => {
+      const label = window.prompt('Saved view name?');
+      if (!label) return;
+      const nextViews = [
+        {
+          id: `view-${Date.now()}`,
+          label,
+          activeAdminTab,
+          adminSearchTerm,
+          adminDateRange,
+          adminSubFilter,
+        },
+        ...savedAdminViews,
+      ].slice(0, 20);
+      persistSavedAdminViews(nextViews);
+      logAdminActivity('saved_view_created', { label });
+    };
+
+    const applySavedAdminView = (view) => {
+      if (!view) return;
+      setActiveAdminTab(view.activeAdminTab || 'dashboard');
+      setAdminSearchTerm(view.adminSearchTerm || '');
+      setAdminDateRange(view.adminDateRange || 'all');
+      setAdminSubFilter(view.adminSubFilter || 'all');
+      logAdminActivity('saved_view_applied', { label: view.label || '' });
+    };
+
+    const handleAdminImport = async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const { default: XLSX } = await import('xlsx');
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(worksheet);
+          const importedUsers = rows.map((row) => ({
+            dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
+            dealerName: String(row.dealerName || row['Dealer Name'] || '').trim(),
+            mobile: String(row.mobile || row.Mobile || '').trim(),
+            email: String(row.email || row.Email || '').trim(),
+            package: String(row.package || row.Package || '').trim(),
+            pin: String(row.pin || row.PIN || '').trim(),
+            role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
+            status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
+            validFrom: toIsoDate(row.validFrom || row['Valid From']) || new Date().toISOString(),
+            validTill: toIsoDate(row.validTill || row['Valid Till']) || computeValidityDates(String(row.package || row.Package || '')).validTill,
+          })).filter((row) => row.dealerCode && row.dealerName && row.package && row.pin);
+          const nextUsers = [...users, ...importedUsers];
+          writeUsersLocal(nextUsers);
+          logAdminActivity('bulk_users_imported', { count: importedUsers.length });
+          alert(`${importedUsers.length} users imported locally.`);
+        };
+        reader.readAsArrayBuffer(file);
+      } catch (error) {
+        void error;
+        alert('Import failed.');
+      } finally {
+        event.target.value = null;
+      }
     };
 
     const persistDeletedUsersBin = (nextBin) => {
@@ -2933,6 +3069,8 @@ function App() {
           status: value?.status || 'pending',
           payload: value?.payload ?? null,
           requestedAt: value?.requestedAt || '',
+          adminReply: value?.adminReply || '',
+          adminReplyAt: value?.adminReplyAt || '',
         }));
       const pendingDictionaryApprovals = (Array.isArray(u?.pendingDictionaryRequests) ? u.pendingDictionaryRequests : [])
         .filter((request) => String(request?.status || 'pending').toLowerCase() === 'pending')
@@ -3083,7 +3221,9 @@ function App() {
           if (approvalDocId) {
             try {
               await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
-            } catch {}
+            } catch (error) {
+              void error;
+            }
           }
         } else if (approvalType === 'planUpgrade') {
           const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
@@ -3209,7 +3349,9 @@ function App() {
         if (approvalDocId) {
           try {
             await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
-          } catch {}
+          } catch (error) {
+            void error;
+          }
         }
         setDictionaryApprovalEdits((prev) => {
           const next = { ...prev };
@@ -3225,7 +3367,7 @@ function App() {
     };
 
     const toggleFeedbackRead = async (item) => {
-      const nextRead = !Boolean(item?.read);
+      const nextRead = !item?.read;
       try {
         if (item?.id) {
           try {
@@ -3305,7 +3447,7 @@ function App() {
     };
 
     const toggleFeedbackResolved = async (item) => {
-      const resolved = !Boolean(item?.resolved);
+      const resolved = !item?.resolved;
       await updateFeedbackMeta(item, { resolved });
       logAdminActivity('feedback_resolved', { id: item.id, resolved });
     };
@@ -4252,8 +4394,8 @@ function App() {
                               <button type="button" onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
                               <button type="button" onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
                               {approvalType === 'planUpgrade' && (
-                                <button type="button" className="admin-ghost-btn" onClick={(e) => { e.preventDefault(); openApprovalReplyPopup(a); }} disabled={!canMutateAdminData}>
-                                  Reply
+                              <button type="button" className="admin-ghost-btn" onClick={(e) => { e.preventDefault(); openApprovalReplyPopup(a); }} disabled={!canMutateAdminData}>
+                                  Approval Reply
                                 </button>
                               )}
                             </div>
@@ -4264,6 +4406,44 @@ function App() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {showApprovalReplyPopup && (
+          <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
+            <div className="admin-chat-popup">
+              <div className="admin-chat-popup-header">
+                <h3>Approval Reply</h3>
+                <button type="button" className="admin-chat-popup-close" onClick={closeApprovalReplyPopup}>Close</button>
+              </div>
+              <div className="admin-chat-popup-body">
+                <div className="admin-chat-content" style={{ width: '100%' }}>
+                  <div className="admin-chat-conversation">
+                    <div className="admin-chat-message user-message">
+                      <strong>User Request:</strong>
+                      <p>
+                        Plan upgrade request from {activeApprovalReply?.dealerCode || 'user'} - {activeApprovalReply?.payload?.package || activeApprovalReply?.payload?.selectedPackage || 'unknown plan'}
+                      </p>
+                    </div>
+                    <div className="admin-chat-message admin-message">
+                      <strong>Approval Reply:</strong>
+                      <p>{getApprovalReplyMessage(activeApprovalReply) || 'No reply yet.'}</p>
+                    </div>
+                  </div>
+                  <textarea
+                    className="form-input"
+                    rows="5"
+                    value={approvalReplyDraft}
+                    onChange={(e) => setApprovalReplyDraft(e.target.value)}
+                    placeholder="Type approval reply here"
+                  />
+                  <div className="admin-chat-actions">
+                    <button type="button" className="form-button" onClick={submitApprovalReply}>Send Approval Reply</button>
+                    <button type="button" className="form-button secondary" onClick={closeApprovalReplyPopup}>Cancel</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -4323,16 +4503,25 @@ function App() {
                               <option value="medium">Medium</option>
                               <option value="low">Low</option>
                             </select>
-                            <button className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
+                            <button type="button" className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
                               {f.resolved ? 'Reopen' : 'Resolve'}
                             </button>
-                            <button className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
+                            <button type="button" className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
                               {f.read ? 'Mark Unread' : 'Mark Read'}
                             </button>
-                            <button className="admin-ghost-btn" onClick={() => openAdminReplyPopup(f)} disabled={!canMutateAdminData}>
-                              Reply
+                            <button
+                              type="button"
+                              className="admin-ghost-btn"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openAdminReplyPopup(f);
+                              }}
+                              disabled={!canMutateAdminData}
+                            >
+                              Feedback Reply
                             </button>
-                            <button className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
+                            <button type="button" className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
                               Delete
                             </button>
                           </div>
@@ -4347,7 +4536,7 @@ function App() {
               <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
                 <div className="admin-chat-popup">
                   <div className="admin-chat-popup-header">
-                    <h3>Reply to User Feedback</h3>
+                    <h3>Feedback Reply</h3>
                     <button type="button" className="admin-chat-popup-close" onClick={closeAdminReplyPopup}>Close</button>
                   </div>
                   <div className="admin-chat-popup-body">
@@ -4377,7 +4566,7 @@ function App() {
                                   onClick={() => openAdminReplyPopup(historyItem)}
                                   disabled={isSelected}
                                 >
-                                  {isSelected ? 'Selected' : 'Reply to this message'}
+                                  {isSelected ? 'Selected' : 'Feedback Reply'}
                                 </button>
                               </div>
                             </div>
@@ -4389,10 +4578,10 @@ function App() {
                         rows="5"
                         value={adminReplyDraft}
                         onChange={(e) => setAdminReplyDraft(e.target.value)}
-                        placeholder="Type your reply here"
+                        placeholder="Type feedback reply here"
                       />
                       <div className="admin-chat-actions">
-                        <button type="button" className="form-button" onClick={submitAdminReply}>Send Reply</button>
+                        <button type="button" className="form-button" onClick={submitAdminReply}>Send Feedback Reply</button>
                         <button type="button" className="form-button secondary" onClick={closeAdminReplyPopup}>Cancel</button>
                       </div>
                     </div>
@@ -4401,41 +4590,6 @@ function App() {
               </div>
             )}
 
-            {showApprovalReplyPopup && (
-              <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
-                <div className="admin-chat-popup">
-                  <div className="admin-chat-popup-header">
-                    <h3>Reply to Plan Upgrade Request</h3>
-                    <button type="button" className="admin-chat-popup-close" onClick={closeApprovalReplyPopup}>Close</button>
-                  </div>
-                  <div className="admin-chat-popup-body">
-                    <div className="admin-chat-content" style={{ width: '100%' }}>
-                      <div className="admin-chat-conversation">
-                        <div className="admin-chat-message user-message">
-                          <strong>User Request:</strong>
-                          <p>Plan upgrade request from {activeApprovalReply?.dealerCode || 'user'} - {activeApprovalReply?.payload?.plan || 'unknown plan'}</p>
-                        </div>
-                        <div className="admin-chat-message admin-message">
-                          <strong>Your reply:</strong>
-                          <p>{approvalReplies?.[activeApprovalReply?.replyKey] || 'No reply yet.'}</p>
-                        </div>
-                      </div>
-                      <textarea
-                        className="form-input"
-                        rows="5"
-                        value={approvalReplyDraft}
-                        onChange={(e) => setApprovalReplyDraft(e.target.value)}
-                        placeholder="Type your reply here"
-                      />
-                      <div className="admin-chat-actions">
-                        <button type="button" className="form-button" onClick={submitApprovalReply}>Send Reply</button>
-                        <button type="button" className="form-button secondary" onClick={closeApprovalReplyPopup}>Cancel</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -4898,21 +5052,8 @@ function App() {
     }
   });
   const [labelDraftSettings, setLabelDraftSettings] = useState(() => createDefaultCashMemoLabelSettings());
-  const [customersToPrint, setCustomersToPrint] = useState([]); // New state to hold multiple customers for printing
+  const [customersToPrint] = useState([]); // New state to hold multiple customers for printing
   const cashMemoRef = useRef(); // Ref for the cash memo component
-
-  // Sample Dealer Details (to be updated by user registration later)
-  const sampleDealerDetails = {
-    name: '',
-    gstn: '',
-    address: {
-      plotNo: '',
-    },
-    contact: {
-      email: '',
-      telephone: '',
-    },
-  };
 
   const defaultVisibleHeaders = [
     'Consumer No.',
@@ -4996,6 +5137,32 @@ function App() {
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
   };
+
+  const loadTestSampleFile = useCallback(async () => {
+    if (sampleDataLoaded || sampleDataLoading) return;
+    setSampleDataLoading(true);
+    try {
+      const response = await fetch(encodeURI('/Sample Excel.xlsx'));
+      if (!response.ok) throw new Error('Unable to load sample file');
+      const blob = await response.blob();
+      const file = new File([blob], 'Sample Excel.xlsx', {
+        type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      await handleFileUpload(file);
+      setSampleDataLoaded(true);
+    } catch (error) {
+      console.error('Sample file load failed:', error);
+      alert('Sample file load failed. Please use Upload Data manually.');
+    } finally {
+      setSampleDataLoading(false);
+      setSampleDataAttempted(true);
+    }
+  }, [handleFileUpload, sampleDataLoaded, sampleDataLoading]);
+
+  useEffect(() => {
+    if (!isTestUser || sampleDataLoaded || sampleDataLoading || sampleDataAttempted) return;
+    loadTestSampleFile();
+  }, [isTestUser, loadTestSampleFile, sampleDataAttempted, sampleDataLoaded, sampleDataLoading]);
 
   const handleResetAllFilters = () => {
     handleResetFilters();
@@ -5242,7 +5409,9 @@ function App() {
                 processedCustomer['Total Amount (₹)'] = rsp;
               }
           }
-        } catch {}
+        } catch (error) {
+          void error;
+        }
 
         const cashMemoHtml = renderToString(
           <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} labelSettings={cashMemoLabelSettings[pageType]} />
@@ -5947,69 +6116,6 @@ function App() {
       alert(`${item.dealerCode || 'Deleted user'} removed permanently.`);
     };
 
-    const saveCurrentAdminView = () => {
-      const label = window.prompt('Saved view name?');
-      if (!label) return;
-      const nextViews = [
-        {
-          id: `view-${Date.now()}`,
-          label,
-          activeAdminTab,
-          adminSearchTerm,
-          adminDateRange,
-          adminSubFilter,
-        },
-        ...savedAdminViews,
-      ].slice(0, 20);
-      persistSavedAdminViews(nextViews);
-      logAdminActivity('saved_view_created', { label });
-    };
-
-    const applySavedAdminView = (view) => {
-      if (!view) return;
-      setActiveAdminTab(view.activeAdminTab || 'dashboard');
-      setAdminSearchTerm(view.adminSearchTerm || '');
-      setAdminDateRange(view.adminDateRange || 'all');
-      setAdminSubFilter(view.adminSubFilter || 'all');
-      logAdminActivity('saved_view_applied', { label: view.label || '' });
-    };
-
-    const handleAdminImport = async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      try {
-        const { default: XLSX } = await import('xlsx');
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const rows = XLSX.utils.sheet_to_json(worksheet);
-          const importedUsers = rows.map((row) => ({
-            dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
-            dealerName: String(row.dealerName || row['Dealer Name'] || '').trim(),
-            mobile: String(row.mobile || row.Mobile || '').trim(),
-            email: String(row.email || row.Email || '').trim(),
-            package: String(row.package || row.Package || '').trim(),
-            pin: String(row.pin || row.PIN || '').trim(),
-            role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
-            status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
-            validFrom: toIsoDate(row.validFrom || row['Valid From']) || new Date().toISOString(),
-            validTill: toIsoDate(row.validTill || row['Valid Till']) || computeValidityDates(String(row.package || row.Package || '')).validTill,
-          })).filter((row) => row.dealerCode && row.dealerName && row.package && row.pin);
-          const nextUsers = [...users, ...importedUsers];
-          writeUsersLocal(nextUsers);
-          logAdminActivity('bulk_users_imported', { count: importedUsers.length });
-          alert(`${importedUsers.length} users imported locally.`);
-        };
-        reader.readAsArrayBuffer(file);
-      } catch {
-        alert('Import failed.');
-      } finally {
-        event.target.value = null;
-      }
-    };
-
   const matchesReportFilter = (row, reportKey) => {
     const ageInDays = getElapsedDays(row['Order Date']);
     const orderDate = getStartOfDay(row['Order Date']);
@@ -6588,6 +6694,162 @@ function App() {
       ? `& Expired on ${formatDisplayDate(loggedInUser.validTill)}`
       : `& It will expire in ${getRemainingDays(loggedInUser.validTill)} Days`
     : '';
+  const approvalReplyMap = readApprovalRepliesFromStorage();
+  const planUpgradeReplyKey = getPlanUpgradeReplyStorageKey({
+    userId: loggedInUser?.id,
+    dealerCode: loggedInUser?.dealerCode,
+    dealerName: loggedInUser?.dealerName,
+  });
+  const planUpgradeReplyText = String(
+    loggedInUser?.pendingUpdates?.planUpgrade?.adminReply
+    || approvalReplyMap[planUpgradeReplyKey]
+    || ''
+  ).trim();
+  const userMenuStatusText = isPlanExpired ? 'Expired' : (loggedInUser?.status || 'Active');
+  const menuDisabledReason = isPlanExpired ? 'Available after plan renewal' : '';
+  const pendingRequestCount = pendingUserApprovalTypes.length;
+  const pendingDictionaryCount = getPendingDictionaryRequestCount(loggedInUser);
+  const userMenuBadgeCount = contactReplyCount > 0
+    ? (contactReplyCount > 9 ? '9+' : contactReplyCount)
+    : (planUpgradeReplyText ? '!' : '');
+
+  const getRequestBadge = (type) => {
+    const pendingUpdate = loggedInUser?.pendingUpdates?.[type];
+    const approvalStatus = String(loggedInUser?.approvalStatus?.[type] || '').toLowerCase();
+    const pendingStatus = String(pendingUpdate?.status || approvalStatus || '').toLowerCase();
+
+    if (type === 'planUpgrade' && planUpgradeReplyText) {
+      return { label: 'Reply', tone: 'reply' };
+    }
+    if (pendingStatus === 'pending') {
+      return { label: 'Pending', tone: 'pending' };
+    }
+    if (approvalStatus === 'approved') {
+      return { label: 'Approved', tone: 'approved' };
+    }
+    if (approvalStatus === 'rejected') {
+      return { label: 'Rejected', tone: 'rejected' };
+    }
+    if (type === 'planUpgrade' && isPlanExpired) {
+      return { label: 'Expired', tone: 'rejected' };
+    }
+    return null;
+  };
+
+  const getRequestHint = (type, fallbackHint = '') => {
+    const badge = getRequestBadge(type);
+    if (badge?.tone === 'reply') return 'Admin reply received. Open to review and continue.';
+    if (badge?.tone === 'pending') return 'Request sent and waiting for admin approval.';
+    if (badge?.tone === 'approved') return 'Latest request was approved.';
+    if (badge?.tone === 'rejected') {
+      if (type === 'planUpgrade' && isPlanExpired) {
+        return 'Renew now to unlock uploads, invoice, and updates again.';
+      }
+      return 'Latest request was rejected. You can review and submit again.';
+    }
+    return fallbackHint;
+  };
+
+  const closeUserMenu = (restoreFocus = false) => {
+    setShowUserMenu(false);
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => {
+        userMenuButtonRef.current?.focus();
+      });
+    }
+  };
+
+  const closeUserMenuAndRun = (action) => () => {
+    closeUserMenu(false);
+    if (typeof action === 'function') action();
+  };
+
+  const userMenuConfig = [
+    {
+      title: 'Account',
+      items: [
+        { label: 'User Profile', onClick: handleUserProfile, hint: 'View account details and package info.' },
+        { label: 'About', onClick: handleAboutOpen, disabled: isPlanExpired, reason: menuDisabledReason },
+        { label: 'Invoice', onClick: handleInvoiceOpen, disabled: isPlanExpired, reason: menuDisabledReason },
+      ],
+    },
+    {
+      title: 'Requests',
+      items: [
+        { label: 'Profile Update', onClick: handleProfileUpdate, disabled: isPlanExpired, reason: menuDisabledReason, badge: getRequestBadge('profile'), hint: getRequestHint('profile', 'Update distributor profile details.') },
+        { label: 'Bank Details', onClick: handleBankDetails, disabled: isPlanExpired, reason: menuDisabledReason, badge: getRequestBadge('bank'), hint: getRequestHint('bank', 'Update bank details for records and billing.') },
+        { label: 'Rate Update', onClick: handleRateUpdate, disabled: isPlanExpired, reason: menuDisabledReason, badge: getRequestBadge('rates'), hint: getRequestHint('rates', 'Send revised rate data for approval.') },
+        { label: 'Label Update', onClick: handleLabelUpdate, disabled: isPlanExpired, reason: menuDisabledReason, hint: 'Adjust print layout labels for cashmemo output.' },
+        {
+          label: 'Dictionary',
+          onClick: handleDictionaryOpen,
+          disabled: isPlanExpired,
+          reason: menuDisabledReason,
+          badge: pendingDictionaryCount > 0 ? { label: String(pendingDictionaryCount), tone: 'pending' } : null,
+          hint: pendingDictionaryCount > 0 ? 'Dictionary changes are waiting for admin approval.' : 'Manage Hindi translation dictionary updates.',
+          show: isEnterpriseHindiPackage(loggedInUser?.package),
+        },
+        {
+          label: 'Upgrade Plan',
+          onClick: handleUpgradePlanOpen,
+          badge: getRequestBadge('planUpgrade'),
+          hint: getRequestHint('planUpgrade', isPlanExpired ? 'Renew your plan to restore full access.' : 'Review renewal options before expiry.'),
+        },
+        {
+          label: 'Delivery Area Update',
+          onClick: handleDeliveryAreaUpdate,
+          disabled: isPlanExpired,
+          reason: menuDisabledReason,
+          badge: getRequestBadge('deliveryArea'),
+          hint: getRequestHint('deliveryArea', 'Update delivery area mappings for approval.'),
+          show: isHindiEnterprisePackage(loggedInUser?.package),
+        },
+        {
+          label: 'Delivery Staff Update',
+          onClick: handleDeliveryStaffUpdate,
+          disabled: isPlanExpired,
+          reason: menuDisabledReason,
+          badge: getRequestBadge('deliveryStaff'),
+          hint: getRequestHint('deliveryStaff', 'Update delivery staff list for approval.'),
+          show: isHindiEnterprisePackage(loggedInUser?.package),
+        },
+        {
+          label: 'Header Update',
+          onClick: handleHeaderUpdate,
+          disabled: isPlanExpired,
+          reason: menuDisabledReason,
+          badge: getRequestBadge('header'),
+          hint: getRequestHint('header', 'Update Hindi header information for approval.'),
+          show: isHindiEnterprisePackage(loggedInUser?.package),
+        },
+      ],
+    },
+    {
+      title: 'Support',
+      items: [
+        {
+          label: 'Support & Replies',
+          onClick: handleContactOpen,
+          badge: contactReplyCount > 0 ? { label: contactReplyCount > 9 ? '9+' : String(contactReplyCount), tone: 'unread' } : null,
+          hint: contactReplyCount > 0 ? 'Unread admin replies are waiting.' : 'Open support chat and reply history.',
+        },
+      ],
+    },
+  ];
+
+  const userMenuSections = userMenuConfig
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => item.show !== false),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  const userMenuSummaryPills = [
+    pendingRequestCount > 0 ? { label: `${pendingRequestCount} Pending`, tone: 'pending' } : null,
+    pendingDictionaryCount > 0 ? { label: `${pendingDictionaryCount} Dictionary`, tone: 'pending' } : null,
+    contactReplyCount > 0 ? { label: `${contactReplyCount} Replies`, tone: 'unread' } : null,
+    isPlanExpired ? { label: 'Plan Expired', tone: 'rejected' } : { label: userMenuStatusText, tone: 'approved' },
+  ].filter(Boolean);
 
   return (
     <>
@@ -6597,13 +6859,8 @@ function App() {
           <div className="navbar-left">
             <button className="navbar-button" onClick={handleHomeOpen} disabled={isPlanExpired}>Home</button>
             <button className="navbar-button" onClick={handleContactOpen}>
-              Contact Us{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
+              Support & Replies{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
             </button>
-            {isPlanExpired && (
-              <button className="navbar-button upgrade-plan-button" onClick={handleUpgradePlanOpen}>
-                Upgrade Plan
-              </button>
-            )}
             {isLoggedIn && !isPlanExpired && !showDataButton && (
               <button className="navbar-button" onClick={handleReUploadClick} disabled={isPlanExpired}>
                 Upload Data
@@ -6636,36 +6893,92 @@ function App() {
                   <span className="navbar-expired-msg">Plan Expired, Please contact Admin or Upgrade Plan</span>
                 )}
               </div>
-                {!isPlanExpired && pendingUserApprovalTypes.length > 0 && (
-                  <span className="navbar-pending-msg">
-                    Your {pendingUserApprovalTypes.join(', ')} request is pending with admin for approval.
-                  </span>
-                )}
-                <div className="user-icon" onClick={() => setShowUserMenu(!showUserMenu)}>
+                <button
+                  type="button"
+                  className="user-icon"
+                  ref={userMenuButtonRef}
+                  onClick={() => setShowUserMenu((prev) => !prev)}
+                  aria-label="Open user menu"
+                  aria-haspopup="menu"
+                  aria-expanded={showUserMenu}
+                  aria-controls="user-menu-dropdown"
+                >
                   &#128100; {/* User icon */}
-                </div>
+                  {userMenuBadgeCount && (
+                    <span className="user-icon-badge">
+                      {userMenuBadgeCount}
+                    </span>
+                  )}
+                </button>
                 {showUserMenu && (
-                  <div className="dropdown-menu">
-                    <button onClick={handleUserProfile}>User Profile</button>
-                    <button onClick={handleAboutOpen} disabled={isPlanExpired}>About</button>
-                    {isEnterpriseHindiPackage(loggedInUser?.package) && (
-                      <button onClick={handleDictionaryOpen} disabled={isPlanExpired}>
-                        Dictionary ({getPendingDictionaryRequestCount(loggedInUser)} pending)
+                  <div className="dropdown-menu" id="user-menu-dropdown" role="menu" aria-label="User menu">
+                    <div className="dropdown-menu__summary">
+                      <div className="dropdown-menu__summary-name">{dealerWelcome || loggedInUser?.dealerCode || 'User'}</div>
+                      <div className="dropdown-menu__summary-meta">
+                        <span>Package: {navbarPackageName}</span>
+                        <span>Valid Till: {formatDisplayDate(loggedInUser?.validTill) || '-'}</span>
+                        <span>Status: {userMenuStatusText}</span>
+                      </div>
+                      <div className="dropdown-menu__summary-pills">
+                        {userMenuSummaryPills.map((pill) => (
+                          <span key={pill.label} className={`dropdown-menu__summary-pill dropdown-menu__summary-pill--${pill.tone}`}>
+                            {pill.label}
+                          </span>
+                        ))}
+                      </div>
+                      {(isPlanExpired || pendingRequestCount > 0 || contactReplyCount > 0) && (
+                        <div className="dropdown-menu__summary-note">
+                          {isPlanExpired
+                            ? 'Plan renew karte hi uploads, invoice aur requests dobara active ho jayenge.'
+                            : [
+                                pendingRequestCount > 0 ? `${pendingRequestCount} request pending` : '',
+                                contactReplyCount > 0 ? `${contactReplyCount} unread reply` : '',
+                              ].filter(Boolean).join(' • ')}
+                        </div>
+                      )}
+                      <div className="dropdown-menu__quick-actions">
+                        <button type="button" className="dropdown-menu__quick-action" onClick={closeUserMenuAndRun(handleUserProfile)} role="menuitem">
+                          View Profile
+                        </button>
+                        <button type="button" className="dropdown-menu__quick-action" onClick={closeUserMenuAndRun(isPlanExpired ? handleUpgradePlanOpen : handleProfileUpdate)} role="menuitem">
+                          {isPlanExpired ? 'Renew Plan' : 'Edit Profile'}
+                        </button>
+                      </div>
+                    </div>
+                    {userMenuSections.map((section) => (
+                      <div key={section.title} className="dropdown-menu__section">
+                        <div className="dropdown-menu__section-title">{section.title}</div>
+                        {section.items.map((item, itemIndex) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            className="dropdown-menu__button"
+                            ref={itemIndex === 0 && section.title === userMenuSections[0]?.title ? firstUserMenuActionRef : null}
+                            onClick={closeUserMenuAndRun(item.onClick)}
+                            disabled={item.disabled}
+                            title={item.reason || item.hint || ''}
+                            role="menuitem"
+                          >
+                            <span className="dropdown-menu__button-row">
+                              <span>{item.label}</span>
+                              <span className="dropdown-menu__badges">
+                                {item.badge && <span className={`dropdown-menu__badge dropdown-menu__badge--${item.badge.tone}`}>{item.badge.label}</span>}
+                              </span>
+                            </span>
+                            {(item.reason || item.hint) && (
+                              <span className="dropdown-menu__button-subtext">
+                                {item.reason || item.hint}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                    <div className="dropdown-menu__footer">
+                      <button type="button" className="dropdown-menu__logout" onClick={closeUserMenuAndRun(handleLogout)} role="menuitem">
+                        Logout
                       </button>
-                    )}
-                    <button onClick={handleInvoiceOpen} disabled={isPlanExpired}>Invoice</button>
-                    <button onClick={handleProfileUpdate} disabled={isPlanExpired}>Profile Update</button>
-                    <button onClick={handleBankDetails} disabled={isPlanExpired}>Bank Details</button>
-                    <button onClick={handleRateUpdate} disabled={isPlanExpired}>Rate Update</button>
-                    <button onClick={handleLabelUpdate} disabled={isPlanExpired}>Lebel Update</button>
-                    {isHindiEnterprisePackage(loggedInUser?.package) && (
-                      <>
-                        <button onClick={handleDeliveryAreaUpdate} disabled={isPlanExpired}>Delivery Area Update</button>
-                        <button onClick={handleDeliveryStaffUpdate} disabled={isPlanExpired}>Delivery Staff Update</button>
-                        <button onClick={handleHeaderUpdate} disabled={isPlanExpired}>Header Update</button>
-                      </>
-                    )}
-                    <button onClick={handleLogout}>Logout</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -6683,7 +6996,7 @@ function App() {
           </div>
         </nav>
       )}
-      {(showUpgradePlan || showUserProfile || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showContactForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && <DictionaryRequestForm mode={dictionaryFormMode} onClose={navigateToHome} />}
