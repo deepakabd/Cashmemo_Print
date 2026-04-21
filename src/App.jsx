@@ -253,6 +253,8 @@ const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
 
 const USER_SESSION_STORAGE_KEY = 'cashmemoUserSession';
 const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
+const FILTER_PRESET_STORAGE_KEY_PREFIX = 'cashmemoFilterPresets_';
+const RECENT_ACTIVITY_STORAGE_KEY_PREFIX = 'cashmemoRecentActivity_';
 
 const getPlanUpgradeReplyStorageKey = ({ userId = '', dealerCode = '', dealerName = '' } = {}) => {
   const userKey = String(userId || dealerCode || dealerName || '').trim();
@@ -325,6 +327,13 @@ const formatDisplayDate = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleDateString('en-GB');
+};
+
+const formatDisplayDateTime = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('en-GB');
 };
 
 const getRemainingDays = (validTill) => {
@@ -435,13 +444,13 @@ const normalizeData = (data) => {
 function App() {
   const fileInputRef = useRef(null);
   const [translationDictionary, setTranslationDictionary] = useState({});
-
-  const handleReUploadClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
+  const [toastItems, setToastItems] = useState([]);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [savedFilterPresets, setSavedFilterPresets] = useState([]);
+  const [userPinVisible, setUserPinVisible] = useState(false);
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [isUserLoginSubmitting, setIsUserLoginSubmitting] = useState(false);
+  const [isAdminLoginSubmitting, setIsAdminLoginSubmitting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileUpdate, setShowProfileUpdate] = useState(false);
@@ -472,6 +481,43 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+
+  const pushToast = useCallback((message, tone = 'info') => {
+    if (!message) return;
+    const toastId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToastItems((prev) => [...prev, { id: toastId, message, tone }]);
+    window.setTimeout(() => {
+      setToastItems((prev) => prev.filter((item) => item.id !== toastId));
+    }, 3600);
+  }, []);
+
+  const handleReUploadClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const getRecentActivityStorageKey = (dealerCode = '') => (
+    `${RECENT_ACTIVITY_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
+  );
+  const logRecentActivity = useCallback((message, dealerCodeOverride = '') => {
+    if (!message) return;
+    const dealerCode = String(dealerCodeOverride || loggedInUser?.dealerCode || 'guest').trim() || 'guest';
+    const nextEntry = {
+      id: `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      message,
+      createdAt: new Date().toISOString(),
+    };
+    setRecentActivities((prev) => {
+      const next = [nextEntry, ...prev].slice(0, 8);
+      try {
+        localStorage.setItem(getRecentActivityStorageKey(dealerCode), JSON.stringify(next));
+      } catch {
+        void 0;
+      }
+      return next;
+    });
+  }, [loggedInUser?.dealerCode]);
   const isPlanExpired = Boolean(
     isLoggedIn &&
     loggedInUser &&
@@ -703,7 +749,7 @@ function App() {
 
   const submitUpdateApprovalRequest = async ({ type, payload, localKey, successMessage }) => {
     if (!loggedInUser?.id) {
-      alert('Please login first.');
+      pushToast('Please login first.', 'error');
       return false;
     }
     if (localKey) {
@@ -770,10 +816,10 @@ function App() {
         }),
         loggedInUser.dealerCode
       );
-      alert(successMessage || 'Your request is pending with admin for approval.');
+      pushToast(successMessage || 'Your request is pending with admin for approval.', 'success');
       return true;
     } catch {
-      alert('Request submit failed. Check Firebase permissions.');
+      pushToast('Request submit failed. Check Firebase permissions.', 'error');
       return false;
     }
   };
@@ -788,6 +834,8 @@ function App() {
       address: '',
       photoDataUrl: '',
     });
+    const [errors, setErrors] = useState({});
+    const [isSaving, setIsSaving] = useState(false);
     useEffect(() => {
       if (loggedInUser?.profileData) {
         setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
@@ -796,36 +844,52 @@ function App() {
     const handleChange = (e) => {
       const { name, value } = e.target;
       setFormData((prev) => ({ ...prev, [name]: value }));
+      setErrors((prev) => ({ ...prev, [name]: '' }));
     };
     const handlePhotoChange = async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
       if (!file.type.startsWith('image/')) {
-        alert('Please choose an image file.');
+        pushToast('Please choose an image file.', 'error');
         return;
       }
       if (file.size > 1024 * 1024) {
-        alert('Profile photo must be under 1 MB.');
+        pushToast('Profile photo must be under 1 MB.', 'error');
         return;
       }
       try {
         const photoDataUrl = await readImageFileAsDataUrl(file);
         setFormData((prev) => ({ ...prev, photoDataUrl }));
       } catch {
-        alert('Photo upload failed. Please try another image.');
+        pushToast('Photo upload failed. Please try another image.', 'error');
       }
     };
     const handlePhotoRemove = () => {
       setFormData((prev) => ({ ...prev, photoDataUrl: '' }));
     };
+    const validateProfileForm = () => {
+      const nextErrors = {};
+      if (!formData.distributorCode.trim()) nextErrors.distributorCode = 'Distributor code is required.';
+      if (!formData.distributorName.trim()) nextErrors.distributorName = 'Distributor name is required.';
+      if (!/^\d{10}$/.test(formData.contact.trim())) nextErrors.contact = 'Enter a valid 10-digit contact number.';
+      if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) nextErrors.email = 'Enter a valid email address.';
+      if (!formData.gst.trim()) nextErrors.gst = 'GST is required.';
+      if (!formData.address.trim()) nextErrors.address = 'Address is required.';
+      setErrors(nextErrors);
+      return Object.keys(nextErrors).length === 0;
+    };
     const handleSave = async () => {
+      if (!validateProfileForm()) return;
+      setIsSaving(true);
       const ok = await submitUpdateApprovalRequest({
         type: 'profile',
         payload: formData,
         localKey: 'profileData',
         successMessage: 'Profile update request submitted. Your request is pending with admin for approval.',
       });
+      setIsSaving(false);
       if (ok) {
+        logRecentActivity('Submitted profile update request');
         onClose();
       }
     };
@@ -848,21 +912,39 @@ function App() {
             </div>
           </div>
           <span className="profile-label">Distributor Code</span>
-          <input className="form-input" name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.distributorCode ? ' form-input--error' : ''}`} name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
+            {errors.distributorCode && <div className="form-error">{errors.distributorCode}</div>}
+          </div>
           <span className="profile-label">Distributor Name</span>
-          <input className="form-input" name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.distributorName ? ' form-input--error' : ''}`} name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} />
+            {errors.distributorName && <div className="form-error">{errors.distributorName}</div>}
+          </div>
           <span className="profile-label">Contact</span>
-          <input className="form-input" name="contact" type="text" value={formData.contact} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.contact ? ' form-input--error' : ''}`} name="contact" type="text" value={formData.contact} onChange={handleChange} />
+            {errors.contact && <div className="form-error">{errors.contact}</div>}
+          </div>
           <span className="profile-label">Email</span>
-          <input className="form-input" name="email" type="email" value={formData.email} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.email ? ' form-input--error' : ''}`} name="email" type="email" value={formData.email} onChange={handleChange} />
+            {errors.email && <div className="form-error">{errors.email}</div>}
+          </div>
           <span className="profile-label">GST</span>
-          <input className="form-input" name="gst" type="text" value={formData.gst} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.gst ? ' form-input--error' : ''}`} name="gst" type="text" value={formData.gst} onChange={handleChange} />
+            {errors.gst && <div className="form-error">{errors.gst}</div>}
+          </div>
           <span className="profile-label">Address</span>
-          <textarea className="form-textarea" name="address" rows="3" value={formData.address} onChange={handleChange} />
+          <div>
+            <textarea className={`form-textarea${errors.address ? ' form-input--error' : ''}`} name="address" rows="3" value={formData.address} onChange={handleChange} />
+            {errors.address && <div className="form-error">{errors.address}</div>}
+          </div>
         </div>
         <div className="form-actions">
-          <button onClick={handleSave}>Save</button>
-          <button onClick={onClose}>Close</button>
+          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
+          <button onClick={onClose} disabled={isSaving}>Close</button>
         </div>
       </div>
     );
@@ -876,6 +958,8 @@ function App() {
       ifsc: '',
     };
     const [formData, setFormData] = useState(defaultBankDetails);
+    const [errors, setErrors] = useState({});
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
       if (loggedInUser?.bankDetailsData) {
@@ -886,16 +970,31 @@ function App() {
     const handleChange = (e) => {
       const { name, value } = e.target;
       setFormData((prev) => ({ ...prev, [name]: value }));
+      setErrors((prev) => ({ ...prev, [name]: '' }));
+    };
+
+    const validateBankForm = () => {
+      const nextErrors = {};
+      if (!formData.bankName.trim()) nextErrors.bankName = 'Bank name is required.';
+      if (!formData.branch.trim()) nextErrors.branch = 'Branch is required.';
+      if (!/^\d{8,20}$/.test(formData.accountNo.trim())) nextErrors.accountNo = 'Enter a valid account number.';
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(formData.ifsc.trim())) nextErrors.ifsc = 'Enter a valid IFSC code.';
+      setErrors(nextErrors);
+      return Object.keys(nextErrors).length === 0;
     };
 
     const handleSave = async () => {
+      if (!validateBankForm()) return;
+      setIsSaving(true);
       const ok = await submitUpdateApprovalRequest({
         type: 'bank',
         payload: formData,
         localKey: 'bankDetailsData',
         successMessage: 'Bank details update request submitted. Your request is pending with admin for approval.',
       });
+      setIsSaving(false);
       if (ok) {
+        logRecentActivity('Submitted bank details update request');
         onClose();
       }
     };
@@ -905,17 +1004,29 @@ function App() {
         <h2>Bank Details</h2>
         <div className="profile-form">
           <span className="profile-label">Bank Name</span>
-          <input className="form-input" name="bankName" type="text" value={formData.bankName} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.bankName ? ' form-input--error' : ''}`} name="bankName" type="text" value={formData.bankName} onChange={handleChange} />
+            {errors.bankName && <div className="form-error">{errors.bankName}</div>}
+          </div>
           <span className="profile-label">Branch</span>
-          <input className="form-input" name="branch" type="text" value={formData.branch} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.branch ? ' form-input--error' : ''}`} name="branch" type="text" value={formData.branch} onChange={handleChange} />
+            {errors.branch && <div className="form-error">{errors.branch}</div>}
+          </div>
           <span className="profile-label">Account No</span>
-          <input className="form-input" name="accountNo" type="text" value={formData.accountNo} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.accountNo ? ' form-input--error' : ''}`} name="accountNo" type="text" value={formData.accountNo} onChange={handleChange} />
+            {errors.accountNo && <div className="form-error">{errors.accountNo}</div>}
+          </div>
           <span className="profile-label">IFSC Code</span>
-          <input className="form-input" name="ifsc" type="text" value={formData.ifsc} onChange={handleChange} />
+          <div>
+            <input className={`form-input${errors.ifsc ? ' form-input--error' : ''}`} name="ifsc" type="text" value={formData.ifsc} onChange={handleChange} />
+            {errors.ifsc && <div className="form-error">{errors.ifsc}</div>}
+          </div>
         </div>
         <div className="form-actions">
-          <button onClick={handleSave}>Save</button>
-          <button onClick={onClose}>Close</button>
+          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
+          <button onClick={onClose} disabled={isSaving}>Close</button>
         </div>
       </div>
     );
@@ -929,6 +1040,8 @@ function App() {
       gstn: '',
       telephone: '',
     });
+    const [errors, setErrors] = useState({});
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
       if (loggedInUser?.hindiHeaderData) {
@@ -939,16 +1052,32 @@ function App() {
     const handleChange = (e) => {
       const { name, value } = e.target;
       setFormData((prev) => ({ ...prev, [name]: value }));
+      setErrors((prev) => ({ ...prev, [name]: '' }));
+    };
+
+    const validateHeaderForm = () => {
+      const nextErrors = {};
+      if (!formData.distributorName.trim()) nextErrors.distributorName = 'Distributor name is required.';
+      if (!formData.address.trim()) nextErrors.address = 'Address is required.';
+      if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) nextErrors.email = 'Enter a valid email address.';
+      if (!formData.gstn.trim()) nextErrors.gstn = 'GSTN is required.';
+      if (!/^\d{10}$/.test(formData.telephone.trim())) nextErrors.telephone = 'Enter a valid 10-digit telephone number.';
+      setErrors(nextErrors);
+      return Object.keys(nextErrors).length === 0;
     };
 
     const handleSave = async () => {
+      if (!validateHeaderForm()) return;
+      setIsSaving(true);
       const ok = await submitUpdateApprovalRequest({
         type: 'header',
         payload: formData,
         localKey: 'hindiHeaderData',
         successMessage: 'Header details update request submitted. Your request is pending with admin for approval.',
       });
+      setIsSaving(false);
       if (ok) {
+        logRecentActivity('Submitted header update request');
         onClose();
       }
     };
@@ -958,19 +1087,34 @@ function App() {
         <h2>Header Update (Hindi / Local)</h2>
         <div className="profile-form">
           <span className="profile-label">Distributor Name</span>
-          <input className="form-input" name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} placeholder="उदा: MAHADEV HP GAS..." />
+          <div>
+            <input className={`form-input${errors.distributorName ? ' form-input--error' : ''}`} name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} placeholder="उदा: MAHADEV HP GAS..." />
+            {errors.distributorName && <div className="form-error">{errors.distributorName}</div>}
+          </div>
           <span className="profile-label">Address</span>
-          <textarea className="form-textarea" name="address" rows="3" value={formData.address} onChange={handleChange} placeholder="उदा: ATHARI, RUNNISAIDPUR..." />
+          <div>
+            <textarea className={`form-textarea${errors.address ? ' form-input--error' : ''}`} name="address" rows="3" value={formData.address} onChange={handleChange} placeholder="उदा: ATHARI, RUNNISAIDPUR..." />
+            {errors.address && <div className="form-error">{errors.address}</div>}
+          </div>
           <span className="profile-label">Email</span>
-          <input className="form-input" name="email" type="text" value={formData.email} onChange={handleChange} placeholder="उदा: mahadev.sitamarhi@gmail.com" />
+          <div>
+            <input className={`form-input${errors.email ? ' form-input--error' : ''}`} name="email" type="text" value={formData.email} onChange={handleChange} placeholder="उदा: mahadev.sitamarhi@gmail.com" />
+            {errors.email && <div className="form-error">{errors.email}</div>}
+          </div>
           <span className="profile-label">GSTN</span>
-          <input className="form-input" name="gstn" type="text" value={formData.gstn} onChange={handleChange} placeholder="उदा: 10ABBFM6137E1ZU" />
+          <div>
+            <input className={`form-input${errors.gstn ? ' form-input--error' : ''}`} name="gstn" type="text" value={formData.gstn} onChange={handleChange} placeholder="उदा: 10ABBFM6137E1ZU" />
+            {errors.gstn && <div className="form-error">{errors.gstn}</div>}
+          </div>
           <span className="profile-label">Telephone</span>
-          <input className="form-input" name="telephone" type="text" value={formData.telephone} onChange={handleChange} placeholder="उदा: 7070236555" />
+          <div>
+            <input className={`form-input${errors.telephone ? ' form-input--error' : ''}`} name="telephone" type="text" value={formData.telephone} onChange={handleChange} placeholder="उदा: 7070236555" />
+            {errors.telephone && <div className="form-error">{errors.telephone}</div>}
+          </div>
         </div>
         <div className="form-actions">
-          <button onClick={handleSave}>Save</button>
-          <button onClick={onClose}>Close</button>
+          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
+          <button onClick={onClose} disabled={isSaving}>Close</button>
         </div>
       </div>
     );
@@ -995,10 +1139,11 @@ function App() {
     const dealerCode = userDealerCode.trim();
     const pin = userPin.trim();
     if (!dealerCode || !pin) {
-      alert('Dealer Code aur PIN required hai.');
+      pushToast('Dealer Code aur PIN required hai.', 'error');
       return;
     }
 
+    setIsUserLoginSubmitting(true);
     let firestoreUser = null;
     try {
       const usersRef = collection(db, 'users');
@@ -1035,22 +1180,26 @@ function App() {
         }
       }
     } catch {
-      alert('Firebase login check failed. Please try again.');
+      pushToast('Firebase login check failed. Please try again.', 'error');
+      setIsUserLoginSubmitting(false);
       return;
     }
 
     if (!firestoreUser) {
-      alert('Invalid Dealer Code / PIN ya account disabled hai.');
+      pushToast('Invalid Dealer Code / PIN ya account disabled hai.', 'error');
+      setIsUserLoginSubmitting(false);
       return;
     }
 
     if (firestoreUser.status === 'pending') {
-      alert('Your registration is pending with admin approval.');
+      pushToast('Your registration is pending with admin approval.', 'info');
+      setIsUserLoginSubmitting(false);
       return;
     }
 
     if (firestoreUser.status === 'disabled') {
-      alert('Your account is disabled. Please contact admin.');
+      pushToast('Your account is disabled. Please contact admin.', 'error');
+      setIsUserLoginSubmitting(false);
       return;
     }
 
@@ -1105,6 +1254,7 @@ function App() {
     setShowAboutInfo(true);
     setUserDealerCode('');
     setUserPin('');
+    setUserPinVisible(false);
     if (String(localUser.status || '').toLowerCase() === 'expired') {
       const replyMap = readApprovalRepliesFromStorage();
       const pendingPlanUpgrade = localUser?.pendingUpdates?.planUpgrade || {};
@@ -1126,11 +1276,13 @@ function App() {
       } else {
         setAdminFlashMessage(null);
       }
-      alert('Logged in successfully. Plan Expired, Please contact Admin or Upgrade Plan');
+      pushToast('Logged in successfully. Plan expired, please contact admin or renew plan.', 'info');
     } else {
       setAdminFlashMessage(null);
-      alert('Logged in successfully!');
+      pushToast('Logged in successfully!', 'success');
     }
+    logRecentActivity('Logged in successfully', localUser?.dealerCode);
+    setIsUserLoginSubmitting(false);
   };
 
   const handleLogout = () => {
@@ -1143,7 +1295,8 @@ function App() {
     setSampleDataLoading(false);
     setSampleDataAttempted(false);
     setShowAboutInfo(true);
-    alert('Logged out successfully!');
+    pushToast('Logged out successfully!', 'success');
+    logRecentActivity('Logged out');
   };
 
   const handleLogoutWithConfirm = () => {
@@ -1344,25 +1497,28 @@ function App() {
     setShowAboutInfo(true);
     setAdminLoginId('');
     setAdminPassword('');
-    alert('Admin logged out successfully!');
+    pushToast('Admin logged out successfully!', 'success');
   };
 
   const handleAdminLoginSubmit = async () => {
     const loginId = adminLoginId.trim().toLowerCase();
     const password = adminPassword.trim();
     if (!loginId || !password) {
-      alert('Admin Email and Password required.');
+      pushToast('Admin Email and Password required.', 'error');
       return;
     }
+    setIsAdminLoginSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, loginId, password);
       setShowAdminLogin(false);
       setShowAdminPanel(true);
       setAdminLoginId('');
       setAdminPassword('');
+      pushToast('Admin login successful.', 'success');
     } catch {
-      alert('Admin login failed. Check Firebase Authentication credentials.');
+      pushToast('Admin login failed. Check Firebase Authentication credentials.', 'error');
     }
+    setIsAdminLoginSubmitting(false);
   };
 
   const RegisterForm = ({ onClose }) => {
@@ -1377,20 +1533,29 @@ function App() {
       utr: '',
       date: '',
     });
+    const [errors, setErrors] = useState({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const fixedPackages = PACKAGE_OPTIONS;
     const onChange = (e) => {
       const { name, value } = e.target;
       setForm(prev => ({ ...prev, [name]: value }));
+      setErrors((prev) => ({ ...prev, [name]: '' }));
+    };
+    const validateRegisterForm = () => {
+      const nextErrors = {};
+      if (!form.package) nextErrors.package = 'Please select a package.';
+      if (!form.dealerCode.trim()) nextErrors.dealerCode = 'Dealer code is required.';
+      if (!form.dealerName.trim()) nextErrors.dealerName = 'Dealer name is required.';
+      if (!/^\d{10}$/.test(form.mobile.trim())) nextErrors.mobile = 'Enter a valid 10-digit mobile number.';
+      if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) nextErrors.email = 'Enter a valid email address.';
+      if (!/^\d{4}$/.test(form.pin.trim())) nextErrors.pin = 'PIN must be exactly 4 digits.';
+      if (form.pin !== form.confirmPin) nextErrors.confirmPin = 'PIN aur Confirm PIN match nahi kar rahe.';
+      setErrors(nextErrors);
+      return Object.keys(nextErrors).length === 0;
     };
     const onSubmit = async () => {
-      if (form.pin !== form.confirmPin) {
-        alert('PIN aur Confirm PIN match nahi kar rahe');
-        return;
-      }
-      if (!form.package) {
-        alert('Please select a package.');
-        return;
-      }
+      if (!validateRegisterForm()) return;
+      setIsSubmitting(true);
       const request = {
         id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         package: form.package,
@@ -1410,7 +1575,8 @@ function App() {
         const existingQuery = query(usersRef, where('dealerCode', '==', form.dealerCode.trim()));
         const existing = await getDocs(existingQuery);
         if (!existing.empty) {
-          alert('You have already a registered account, if you forget your Pin Kindly Contact Admin');
+          pushToast('You already have a registered account. If you forgot your PIN, contact admin.', 'info');
+          setIsSubmitting(false);
           return;
         }
 
@@ -1435,7 +1601,8 @@ function App() {
           createdAt: serverTimestamp(),
         });
       } catch {
-        alert('Registration save to Firebase failed. Check Firebase config.');
+        pushToast('Registration save to Firebase failed. Check Firebase config.', 'error');
+        setIsSubmitting(false);
         return;
       }
       const requestToStore = { ...request, id: requestRef.id };
@@ -1449,32 +1616,55 @@ function App() {
         localStorage.setItem('registrationRequests', JSON.stringify([requestToStore]));
       }
       localStorage.setItem('registrationData', JSON.stringify(form));
-      alert('Registration request submitted!');
+      pushToast('Registration request submitted!', 'success');
+      logRecentActivity('Submitted registration request', form.dealerCode);
+      setIsSubmitting(false);
       onClose();
     };
     return (
       <div className="placeholder-container">
         <h2 className="register-title">रजिस्टर करें</h2>
         <div className="register-form">
-          <select name="package" value={form.package} onChange={onChange} className="form-input">
+          <div>
+            <select name="package" value={form.package} onChange={onChange} className={`form-input${errors.package ? ' form-input--error' : ''}`}>
             <option value="">पैकेज चुनें</option>
             {fixedPackages.map((opt, i) => (
               <option key={i} value={opt}>{`${opt} - ${PACKAGE_PRICING[opt] || '-'}`}</option>
             ))}
-          </select>
-          <input name="dealerCode" className="form-input" placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
-          <input name="dealerName" className="form-input" placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
-          <input name="mobile" className="form-input" placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
-          <input name="email" className="form-input" placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
-          <input name="pin" className="form-input" placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
-          <input name="confirmPin" className="form-input" placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
+            </select>
+            {errors.package && <div className="form-error">{errors.package}</div>}
+          </div>
+          <div>
+            <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
+            {errors.dealerCode && <div className="form-error">{errors.dealerCode}</div>}
+          </div>
+          <div>
+            <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
+            {errors.dealerName && <div className="form-error">{errors.dealerName}</div>}
+          </div>
+          <div>
+            <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
+            {errors.mobile && <div className="form-error">{errors.mobile}</div>}
+          </div>
+          <div>
+            <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
+            {errors.email && <div className="form-error">{errors.email}</div>}
+          </div>
+          <div>
+            <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
+            {errors.pin && <div className="form-error">{errors.pin}</div>}
+          </div>
+          <div>
+            <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
+            {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
+          </div>
           <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
           <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
           <div className="upi-note">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
         </div>
         <div className="form-actions">
-          <button onClick={onSubmit}>रजिस्टर करें</button>
-          <button onClick={onClose}>Close</button>
+          <button onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'रजिस्टर करें'}</button>
+          <button onClick={onClose} disabled={isSubmitting}>Close</button>
         </div>
       </div>
     );
@@ -2175,21 +2365,23 @@ function App() {
       paymentDate: '',
       paymentNote: '',
     });
+    const [errors, setErrors] = useState({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handlePaymentDetailsChange = (e) => {
       const { name, value } = e.target;
       setPaymentDetails((prev) => ({ ...prev, [name]: value }));
+      setErrors((prev) => ({ ...prev, [name]: '', selectedPackage: '' }));
     };
 
     const submitUpgradeRequest = async () => {
-      if (!selectedPackage) {
-        alert('Please select a plan.');
-        return;
-      }
-      if (!paymentDetails.utr.trim() || !paymentDetails.paymentDate) {
-        alert('UTR number & payment date required.');
-        return;
-      }
+      const nextErrors = {};
+      if (!selectedPackage) nextErrors.selectedPackage = 'Please select a plan.';
+      if (!paymentDetails.utr.trim()) nextErrors.utr = 'UTR number is required.';
+      if (!paymentDetails.paymentDate) nextErrors.paymentDate = 'Payment date is required.';
+      setErrors(nextErrors);
+      if (Object.keys(nextErrors).length > 0) return;
+      setIsSubmitting(true);
       const payload = {
         package: selectedPackage,
         packagePrice: PACKAGE_PRICING[selectedPackage] || '',
@@ -2206,7 +2398,9 @@ function App() {
         payload,
         successMessage: 'Plan upgrade request submitted. Your request is pending with admin for approval.',
       });
+      setIsSubmitting(false);
       if (ok) {
+        logRecentActivity('Submitted plan upgrade request');
         onClose();
       }
     };
@@ -2221,10 +2415,13 @@ function App() {
           <span>{formatDisplayDate(loggedInUser?.validTill)}</span>
           <span className="profile-label">Choose New Plan</span>
           <select
-            className="form-input"
+            className={`form-input${errors.selectedPackage ? ' form-input--error' : ''}`}
             value={selectedPackage}
-            onChange={(e) => setSelectedPackage(e.target.value)}
-            disabled={hasPendingUpgrade}
+            onChange={(e) => {
+              setSelectedPackage(e.target.value);
+              setErrors((prev) => ({ ...prev, selectedPackage: '' }));
+            }}
+            disabled={hasPendingUpgrade || isSubmitting}
           >
             {PLAN_UPGRADE_OPTIONS.map((pkg) => (
               <option key={pkg} value={pkg}>
@@ -2232,26 +2429,33 @@ function App() {
               </option>
             ))}
           </select>
+          {errors.selectedPackage ? <div className="form-error">{errors.selectedPackage}</div> : <span />}
           <span className="profile-label">Payment UPI ID</span>
           <span className="upgrade-plan-upi">{PAYMENT_UPI_ID}</span>
           <span className="profile-label">UTR Number</span>
-          <input
-            className="form-input"
-            name="utr"
-            value={paymentDetails.utr}
-            onChange={handlePaymentDetailsChange}
-            placeholder="Enter UTR / Transaction ID"
-            disabled={hasPendingUpgrade}
-          />
+          <div>
+            <input
+              className={`form-input${errors.utr ? ' form-input--error' : ''}`}
+              name="utr"
+              value={paymentDetails.utr}
+              onChange={handlePaymentDetailsChange}
+              placeholder="Enter UTR / Transaction ID"
+              disabled={hasPendingUpgrade || isSubmitting}
+            />
+            {errors.utr && <div className="form-error">{errors.utr}</div>}
+          </div>
           <span className="profile-label">Payment Date</span>
-          <input
-            className="form-input"
-            name="paymentDate"
-            type="date"
-            value={paymentDetails.paymentDate}
-            onChange={handlePaymentDetailsChange}
-            disabled={hasPendingUpgrade}
-          />
+          <div>
+            <input
+              className={`form-input${errors.paymentDate ? ' form-input--error' : ''}`}
+              name="paymentDate"
+              type="date"
+              value={paymentDetails.paymentDate}
+              onChange={handlePaymentDetailsChange}
+              disabled={hasPendingUpgrade || isSubmitting}
+            />
+            {errors.paymentDate && <div className="form-error">{errors.paymentDate}</div>}
+          </div>
           <span className="profile-label">Payment Remark</span>
           <textarea
             className="form-textarea"
@@ -2259,15 +2463,15 @@ function App() {
             value={paymentDetails.paymentNote}
             onChange={handlePaymentDetailsChange}
             placeholder="Optional payment note"
-            disabled={hasPendingUpgrade}
+            disabled={hasPendingUpgrade || isSubmitting}
           />
         </div>
         {hasPendingUpgrade && (
           <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
         )}
         <div className="form-actions">
-          <button onClick={submitUpgradeRequest} disabled={hasPendingUpgrade}>Send Request</button>
-          <button onClick={onClose}>Close</button>
+          <button onClick={submitUpgradeRequest} disabled={hasPendingUpgrade || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Send Request'}</button>
+          <button onClick={onClose} disabled={isSubmitting}>Close</button>
         </div>
       </div>
     );
@@ -5192,6 +5396,9 @@ function App() {
     'Online Refill Payment status',
     'EKYC Status'
   ];
+  const getFilterPresetStorageKey = (dealerCode = '') => (
+    `${FILTER_PRESET_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
+  );
 
   const {
     parsedData,
@@ -5212,6 +5419,8 @@ function App() {
     setShowParsedData,
     showBookingReport,
     setShowBookingReport,
+    uploadMetadata,
+    uploadInProgress,
     eKycFilter,
     setEKycFilter,
     areaFilter,
@@ -5259,11 +5468,31 @@ function App() {
     sortedUniqueValues,
     defaultVisibleHeaders,
     hideAllViews,
+    onNotify: pushToast,
   });
 
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
   };
+
+  useEffect(() => {
+    try {
+      const storageKey = getRecentActivityStorageKey(loggedInUser?.dealerCode);
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setRecentActivities(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setRecentActivities([]);
+    }
+  }, [loggedInUser?.dealerCode]);
+
+  useEffect(() => {
+    if (!uploadMetadata?.uploadedAt) return;
+    logRecentActivity(
+      `Uploaded ${uploadMetadata.fileName} with ${uploadMetadata.totalRows} rows`,
+      loggedInUser?.dealerCode,
+    );
+  }, [uploadMetadata?.uploadedAt]);
 
   const loadTestSampleFile = useCallback(async () => {
     if (sampleDataLoaded || sampleDataLoading) return;
@@ -5279,12 +5508,12 @@ function App() {
       setSampleDataLoaded(true);
     } catch (error) {
       console.error('Sample file load failed:', error);
-      alert('Sample file load failed. Please use Upload Data manually.');
+      pushToast('Sample file load failed. Please use Upload Data manually.', 'error');
     } finally {
       setSampleDataLoading(false);
       setSampleDataAttempted(true);
     }
-  }, [handleFileUpload, sampleDataLoaded, sampleDataLoading]);
+  }, [handleFileUpload, pushToast, sampleDataLoaded, sampleDataLoading]);
 
   useEffect(() => {
     if (!isTestUser || sampleDataLoaded || sampleDataLoading || sampleDataAttempted) return;
@@ -5294,6 +5523,130 @@ function App() {
   const handleResetAllFilters = () => {
     handleResetFilters();
     clearSelection();
+  };
+
+  const exportRowsToCsvFile = (filename, rows, exportHeaders = visibleHeaders) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      pushToast('No data available to export.', 'info');
+      return;
+    }
+    const headersToUse = Array.isArray(exportHeaders) && exportHeaders.length > 0 ? exportHeaders : Object.keys(rows[0] || {});
+    const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csvLines = [
+      headersToUse.map(escapeCell).join(','),
+      ...rows.map((row) => headersToUse.map((header) => escapeCell(row?.[header])).join(',')),
+    ];
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    pushToast(`Exported ${rows.length} rows to ${filename}`, 'success');
+    logRecentActivity(`Exported ${rows.length} rows as ${filename}`);
+  };
+
+  useEffect(() => {
+    try {
+      const storageKey = getFilterPresetStorageKey(loggedInUser?.dealerCode);
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setSavedFilterPresets(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setSavedFilterPresets([]);
+    }
+  }, [loggedInUser?.dealerCode]);
+
+  const buildCurrentFilterPreset = () => ({
+    searchTerm,
+    activeReportFilter,
+    eKycFilter,
+    areaFilter,
+    natureFilter,
+    mobileStatusFilter,
+    consumerStatusFilter,
+    connectionTypeFilter,
+    onlineRefillPaymentStatusFilter,
+    orderStatusFilter,
+    orderSourceFilter,
+    orderTypeFilter,
+    cashMemoStatusFilter,
+    deliveryManFilter,
+    isRegMobileFilter,
+    orderDateStart,
+    orderDateEnd,
+    cashMemoDateStart,
+    cashMemoDateEnd,
+    sortBy,
+    sortOrder,
+  });
+
+  const applyFilterPreset = (preset = {}) => {
+    setSearchTerm(String(preset.searchTerm || ''));
+    setActiveReportFilter(String(preset.activeReportFilter || ''));
+    setEKycFilter(String(preset.eKycFilter || 'All'));
+    setAreaFilter(String(preset.areaFilter || 'All'));
+    setNatureFilter(String(preset.natureFilter || 'All'));
+    setMobileStatusFilter(String(preset.mobileStatusFilter || 'All'));
+    setConsumerStatusFilter(String(preset.consumerStatusFilter || 'All'));
+    setConnectionTypeFilter(String(preset.connectionTypeFilter || 'All'));
+    setOnlineRefillPaymentStatusFilter(String(preset.onlineRefillPaymentStatusFilter || 'All'));
+    setOrderStatusFilter(String(preset.orderStatusFilter || 'All'));
+    setOrderSourceFilter(String(preset.orderSourceFilter || 'All'));
+    setOrderTypeFilter(String(preset.orderTypeFilter || 'All'));
+    setCashMemoStatusFilter(String(preset.cashMemoStatusFilter || 'All'));
+    setDeliveryManFilter(String(preset.deliveryManFilter || 'All'));
+    setIsRegMobileFilter(String(preset.isRegMobileFilter || 'All'));
+    setOrderDateStart(String(preset.orderDateStart || ''));
+    setOrderDateEnd(String(preset.orderDateEnd || ''));
+    setCashMemoDateStart(String(preset.cashMemoDateStart || ''));
+    setCashMemoDateEnd(String(preset.cashMemoDateEnd || ''));
+    setSortBy(String(preset.sortBy || ''));
+    setSortOrder(String(preset.sortOrder || 'asc'));
+    setShowAdvancedFilters(true);
+    pushToast(`Applied preset: ${preset?.name || 'Saved filter'}`, 'success');
+  };
+
+  const persistFilterPresets = (nextPresets) => {
+    setSavedFilterPresets(nextPresets);
+    try {
+      localStorage.setItem(
+        getFilterPresetStorageKey(loggedInUser?.dealerCode),
+        JSON.stringify(nextPresets),
+      );
+    } catch {
+      pushToast('Unable to save filter preset locally.', 'error');
+    }
+  };
+
+  const handleSaveCurrentPreset = () => {
+    const presetName = window.prompt('Preset name', '');
+    if (!presetName || !presetName.trim()) {
+      pushToast('Preset save cancelled.', 'info');
+      return;
+    }
+    const trimmedName = presetName.trim();
+    const nextPreset = {
+      id: `preset-${Date.now()}`,
+      name: trimmedName,
+      updatedAt: new Date().toISOString(),
+      filters: buildCurrentFilterPreset(),
+    };
+    const dedupedPresets = savedFilterPresets.filter(
+      (preset) => String(preset?.name || '').trim().toLowerCase() !== trimmedName.toLowerCase(),
+    );
+    const nextPresets = [nextPreset, ...dedupedPresets].slice(0, 8);
+    persistFilterPresets(nextPresets);
+    pushToast(`Saved preset: ${trimmedName}`, 'success');
+  };
+
+  const handleDeletePreset = (presetId) => {
+    const nextPresets = savedFilterPresets.filter((preset) => preset.id !== presetId);
+    persistFilterPresets(nextPresets);
+    pushToast('Preset removed.', 'info');
   };
 
   const handlePrintData = () => {
@@ -5306,16 +5659,17 @@ function App() {
     });
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      alert('Unable to open print window. Please allow pop-ups.');
+      pushToast('Unable to open print window. Please allow pop-ups.', 'error');
       return;
     }
     printWindow.document.write(printContent);
     printWindow.document.close();
     printWindow.print();
+    logRecentActivity(`Printed data view with ${filteredData.length} rows`);
   };
   const handlePrintCashmemo = async () => {
       if (selectedCustomerIds.length === 0) {
-        alert('Please select at least one cashmemo to print.');
+        pushToast('Please select at least one cashmemo to print.', 'info');
         return;
       }
 
@@ -6588,6 +6942,72 @@ function App() {
     const endIndex = startIndex + itemsPerPage;
     return filteredData.slice(startIndex, endIndex);
   }, [filteredData, currentPage, itemsPerPage]);
+  const hasActiveDataFilters = Boolean(
+    searchTerm
+    || activeReportFilter
+    || eKycFilter !== 'All'
+    || areaFilter !== 'All'
+    || natureFilter !== 'All'
+    || mobileStatusFilter !== 'All'
+    || consumerStatusFilter !== 'All'
+    || connectionTypeFilter !== 'All'
+    || onlineRefillPaymentStatusFilter !== 'All'
+    || orderStatusFilter !== 'All'
+    || orderSourceFilter !== 'All'
+    || orderTypeFilter !== 'All'
+    || cashMemoStatusFilter !== 'All'
+    || deliveryManFilter !== 'All'
+    || isRegMobileFilter !== 'All'
+    || orderDateStart
+    || orderDateEnd
+    || cashMemoDateStart
+    || cashMemoDateEnd
+    || sortBy
+    || sortOrder !== 'asc'
+  );
+  const shouldShowEmptyUploadState = showParsedData && parsedData.length === 0;
+  const shouldShowFilteredEmptyState = showParsedData && parsedData.length > 0 && filteredData.length === 0;
+  const activeFilterChips = [
+    searchTerm ? { key: 'search', label: `Search: ${searchTerm}`, clear: () => setSearchTerm('') } : null,
+    activeReportFilter ? { key: 'report', label: `Report: ${activeReportFilter}`, clear: () => setActiveReportFilter('') } : null,
+    eKycFilter !== 'All' ? { key: 'ekyc', label: `EKYC: ${eKycFilter}`, clear: () => setEKycFilter('All') } : null,
+    areaFilter !== 'All' ? { key: 'area', label: `Area: ${areaFilter}`, clear: () => setAreaFilter('All') } : null,
+    natureFilter !== 'All' ? { key: 'nature', label: `Nature: ${natureFilter}`, clear: () => setNatureFilter('All') } : null,
+    mobileStatusFilter !== 'All' ? { key: 'mobile', label: `Mobile: ${mobileStatusFilter}`, clear: () => setMobileStatusFilter('All') } : null,
+    onlineRefillPaymentStatusFilter !== 'All' ? { key: 'payment', label: `Payment: ${onlineRefillPaymentStatusFilter}`, clear: () => setOnlineRefillPaymentStatusFilter('All') } : null,
+    orderTypeFilter !== 'All' ? { key: 'orderType', label: `Order Type: ${orderTypeFilter}`, clear: () => setOrderTypeFilter('All') } : null,
+    consumerStatusFilter !== 'All' ? { key: 'consumerType', label: `Consumer Type: ${consumerStatusFilter}`, clear: () => setConsumerStatusFilter('All') } : null,
+    connectionTypeFilter !== 'All' ? { key: 'connection', label: `Connection: ${connectionTypeFilter}`, clear: () => setConnectionTypeFilter('All') } : null,
+    orderStatusFilter !== 'All' ? { key: 'orderStatus', label: `Order Status: ${orderStatusFilter}`, clear: () => setOrderStatusFilter('All') } : null,
+    orderSourceFilter !== 'All' ? { key: 'orderSource', label: `Order Source: ${orderSourceFilter}`, clear: () => setOrderSourceFilter('All') } : null,
+    cashMemoStatusFilter !== 'All' ? { key: 'cashMemoStatus', label: `Cash Memo: ${cashMemoStatusFilter}`, clear: () => setCashMemoStatusFilter('All') } : null,
+    deliveryManFilter !== 'All' ? { key: 'deliveryMan', label: `Delivery Man: ${deliveryManFilter}`, clear: () => setDeliveryManFilter('All') } : null,
+    isRegMobileFilter !== 'All' ? { key: 'regMobile', label: `Reg Mobile: ${isRegMobileFilter}`, clear: () => setIsRegMobileFilter('All') } : null,
+    orderDateStart || orderDateEnd ? {
+      key: 'orderDate',
+      label: `Order Date: ${orderDateStart || 'Any'} to ${orderDateEnd || 'Any'}`,
+      clear: () => {
+        setOrderDateStart('');
+        setOrderDateEnd('');
+      },
+    } : null,
+    cashMemoDateStart || cashMemoDateEnd ? {
+      key: 'cashMemoDate',
+      label: `Cash Memo Date: ${cashMemoDateStart || 'Any'} to ${cashMemoDateEnd || 'Any'}`,
+      clear: () => {
+        setCashMemoDateStart('');
+        setCashMemoDateEnd('');
+      },
+    } : null,
+    sortBy ? {
+      key: 'sort',
+      label: `Sort: ${sortBy} (${sortOrder})`,
+      clear: () => {
+        setSortBy('');
+        setSortOrder('asc');
+      },
+    } : null,
+  ].filter(Boolean);
 
   const {
     selectedCustomerIds,
@@ -6597,6 +7017,8 @@ function App() {
     handleSelectAllChange,
     clearSelection,
   } = useCashmemoSelection(filteredData);
+
+  const selectedFilteredRows = filteredData.filter((row) => selectedCustomerIds.includes(String(row['Consumer No.'])));
 
   const reportCards = [
     { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
@@ -6704,7 +7126,7 @@ function App() {
 
     updateUserInFirebase(loggedInUser.id, { cashMemoLabelSettings: mergedSettings }, loggedInUser.dealerCode)
       .catch(() => {
-        alert('Lebel Update local save ho gaya, Firebase sync nahi ho paya. Internet/Firebase check karein.');
+        pushToast('Label update saved locally, but Firebase sync failed.', 'error');
       });
   };
 
@@ -6712,7 +7134,7 @@ function App() {
     const nextSettings = mergeCashMemoLabelSettings(labelDraftSettings);
     setCashMemoLabelSettings(nextSettings);
     persistCashMemoLabelSettings(nextSettings);
-    alert('Lebel Updateed.');
+    pushToast('Label settings updated.', 'success');
   };
 //test
   const updateCashMemoLabelSetting = (targetPageType, labelKey, checked) => {
@@ -7109,6 +7531,10 @@ function App() {
       : updateInboxCount === 0 && incompleteProfileAreas.length === 0
         ? 'Everything looks up to date. You can open Data View or Invoice tools next.'
         : 'Use the quick actions to complete the next best step.';
+  const handleOpenRenewalHistory = () => {
+    setUserProfileInitialSection('history');
+    handleRequestHistoryOpen();
+  };
   const profileCompletenessActions = {
     profile: {
       label: 'Complete Profile',
@@ -7244,6 +7670,18 @@ function App() {
   return (
     <>
       {isLoggedIn && !isPlanExpired && <FileUpload onFileUpload={handleFileUpload} ref={fileInputRef} />}
+      {toastItems.length > 0 && (
+        <div className="toast-stack" aria-live="polite" aria-atomic="true">
+          {toastItems.map((toast) => (
+            <div key={toast.id} className={`toast-item toast-item--${toast.tone}`}>
+              <span>{toast.message}</span>
+              <button type="button" onClick={() => setToastItems((prev) => prev.filter((item) => item.id !== toast.id))}>
+                Close
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {!hideUserNavbar && (
         <nav className="navbar">
           <div className="navbar-left">
@@ -7261,6 +7699,11 @@ function App() {
                 Load Sample Data
               </button>
             )}
+            {isTestUser && sampleDataLoading && (
+              <button className="navbar-button" disabled>
+                Loading Sample...
+              </button>
+            )}
             {isLoggedIn && !isPlanExpired && showDataButton && (
               <>
                 <button onClick={handleShowData} className="navbar-button" disabled={isPlanExpired}>{showParsedData ? 'Hide Data' : 'Show Data'}</button>
@@ -7270,6 +7713,12 @@ function App() {
                 )}
               </>
             )}
+            {/* {isLoggedIn && uploadMetadata && (
+              <div className="upload-meta-badge" title={uploadMetadata.fileName}>
+                <strong>{uploadMetadata.totalRows}</strong> rows
+                <span>{formatDisplayDateTime(uploadMetadata.uploadedAt)}</span>
+              </div>
+            )} */}
           </div>
           <div className="navbar-right">
             {isLoggedIn ? (
@@ -7350,6 +7799,31 @@ function App() {
           </div>
         </nav>
       )}
+      {isLoggedIn && isPlanExpired && (
+        <section className="expired-recovery-panel">
+          <div className="expired-recovery-panel__content">
+            <div>
+              <p className="expired-recovery-panel__eyebrow">Plan Expired</p>
+              <h3>Working tools are paused until renewal is approved.</h3>
+              <p>
+                Upload, invoice, and update tools are currently blocked for this account.
+                Choose the next step below to continue faster.
+              </p>
+            </div>
+            <div className="expired-recovery-panel__actions">
+              <button type="button" className="expired-recovery-panel__primary" onClick={handleUpgradePlanOpen}>
+                Renew Now
+              </button>
+              <button type="button" className="expired-recovery-panel__secondary" onClick={handleContactOpen}>
+                Contact Admin
+              </button>
+              <button type="button" className="expired-recovery-panel__secondary" onClick={handleOpenRenewalHistory}>
+                See Renewal History
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
       {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
@@ -7391,14 +7865,17 @@ function App() {
                 />
               </form>
               <div className="form-actions">
-                <button onClick={handleAdminLoginSubmit} type="button">Login</button>
-                <button onClick={navigateToHome}>Close</button>
+                <button onClick={handleAdminLoginSubmit} type="button" disabled={isAdminLoginSubmitting}>{isAdminLoginSubmitting ? 'Logging in...' : 'Login'}</button>
+                <button onClick={navigateToHome} disabled={isAdminLoginSubmitting}>Close</button>
               </div>
             </div>
           )}
           {showUserLogin && (
             <div className="placeholder-container admin-login-panel">
               <h2>User Login</h2>
+              <p className="login-helper-text">
+                Dealer Code aur 4-digit PIN se login kijiye. Agar PIN yaad nahi hai, to Support & Replies ya admin contact use karke help le sakte hain.
+              </p>
               <form
                 className="register-form"
                 onSubmit={(e) => {
@@ -7415,16 +7892,29 @@ function App() {
                 />
                 <input
                   className="form-input"
-                  type="password"
+                  type={userPinVisible ? 'text' : 'password'}
                   placeholder="PIN"
                   autoComplete="current-password"
                   value={userPin}
                   onChange={(e) => setUserPin(e.target.value)}
                 />
+                <div className="login-help-row">
+                  <label className="login-help-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={userPinVisible}
+                      onChange={(e) => setUserPinVisible(e.target.checked)}
+                    />
+                    <span>Show PIN</span>
+                  </label>
+                  <button type="button" className="login-help-link" onClick={handleContactOpen}>
+                    Forgot PIN / Contact Admin
+                  </button>
+                </div>
               </form>
               <div className="form-actions">
-                <button onClick={handleUserLoginSubmit} type="button">Login</button>
-                <button onClick={navigateToHome}>Close</button>
+                <button onClick={handleUserLoginSubmit} type="button" disabled={isUserLoginSubmitting}>{isUserLoginSubmitting ? 'Logging in...' : 'Login'}</button>
+                <button onClick={navigateToHome} disabled={isUserLoginSubmitting}>Close</button>
               </div>
             </div>
           )}
@@ -7512,157 +8002,225 @@ function App() {
 
 
 
-          {/* New Filter UI */}
-          <div className="filters-container">
+          <div className="filters-overview">
+            {uploadInProgress && (
+              <div className="inline-status-banner inline-status-banner--info">
+                <span className="inline-status-banner__spinner" />
+                <span>Uploading and preparing your file...</span>
+              </div>
+            )}
+            {/* {uploadMetadata && (
+              <div className="upload-info-card">
+                <div>
+                  <p className="upload-info-card__eyebrow">Last Uploaded File</p>
+                  <h4>{uploadMetadata.fileName}</h4>
+                </div>
+                <div className="upload-info-card__stats">
+                  <span>{uploadMetadata.totalRows} rows</span>
+                  <span>{uploadMetadata.validConsumerRows} valid consumers</span>
+                  <span>{formatDisplayDateTime(uploadMetadata.uploadedAt)}</span>
+                </div>
+              </div>
+            )} */}
+            {activeFilterChips.length > 0 && (
+              <div className="filter-chip-row">
+                {activeFilterChips.map((chip) => (
+                  <button key={chip.key} type="button" className="filter-chip" onClick={chip.clear}>
+                    <span>{chip.label}</span>
+                    <strong>×</strong>
+                  </button>
+                ))}
+                <button type="button" className="filter-chip filter-chip--clear" onClick={handleResetAllFilters}>
+                  Clear All
+                </button>
+              </div>
+            )}
+            <div className="preset-toolbar">
+              <div className="preset-toolbar__actions">
+                <button type="button" className="filter-action filter-action--secondary" onClick={handleSaveCurrentPreset}>
+                  Save Current Preset
+                </button>
+                <button type="button" className="filter-action filter-action--secondary" onClick={() => setShowAdvancedFilters((prev) => !prev)}>
+                  {showAdvancedFilters ? 'Hide Advanced Filters' : 'Show Advanced Filters'}
+                </button>
+              </div>
+              {savedFilterPresets.length > 0 && (
+                <div className="preset-chip-row">
+                  {savedFilterPresets.map((preset) => (
+                    <div key={preset.id} className="preset-chip">
+                      <button type="button" onClick={() => applyFilterPreset({ ...preset.filters, name: preset.name })}>
+                        {preset.name}
+                      </button>
+                      <button type="button" className="preset-chip__delete" onClick={() => handleDeletePreset(preset.id)}>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {selectedCustomerIds.length > 0 && (
+              <div className="bulk-action-bar">
+                <strong>{selectedCustomerIds.length} selected</strong>
+                <span>{selectedFilteredRows.length} visible in current filters</span>
+                <div className="bulk-action-bar__actions">
+                  <button type="button" className="table-action table-action--blue" onClick={handlePrintCashmemo}>
+                    Print Selected
+                  </button>
+                  <button
+                    type="button"
+                    className="table-action table-action--green"
+                    onClick={() => exportRowsToCsvFile('selected-cashmemo.csv', selectedFilteredRows, visibleHeaders)}
+                  >
+                    Export Selected
+                  </button>
+                  <button
+                    type="button"
+                    className="filter-action filter-action--secondary"
+                    onClick={() => {
+                      clearSelection();
+                      pushToast('Selection cleared.', 'info');
+                    }}
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* {recentActivities.length > 0 && (
+              <div className="recent-activity-panel">
+                <div className="recent-activity-panel__header">
+                  <h4>Recent Activity</h4>
+                  <span>{recentActivities.length} recent actions</span>
+                </div>
+                <div className="recent-activity-list">
+                  {recentActivities.map((item) => (
+                    <div key={item.id} className="recent-activity-item">
+                      <strong>{item.message}</strong>
+                      <span>{formatDisplayDateTime(item.createdAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )} */}
+          </div>
+
+          <div className="filters-container filters-container--basic">
             <select className="filter-select" value={activeReportFilter || 'All'} onChange={(e) => setActiveReportFilter(e.target.value === 'All' ? '' : e.target.value)}>
               <option value="All">All Report Filters</option>
               {reportFilterOptions.map((item) => (
                 <option key={item.key} value={item.key}>{item.label}</option>
               ))}
             </select>
-
-            {/* eKYC Filter */}
             <select className="filter-select" value={eKycFilter} onChange={(e) => setEKycFilter(e.target.value)}>
               <option value="All">All eKYC</option>
               {availableEkycOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
-
-            {/* Area Filter */}
             <select className="filter-select" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
               <option value="All">All Areas</option>
               {availableAreaOptions.map((area, index) => (
                 <option key={index} value={area}>{area}</option>
               ))}
             </select>
-
-            {/* Nature Filter */}
-            <select className="filter-select" value={natureFilter} onChange={(e) => setNatureFilter(e.target.value)}>
-              <option value="All">All Nature</option>
-              {availableNatureOptions.map((nature, index) => (
-                <option key={index} value={nature}>{nature}</option>
-              ))}
-            </select>
-
-            {/* Mobile Status Filter */}
-            <select className="filter-select" value={mobileStatusFilter} onChange={(e) => setMobileStatusFilter(e.target.value)}>
-              <option value="All">All Mobile Status</option>
-              {availableMobileStatusOptions.map((status, index) => (
-                <option key={index} value={status}>{status}</option>
-              ))}
-            </select>
-
-            {/* Consumer Status Filter */}
-            <select className="filter-select" value={consumerStatusFilter} onChange={(e) => setConsumerStatusFilter(e.target.value)}>
-              <option value="All">All Consumer Status</option>
-              {availableConsumerStatusOptions.map((status, index) => (
-                <option key={index} value={status}>{status}</option>
-              ))}
-            </select>
-
-            {/* Connection Type Filter */}
-            <select className="filter-select" value={connectionTypeFilter} onChange={(e) => setConnectionTypeFilter(e.target.value)}>
-              <option value="All">All Connection Types</option>
-              {availableConnectionTypeOptions.map((type, index) => (
-                <option key={index} value={type}>{type}</option>
-              ))}
-            </select>
-
-            {/* Online Refill Payment Status Filter */}
             <select className="filter-select" value={onlineRefillPaymentStatusFilter} onChange={(e) => setOnlineRefillPaymentStatusFilter(e.target.value)}>
               <option value="All">All Online Refill Payment Status</option>
               {availableOnlinePaymentOptions.map((status, index) => (
                 <option key={index} value={status}>{status}</option>
               ))}
             </select>
-
-
-
-
-
-            {/* Order Status Filter */}
-            <select className="filter-select" value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)}>
-              <option value="All">All Order Status</option>
-              {availableOrderStatusOptions.map((status, index) => (
-                <option key={index} value={status}>{status}</option>
-              ))}
-            </select>
-
-            {/* Order Source Filter */}
-            <select className="filter-select" value={orderSourceFilter} onChange={(e) => setOrderSourceFilter(e.target.value)}>
-              <option value="All">All Order Source</option>
-              {availableOrderSourceOptions.map((source, index) => (
-                <option key={index} value={source}>{source}</option>
-              ))}
-            </select>
-
-            {/* Order Type Filter */}
             <select className="filter-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
               <option value="All">All Order Type</option>
               {availableOrderTypeOptions.map((type, index) => (
                 <option key={index} value={type}>{type}</option>
               ))}
             </select>
-
-            {/* Cash Memo Status Filter */}
-            <select className="filter-select" value={cashMemoStatusFilter} onChange={(e) => setCashMemoStatusFilter(e.target.value)}>
-              <option value="All">All Cash Memo Status</option>
-              {availableCashMemoStatusOptions.map((status, index) => (
-                <option key={index} value={status}>{status}</option>
-              ))}
-            </select>
-
-            {/* Delivery Man Filter */}
-            <select className="filter-select" value={deliveryManFilter} onChange={(e) => setDeliveryManFilter(e.target.value)}>
-              <option value="All">All Delivery Man</option>
-              {availableDeliveryManOptions.map((man, index) => (
-                <option key={index} value={man}>{man}</option>
-              ))}
-            </select>
-
-            {/* Is Reg Mobile Filter */}
-            <select className="filter-select" value={isRegMobileFilter} onChange={(e) => setIsRegMobileFilter(e.target.value)}>
-              <option value="All">All Is Reg Mobile</option>
-              {availableIsRegMobileOptions.map((status, index) => (
-                <option key={index} value={status}>{status}</option>
-              ))}
-            </select>
-
-            {/* Refill Date Range */}
             <div className="filter-date-group">
               <span className="filter-date-label">Order Date</span>
               <input className="filter-date-input" type="date" value={orderDateStart} onChange={(e) => setOrderDateStart(e.target.value)} />
               <span className="filter-date-divider">to</span>
               <input className="filter-date-input" type="date" value={orderDateEnd} onChange={(e) => setOrderDateEnd(e.target.value)} />
             </div>
-
-            {/* Cash Memo Date Range */}
-            <div className="filter-date-group">
-              <span className="filter-date-label">Cash Memo Date</span>
-              <input className="filter-date-input" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
-              <span className="filter-date-divider">to</span>
-              <input className="filter-date-input" type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} />
-            </div>
-
-            {/* Sort By */}
-            <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-              <option value="">Sort By</option>
-              {headers.map((header, index) => (
-                <option key={index} value={header}>{header}</option>
-              ))}
-            </select>
-
-            {/* Sort Order */}
-            <select className="filter-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-              <option value="asc">asc</option>
-              <option value="desc">desc</option>
-            </select>
-
-            <div className="filters-reset-wrap">
-              <button className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>Reset Filters</button>
-            </div>
           </div>
+
+          {showAdvancedFilters && (
+            <div className="filters-container">
+              <select className="filter-select" value={natureFilter} onChange={(e) => setNatureFilter(e.target.value)}>
+                <option value="All">All Nature</option>
+                {availableNatureOptions.map((nature, index) => (
+                  <option key={index} value={nature}>{nature}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={mobileStatusFilter} onChange={(e) => setMobileStatusFilter(e.target.value)}>
+                <option value="All">All Mobile Status</option>
+                {availableMobileStatusOptions.map((status, index) => (
+                  <option key={index} value={status}>{status}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={consumerStatusFilter} onChange={(e) => setConsumerStatusFilter(e.target.value)}>
+                <option value="All">All Consumer Status</option>
+                {availableConsumerStatusOptions.map((status, index) => (
+                  <option key={index} value={status}>{status}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={connectionTypeFilter} onChange={(e) => setConnectionTypeFilter(e.target.value)}>
+                <option value="All">All Connection Types</option>
+                {availableConnectionTypeOptions.map((type, index) => (
+                  <option key={index} value={type}>{type}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)}>
+                <option value="All">All Order Status</option>
+                {availableOrderStatusOptions.map((status, index) => (
+                  <option key={index} value={status}>{status}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={orderSourceFilter} onChange={(e) => setOrderSourceFilter(e.target.value)}>
+                <option value="All">All Order Source</option>
+                {availableOrderSourceOptions.map((source, index) => (
+                  <option key={index} value={source}>{source}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={cashMemoStatusFilter} onChange={(e) => setCashMemoStatusFilter(e.target.value)}>
+                <option value="All">All Cash Memo Status</option>
+                {availableCashMemoStatusOptions.map((status, index) => (
+                  <option key={index} value={status}>{status}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={deliveryManFilter} onChange={(e) => setDeliveryManFilter(e.target.value)}>
+                <option value="All">All Delivery Man</option>
+                {availableDeliveryManOptions.map((man, index) => (
+                  <option key={index} value={man}>{man}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={isRegMobileFilter} onChange={(e) => setIsRegMobileFilter(e.target.value)}>
+                <option value="All">All Is Reg Mobile</option>
+                {availableIsRegMobileOptions.map((status, index) => (
+                  <option key={index} value={status}>{status}</option>
+                ))}
+              </select>
+              <div className="filter-date-group">
+                <span className="filter-date-label">Cash Memo Date</span>
+                <input className="filter-date-input" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
+                <span className="filter-date-divider">to</span>
+                <input className="filter-date-input" type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} />
+              </div>
+              <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="">Sort By</option>
+                {headers.map((header, index) => (
+                  <option key={index} value={header}>{header}</option>
+                ))}
+              </select>
+              <select className="filter-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+                <option value="asc">asc</option>
+                <option value="desc">desc</option>
+              </select>
+              <div className="filters-reset-wrap">
+                <button className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>Reset Filters</button>
+              </div>
+            </div>
+          )}
 
           <div className="table-controls">
             <div className="table-control-group">
@@ -7707,83 +8265,132 @@ function App() {
 
             <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
             <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
+            <button className="filter-action filter-action--secondary action-button" onClick={() => exportRowsToCsvFile('filtered-cashmemo.csv', filteredData, visibleHeaders)}>Export Filtered</button>
 
             </div>
 
           <div className="table-container">
-            <table>
-            <thead>
-              <tr>
-                    <th style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
-                      <input
-                        type="checkbox"
-                        onChange={handleSelectAllChange}
-                        checked={isAllFilteredRowsSelected}
-                      />
-                    </th>
-                    {visibleHeaders.map((header, index) => (
-                  <th key={index} style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
-                    {header}
-                  </th>
-                ))}
-  
-              </tr>
-            </thead>
-            <tbody>
-                  {currentTableData.map((customer, index) => {
-                    const isEkycStatusPending = customer['EKYC Status'] === 'Pending' || customer['EKYC Status'] === 'EKYC NOT DONE';
-                    return (
-                      <tr
-                        key={index}
-                        style={{
-                          border: '1px solid black',
-                          color: isEkycStatusPending ? 'red' : 'inherit',
-                          fontWeight: isEkycStatusPending ? 'bold' : 'normal',
-                        }}
-                      >
-                        <td style={{ border: '1px solid black', padding: '8px' }}>
+            {shouldShowFilteredEmptyState ? (
+              <div className="data-empty-state">
+                <p className="data-empty-state__eyebrow">No Records Found</p>
+                <h3>No bookings match the current filters.</h3>
+                <p>
+                  {hasActiveDataFilters
+                    ? 'Try clearing one or more filters, changing the date range, or searching with a broader term.'
+                    : 'No visible rows are available right now. Try re-uploading the latest Pending Booking file.'}
+                </p>
+                <div className="data-empty-state__actions">
+                  {hasActiveDataFilters && (
+                    <button type="button" className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>
+                      Reset Filters
+                    </button>
+                  )}
+                  <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
+                    Re-Upload Data
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <table className="data-table">
+                <thead>
+                  <tr>
+                        <th className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
                           <input
-                              type="checkbox"
-                              checked={selectedCustomerIds.includes(String(customer['Consumer No.']))}
-                              onChange={() => handleCheckboxChange(customer['Consumer No.'])}
-                            />
-                        </td>
-                    {visibleHeaders.map((header, colIndex) => {
-                          return (
-                            <td
-                              key={colIndex}
-                              style={{
-                                border: '1px solid black',
-                                padding: '8px',
-                              }}
-                            >
-                              {String(
-                                  header === 'Online Refill Payment status'
-                                    ? (customer[header] === 'PAID' ? 'PAID' : 'COD')
-                                    : (header === 'Order Date' || header === 'Cash Memo Date'
-                                      ? formatDateToDDMMYYYY(
-                                          typeof customer[header] === 'number'
-                                            ? excelSerialDateToJSDate(customer[header])
-                                            : parseDateString(customer[header])
-                                        )
-                                      : (customer[header] === undefined || customer[header] === null ? '' : customer[header]))
-                                 )}
-                            </td>
-                          );
-                        })}
+                            type="checkbox"
+                            onChange={handleSelectAllChange}
+                            checked={isAllFilteredRowsSelected}
+                          />
+                        </th>
+                        {visibleHeaders.map((header, index) => (
+                      <th key={index} style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
+                        {header}
+                      </th>
+                    ))}
+      
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <p>Total Records: {filteredData.length}</p>
+                </thead>
+                <tbody>
+                      {currentTableData.map((customer, index) => {
+                        const isEkycStatusPending = customer['EKYC Status'] === 'Pending' || customer['EKYC Status'] === 'EKYC NOT DONE';
+                        return (
+                          <tr
+                            key={index}
+                            style={{
+                              border: '1px solid black',
+                              color: isEkycStatusPending ? 'red' : 'inherit',
+                              fontWeight: isEkycStatusPending ? 'bold' : 'normal',
+                            }}
+                          >
+                            <td className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px' }}>
+                              <input
+                                  type="checkbox"
+                                  checked={selectedCustomerIds.includes(String(customer['Consumer No.']))}
+                                  onChange={() => handleCheckboxChange(customer['Consumer No.'])}
+                                />
+                            </td>
+                        {visibleHeaders.map((header, colIndex) => {
+                              return (
+                                <td
+                                  key={colIndex}
+                                  style={{
+                                    border: '1px solid black',
+                                    padding: '8px',
+                                  }}
+                                >
+                                  {String(
+                                      header === 'Online Refill Payment status'
+                                        ? (customer[header] === 'PAID' ? 'PAID' : 'COD')
+                                        : (header === 'Order Date' || header === 'Cash Memo Date'
+                                          ? formatDateToDDMMYYYY(
+                                              typeof customer[header] === 'number'
+                                                ? excelSerialDateToJSDate(customer[header])
+                                                : parseDateString(customer[header])
+                                            )
+                                          : (customer[header] === undefined || customer[header] === null ? '' : customer[header]))
+                                     )}
+                                </td>
+                              );
+                            })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p>Total Records: {filteredData.length}</p>
 
-        <div className="pagination">
-          <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}>Previous</button>
-          <span>Page {currentPage} of {totalPages}</span>
-          <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages}>Next</button>
+            <div className="pagination">
+              <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}>Previous</button>
+              <span>Page {currentPage} of {totalPages}</span>
+              <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages}>Next</button>
+            </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+      {!isPlanExpired && shouldShowEmptyUploadState && (
+        <div className="filters-shell">
+          <div className="data-empty-state data-empty-state--upload">
+            <p className="data-empty-state__eyebrow">No Data Loaded</p>
+            <h3>Upload a Pending Booking file to start working.</h3>
+            <p>
+              Cashmemo print, data filtering, and invoice work begin after you upload the latest
+              `Pending Booking` CSV or XLSX file from cDCMS.
+            </p>
+            <p>
+              Current access: {formatPackageNameForNavbar(loggedInUser?.package)}. If upload is not available later,
+              renew plan or contact admin from Support & Replies.
+            </p>
+            <div className="data-empty-state__actions">
+              <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
+                Upload Data
+              </button>
+              <button type="button" className="filter-action filter-action--secondary" onClick={handleAboutOpen}>
+                View Steps
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
