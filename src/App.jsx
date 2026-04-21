@@ -7722,7 +7722,7 @@ function App() {
           </div>
           <div className="navbar-right">
             {isLoggedIn ? (
-            <div className="user-menu-container" ref={userMenuRef}>
+            <div className="user-menu-container" ref={userMenuRef} style={{ display: 'flex', alignItems: 'center' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '10px' }}>
                 <span className="navbar-welcome" style={{ marginRight: 0 }}>Welcome, {dealerWelcome}</span>
                 <span style={{ fontSize: '10.5px', marginTop: '2px', fontWeight: 'normal', opacity: 0.85, whiteSpace: 'nowrap' }}>
@@ -7786,10 +7786,10 @@ function App() {
                 )}
               </div>
             ) : (
-              <>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
                 <button onClick={handleLogin}>Login</button>
                 <button onClick={handleRegister}>Register</button>
-              </>
+              </div>
             )}
             {!isLoggedIn && (
               <button className="admin-nav-button" onClick={handleAdminLoginOpen}>
@@ -8318,7 +8318,7 @@ function App() {
                             key={index}
                             style={{
                               border: '1px solid black',
-                              color: isEkycStatusPending ? 'red' : 'inherit',
+                              color: isEkycStatusPending ? '#ff5252' : 'inherit',
                               fontWeight: isEkycStatusPending ? 'bold' : 'normal',
                             }}
                           >
