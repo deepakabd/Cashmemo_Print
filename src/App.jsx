@@ -6712,9 +6712,9 @@ function App() {
     const nextSettings = mergeCashMemoLabelSettings(labelDraftSettings);
     setCashMemoLabelSettings(nextSettings);
     persistCashMemoLabelSettings(nextSettings);
-    alert('Lebel Update save ho gaya.');
+    alert('Lebel Updateed.');
   };
-//tets
+//test
   const updateCashMemoLabelSetting = (targetPageType, labelKey, checked) => {
     setLabelDraftSettings((prev) => {
       const next = mergeCashMemoLabelSettings(prev);
