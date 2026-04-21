@@ -5762,7 +5762,7 @@ function App() {
               return processedText;
             }
 
-            const GOOGLE_CLOUD_API_KEY = 'AIzaSyA9fCIrR8PkDcPAFxHm_bYXxOwXzeFfCGA';
+            const GOOGLE_CLOUD_API_KEY = import.meta.env.VITE_GOOGLE_CLOUD_API_KEY;
             const response = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_CLOUD_API_KEY}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
