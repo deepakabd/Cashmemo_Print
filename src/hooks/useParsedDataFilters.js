@@ -5,6 +5,7 @@ export const useParsedDataFilters = ({
   sortedUniqueValues,
   defaultVisibleHeaders,
   hideAllViews,
+  onNotify,
 }) => {
   const [parsedData, setParsedData] = useState([]);
   const [headers, setHeaders] = useState([]);
@@ -18,6 +19,8 @@ export const useParsedDataFilters = ({
   const [showParsedData, setShowParsedData] = useState(false);
   const [fileUploadMessage, setFileUploadMessage] = useState('');
   const [showBookingReport, setShowBookingReport] = useState(true);
+  const [uploadMetadata, setUploadMetadata] = useState(null);
+  const [uploadInProgress, setUploadInProgress] = useState(false);
 
   const [eKycFilter, setEKycFilter] = useState('All');
   const [areaFilter, setAreaFilter] = useState('All');
@@ -56,10 +59,18 @@ export const useParsedDataFilters = ({
 
   const handleFileUpload = async (file) => {
     if (!file) return;
+    setUploadInProgress(true);
 
     const processAndSetData = (data) => {
       const normalizedData = normalizeData(data);
       setParsedData(normalizedData);
+      const validConsumerRows = normalizedData.filter((row) => /^\d{6}$/.test(String(row?.['Consumer No.'] || ''))).length;
+      setUploadMetadata({
+        fileName: file?.name || 'Uploaded file',
+        uploadedAt: new Date().toISOString(),
+        totalRows: normalizedData.length,
+        validConsumerRows,
+      });
 
       if (normalizedData.length > 0) {
         const firstRow = normalizedData[0];
@@ -85,7 +96,11 @@ export const useParsedDataFilters = ({
       hideAllViews();
       setShowParsedData(true);
       setFileUploadMessage('File uploaded successfully!');
+      if (typeof onNotify === 'function') {
+        onNotify(`Uploaded ${file?.name || 'file'} with ${normalizedData.length} rows.`, 'success');
+      }
       setTimeout(() => setFileUploadMessage(''), 5000);
+      setUploadInProgress(false);
     };
 
     if (file.name.endsWith('.csv')) {
@@ -95,7 +110,10 @@ export const useParsedDataFilters = ({
         complete: (result) => processAndSetData(result.data),
         error: (error) => {
           console.error('Error parsing CSV file:', error);
-          alert('Error parsing CSV file. Please try again.');
+          if (typeof onNotify === 'function') {
+            onNotify('Error parsing CSV file. Please try again.', 'error');
+          }
+          setUploadInProgress(false);
         },
       });
     } else if (file.name.endsWith('.xlsx')) {
@@ -109,7 +127,18 @@ export const useParsedDataFilters = ({
         const json = XLSX.utils.sheet_to_json(worksheet);
         processAndSetData(json);
       };
+      reader.onerror = () => {
+        if (typeof onNotify === 'function') {
+          onNotify('Error reading XLSX file. Please try again.', 'error');
+        }
+        setUploadInProgress(false);
+      };
       reader.readAsArrayBuffer(file);
+    } else {
+      if (typeof onNotify === 'function') {
+        onNotify('Unsupported file type. Please upload CSV or XLSX.', 'error');
+      }
+      setUploadInProgress(false);
     }
   };
 
@@ -162,6 +191,8 @@ export const useParsedDataFilters = ({
     setFileUploadMessage,
     showBookingReport,
     setShowBookingReport,
+    uploadMetadata,
+    uploadInProgress,
     eKycFilter,
     setEKycFilter,
     areaFilter,
