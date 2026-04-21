@@ -5813,7 +5813,7 @@ function App() {
       const baseDealerName = pd?.distributorName
         ? (pd?.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
         : '-';
-
+//test
       const dealerDetails = {
         name: (isHindiPrint && hd?.distributorName) ? hd.distributorName : baseDealerName,
         gstn: (isHindiPrint && hd?.gstn) ? hd.gstn : (pd?.gst || '-'),
