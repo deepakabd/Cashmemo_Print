@@ -6714,7 +6714,7 @@ function App() {
     persistCashMemoLabelSettings(nextSettings);
     alert('Lebel Update save ho gaya.');
   };
-
+//tets
   const updateCashMemoLabelSetting = (targetPageType, labelKey, checked) => {
     setLabelDraftSettings((prev) => {
       const next = mergeCashMemoLabelSettings(prev);
