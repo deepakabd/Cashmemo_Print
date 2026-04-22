@@ -17,6 +17,10 @@ import { useCashmemoSelection } from './hooks/useCashmemoSelection';
 import { useParsedDataFilters } from './hooks/useParsedDataFilters';
 
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
+const LazyHomeDashboard = lazy(() => import('./components/HomeDashboard'));
+const LazyRegisterPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.RegisterPanel })));
+const LazyAdminLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.AdminLoginPanel })));
+const LazyUserLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.UserLoginPanel })));
 
 // Helper function to convert Excel serial date to JavaScript Date object
 const excelSerialDateToJSDate = (serial) => {
@@ -500,6 +504,8 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
+  const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
 
   const pushToast = useCallback((message, tone = 'info') => {
     if (!message) return;
@@ -509,6 +515,56 @@ function App() {
       setToastItems((prev) => prev.filter((item) => item.id !== toastId));
     }, 3600);
   }, []);
+
+  const openConfirmDialog = useCallback((config = {}) => {
+    setConfirmDialog({
+      open: true,
+      title: config.title || 'Please Confirm',
+      message: config.message || '',
+      confirmLabel: config.confirmLabel || 'Confirm',
+      onConfirm: typeof config.onConfirm === 'function' ? config.onConfirm : null,
+    });
+  }, []);
+
+  const closeConfirmDialog = useCallback(() => {
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
+  }, []);
+
+  const handleConfirmDialogSubmit = useCallback(() => {
+    const callback = confirmDialog.onConfirm;
+    closeConfirmDialog();
+    if (typeof callback === 'function') {
+      callback();
+    }
+  }, [closeConfirmDialog, confirmDialog.onConfirm]);
+
+  const openInputDialog = useCallback((config = {}) => {
+    setInputDialog({
+      open: true,
+      title: config.title || 'Enter Value',
+      message: config.message || '',
+      value: config.value || '',
+      submitLabel: config.submitLabel || 'Save',
+      onSubmit: typeof config.onSubmit === 'function' ? config.onSubmit : null,
+    });
+  }, []);
+
+  const closeInputDialog = useCallback(() => {
+    setInputDialog({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
+  }, []);
+
+  const handleInputDialogSubmit = useCallback(() => {
+    const callback = inputDialog.onSubmit;
+    const value = String(inputDialog.value || '').trim();
+    if (!value) {
+      pushToast('Please enter a valid name.', 'error');
+      return;
+    }
+    closeInputDialog();
+    if (typeof callback === 'function') {
+      callback(value);
+    }
+  }, [closeInputDialog, inputDialog.onSubmit, inputDialog.value, pushToast]);
 
   const handleReUploadClick = () => {
     if (fileInputRef.current) {
@@ -1333,8 +1389,12 @@ function App() {
   };
 
   const handleLogoutWithConfirm = () => {
-    if (!window.confirm('Are you sure you want to log out from this account?')) return;
-    handleLogout();
+    openConfirmDialog({
+      title: 'Log Out',
+      message: 'Are you sure you want to log out from this account?',
+      confirmLabel: 'Log Out',
+      onConfirm: handleLogout,
+    });
   };
 
   const hideAllViews = () => {
@@ -1554,188 +1614,6 @@ function App() {
     setIsAdminLoginSubmitting(false);
   };
 
-  const RegisterForm = ({ onClose }) => {
-    const [form, setForm] = useState({
-      package: '',
-      dealerCode: '',
-      dealerName: '',
-      mobile: '',
-      email: '',
-      pin: '',
-      confirmPin: '',
-      utr: '',
-      date: '',
-    });
-    const [errors, setErrors] = useState({});
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const fixedPackages = PACKAGE_OPTIONS;
-    const onChange = (e) => {
-      const { name, value } = e.target;
-      setForm(prev => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-    const validateRegisterForm = () => {
-      const nextErrors = {};
-      if (!form.package) nextErrors.package = 'Please select a package.';
-      if (!form.dealerCode.trim()) nextErrors.dealerCode = 'Dealer code is required.';
-      if (!form.dealerName.trim()) nextErrors.dealerName = 'Dealer name is required.';
-      if (!/^\d{10}$/.test(form.mobile.trim())) nextErrors.mobile = 'Enter a valid 10-digit mobile number.';
-      if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) nextErrors.email = 'Enter a valid email address.';
-      if (!/^\d{4}$/.test(form.pin.trim())) nextErrors.pin = 'PIN must be exactly 4 digits.';
-      if (form.pin !== form.confirmPin) nextErrors.confirmPin = 'PIN aur Confirm PIN match nahi kar rahe.';
-      setErrors(nextErrors);
-      return Object.keys(nextErrors).length === 0;
-    };
-    const onSubmit = async () => {
-      if (!validateRegisterForm()) return;
-      setIsSubmitting(true);
-      const request = {
-        id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        package: form.package,
-        dealerCode: form.dealerCode,
-        dealerName: form.dealerName,
-        mobile: form.mobile,
-        email: form.email,
-        pin: form.pin,
-        utr: form.utr,
-        date: form.date,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-      let requestRef = null;
-      try {
-        const usersRef = collection(db, 'users');
-        const existingQuery = query(usersRef, where('dealerCode', '==', form.dealerCode.trim()));
-        const existing = await getDocs(existingQuery);
-        if (!existing.empty) {
-          pushToast('You already have a registered account. If you forgot your PIN, contact admin.', 'info');
-          setIsSubmitting(false);
-          return;
-        }
-
-        requestRef = await addDoc(collection(db, 'registrationRequests'), {
-          ...request,
-          createdAt: serverTimestamp(),
-        });
-
-        const validity = computeValidityDates(form.package);
-        await addDoc(usersRef, {
-          dealerCode: form.dealerCode.trim(),
-          dealerName: form.dealerName.trim(),
-          mobile: form.mobile.trim(),
-          email: form.email.trim(),
-          pin: form.pin.trim(),
-          package: form.package,
-          packageDays: validity.packageDays,
-          validFrom: validity.validFrom,
-          validTill: validity.validTill,
-          role: 'operator',
-          status: 'pending',
-          createdAt: serverTimestamp(),
-        });
-      } catch {
-        pushToast('Registration save to Firebase failed. Check Firebase config.', 'error');
-        setIsSubmitting(false);
-        return;
-      }
-      const requestToStore = { ...request, id: requestRef.id };
-      try {
-        const existing = localStorage.getItem('registrationRequests');
-        const arr = existing ? JSON.parse(existing) : [];
-        const next = Array.isArray(arr) ? arr : [];
-        next.push(requestToStore);
-        localStorage.setItem('registrationRequests', JSON.stringify(next));
-      } catch {
-        localStorage.setItem('registrationRequests', JSON.stringify([requestToStore]));
-      }
-      localStorage.setItem('registrationData', JSON.stringify(form));
-      pushToast('Registration request submitted!', 'success');
-      logRecentActivity('Submitted registration request', form.dealerCode);
-      setIsSubmitting(false);
-      onClose();
-    };
-    return (
-      <div className="placeholder-container auth-panel auth-panel--register">
-        <div className="auth-panel__hero">
-          <div>
-            <span className="auth-panel__eyebrow">New Account</span>
-            <h2 className="register-title">रजिस्टर करें</h2>
-            <p className="auth-panel__subtitle">
-              Apna distributor account create kijiye, package select kijiye, aur request admin approval ke liye bhejiye.
-            </p>
-          </div>
-          <div className="auth-panel__hero-badges">
-            <span className="auth-panel__badge">Fast approval flow</span>
-            <span className="auth-panel__badge">Secure 4-digit PIN</span>
-          </div>
-        </div>
-        <div className="auth-panel__content auth-panel__content--wide">
-          <div className="auth-section-card">
-            <div className="auth-section-card__header">
-              <h3>Account Details</h3>
-              <p>Basic registration details enter karke request submit kijiye.</p>
-            </div>
-            <div className="register-form register-form--enhanced">
-              <div>
-                <label className="auth-field-label">Package</label>
-                <select name="package" value={form.package} onChange={onChange} className={`form-input${errors.package ? ' form-input--error' : ''}`}>
-                  <option value="">पैकेज चुनें</option>
-                  {fixedPackages.map((opt, i) => (
-                    <option key={i} value={opt}>{`${opt} - ${PACKAGE_PRICING[opt] || '-'}`}</option>
-                  ))}
-                </select>
-                {errors.package && <div className="form-error">{errors.package}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Dealer Code</label>
-                <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
-                {errors.dealerCode && <div className="form-error">{errors.dealerCode}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Dealer Name</label>
-                <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
-                {errors.dealerName && <div className="form-error">{errors.dealerName}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Mobile Number</label>
-                <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
-                {errors.mobile && <div className="form-error">{errors.mobile}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Email ID</label>
-                <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
-                {errors.email && <div className="form-error">{errors.email}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">PIN</label>
-                <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
-                {errors.pin && <div className="form-error">{errors.pin}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Confirm PIN</label>
-                <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
-                {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">UTR Number</label>
-                <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
-              </div>
-              <div>
-                <label className="auth-field-label">Payment Date</label>
-                <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
-              </div>
-            </div>
-            <div className="upi-note upi-note--card">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
-            <div className="form-actions auth-panel__actions">
-              <button className="auth-primary-button" onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'रजिस्टर करें'}</button>
-              <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const UserProfile = ({ onClose, initialSection = 'overview' }) => {
     const [data, setData] = useState(null);
     useEffect(() => {
@@ -1853,6 +1731,8 @@ function App() {
     const [activeReplyItem, setActiveReplyItem] = useState(null);
     const [adminReplyMessage, setAdminReplyMessage] = useState('');
     const [localFeedbackEntries, setLocalFeedbackEntries] = useState(() => readFeedbackDataFromStorage());
+    const [feedbackErrors, setFeedbackErrors] = useState({});
+    const [adminChatError, setAdminChatError] = useState('');
 
     useEffect(() => {
       setForm((prev) => ({
@@ -1888,17 +1768,21 @@ function App() {
     const handleCloseAdminChat = () => {
       setShowAdminChatPopup(false);
       setAdminReplyMessage('');
+      setAdminChatError('');
     };
 
     const submitAdminChatReply = async () => {
       if (!adminReplyMessage.trim()) {
-        alert('Please type your message before sending.');
+        setAdminChatError('Please type your message before sending.');
+        pushToast('Please type your message before sending.', 'error');
         return;
       }
       if (!loggedInUser && (!form.name.trim() || !form.mobile.trim())) {
-        alert('Name and mobile number are required to send a chat message.');
+        setAdminChatError('Name and mobile number are required to send a chat message.');
+        pushToast('Name and mobile number are required to send a chat message.', 'error');
         return;
       }
+      setAdminChatError('');
       const key = 'feedbackData';
       const feedbackEntry = {
         clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1943,23 +1827,32 @@ function App() {
       } catch (e) { void e; }
 
       if (anySaved) {
-        alert('Your chat message has been sent. Admin will reply shortly.');
+        pushToast('Your chat message has been sent. Admin will reply shortly.', 'success');
         setAdminReplyMessage('');
       } else {
-        alert('Unable to send your chat message. Please try again.');
+        setAdminChatError('Unable to send your chat message. Please try again.');
+        pushToast('Unable to send your chat message. Please try again.', 'error');
       }
     };
 
     const handleChange = (e) => {
       const { name, value } = e.target;
       setForm((prev) => ({ ...prev, [name]: value }));
+      setFeedbackErrors((prev) => ({ ...prev, [name]: '' }));
     };
 
     const submitFeedback = async () => {
-      if (!form.name.trim() || !form.mobile.trim() || !form.email.trim() || !form.feedback.trim()) {
-        alert('Name, Mobile, Email and Feedback are required.');
+      const nextErrors = {};
+      if (!form.name.trim()) nextErrors.name = 'Name is required.';
+      if (!form.mobile.trim()) nextErrors.mobile = 'Mobile number is required.';
+      if (!form.email.trim()) nextErrors.email = 'Email is required.';
+      if (!form.feedback.trim()) nextErrors.feedback = 'Feedback is required.';
+      if (Object.keys(nextErrors).length > 0) {
+        setFeedbackErrors(nextErrors);
+        pushToast('Name, Mobile, Email and Feedback are required.', 'error');
         return;
       }
+      setFeedbackErrors({});
       const key = 'feedbackData';
       const feedbackEntry = {
         clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -2004,10 +1897,10 @@ function App() {
       }
 
       if (anySaved) {
-        alert('Feedback submitted. Thank you!');
+        pushToast('Feedback submitted. Thank you!', 'success');
         onClose();
       } else {
-        alert('Unable to save feedback.');
+        pushToast('Unable to save feedback.', 'error');
       }
     };
     return (
@@ -2078,9 +1971,13 @@ function App() {
                     className="form-input"
                     rows="4"
                     value={adminReplyMessage}
-                    onChange={(e) => setAdminReplyMessage(e.target.value)}
+                    onChange={(e) => {
+                      setAdminReplyMessage(e.target.value);
+                      setAdminChatError('');
+                    }}
                     placeholder="Type your message to admin here..."
                   />
+                  {adminChatError && <div className="form-error">{adminChatError}</div>}
                   <div className="admin-chat-actions">
                     <button type="button" className="form-button" onClick={submitAdminChatReply}>Send</button>
                     <button type="button" className="form-button secondary" onClick={handleCloseAdminChat}>Close</button>
@@ -2093,40 +1990,44 @@ function App() {
         <div className="profile-form">
           <span className="profile-label">Name</span>
           <input
-            className="form-input"
+            className={`form-input${feedbackErrors.name ? ' form-input--error' : ''}`}
             name="name"
             type="text"
             value={form.name}
             onChange={handleChange}
             placeholder="Enter your name"
           />
+          {feedbackErrors.name && <div className="form-error profile-form__error">{feedbackErrors.name}</div>}
           <span className="profile-label">Mobile</span>
           <input
-            className="form-input"
+            className={`form-input${feedbackErrors.mobile ? ' form-input--error' : ''}`}
             name="mobile"
             type="text"
             value={form.mobile}
             onChange={handleChange}
             placeholder="Enter mobile number"
           />
+          {feedbackErrors.mobile && <div className="form-error profile-form__error">{feedbackErrors.mobile}</div>}
           <span className="profile-label">Email</span>
           <input
-            className="form-input"
+            className={`form-input${feedbackErrors.email ? ' form-input--error' : ''}`}
             name="email"
             type="email"
             value={form.email}
             onChange={handleChange}
             placeholder="Enter email"
           />
+          {feedbackErrors.email && <div className="form-error profile-form__error">{feedbackErrors.email}</div>}
           <span className="profile-label">Feedback</span>
           <textarea
-            className="form-textarea"
+            className={`form-textarea${feedbackErrors.feedback ? ' form-input--error' : ''}`}
             name="feedback"
             rows="5"
             value={form.feedback}
             onChange={handleChange}
             placeholder="Kindly provide your feedback or Suggestion here"
           />
+          {feedbackErrors.feedback && <div className="form-error profile-form__error">{feedbackErrors.feedback}</div>}
         </div>
         <div className="form-actions">
           <button onClick={submitFeedback}>Submit</button>
@@ -2139,6 +2040,7 @@ function App() {
   const DictionaryRequestForm = ({ mode = 'default', onClose }) => {
     const [form, setForm] = useState({ englishWord: '', hindiTranslation: '' });
     const [entries, setEntries] = useState([{ englishWord: '', hindiTranslation: '' }]);
+    const [dictionaryError, setDictionaryError] = useState('');
     const pendingCount = getPendingDictionaryRequestCount(loggedInUser);
     const isDeliveryAreaMode = mode === 'deliveryArea';
     const isDeliveryStaffMode = mode === 'deliveryStaff';
@@ -2165,6 +2067,7 @@ function App() {
     }, [mode, isDeliveryAreaMode, isDeliveryStaffMode]);
 
     const updateEntry = (index, field, value) => {
+      setDictionaryError('');
       setEntries((prev) => prev.map((entry, entryIndex) => (
         entryIndex === index
           ? { ...entry, [field]: value }
@@ -2183,6 +2086,7 @@ function App() {
     const handleChange = (e) => {
       const { name, value } = e.target;
       setForm((prev) => ({ ...prev, [name]: value }));
+      setDictionaryError('');
     };
 
     const submitDictionaryRequest = async () => {
@@ -2194,7 +2098,8 @@ function App() {
         : 'Dictionary request submitted. Your request is pending with admin for approval.';
 
       if (!loggedInUser?.id) {
-        alert('Please login first.');
+        setDictionaryError('Please login first.');
+        pushToast('Please login first.', 'error');
         return;
       }
 
@@ -2205,7 +2110,8 @@ function App() {
         })).filter((entry) => entry.englishWord || entry.hindiTranslation);
 
         if (normalizedEntries.length === 0 || normalizedEntries.some((entry) => !entry.englishWord || !entry.hindiTranslation)) {
-          alert('Har row mein English aur Hindi dono values bharen.');
+          setDictionaryError('Har row mein English aur Hindi dono values bharen.');
+          pushToast('Har row mein English aur Hindi dono values bharen.', 'error');
           return;
         }
 
@@ -2225,9 +2131,11 @@ function App() {
       const englishWord = form.englishWord.trim();
       const hindiTranslation = form.hindiTranslation.trim();
       if (!englishWord || !hindiTranslation) {
-        alert('English word aur Hindi translation required hai.');
+        setDictionaryError('English word aur Hindi translation required hai.');
+        pushToast('English word aur Hindi translation required hai.', 'error');
         return;
       }
+      setDictionaryError('');
 
       const nextPendingCount = pendingCount + 1;
       const clientRequestId = `dict-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2296,9 +2204,10 @@ function App() {
           loggedInUser.dealerCode
         );
         setForm({ englishWord: '', hindiTranslation: '' });
-        alert('Dictionary request submitted. Your request is pending with admin for approval.');
+        pushToast('Dictionary request submitted. Your request is pending with admin for approval.', 'success');
       } catch {
-        alert('Dictionary request submit failed. Check Firebase permissions.');
+        setDictionaryError('Dictionary request submit failed. Check Firebase permissions.');
+        pushToast('Dictionary request submit failed. Check Firebase permissions.', 'error');
       }
     };
 
@@ -2308,6 +2217,7 @@ function App() {
         {mode === 'default' ? (
           <div className="dictionary-pending-count">{pendingCount} request pending</div>
         ) : null}
+        {dictionaryError && <div className="form-error dictionary-request-panel__error">{dictionaryError}</div>}
         {(isDeliveryAreaMode || isDeliveryStaffMode) && (
           <div className="dictionary-approved-toggle">
             <button
@@ -5222,129 +5132,6 @@ function App() {
     );
   };
 
-  const HomeInfo = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayOrders = parsedData.filter((row) => {
-      const raw = row?.['Order Date'];
-      if (!raw) return false;
-      const dt = getNormalizedRowDate(raw);
-      if (!dt || Number.isNaN(dt.getTime())) return false;
-      dt.setHours(0, 0, 0, 0);
-      return dt.getTime() === today.getTime();
-    }).length;
-
-    const pendingEkycCount = parsedData.filter((row) => {
-      const status = String(row?.['EKYC Status'] || '').toLowerCase().trim();
-      return status === 'pending' || status === 'ekyc not done';
-    }).length;
-
-    const activePackageStatus = loggedInUser?.package
-      ? `${loggedInUser.package} (Valid till: ${formatDisplayDate(loggedInUser.validTill)})`
-      : 'N/A';
-
-    const homeQuickActions = [
-      'CSV / XLSX Pending Booking डेटा अपलोड करें',
-      'रिपोर्ट और फ़िल्टर से रिकॉर्ड जांचें',
-      'Cashmemo और Tax Invoice प्रिंट करें',
-      'Profile / Bank / Rate update request भेजें',
-    ];
-
-    const homeTodayFocus = [
-      `आज की bookings: ${todayOrders}`,
-      `eKYC pending records: ${pendingEkycCount}`,
-      'Pending SV और long pending bookings को प्राथमिकता दें',
-      'Online paid bookings और selected rows verify करें',
-    ];
-
-    const homeSupportPoints = [
-      'Data mismatch होने पर fresh file दोबारा upload करें',
-      'Print से पहले selected rows एक बार verify करें',
-      'Profile, bank और rate changes admin approval के बाद लागू होंगे',
-    ];
-
-    const homeAccountDetails = [
-      { label: 'Dealer Code', value: loggedInUser?.dealerCode || 'N/A' },
-      { label: 'Dealer Name', value: loggedInUser?.dealerName || 'N/A' },
-      { label: 'Active Package', value: activePackageStatus },
-      { label: 'Account Status', value: loggedInUser?.status || 'N/A' },
-    ];
-
-    return (
-      <div className="placeholder-container home-dashboard">
-        <h2 className="home-info-title">🏠 होम (Home Dashboard)</h2>
-
-        <div className="home-important-note">
-          {!isLoggedIn && <h2>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>}
-          <h3>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
-          <p>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
-          <p><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS -&gt; Order Fulfillment -&gt; Pending Booking</p>
-          <p>डाउनलोड की गई फ़ाइल को इस पोर्टल के Top Navbar में Upload करें, फिर “Show Data” पर क्लिक करके डेटा प्रदर्शित करें।</p>
-          <p><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</strong></p>
-        </div>
-
-        <div className="home-section">
-          <h3>स्वागत संदेश</h3>
-          <p>HPCL LPG Distributor Dashboard में आपका स्वागत है।</p>
-          <p>यहाँ से आप cDCMS से Pending Booking डेटा upload करके, उसे validate और review करके, Cashmemo और Tax Invoice print कर सकते हैं।</p>
-          <p>इसके साथ ही आप Profile, Bank, Rate, Delivery Area और Delivery Staff update requests भेज सकते हैं तथा approval workflow को ट्रैक कर सकते हैं।</p>
-        </div>
-
-        <div className="home-hero-grid">
-          <div className="home-section home-highlight-card">
-            <h3>काम करने का आसान क्रम</h3>
-            <ol className="home-steps-list">
-              <li>cDCMS से Pending Booking डेटा download करके upload करें</li>
-              <li>Filters और report cards से records verify करें</li>
-              <li>Cashmemo / Invoice generate और print करें</li>
-              <li>ज़रूरत होने पर profile, bank या rate update request भेजें</li>
-            </ol>
-          </div>
-
-          <div className="home-section home-highlight-card">
-            <h3>अकाउंट की झलक</h3>
-            <div className="home-account-grid">
-              {homeAccountDetails.map((item) => (
-                <div key={item.label} className="home-account-item">
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="home-layout">
-          <div className="home-section">
-            <h3>त्वरित कार्य</h3>
-            <ul>
-              {homeQuickActions.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="home-section">
-            <h3>आज का फोकस</h3>
-            <ul>
-              {homeTodayFocus.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="home-section">
-            <h3>सहायता और सुझाव</h3>
-            <ul>
-              {homeSupportPoints.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
-  };
   const AboutInfo = () => {
     const summaryCards = [
       {
@@ -5740,24 +5527,27 @@ function App() {
   };
 
   const handleSaveCurrentPreset = () => {
-    const presetName = window.prompt('Preset name', '');
-    if (!presetName || !presetName.trim()) {
-      pushToast('Preset save cancelled.', 'info');
-      return;
-    }
-    const trimmedName = presetName.trim();
-    const nextPreset = {
-      id: `preset-${Date.now()}`,
-      name: trimmedName,
-      updatedAt: new Date().toISOString(),
-      filters: buildCurrentFilterPreset(),
-    };
-    const dedupedPresets = savedFilterPresets.filter(
-      (preset) => String(preset?.name || '').trim().toLowerCase() !== trimmedName.toLowerCase(),
-    );
-    const nextPresets = [nextPreset, ...dedupedPresets].slice(0, 8);
-    persistFilterPresets(nextPresets);
-    pushToast(`Saved preset: ${trimmedName}`, 'success');
+    openInputDialog({
+      title: 'Save Filter Preset',
+      message: 'Preset ka naam dijiye. Ye current filters ko future use ke liye save karega.',
+      value: '',
+      submitLabel: 'Save Preset',
+      onSubmit: (presetName) => {
+        const trimmedName = presetName.trim();
+        const nextPreset = {
+          id: `preset-${Date.now()}`,
+          name: trimmedName,
+          updatedAt: new Date().toISOString(),
+          filters: buildCurrentFilterPreset(),
+        };
+        const dedupedPresets = savedFilterPresets.filter(
+          (preset) => String(preset?.name || '').trim().toLowerCase() !== trimmedName.toLowerCase(),
+        );
+        const nextPresets = [nextPreset, ...dedupedPresets].slice(0, 8);
+        persistFilterPresets(nextPresets);
+        pushToast(`Saved preset: ${trimmedName}`, 'success');
+      },
+    });
   };
 
   const handleDeletePreset = (presetId) => {
@@ -7620,7 +7410,22 @@ function App() {
   const runUserMenuItem = (item) => () => {
     closeUserMenu(false);
     if (item?.viewKey && item.viewKey === currentUserView && !item?.allowSameView) return;
-    if (item?.requiresConfirm && !window.confirm(item.confirmMessage || `Open ${item.label}?`)) return;
+    if (item?.requiresConfirm) {
+      openConfirmDialog({
+        title: item.label || 'Please Confirm',
+        message: item.confirmMessage || `Open ${item.label}?`,
+        confirmLabel: 'Open',
+        onConfirm: () => {
+          if (typeof item?.beforeOpen === 'function') {
+            item.beforeOpen();
+          }
+          if (typeof item?.onClick === 'function') {
+            item.onClick();
+          }
+        },
+      });
+      return;
+    }
     if (typeof item?.beforeOpen === 'function') {
       item.beforeOpen();
     }
@@ -7725,6 +7530,102 @@ function App() {
                 viewKey: 'dataUpload',
                 allowSameView: true,
               };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayOrders = parsedData.filter((row) => {
+    const raw = row?.['Order Date'];
+    if (!raw) return false;
+    const dt = getNormalizedRowDate(raw);
+    if (!dt || Number.isNaN(dt.getTime())) return false;
+    dt.setHours(0, 0, 0, 0);
+    return dt.getTime() === today.getTime();
+  }).length;
+  const pendingEkycCount = parsedData.filter((row) => isEkycNotDoneStatus(row?.['EKYC Status'])).length;
+  const activePackageStatus = loggedInUser?.package
+    ? `${formatPackageNameForNavbar(loggedInUser.package)} (Valid till: ${formatDisplayDate(loggedInUser.validTill)})`
+    : 'No active package';
+  const homeQuickActions = [
+    'cDCMS से Pending Booking डेटा download करके upload करें',
+    'Filters और report cards से records verify करें',
+    'Cashmemo / Invoice generate और print करें',
+    'ज़रूरत होने पर profile, bank या rate update request भेजें',
+  ];
+  const homeTodayFocus = [
+    `आज की bookings: ${todayOrders}`,
+    `eKYC pending records: ${pendingEkycCount}`,
+    hasWorkingData ? `${filteredData.length} rows current filters में visible हैं` : 'Fresh upload karke working data ready kijiye',
+    selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} row print/export ke liye selected हैं` : 'Online paid ya priority rows select kijiye',
+  ];
+  const homeSupportPoints = [
+    'Data mismatch होने पर fresh file दोबारा upload करें',
+    'Print से पहले selected rows एक बार verify करें',
+    'Profile, bank और rate changes admin approval के बाद लागू होंगे',
+  ];
+  const homeAccountDetails = [
+    { label: 'Dealer Code', value: loggedInUser?.dealerCode || 'N/A' },
+    { label: 'Dealer Name', value: loggedInUser?.dealerName || 'N/A' },
+    { label: 'Active Package', value: activePackageStatus },
+    { label: 'Account Status', value: loggedInUser?.status || 'N/A' },
+  ];
+  const dashboardActionCenterCards = [
+    {
+      key: 'continue',
+      label: 'Recommended',
+      title: recommendedAction?.actionLabel || 'Continue',
+      description: recommendedAction?.description || 'Agla best step yahan se continue kijiye.',
+      cta: recommendedAction?.label || 'Open next step',
+      badge: recommendedAction?.label,
+      tone: 'primary',
+      action: recommendedAction || primaryQuickAction,
+      disabled: recommendedAction?.disabled,
+    },
+    {
+      key: 'profile',
+      label: 'Profile Setup',
+      title: `${profileCompletionPercent}% complete`,
+      description: incompleteProfileAreas.length > 0
+        ? `${incompleteProfileAreas.map((item) => item.label).join(', ')} abhi pending hai.`
+        : 'Profile, bank, header, aur rates sab ready hain.',
+      cta: incompleteProfileActionItems[0]?.label || 'View Profile',
+      badge: profileCompletenessLabel,
+      tone: incompleteProfileAreas.length > 0 ? 'warning' : 'success',
+      action: incompleteProfileActionItems[0] || primaryQuickAction,
+      disabled: incompleteProfileActionItems[0]?.disabled,
+    },
+    {
+      key: 'updates',
+      label: 'Updates Inbox',
+      title: updateInboxCount > 0 ? `${updateInboxCount} update waiting` : 'No pending updates',
+      description: contactReplyCount > 0
+        ? `${contactReplyCount} unread admin repl${contactReplyCount > 1 ? 'ies' : 'y'} available.`
+        : pendingRequestCount > 0
+          ? `${pendingRequestCount} request approval mein hai.`
+          : 'Support replies aur approval history yahan se track kijiye.',
+      cta: contactReplyCount > 0 ? 'Open Support' : 'Open History',
+      badge: updateInboxCount > 0 ? String(updateInboxCount) : '',
+      tone: updateInboxCount > 0 ? 'info' : 'default',
+      action: contactReplyCount > 0 ? secondaryQuickAction : { label: 'Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true },
+    },
+    {
+      key: 'work',
+      label: 'Work Status',
+      title: hasWorkingData ? `${parsedData.length} rows ready` : 'No working data',
+      description: hasWorkingData
+        ? `${uploadMetadata?.fileName || 'Latest file'} loaded hai. ${selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} rows selected hain.` : 'Ab filters ya selection continue kijiye.'}`
+        : 'Pending Booking file upload karke data flow start kijiye.',
+      cta: hasWorkingData ? (selectedCustomerIds.length > 0 ? 'Open Data View' : 'Filter Data') : 'Upload Data',
+      badge: uploadMetadata?.fileName ? 'Uploaded' : '',
+      tone: hasWorkingData ? 'success' : 'default',
+      action: hasWorkingData
+        ? { label: 'Open Data View', onClick: handleShowData, viewKey: 'dataUpload', allowSameView: true }
+        : { label: 'Upload Data', onClick: handleReUploadClick, viewKey: 'dataUpload' },
+      disabled: isPlanExpired && !hasWorkingData,
+    },
+  ];
+  const handleDashboardQuickAction = (action) => {
+    if (!action) return;
+    runUserMenuItem(action)();
+  };
   const handleOpenRenewalHistory = () => {
     setUserProfileInitialSection('history');
     handleRequestHistoryOpen();
@@ -7993,7 +7894,26 @@ function App() {
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && <DictionaryRequestForm mode={dictionaryFormMode} onClose={navigateToHome} />}
-          {showHomeInfo && <HomeInfo />}
+          {showHomeInfo && (
+            <Suspense fallback={<div className="placeholder-container">Loading dashboard...</div>}>
+              <LazyHomeDashboard
+                isLoggedIn={isLoggedIn}
+                todayOrders={todayOrders}
+                pendingEkycCount={pendingEkycCount}
+                activePackageStatus={activePackageStatus}
+                homeQuickActions={homeQuickActions}
+                homeTodayFocus={homeTodayFocus}
+                homeSupportPoints={homeSupportPoints}
+                homeAccountDetails={homeAccountDetails}
+                actionCenterCards={dashboardActionCenterCards}
+                recentActivities={recentActivities.map((item) => ({
+                  ...item,
+                  createdAt: formatDisplayDateTime(item.createdAt),
+                }))}
+                onQuickAction={handleDashboardQuickAction}
+              />
+            </Suspense>
+          )}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && (
             <Suspense fallback={<div className="placeholder-container">Loading invoice...</div>}>
@@ -8004,135 +7924,33 @@ function App() {
           {showHeaderUpdate && <HeaderUpdateForm onClose={navigateToHome} />}
           {showAdminPanel && <AdminPanel onClose={navigateToHome} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
-            <div className="placeholder-container auth-panel auth-panel--login">
-              <div className="auth-panel__hero">
-                <div>
-                  <span className="auth-panel__eyebrow">Secure Access</span>
-                  <h2>Admin Login</h2>
-                  <p className="auth-panel__subtitle">
-                    Admin dashboard access ke liye approved email aur password use kijiye.
-                  </p>
-                </div>
-                <div className="auth-panel__hero-badges">
-                  <span className="auth-panel__badge">Protected access</span>
-                  <span className="auth-panel__badge">Firebase auth</span>
-                </div>
-              </div>
-              <div className="auth-panel__content">
-                <div className="auth-section-card">
-                  <div className="auth-section-card__header">
-                    <h3>Welcome Back</h3>
-                    <p>Sign in to manage users, approvals, and support replies.</p>
-                  </div>
-                  <form
-                    className="register-form register-form--enhanced"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleAdminLoginSubmit();
-                    }}
-                  >
-                    <div>
-                      <label className="auth-field-label">Admin Email</label>
-                      <input
-                        className="form-input"
-                        placeholder="Admin Email"
-                        autoComplete="username"
-                        value={adminLoginId}
-                        onChange={(e) => setAdminLoginId(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="auth-field-label">Password</label>
-                      <input
-                        className="form-input"
-                        type="password"
-                        placeholder="Password"
-                        autoComplete="current-password"
-                        value={adminPassword}
-                        onChange={(e) => setAdminPassword(e.target.value)}
-                      />
-                    </div>
-                  </form>
-                  <div className="form-actions auth-panel__actions">
-                    <button className="auth-primary-button" onClick={handleAdminLoginSubmit} type="button" disabled={isAdminLoginSubmitting}>{isAdminLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-                    <button className="auth-secondary-button" onClick={navigateToHome} disabled={isAdminLoginSubmitting}>Close</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <Suspense fallback={<div className="placeholder-container">Loading admin login...</div>}>
+              <LazyAdminLoginPanel
+                adminLoginId={adminLoginId}
+                setAdminLoginId={setAdminLoginId}
+                adminPassword={adminPassword}
+                setAdminPassword={setAdminPassword}
+                isAdminLoginSubmitting={isAdminLoginSubmitting}
+                handleAdminLoginSubmit={handleAdminLoginSubmit}
+                navigateToHome={navigateToHome}
+              />
+            </Suspense>
           )}
           {showUserLogin && (
-            <div className="placeholder-container auth-panel auth-panel--login">
-              <div className="auth-panel__hero">
-                <div>
-                  <span className="auth-panel__eyebrow">Dealer Access</span>
-                  <h2>User Login</h2>
-                  <p className="auth-panel__subtitle">
-                    Dealer Code aur 4-digit PIN se secure login kijiye aur apna workflow continue kijiye.
-                  </p>
-                </div>
-                <div className="auth-panel__hero-badges">
-                  <span className="auth-panel__badge">Fast sign in</span>
-                  <span className="auth-panel__badge">Support ready</span>
-                </div>
-              </div>
-              <div className="auth-panel__content">
-                <div className="auth-section-card">
-                  <div className="auth-section-card__header">
-                    <h3>Welcome Back</h3>
-                    <p className="login-helper-text">
-                      Agar PIN yaad nahi hai, to Support & Replies ya admin contact use karke help le sakte hain.
-                    </p>
-                  </div>
-                  <form
-                    className="register-form register-form--enhanced"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleUserLoginSubmit();
-                    }}
-                  >
-                    <div>
-                      <label className="auth-field-label">Dealer Code</label>
-                      <input
-                        className="form-input"
-                        placeholder="Dealer Code"
-                        autoComplete="username"
-                        value={userDealerCode}
-                        onChange={(e) => setUserDealerCode(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="auth-field-label">PIN</label>
-                      <input
-                        className="form-input"
-                        type={userPinVisible ? 'text' : 'password'}
-                        placeholder="PIN"
-                        autoComplete="current-password"
-                        value={userPin}
-                        onChange={(e) => setUserPin(e.target.value)}
-                      />
-                    </div>
-                    <div className="login-help-row">
-                      <label className="login-help-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={userPinVisible}
-                          onChange={(e) => setUserPinVisible(e.target.checked)}
-                        />
-                        <span>Show PIN</span>
-                      </label>
-                      <button type="button" className="login-help-link" onClick={handleContactOpen}>
-                        Forgot PIN / Contact Admin
-                      </button>
-                    </div>
-                  </form>
-                  <div className="form-actions auth-panel__actions">
-                    <button className="auth-primary-button" onClick={handleUserLoginSubmit} type="button" disabled={isUserLoginSubmitting}>{isUserLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-                    <button className="auth-secondary-button" onClick={navigateToHome} disabled={isUserLoginSubmitting}>Close</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <Suspense fallback={<div className="placeholder-container">Loading login...</div>}>
+              <LazyUserLoginPanel
+                userDealerCode={userDealerCode}
+                setUserDealerCode={setUserDealerCode}
+                userPinVisible={userPinVisible}
+                setUserPinVisible={setUserPinVisible}
+                userPin={userPin}
+                setUserPin={setUserPin}
+                isUserLoginSubmitting={isUserLoginSubmitting}
+                handleUserLoginSubmit={handleUserLoginSubmit}
+                navigateToHome={navigateToHome}
+                handleContactOpen={handleContactOpen}
+              />
+            </Suspense>
           )}
           {showProfileUpdate && <ProfileUpdateForm onClose={navigateToHome} />}
           {showRateUpdate && (
@@ -8143,7 +7961,19 @@ function App() {
             />
           )}
           {showBankDetails && <BankDetailsForm onClose={navigateToHome} />}
-          {showRegisterForm && <RegisterForm onClose={navigateToHome} />}
+          {showRegisterForm && (
+            <Suspense fallback={<div className="placeholder-container">Loading registration...</div>}>
+              <LazyRegisterPanel
+                packageOptions={PACKAGE_OPTIONS}
+                packagePricing={PACKAGE_PRICING}
+                paymentUpiId={PAYMENT_UPI_ID}
+                computeValidityDates={computeValidityDates}
+                pushToast={pushToast}
+                logRecentActivity={logRecentActivity}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
           {showUserProfile && <UserProfile onClose={navigateToHome} initialSection={userProfileInitialSection} />}
           {showContactForm && <ContactForm onClose={navigateToHome} />}
         </div>
@@ -8659,6 +8489,45 @@ function App() {
                   <CashMemoEnglish customerData={item.customer} />
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {confirmDialog.open && (
+        <div className="app-dialog-overlay" onClick={closeConfirmDialog}>
+          <div className="app-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+            <div className="app-dialog__header">
+              <h3 id="confirm-dialog-title">{confirmDialog.title}</h3>
+              <button type="button" className="app-dialog__close" onClick={closeConfirmDialog}>×</button>
+            </div>
+            <p className="app-dialog__message">{confirmDialog.message}</p>
+            <div className="app-dialog__actions">
+              <button type="button" className="auth-secondary-button" onClick={closeConfirmDialog}>Cancel</button>
+              <button type="button" className="auth-primary-button" onClick={handleConfirmDialogSubmit}>{confirmDialog.confirmLabel}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {inputDialog.open && (
+        <div className="app-dialog-overlay" onClick={closeInputDialog}>
+          <div className="app-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="input-dialog-title">
+            <div className="app-dialog__header">
+              <h3 id="input-dialog-title">{inputDialog.title}</h3>
+              <button type="button" className="app-dialog__close" onClick={closeInputDialog}>×</button>
+            </div>
+            <p className="app-dialog__message">{inputDialog.message}</p>
+            <input
+              className="form-input app-dialog__input"
+              value={inputDialog.value}
+              onChange={(e) => setInputDialog((prev) => ({ ...prev, value: e.target.value }))}
+              placeholder="Type here"
+              autoFocus
+            />
+            <div className="app-dialog__actions">
+              <button type="button" className="auth-secondary-button" onClick={closeInputDialog}>Cancel</button>
+              <button type="button" className="auth-primary-button" onClick={handleInputDialogSubmit}>{inputDialog.submitLabel}</button>
+            </div>
           </div>
         </div>
       )}
