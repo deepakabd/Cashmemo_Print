@@ -360,6 +360,25 @@ const formatPackageOptionLabel = (packageName = '') => {
   return `${formatPackageNameForNavbar(packageName)} - ${PACKAGE_PRICING[packageName] || '-'} - Validity: ${validityText}`;
 };
 
+const DEFAULT_EXPORT_HEADERS = [
+  'Consumer No.',
+  'Consumer Name',
+  'Delivery Area',
+  'Mobile No.',
+  'Order Date',
+  'Cash Memo Date',
+  'Order Type',
+  'Order Status',
+  'Online Refill Payment status',
+  'EKYC Status',
+];
+
+const sanitizeFilenamePart = (value = '') => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '') || 'all';
+
 const getDictionaryDocId = (englishWord = '') => (
   encodeURIComponent(String(englishWord || '').trim().toLowerCase()).replace(/\./g, '%2E') || `word-${Date.now()}`
 );
@@ -1145,6 +1164,7 @@ function App() {
 
     setIsUserLoginSubmitting(true);
     let firestoreUser = null;
+    let dealerLookupStatus = 'not-found';
     try {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('dealerCode', '==', dealerCode));
@@ -1152,6 +1172,11 @@ function App() {
       if (!snap.empty) {
         const docData = snap.docs[0].data();
         const status = String(docData?.status || 'active').toLowerCase();
+        dealerLookupStatus = status === 'pending'
+          ? 'pending'
+          : status === 'disabled'
+            ? 'disabled'
+            : 'dealer-found';
         if (String(docData?.pin || '') === pin) {
           firestoreUser = {
             id: snap.docs[0].id,
@@ -1186,7 +1211,15 @@ function App() {
     }
 
     if (!firestoreUser) {
-      pushToast('Invalid Dealer Code / PIN ya account disabled hai.', 'error');
+      if (dealerLookupStatus === 'pending') {
+        pushToast('Aapka account admin approval ke liye pending hai.', 'info');
+      } else if (dealerLookupStatus === 'disabled') {
+        pushToast('Aapka account disabled hai. Admin se contact kijiye.', 'error');
+      } else if (dealerLookupStatus === 'dealer-found') {
+        pushToast('Dealer Code mil gaya, lekin PIN sahi nahi hai.', 'error');
+      } else {
+        pushToast('Dealer Code nahi mila. Please check code ya register first.', 'error');
+      }
       setIsUserLoginSubmitting(false);
       return;
     }
@@ -1622,49 +1655,82 @@ function App() {
       onClose();
     };
     return (
-      <div className="placeholder-container">
-        <h2 className="register-title">रजिस्टर करें</h2>
-        <div className="register-form">
+      <div className="placeholder-container auth-panel auth-panel--register">
+        <div className="auth-panel__hero">
           <div>
-            <select name="package" value={form.package} onChange={onChange} className={`form-input${errors.package ? ' form-input--error' : ''}`}>
-            <option value="">पैकेज चुनें</option>
-            {fixedPackages.map((opt, i) => (
-              <option key={i} value={opt}>{`${opt} - ${PACKAGE_PRICING[opt] || '-'}`}</option>
-            ))}
-            </select>
-            {errors.package && <div className="form-error">{errors.package}</div>}
+            <span className="auth-panel__eyebrow">New Account</span>
+            <h2 className="register-title">रजिस्टर करें</h2>
+            <p className="auth-panel__subtitle">
+              Apna distributor account create kijiye, package select kijiye, aur request admin approval ke liye bhejiye.
+            </p>
           </div>
-          <div>
-            <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
-            {errors.dealerCode && <div className="form-error">{errors.dealerCode}</div>}
+          <div className="auth-panel__hero-badges">
+            <span className="auth-panel__badge">Fast approval flow</span>
+            <span className="auth-panel__badge">Secure 4-digit PIN</span>
           </div>
-          <div>
-            <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
-            {errors.dealerName && <div className="form-error">{errors.dealerName}</div>}
-          </div>
-          <div>
-            <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
-            {errors.mobile && <div className="form-error">{errors.mobile}</div>}
-          </div>
-          <div>
-            <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
-            {errors.email && <div className="form-error">{errors.email}</div>}
-          </div>
-          <div>
-            <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
-            {errors.pin && <div className="form-error">{errors.pin}</div>}
-          </div>
-          <div>
-            <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
-            {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
-          </div>
-          <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
-          <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
-          <div className="upi-note">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
         </div>
-        <div className="form-actions">
-          <button onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'रजिस्टर करें'}</button>
-          <button onClick={onClose} disabled={isSubmitting}>Close</button>
+        <div className="auth-panel__content auth-panel__content--wide">
+          <div className="auth-section-card">
+            <div className="auth-section-card__header">
+              <h3>Account Details</h3>
+              <p>Basic registration details enter karke request submit kijiye.</p>
+            </div>
+            <div className="register-form register-form--enhanced">
+              <div>
+                <label className="auth-field-label">Package</label>
+                <select name="package" value={form.package} onChange={onChange} className={`form-input${errors.package ? ' form-input--error' : ''}`}>
+                  <option value="">पैकेज चुनें</option>
+                  {fixedPackages.map((opt, i) => (
+                    <option key={i} value={opt}>{`${opt} - ${PACKAGE_PRICING[opt] || '-'}`}</option>
+                  ))}
+                </select>
+                {errors.package && <div className="form-error">{errors.package}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Dealer Code</label>
+                <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
+                {errors.dealerCode && <div className="form-error">{errors.dealerCode}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Dealer Name</label>
+                <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
+                {errors.dealerName && <div className="form-error">{errors.dealerName}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Mobile Number</label>
+                <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
+                {errors.mobile && <div className="form-error">{errors.mobile}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Email ID</label>
+                <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
+                {errors.email && <div className="form-error">{errors.email}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">PIN</label>
+                <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
+                {errors.pin && <div className="form-error">{errors.pin}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Confirm PIN</label>
+                <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
+                {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">UTR Number</label>
+                <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
+              </div>
+              <div>
+                <label className="auth-field-label">Payment Date</label>
+                <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
+              </div>
+            </div>
+            <div className="upi-note upi-note--card">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
+            <div className="form-actions auth-panel__actions">
+              <button className="auth-primary-button" onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'रजिस्टर करें'}</button>
+              <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -5549,6 +5615,57 @@ function App() {
     logRecentActivity(`Exported ${rows.length} rows as ${filename}`);
   };
 
+  const getActiveFilterFilenamePart = () => {
+    if (activeReportFilter) return sanitizeFilenamePart(activeReportFilter);
+    if (eKycFilter !== 'All') return `ekyc-${sanitizeFilenamePart(eKycFilter)}`;
+    if (onlineRefillPaymentStatusFilter !== 'All') return `payment-${sanitizeFilenamePart(onlineRefillPaymentStatusFilter)}`;
+    if (areaFilter !== 'All') return `area-${sanitizeFilenamePart(areaFilter)}`;
+    if (orderTypeFilter !== 'All') return `order-${sanitizeFilenamePart(orderTypeFilter)}`;
+    if (searchTerm) return `search-${sanitizeFilenamePart(searchTerm)}`;
+    return hasActiveDataFilters ? 'filtered' : 'all';
+  };
+
+  const buildExportFilename = (prefix) => {
+    const today = new Date().toLocaleDateString('en-CA');
+    return `${sanitizeFilenamePart(prefix)}-${getActiveFilterFilenamePart()}-${today}.csv`;
+  };
+
+  const getExportHeaders = (mode = 'visible') => {
+    if (mode !== 'business') return visibleHeaders;
+    const matchedHeaders = DEFAULT_EXPORT_HEADERS.filter((header) => headers.includes(header));
+    return matchedHeaders.length > 0 ? matchedHeaders : visibleHeaders;
+  };
+
+  const exportSelectedBusinessRows = () => {
+    exportRowsToCsvFile(
+      buildExportFilename('selected-business'),
+      selectedFilteredRows,
+      getExportHeaders('business'),
+    );
+  };
+
+  const exportFilteredRows = () => {
+    exportRowsToCsvFile(
+      buildExportFilename('filtered-cashmemo'),
+      filteredData,
+      visibleHeaders,
+    );
+  };
+
+  const exportReportSummary = () => {
+    const summaryRows = reportCards.map((card) => ({
+      Metric: card.label,
+      Count: card.value,
+      Filter: activeReportFilter ? reportFilterOptions.find((item) => item.key === activeReportFilter)?.label || activeReportFilter : 'All',
+      ExportedOn: new Date().toLocaleString('en-GB'),
+    }));
+    exportRowsToCsvFile(
+      buildExportFilename('report-summary'),
+      summaryRows,
+      ['Metric', 'Count', 'Filter', 'ExportedOn'],
+    );
+  };
+
   useEffect(() => {
     try {
       const storageKey = getFilterPresetStorageKey(loggedInUser?.dealerCode);
@@ -7531,10 +7648,6 @@ function App() {
       : updateInboxCount === 0 && incompleteProfileAreas.length === 0
         ? 'Everything looks up to date. You can open Data View or Invoice tools next.'
         : 'Use the quick actions to complete the next best step.';
-  const handleOpenRenewalHistory = () => {
-    setUserProfileInitialSection('history');
-    handleRequestHistoryOpen();
-  };
   const profileCompletenessActions = {
     profile: {
       label: 'Complete Profile',
@@ -7564,6 +7677,58 @@ function App() {
       ...(profileCompletenessActions[item.key] || {}),
     }))
     .filter((item) => item.onClick);
+  const recommendedAction = isPlanExpired
+    ? {
+        label: 'Plan expired',
+        actionLabel: 'Renew Now',
+        description: 'Uploads, invoice, aur update requests tabhi resume honge jab renewal approve hoga.',
+        onClick: handleUpgradePlanOpen,
+        viewKey: 'upgradePlan',
+      }
+    : contactReplyCount > 0
+      ? {
+          label: 'Unread admin reply',
+          actionLabel: 'Open Support',
+          description: `${contactReplyCount} unread repl${contactReplyCount > 1 ? 'ies are' : 'y is'} waiting in Support & Replies.`,
+          onClick: handleContactOpen,
+          viewKey: 'support',
+        }
+      : incompleteProfileAreas.length > 0
+        ? {
+            label: 'Profile setup pending',
+            actionLabel: incompleteProfileActionItems[0]?.label || 'Complete Setup',
+            description: `${incompleteProfileAreas[0]?.label || 'Profile'} abhi complete nahi hai. Isse onboarding aur smooth ho jayegi.`,
+            ...(incompleteProfileActionItems[0] || primaryQuickAction),
+          }
+        : !hasWorkingData
+          ? {
+              label: 'No working data',
+              actionLabel: 'Upload Data',
+              description: 'Latest Pending Booking file upload karke filtering aur print start kijiye.',
+              onClick: handleReUploadClick,
+              viewKey: 'dataUpload',
+            }
+          : selectedCustomerIds.length === 0
+            ? {
+                label: 'Selection pending',
+                actionLabel: showBookingReport ? 'Open Data View' : 'Show Report',
+                description: 'Data ready hai. Ab filters lagakar rows select kijiye, phir cashmemo print kijiye.',
+                onClick: showBookingReport ? handleShowData : () => setShowBookingReport(true),
+                viewKey: 'dataUpload',
+                allowSameView: true,
+              }
+            : {
+                label: 'Ready to print',
+                actionLabel: 'Open Data View',
+                description: `${selectedCustomerIds.length} row selected hai. Ab direct print ya export kar sakte hain.`,
+                onClick: handleShowData,
+                viewKey: 'dataUpload',
+                allowSameView: true,
+              };
+  const handleOpenRenewalHistory = () => {
+    setUserProfileInitialSection('history');
+    handleRequestHistoryOpen();
+  };
 
   const userMenuConfig = [
     {
@@ -7776,6 +7941,7 @@ function App() {
                     updateInboxCount={updateInboxCount}
                     primaryQuickAction={primaryQuickAction}
                     secondaryQuickAction={secondaryQuickAction}
+                    recommendedAction={recommendedAction}
                     userMenuSections={userMenuSections}
                     adminContacts={ADMIN_CONTACTS}
                     handleLogout={handleLogoutWithConfirm}
@@ -7786,15 +7952,14 @@ function App() {
                 )}
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <button onClick={handleLogin}>Login</button>
-                <button onClick={handleRegister}>Register</button>
+              <div className="navbar-auth-group">
+                <button className="navbar-button navbar-button--ghost" onClick={handleLogin}>Login</button>
+                <button className="navbar-button navbar-button--primary" onClick={handleRegister}>Register</button>
+                <button className="navbar-button admin-nav-button" onClick={handleAdminLoginOpen}>
+                  <span aria-hidden="true">&#128274;</span>
+                  <span>Admin</span>
+                </button>
               </div>
-            )}
-            {!isLoggedIn && (
-              <button className="admin-nav-button" onClick={handleAdminLoginOpen}>
-                <span aria-hidden="true">&#128274;</span> 
-              </button>
             )}
           </div>
         </nav>
@@ -7839,82 +8004,133 @@ function App() {
           {showHeaderUpdate && <HeaderUpdateForm onClose={navigateToHome} />}
           {showAdminPanel && <AdminPanel onClose={navigateToHome} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
-            <div className="placeholder-container admin-login-panel">
-              <h2>Admin Login</h2>
-              <form
-                className="register-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleAdminLoginSubmit();
-                }}
-              >
-                <input
-                  className="form-input"
-                  placeholder="Admin Email"
-                  autoComplete="username"
-                  value={adminLoginId}
-                  onChange={(e) => setAdminLoginId(e.target.value)}
-                />
-                <input
-                  className="form-input"
-                  type="password"
-                  placeholder="Password"
-                  autoComplete="current-password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                />
-              </form>
-              <div className="form-actions">
-                <button onClick={handleAdminLoginSubmit} type="button" disabled={isAdminLoginSubmitting}>{isAdminLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-                <button onClick={navigateToHome} disabled={isAdminLoginSubmitting}>Close</button>
+            <div className="placeholder-container auth-panel auth-panel--login">
+              <div className="auth-panel__hero">
+                <div>
+                  <span className="auth-panel__eyebrow">Secure Access</span>
+                  <h2>Admin Login</h2>
+                  <p className="auth-panel__subtitle">
+                    Admin dashboard access ke liye approved email aur password use kijiye.
+                  </p>
+                </div>
+                <div className="auth-panel__hero-badges">
+                  <span className="auth-panel__badge">Protected access</span>
+                  <span className="auth-panel__badge">Firebase auth</span>
+                </div>
+              </div>
+              <div className="auth-panel__content">
+                <div className="auth-section-card">
+                  <div className="auth-section-card__header">
+                    <h3>Welcome Back</h3>
+                    <p>Sign in to manage users, approvals, and support replies.</p>
+                  </div>
+                  <form
+                    className="register-form register-form--enhanced"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleAdminLoginSubmit();
+                    }}
+                  >
+                    <div>
+                      <label className="auth-field-label">Admin Email</label>
+                      <input
+                        className="form-input"
+                        placeholder="Admin Email"
+                        autoComplete="username"
+                        value={adminLoginId}
+                        onChange={(e) => setAdminLoginId(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="auth-field-label">Password</label>
+                      <input
+                        className="form-input"
+                        type="password"
+                        placeholder="Password"
+                        autoComplete="current-password"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                      />
+                    </div>
+                  </form>
+                  <div className="form-actions auth-panel__actions">
+                    <button className="auth-primary-button" onClick={handleAdminLoginSubmit} type="button" disabled={isAdminLoginSubmitting}>{isAdminLoginSubmitting ? 'Logging in...' : 'Login'}</button>
+                    <button className="auth-secondary-button" onClick={navigateToHome} disabled={isAdminLoginSubmitting}>Close</button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
           {showUserLogin && (
-            <div className="placeholder-container admin-login-panel">
-              <h2>User Login</h2>
-              <p className="login-helper-text">
-                Dealer Code aur 4-digit PIN se login kijiye. Agar PIN yaad nahi hai, to Support & Replies ya admin contact use karke help le sakte hain.
-              </p>
-              <form
-                className="register-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleUserLoginSubmit();
-                }}
-              >
-                <input
-                  className="form-input"
-                  placeholder="Dealer Code"
-                  autoComplete="username"
-                  value={userDealerCode}
-                  onChange={(e) => setUserDealerCode(e.target.value)}
-                />
-                <input
-                  className="form-input"
-                  type={userPinVisible ? 'text' : 'password'}
-                  placeholder="PIN"
-                  autoComplete="current-password"
-                  value={userPin}
-                  onChange={(e) => setUserPin(e.target.value)}
-                />
-                <div className="login-help-row">
-                  <label className="login-help-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={userPinVisible}
-                      onChange={(e) => setUserPinVisible(e.target.checked)}
-                    />
-                    <span>Show PIN</span>
-                  </label>
-                  <button type="button" className="login-help-link" onClick={handleContactOpen}>
-                    Forgot PIN / Contact Admin
-                  </button>
+            <div className="placeholder-container auth-panel auth-panel--login">
+              <div className="auth-panel__hero">
+                <div>
+                  <span className="auth-panel__eyebrow">Dealer Access</span>
+                  <h2>User Login</h2>
+                  <p className="auth-panel__subtitle">
+                    Dealer Code aur 4-digit PIN se secure login kijiye aur apna workflow continue kijiye.
+                  </p>
                 </div>
-              </form>
-              <div className="form-actions">
-                <button onClick={handleUserLoginSubmit} type="button" disabled={isUserLoginSubmitting}>{isUserLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-                <button onClick={navigateToHome} disabled={isUserLoginSubmitting}>Close</button>
+                <div className="auth-panel__hero-badges">
+                  <span className="auth-panel__badge">Fast sign in</span>
+                  <span className="auth-panel__badge">Support ready</span>
+                </div>
+              </div>
+              <div className="auth-panel__content">
+                <div className="auth-section-card">
+                  <div className="auth-section-card__header">
+                    <h3>Welcome Back</h3>
+                    <p className="login-helper-text">
+                      Agar PIN yaad nahi hai, to Support & Replies ya admin contact use karke help le sakte hain.
+                    </p>
+                  </div>
+                  <form
+                    className="register-form register-form--enhanced"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleUserLoginSubmit();
+                    }}
+                  >
+                    <div>
+                      <label className="auth-field-label">Dealer Code</label>
+                      <input
+                        className="form-input"
+                        placeholder="Dealer Code"
+                        autoComplete="username"
+                        value={userDealerCode}
+                        onChange={(e) => setUserDealerCode(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="auth-field-label">PIN</label>
+                      <input
+                        className="form-input"
+                        type={userPinVisible ? 'text' : 'password'}
+                        placeholder="PIN"
+                        autoComplete="current-password"
+                        value={userPin}
+                        onChange={(e) => setUserPin(e.target.value)}
+                      />
+                    </div>
+                    <div className="login-help-row">
+                      <label className="login-help-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={userPinVisible}
+                          onChange={(e) => setUserPinVisible(e.target.checked)}
+                        />
+                        <span>Show PIN</span>
+                      </label>
+                      <button type="button" className="login-help-link" onClick={handleContactOpen}>
+                        Forgot PIN / Contact Admin
+                      </button>
+                    </div>
+                  </form>
+                  <div className="form-actions auth-panel__actions">
+                    <button className="auth-primary-button" onClick={handleUserLoginSubmit} type="button" disabled={isUserLoginSubmitting}>{isUserLoginSubmitting ? 'Logging in...' : 'Login'}</button>
+                    <button className="auth-secondary-button" onClick={navigateToHome} disabled={isUserLoginSubmitting}>Close</button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -8009,6 +8225,31 @@ function App() {
                 <span>Uploading and preparing your file...</span>
               </div>
             )}
+            <div className="upload-journey-card">
+              <div className="upload-journey-card__header">
+                <div>
+                  <p className="upload-journey-card__eyebrow">Next Steps</p>
+                  <h4>Upload se print tak ka fast flow</h4>
+                </div>
+                <span className="upload-journey-card__badge">
+                  {selectedCustomerIds.length > 0 ? 'Ready to print' : hasActiveDataFilters ? 'Selection next' : 'Filters next'}
+                </span>
+              </div>
+              <div className="upload-journey-card__steps">
+                <div className={`upload-journey-step ${parsedData.length > 0 ? 'is-complete' : ''}`}>
+                  <strong>1. Upload done</strong>
+                  <span>{uploadMetadata?.fileName ? `${uploadMetadata.fileName} loaded` : `${parsedData.length} rows ready`}</span>
+                </div>
+                <div className={`upload-journey-step ${hasActiveDataFilters ? 'is-complete' : ''}`}>
+                  <strong>2. Filter lagao</strong>
+                  <span>{hasActiveDataFilters ? `${filteredData.length} matching rows found` : 'Area, eKYC, payment ya date filters apply kijiye'}</span>
+                </div>
+                <div className={`upload-journey-step ${selectedCustomerIds.length > 0 ? 'is-complete' : ''}`}>
+                  <strong>3. Select & Print</strong>
+                  <span>{selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} row selected` : 'Rows select karke cashmemo ya export run kijiye'}</span>
+                </div>
+              </div>
+            </div>
             {/* {uploadMetadata && (
               <div className="upload-info-card">
                 <div>
@@ -8070,9 +8311,16 @@ function App() {
                   <button
                     type="button"
                     className="table-action table-action--green"
-                    onClick={() => exportRowsToCsvFile('selected-cashmemo.csv', selectedFilteredRows, visibleHeaders)}
+                    onClick={exportSelectedBusinessRows}
                   >
-                    Export Selected
+                    Export Selected Business
+                  </button>
+                  <button
+                    type="button"
+                    className="filter-action filter-action--secondary"
+                    onClick={() => exportRowsToCsvFile(buildExportFilename('selected-visible'), selectedFilteredRows, visibleHeaders)}
+                  >
+                    Export Selected Visible
                   </button>
                   <button
                     type="button"
@@ -8265,7 +8513,8 @@ function App() {
 
             <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
             <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
-            <button className="filter-action filter-action--secondary action-button" onClick={() => exportRowsToCsvFile('filtered-cashmemo.csv', filteredData, visibleHeaders)}>Export Filtered</button>
+            <button className="filter-action filter-action--secondary action-button" onClick={exportFilteredRows}>Export Filtered</button>
+            <button className="filter-action filter-action--secondary action-button" onClick={exportReportSummary}>Export Report Summary</button>
 
             </div>
 
