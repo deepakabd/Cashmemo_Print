@@ -364,6 +364,7 @@ export const ContactSupportPanel = ({
   const [localFeedbackEntries, setLocalFeedbackEntries] = useState(() => readFeedbackDataFromStorage());
   const [feedbackErrors, setFeedbackErrors] = useState({});
   const [adminChatError, setAdminChatError] = useState('');
+  const [selectedTicketId, setSelectedTicketId] = useState('');
 
   useEffect(() => {
     setForm((prev) => ({
@@ -401,12 +402,71 @@ export const ContactSupportPanel = ({
           replyId: idKey,
           resolved,
           status,
+          priority: String(override?.priority || item?.priority || 'medium').toLowerCase(),
+          resolvedAt: override?.resolvedAt || item?.resolvedAt || '',
+          updatedAt: override?.updatedAt || item?.updatedAt || item?.createdAt || '',
+          rootTicketId: item.parentFeedbackId || idKey,
         };
       })
       .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
   }, [feedbackMetaOverrides, localFeedbackEntries, loggedInUser, storedFeedbackReplies]);
 
   const userReplies = supportRequests.filter((item) => item.reply);
+  const ticketThreads = useMemo(() => {
+    const map = new Map();
+    supportRequests.forEach((item) => {
+      const rootId = item.rootTicketId || item.replyId || item.id || item.clientFeedbackId;
+      const existing = map.get(rootId);
+      const messageTimeline = [
+        {
+          id: `${item.replyId || item.id || item.clientFeedbackId}-user`,
+          type: 'user',
+          message: item.text || item.feedback || 'No message content.',
+          createdAt: item.createdAt,
+        },
+        ...(item.reply ? [{
+          id: `${item.replyId || item.id || item.clientFeedbackId}-admin`,
+          type: 'admin',
+          message: item.reply,
+          createdAt: item.updatedAt || item.createdAt,
+          highlight: true,
+        }] : []),
+      ];
+      if (!existing) {
+        map.set(rootId, {
+          id: rootId,
+          subject: item.text || item.feedback || 'Support request',
+          status: item.status,
+          priority: item.priority,
+          resolvedAt: item.resolvedAt,
+          latestAt: item.updatedAt || item.createdAt,
+          latestPreview: item.reply || item.text || '',
+          messages: messageTimeline,
+        });
+        return;
+      }
+      const mergedMessages = [...existing.messages, ...messageTimeline]
+        .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+      const latestAt = new Date(existing.latestAt || 0).getTime() >= new Date(item.updatedAt || item.createdAt || 0).getTime()
+        ? existing.latestAt
+        : item.updatedAt || item.createdAt;
+      map.set(rootId, {
+        ...existing,
+        status: item.status === 'resolved' ? 'resolved' : existing.status === 'resolved' ? 'resolved' : item.status === 'reply' ? 'reply' : existing.status,
+        priority: item.priority || existing.priority,
+        resolvedAt: item.resolvedAt || existing.resolvedAt,
+        latestAt,
+        latestPreview: item.reply || item.text || existing.latestPreview,
+        messages: mergedMessages,
+      });
+    });
+    return Array.from(map.values())
+      .sort((a, b) => new Date(b.latestAt || 0).getTime() - new Date(a.latestAt || 0).getTime());
+  }, [supportRequests]);
+  const selectedTicket = useMemo(
+    () => ticketThreads.find((item) => item.id === selectedTicketId) || ticketThreads[0] || null,
+    [selectedTicketId, ticketThreads],
+  );
 
   useEffect(() => {
     if (!showAdminChatPopup) return;
@@ -414,6 +474,14 @@ export const ContactSupportPanel = ({
       setActiveReplyItem((prev) => prev || userReplies[0]);
     }
   }, [showAdminChatPopup, userReplies]);
+
+  useEffect(() => {
+    if (ticketThreads.length === 0) {
+      setSelectedTicketId('');
+      return;
+    }
+    setSelectedTicketId((prev) => (prev && ticketThreads.some((item) => item.id === prev) ? prev : ticketThreads[0].id));
+  }, [ticketThreads]);
 
   const handleOpenAdminChat = () => {
     setShowAdminChatPopup(true);
@@ -589,17 +657,56 @@ export const ContactSupportPanel = ({
           {supportRequests.length === 0 ? (
             <p className="support-status-panel__empty">Abhi koi support request submit nahi hui hai. Naya feedback bhejte hi yahan status dikhne lagega.</p>
           ) : (
-            <div className="support-status-panel__list">
-              {supportRequests.slice(0, 6).map((item) => (
-                <div key={item.id || item.clientFeedbackId} className={`support-status-card support-status-card--${item.status}`}>
-                  <div className="support-status-card__top">
-                    <strong>{item.status === 'resolved' ? 'Resolved' : item.status === 'reply' ? 'Reply Received' : 'Submitted'}</strong>
-                    <span>{formatDisplayDateTime(item.updatedAt || item.createdAt)}</span>
+            <div className="support-ticket-layout">
+              <div className="support-status-panel__list">
+                {ticketThreads.slice(0, 8).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`support-status-card support-status-card--${item.status} ${selectedTicket?.id === item.id ? 'is-active' : ''}`}
+                    onClick={() => setSelectedTicketId(item.id)}
+                  >
+                    <div className="support-status-card__top">
+                      <strong>{item.status === 'resolved' ? 'Resolved' : item.status === 'reply' ? 'Reply Received' : 'Submitted'}</strong>
+                      <span>{formatDisplayDateTime(item.latestAt)}</span>
+                    </div>
+                    <div className="support-status-card__meta">
+                      <span className={`support-priority support-priority--${item.priority}`}>{item.priority} priority</span>
+                      {item.resolvedAt && <span>Closed: {formatDisplayDateTime(item.resolvedAt)}</span>}
+                    </div>
+                    <p>{item.subject}</p>
+                    <small>{item.latestPreview}</small>
+                  </button>
+                ))}
+              </div>
+              {selectedTicket && (
+                <div className="support-ticket-thread">
+                  <div className="support-ticket-thread__header">
+                    <div>
+                      <h4>Ticket Conversation</h4>
+                      <p>{selectedTicket.subject}</p>
+                    </div>
+                    <div className="support-ticket-thread__badges">
+                      <span className={`support-priority support-priority--${selectedTicket.priority}`}>{selectedTicket.priority}</span>
+                      <span className={`support-ticket-status support-ticket-status--${selectedTicket.status}`}>{selectedTicket.status}</span>
+                    </div>
                   </div>
-                  <p>{item.text || 'No message content.'}</p>
-                  {item.reply && <small>Admin: {item.reply}</small>}
+                  <div className="support-ticket-thread__timeline">
+                    {selectedTicket.messages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`support-ticket-message support-ticket-message--${message.type} ${message.highlight ? 'is-highlighted' : ''}`}
+                      >
+                        <div className="support-ticket-message__meta">
+                          <strong>{message.type === 'admin' ? 'Admin Reply' : 'Your Message'}</strong>
+                          <span>{formatDisplayDateTime(message.createdAt)}</span>
+                        </div>
+                        <p>{message.message}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
