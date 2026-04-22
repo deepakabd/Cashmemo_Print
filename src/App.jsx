@@ -5902,7 +5902,7 @@ function App() {
           }
           return processedText || text;
         };
-
+//test
         customersToPrint = await Promise.all(
           customersToPrint.map(async (customer) => {
             const translatedCustomer = { ...customer };
