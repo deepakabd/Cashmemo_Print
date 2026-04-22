@@ -17,6 +17,16 @@ import { useCashmemoSelection } from './hooks/useCashmemoSelection';
 import { useParsedDataFilters } from './hooks/useParsedDataFilters';
 
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
+const LazyHomeDashboard = lazy(() => import('./components/HomeDashboard'));
+const LazyDataWorkspace = lazy(() => import('./components/DataWorkspace'));
+const LazyRegisterPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.RegisterPanel })));
+const LazyAdminLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.AdminLoginPanel })));
+const LazyUserLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.UserLoginPanel })));
+const LazyProfileUpdatePanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.ProfileUpdatePanel })));
+const LazyBankDetailsPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.BankDetailsPanel })));
+const LazyUserProfilePanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.UserProfilePanel })));
+const LazyContactSupportPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.ContactSupportPanel })));
+const LazyDictionaryRequestPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.DictionaryRequestPanel })));
 
 // Helper function to convert Excel serial date to JavaScript Date object
 const excelSerialDateToJSDate = (serial) => {
@@ -500,6 +510,8 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
+  const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
 
   const pushToast = useCallback((message, tone = 'info') => {
     if (!message) return;
@@ -509,6 +521,56 @@ function App() {
       setToastItems((prev) => prev.filter((item) => item.id !== toastId));
     }, 3600);
   }, []);
+
+  const openConfirmDialog = useCallback((config = {}) => {
+    setConfirmDialog({
+      open: true,
+      title: config.title || 'Please Confirm',
+      message: config.message || '',
+      confirmLabel: config.confirmLabel || 'Confirm',
+      onConfirm: typeof config.onConfirm === 'function' ? config.onConfirm : null,
+    });
+  }, []);
+
+  const closeConfirmDialog = useCallback(() => {
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
+  }, []);
+
+  const handleConfirmDialogSubmit = useCallback(() => {
+    const callback = confirmDialog.onConfirm;
+    closeConfirmDialog();
+    if (typeof callback === 'function') {
+      callback();
+    }
+  }, [closeConfirmDialog, confirmDialog.onConfirm]);
+
+  const openInputDialog = useCallback((config = {}) => {
+    setInputDialog({
+      open: true,
+      title: config.title || 'Enter Value',
+      message: config.message || '',
+      value: config.value || '',
+      submitLabel: config.submitLabel || 'Save',
+      onSubmit: typeof config.onSubmit === 'function' ? config.onSubmit : null,
+    });
+  }, []);
+
+  const closeInputDialog = useCallback(() => {
+    setInputDialog({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
+  }, []);
+
+  const handleInputDialogSubmit = useCallback(() => {
+    const callback = inputDialog.onSubmit;
+    const value = String(inputDialog.value || '').trim();
+    if (!value) {
+      pushToast('Please enter a valid name.', 'error');
+      return;
+    }
+    closeInputDialog();
+    if (typeof callback === 'function') {
+      callback(value);
+    }
+  }, [closeInputDialog, inputDialog.onSubmit, inputDialog.value, pushToast]);
 
   const handleReUploadClick = () => {
     if (fileInputRef.current) {
@@ -843,213 +905,6 @@ function App() {
     }
   };
 
-  const ProfileUpdateForm = ({ onClose }) => {
-    const [formData, setFormData] = useState({
-      distributorCode: '',
-      distributorName: '',
-      contact: '',
-      email: '',
-      gst: '',
-      address: '',
-      photoDataUrl: '',
-    });
-    const [errors, setErrors] = useState({});
-    const [isSaving, setIsSaving] = useState(false);
-    useEffect(() => {
-      if (loggedInUser?.profileData) {
-        setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
-      }
-    }, []);
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setFormData((prev) => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-    const handlePhotoChange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      if (!file.type.startsWith('image/')) {
-        pushToast('Please choose an image file.', 'error');
-        return;
-      }
-      if (file.size > 1024 * 1024) {
-        pushToast('Profile photo must be under 1 MB.', 'error');
-        return;
-      }
-      try {
-        const photoDataUrl = await readImageFileAsDataUrl(file);
-        setFormData((prev) => ({ ...prev, photoDataUrl }));
-      } catch {
-        pushToast('Photo upload failed. Please try another image.', 'error');
-      }
-    };
-    const handlePhotoRemove = () => {
-      setFormData((prev) => ({ ...prev, photoDataUrl: '' }));
-    };
-    const validateProfileForm = () => {
-      const nextErrors = {};
-      if (!formData.distributorCode.trim()) nextErrors.distributorCode = 'Distributor code is required.';
-      if (!formData.distributorName.trim()) nextErrors.distributorName = 'Distributor name is required.';
-      if (!/^\d{10}$/.test(formData.contact.trim())) nextErrors.contact = 'Enter a valid 10-digit contact number.';
-      if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) nextErrors.email = 'Enter a valid email address.';
-      if (!formData.gst.trim()) nextErrors.gst = 'GST is required.';
-      if (!formData.address.trim()) nextErrors.address = 'Address is required.';
-      setErrors(nextErrors);
-      return Object.keys(nextErrors).length === 0;
-    };
-    const handleSave = async () => {
-      if (!validateProfileForm()) return;
-      setIsSaving(true);
-      const ok = await submitUpdateApprovalRequest({
-        type: 'profile',
-        payload: formData,
-        localKey: 'profileData',
-        successMessage: 'Profile update request submitted. Your request is pending with admin for approval.',
-      });
-      setIsSaving(false);
-      if (ok) {
-        logRecentActivity('Submitted profile update request');
-        onClose();
-      }
-    };
-    return (
-      <div className="placeholder-container">
-        <h2>Profile Update</h2>
-        <div className="profile-form">
-          <span className="profile-label">Profile Photo</span>
-          <div className="profile-photo-field">
-            {formData.photoDataUrl ? (
-              <img className="profile-photo-preview" src={formData.photoDataUrl} alt="Profile preview" />
-            ) : (
-              <div className="profile-photo-placeholder">No photo selected</div>
-            )}
-            <div className="profile-photo-actions">
-              <input className="form-input" type="file" accept="image/*" onChange={handlePhotoChange} />
-              {formData.photoDataUrl && (
-                <button type="button" className="profile-photo-remove" onClick={handlePhotoRemove}>Remove Photo</button>
-              )}
-            </div>
-          </div>
-          <span className="profile-label">Distributor Code</span>
-          <div>
-            <input className={`form-input${errors.distributorCode ? ' form-input--error' : ''}`} name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
-            {errors.distributorCode && <div className="form-error">{errors.distributorCode}</div>}
-          </div>
-          <span className="profile-label">Distributor Name</span>
-          <div>
-            <input className={`form-input${errors.distributorName ? ' form-input--error' : ''}`} name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} />
-            {errors.distributorName && <div className="form-error">{errors.distributorName}</div>}
-          </div>
-          <span className="profile-label">Contact</span>
-          <div>
-            <input className={`form-input${errors.contact ? ' form-input--error' : ''}`} name="contact" type="text" value={formData.contact} onChange={handleChange} />
-            {errors.contact && <div className="form-error">{errors.contact}</div>}
-          </div>
-          <span className="profile-label">Email</span>
-          <div>
-            <input className={`form-input${errors.email ? ' form-input--error' : ''}`} name="email" type="email" value={formData.email} onChange={handleChange} />
-            {errors.email && <div className="form-error">{errors.email}</div>}
-          </div>
-          <span className="profile-label">GST</span>
-          <div>
-            <input className={`form-input${errors.gst ? ' form-input--error' : ''}`} name="gst" type="text" value={formData.gst} onChange={handleChange} />
-            {errors.gst && <div className="form-error">{errors.gst}</div>}
-          </div>
-          <span className="profile-label">Address</span>
-          <div>
-            <textarea className={`form-textarea${errors.address ? ' form-input--error' : ''}`} name="address" rows="3" value={formData.address} onChange={handleChange} />
-            {errors.address && <div className="form-error">{errors.address}</div>}
-          </div>
-        </div>
-        <div className="form-actions">
-          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-          <button onClick={onClose} disabled={isSaving}>Close</button>
-        </div>
-      </div>
-    );
-  };
-
-  const BankDetailsForm = ({ onClose }) => {
-    const defaultBankDetails = {
-      bankName: '',
-      branch: '',
-      accountNo: '',
-      ifsc: '',
-    };
-    const [formData, setFormData] = useState(defaultBankDetails);
-    const [errors, setErrors] = useState({});
-    const [isSaving, setIsSaving] = useState(false);
-
-    useEffect(() => {
-      if (loggedInUser?.bankDetailsData) {
-        setFormData((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
-      }
-    }, []);
-
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setFormData((prev) => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-
-    const validateBankForm = () => {
-      const nextErrors = {};
-      if (!formData.bankName.trim()) nextErrors.bankName = 'Bank name is required.';
-      if (!formData.branch.trim()) nextErrors.branch = 'Branch is required.';
-      if (!/^\d{8,20}$/.test(formData.accountNo.trim())) nextErrors.accountNo = 'Enter a valid account number.';
-      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(formData.ifsc.trim())) nextErrors.ifsc = 'Enter a valid IFSC code.';
-      setErrors(nextErrors);
-      return Object.keys(nextErrors).length === 0;
-    };
-
-    const handleSave = async () => {
-      if (!validateBankForm()) return;
-      setIsSaving(true);
-      const ok = await submitUpdateApprovalRequest({
-        type: 'bank',
-        payload: formData,
-        localKey: 'bankDetailsData',
-        successMessage: 'Bank details update request submitted. Your request is pending with admin for approval.',
-      });
-      setIsSaving(false);
-      if (ok) {
-        logRecentActivity('Submitted bank details update request');
-        onClose();
-      }
-    };
-
-    return (
-      <div className="placeholder-container">
-        <h2>Bank Details</h2>
-        <div className="profile-form">
-          <span className="profile-label">Bank Name</span>
-          <div>
-            <input className={`form-input${errors.bankName ? ' form-input--error' : ''}`} name="bankName" type="text" value={formData.bankName} onChange={handleChange} />
-            {errors.bankName && <div className="form-error">{errors.bankName}</div>}
-          </div>
-          <span className="profile-label">Branch</span>
-          <div>
-            <input className={`form-input${errors.branch ? ' form-input--error' : ''}`} name="branch" type="text" value={formData.branch} onChange={handleChange} />
-            {errors.branch && <div className="form-error">{errors.branch}</div>}
-          </div>
-          <span className="profile-label">Account No</span>
-          <div>
-            <input className={`form-input${errors.accountNo ? ' form-input--error' : ''}`} name="accountNo" type="text" value={formData.accountNo} onChange={handleChange} />
-            {errors.accountNo && <div className="form-error">{errors.accountNo}</div>}
-          </div>
-          <span className="profile-label">IFSC Code</span>
-          <div>
-            <input className={`form-input${errors.ifsc ? ' form-input--error' : ''}`} name="ifsc" type="text" value={formData.ifsc} onChange={handleChange} />
-            {errors.ifsc && <div className="form-error">{errors.ifsc}</div>}
-          </div>
-        </div>
-        <div className="form-actions">
-          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-          <button onClick={onClose} disabled={isSaving}>Close</button>
-        </div>
-      </div>
-    );
-  };
 
   const HeaderUpdateForm = ({ onClose }) => {
     const [formData, setFormData] = useState({
@@ -1333,8 +1188,12 @@ function App() {
   };
 
   const handleLogoutWithConfirm = () => {
-    if (!window.confirm('Are you sure you want to log out from this account?')) return;
-    handleLogout();
+    openConfirmDialog({
+      title: 'Log Out',
+      message: 'Are you sure you want to log out from this account?',
+      confirmLabel: 'Log Out',
+      onConfirm: handleLogout,
+    });
   };
 
   const hideAllViews = () => {
@@ -1554,873 +1413,6 @@ function App() {
     setIsAdminLoginSubmitting(false);
   };
 
-  const RegisterForm = ({ onClose }) => {
-    const [form, setForm] = useState({
-      package: '',
-      dealerCode: '',
-      dealerName: '',
-      mobile: '',
-      email: '',
-      pin: '',
-      confirmPin: '',
-      utr: '',
-      date: '',
-    });
-    const [errors, setErrors] = useState({});
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const fixedPackages = PACKAGE_OPTIONS;
-    const onChange = (e) => {
-      const { name, value } = e.target;
-      setForm(prev => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-    const validateRegisterForm = () => {
-      const nextErrors = {};
-      if (!form.package) nextErrors.package = 'Please select a package.';
-      if (!form.dealerCode.trim()) nextErrors.dealerCode = 'Dealer code is required.';
-      if (!form.dealerName.trim()) nextErrors.dealerName = 'Dealer name is required.';
-      if (!/^\d{10}$/.test(form.mobile.trim())) nextErrors.mobile = 'Enter a valid 10-digit mobile number.';
-      if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) nextErrors.email = 'Enter a valid email address.';
-      if (!/^\d{4}$/.test(form.pin.trim())) nextErrors.pin = 'PIN must be exactly 4 digits.';
-      if (form.pin !== form.confirmPin) nextErrors.confirmPin = 'PIN aur Confirm PIN match nahi kar rahe.';
-      setErrors(nextErrors);
-      return Object.keys(nextErrors).length === 0;
-    };
-    const onSubmit = async () => {
-      if (!validateRegisterForm()) return;
-      setIsSubmitting(true);
-      const request = {
-        id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        package: form.package,
-        dealerCode: form.dealerCode,
-        dealerName: form.dealerName,
-        mobile: form.mobile,
-        email: form.email,
-        pin: form.pin,
-        utr: form.utr,
-        date: form.date,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-      let requestRef = null;
-      try {
-        const usersRef = collection(db, 'users');
-        const existingQuery = query(usersRef, where('dealerCode', '==', form.dealerCode.trim()));
-        const existing = await getDocs(existingQuery);
-        if (!existing.empty) {
-          pushToast('You already have a registered account. If you forgot your PIN, contact admin.', 'info');
-          setIsSubmitting(false);
-          return;
-        }
-
-        requestRef = await addDoc(collection(db, 'registrationRequests'), {
-          ...request,
-          createdAt: serverTimestamp(),
-        });
-
-        const validity = computeValidityDates(form.package);
-        await addDoc(usersRef, {
-          dealerCode: form.dealerCode.trim(),
-          dealerName: form.dealerName.trim(),
-          mobile: form.mobile.trim(),
-          email: form.email.trim(),
-          pin: form.pin.trim(),
-          package: form.package,
-          packageDays: validity.packageDays,
-          validFrom: validity.validFrom,
-          validTill: validity.validTill,
-          role: 'operator',
-          status: 'pending',
-          createdAt: serverTimestamp(),
-        });
-      } catch {
-        pushToast('Registration save to Firebase failed. Check Firebase config.', 'error');
-        setIsSubmitting(false);
-        return;
-      }
-      const requestToStore = { ...request, id: requestRef.id };
-      try {
-        const existing = localStorage.getItem('registrationRequests');
-        const arr = existing ? JSON.parse(existing) : [];
-        const next = Array.isArray(arr) ? arr : [];
-        next.push(requestToStore);
-        localStorage.setItem('registrationRequests', JSON.stringify(next));
-      } catch {
-        localStorage.setItem('registrationRequests', JSON.stringify([requestToStore]));
-      }
-      localStorage.setItem('registrationData', JSON.stringify(form));
-      pushToast('Registration request submitted!', 'success');
-      logRecentActivity('Submitted registration request', form.dealerCode);
-      setIsSubmitting(false);
-      onClose();
-    };
-    return (
-      <div className="placeholder-container auth-panel auth-panel--register">
-        <div className="auth-panel__hero">
-          <div>
-            <span className="auth-panel__eyebrow">New Account</span>
-            <h2 className="register-title">रजिस्टर करें</h2>
-            <p className="auth-panel__subtitle">
-              Apna distributor account create kijiye, package select kijiye, aur request admin approval ke liye bhejiye.
-            </p>
-          </div>
-          <div className="auth-panel__hero-badges">
-            <span className="auth-panel__badge">Fast approval flow</span>
-            <span className="auth-panel__badge">Secure 4-digit PIN</span>
-          </div>
-        </div>
-        <div className="auth-panel__content auth-panel__content--wide">
-          <div className="auth-section-card">
-            <div className="auth-section-card__header">
-              <h3>Account Details</h3>
-              <p>Basic registration details enter karke request submit kijiye.</p>
-            </div>
-            <div className="register-form register-form--enhanced">
-              <div>
-                <label className="auth-field-label">Package</label>
-                <select name="package" value={form.package} onChange={onChange} className={`form-input${errors.package ? ' form-input--error' : ''}`}>
-                  <option value="">पैकेज चुनें</option>
-                  {fixedPackages.map((opt, i) => (
-                    <option key={i} value={opt}>{`${opt} - ${PACKAGE_PRICING[opt] || '-'}`}</option>
-                  ))}
-                </select>
-                {errors.package && <div className="form-error">{errors.package}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Dealer Code</label>
-                <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
-                {errors.dealerCode && <div className="form-error">{errors.dealerCode}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Dealer Name</label>
-                <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
-                {errors.dealerName && <div className="form-error">{errors.dealerName}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Mobile Number</label>
-                <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
-                {errors.mobile && <div className="form-error">{errors.mobile}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Email ID</label>
-                <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
-                {errors.email && <div className="form-error">{errors.email}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">PIN</label>
-                <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
-                {errors.pin && <div className="form-error">{errors.pin}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Confirm PIN</label>
-                <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
-                {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">UTR Number</label>
-                <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
-              </div>
-              <div>
-                <label className="auth-field-label">Payment Date</label>
-                <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
-              </div>
-            </div>
-            <div className="upi-note upi-note--card">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
-            <div className="form-actions auth-panel__actions">
-              <button className="auth-primary-button" onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'रजिस्टर करें'}</button>
-              <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const UserProfile = ({ onClose, initialSection = 'overview' }) => {
-    const [data, setData] = useState(null);
-    useEffect(() => {
-      if (loggedInUser?.profileData) {
-        setData(loggedInUser.profileData);
-      } else {
-        setData(null);
-      }
-    }, [loggedInUser]);
-
-    const currentPackage = loggedInUser?.package || '-';
-    const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
-    const profilePhotoDataUrl = data?.photoDataUrl || '';
-    const summaryItems = [
-      { label: 'Distributor Name', value: loggedInUser?.profileData?.distributorName || '-' },
-      { label: 'Bank Details', value: loggedInUser?.bankDetailsData?.bankName ? 'Available' : 'Missing' },
-      { label: 'Header', value: loggedInUser?.hindiHeaderData?.distributorName ? 'Available' : 'Missing' },
-      { label: 'Rates', value: Array.isArray(loggedInUser?.ratesData) && loggedInUser.ratesData.length > 0 ? `${loggedInUser.ratesData.length} rows` : 'Missing' },
-    ];
-    const requestHistoryRows = Object.entries(loggedInUser?.pendingUpdates || {})
-      .map(([type, info]) => {
-        const normalizedType = normalizePendingTypeLabel(type);
-        const status = String(info?.status || loggedInUser?.approvalStatus?.[type] || '').toLowerCase() || 'draft';
-        const mostRecentAt = info?.approvedAt || info?.rejectedAt || info?.adminReplyAt || info?.requestedAt || '';
-        return {
-          type: normalizedType,
-          status,
-          requestedAt: info?.requestedAt || '',
-          lastUpdatedAt: mostRecentAt,
-          adminReply: String(info?.adminReply || '').trim(),
-        };
-      })
-      .sort((a, b) => new Date(b.lastUpdatedAt || b.requestedAt || 0).getTime() - new Date(a.lastUpdatedAt || a.requestedAt || 0).getTime());
-
-    useEffect(() => {
-      if (initialSection !== 'history') return;
-      const historyBlock = document.getElementById('user-request-history');
-      historyBlock?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, [initialSection]);
-
-    return (
-      <div className="placeholder-container">
-        <h2>User Profile</h2>
-        {profilePhotoDataUrl && (
-          <div className="user-profile-photo-wrap">
-            <img className="user-profile-photo" src={profilePhotoDataUrl} alt="User profile" />
-          </div>
-        )}
-        <div className="home-account-grid user-profile-summary-grid">
-          {summaryItems.map((item) => (
-            <div key={item.label} className="home-account-item">
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </div>
-          ))}
-        </div>
-        <div className="profile-form">
-          <span className="profile-label">Current Package</span>
-          <span>{currentPackage}</span>
-          <span className="profile-label">Package Validity</span>
-          <span>{validity}</span>
-          {data && (
-            <>
-              <span className="profile-label">Distributor Code</span>
-              <span>{data.distributorCode || '-'}</span>
-              <span className="profile-label">Distributor Name</span>
-              <span>{data.distributorName || '-'}</span>
-              <span className="profile-label">Contact</span>
-              <span>{data.contact || '-'}</span>
-              <span className="profile-label">Email</span>
-              <span>{data.email || '-'}</span>
-              <span className="profile-label">GST</span>
-              <span>{data.gst || '-'}</span>
-              <span className="profile-label">Address</span>
-              <span>{data.address || '-'}</span>
-            </>
-          )}
-        </div>
-        {!data && (
-          <div style={{ marginTop: '15px' }}>No additional profile details found. Please update your profile.</div>
-        )}
-        <div id="user-request-history" className="user-profile-history">
-          <h3>Request History</h3>
-          {requestHistoryRows.length === 0 ? (
-            <div className="user-profile-history-empty">No update requests submitted yet.</div>
-          ) : (
-            <div className="user-profile-history-list">
-              {requestHistoryRows.map((item) => (
-                <div key={`${item.type}-${item.requestedAt}-${item.lastUpdatedAt}`} className="user-profile-history-item">
-                  <strong>{item.type}</strong>
-                  <span>Status: {item.status || '-'}</span>
-                  <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
-                  <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
-                  {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="form-actions">
-          <button onClick={onClose}>Close</button>
-        </div>
-      </div>
-    );
-  };
-
-  const ContactForm = ({ onClose }) => {
-    const [form, setForm] = useState({
-      name: '',
-      mobile: '',
-      email: '',
-      feedback: '',
-    });
-    const [showAdminChatPopup, setShowAdminChatPopup] = useState(false);
-    const [activeReplyItem, setActiveReplyItem] = useState(null);
-    const [adminReplyMessage, setAdminReplyMessage] = useState('');
-    const [localFeedbackEntries, setLocalFeedbackEntries] = useState(() => readFeedbackDataFromStorage());
-
-    useEffect(() => {
-      setForm((prev) => ({
-        ...prev,
-        name: loggedInUser?.dealerName || '',
-        mobile: loggedInUser?.mobile || '',
-        email: loggedInUser?.email || '',
-      }));
-    }, []);
-
-    const storedFeedbackReplies = readFeedbackRepliesFromStorage();
-    const userReplies = useMemo(() => loggedInUser
-      ? localFeedbackEntries
-          .filter((item) => item.userId === loggedInUser?.id || item.dealerCode === loggedInUser?.dealerCode)
-          .map((item) => {
-            const idKey = item.id || item.clientFeedbackId || '';
-            return { ...item, reply: storedFeedbackReplies[idKey] || '', replyId: idKey };
-          })
-          .filter((item) => item.reply)
-      : [], [localFeedbackEntries, storedFeedbackReplies]);
-
-    useEffect(() => {
-      if (!showAdminChatPopup) return;
-      if (userReplies.length > 0) {
-        setActiveReplyItem((prev) => prev || userReplies[0]);
-      }
-    }, [showAdminChatPopup, userReplies]);
-
-    const handleOpenAdminChat = () => {
-      setShowAdminChatPopup(true);
-    };
-
-    const handleCloseAdminChat = () => {
-      setShowAdminChatPopup(false);
-      setAdminReplyMessage('');
-    };
-
-    const submitAdminChatReply = async () => {
-      if (!adminReplyMessage.trim()) {
-        alert('Please type your message before sending.');
-        return;
-      }
-      if (!loggedInUser && (!form.name.trim() || !form.mobile.trim())) {
-        alert('Name and mobile number are required to send a chat message.');
-        return;
-      }
-      const key = 'feedbackData';
-      const feedbackEntry = {
-        clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        userId: loggedInUser?.id || '',
-        name: loggedInUser?.dealerName || form.name.trim() || '',
-        mobile: loggedInUser?.mobile || form.mobile.trim() || '',
-        dealerCode: loggedInUser?.dealerCode || '',
-        dealerName: loggedInUser?.dealerName || form.name.trim() || '',
-        email: loggedInUser?.email || form.email.trim() || '',
-        text: adminReplyMessage.trim(),
-        parentFeedbackId: activeReplyItem?.id || activeReplyItem?.clientFeedbackId || '',
-        read: false,
-        createdAt: new Date().toISOString(),
-      };
-      let anySaved = false;
-      try {
-        await addDoc(collection(db, 'feedback'), {
-          ...feedbackEntry,
-          createdAt: serverTimestamp(),
-        });
-        anySaved = true;
-      } catch (e) { void e; }
-      if (loggedInUser?.id) {
-        try {
-          const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
-          updateUserInStore(
-            resolvedId,
-            (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
-            loggedInUser.dealerCode
-          );
-          anySaved = true;
-        } catch (e) { void e; }
-      }
-      try {
-        const existing = localStorage.getItem(key);
-        const arr = existing ? JSON.parse(existing) : [];
-        const next = Array.isArray(arr) ? arr : [];
-        next.push({ ...feedbackEntry, source: 'local' });
-        localStorage.setItem(key, JSON.stringify(next));
-        setLocalFeedbackEntries(next);
-        anySaved = true;
-      } catch (e) { void e; }
-
-      if (anySaved) {
-        alert('Your chat message has been sent. Admin will reply shortly.');
-        setAdminReplyMessage('');
-      } else {
-        alert('Unable to send your chat message. Please try again.');
-      }
-    };
-
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setForm((prev) => ({ ...prev, [name]: value }));
-    };
-
-    const submitFeedback = async () => {
-      if (!form.name.trim() || !form.mobile.trim() || !form.email.trim() || !form.feedback.trim()) {
-        alert('Name, Mobile, Email and Feedback are required.');
-        return;
-      }
-      const key = 'feedbackData';
-      const feedbackEntry = {
-        clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        userId: loggedInUser?.id || '',
-        name: form.name.trim(),
-        mobile: form.mobile.trim(),
-        dealerCode: loggedInUser?.dealerCode || '',
-        dealerName: loggedInUser?.dealerName || form.name.trim(),
-        email: form.email.trim(),
-        text: form.feedback.trim(),
-        read: false,
-        createdAt: new Date().toISOString(),
-      };
-      let anySaved = false;
-      try {
-        await addDoc(collection(db, 'feedback'), {
-          ...feedbackEntry,
-          createdAt: serverTimestamp(),
-        });
-        anySaved = true;
-      } catch (e) { void e; }
-      if (loggedInUser?.id) {
-        try {
-          const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
-          updateUserInStore(
-            resolvedId,
-            (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
-            loggedInUser.dealerCode
-          );
-          anySaved = true;
-        } catch (e) { void e; }
-      }
-      try {
-        const existing = localStorage.getItem(key);
-        const arr = existing ? JSON.parse(existing) : [];
-        const next = Array.isArray(arr) ? arr : [];
-        next.push({ ...feedbackEntry, source: 'local' });
-        localStorage.setItem(key, JSON.stringify(next));
-        anySaved = true;
-      } catch (error) {
-        void error;
-      }
-
-      if (anySaved) {
-        alert('Feedback submitted. Thank you!');
-        onClose();
-      } else {
-        alert('Unable to save feedback.');
-      }
-    };
-    return (
-      <div className="placeholder-container">
-        <h2>Contact Us</h2>
-        <div className="contact-us-links">
-          <a className="contact-us-link" href="mailto:deepak.youvi@gmail.com" aria-label="Email Us">
-            <span className="contact-us-icon">📧</span> Email Us
-          </a>
-          <a className="contact-us-link" href="https://wa.me/918789358400" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp Us">
-            <span className="contact-us-icon">💬</span> WhatsApp Us
-          </a>
-          {loggedInUser && (
-            <button type="button" className="contact-us-link" onClick={handleOpenAdminChat}>
-              <span className="contact-us-icon">💬</span> Open Admin Replies Chat
-            </button>
-          )}
-        </div>
-        {showAdminChatPopup && (
-          <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
-            <div className="admin-chat-popup">
-              <div className="admin-chat-popup-header">
-                <h3>Admin Chat</h3>
-                <button type="button" className="admin-chat-popup-close" onClick={handleCloseAdminChat}>Close</button>
-              </div>
-              <div className="admin-chat-popup-body">
-                <div className="admin-chat-sidebar">
-                  <h4>Conversations</h4>
-                  {userReplies.length === 0 ? (
-                    <p>No admin replies yet. Send a message below to start chat with admin.</p>
-                  ) : (
-                    <ul className="admin-chat-thread-list">
-                      {userReplies.map((replyItem) => (
-                        <li key={replyItem.id || replyItem.clientFeedbackId || `${replyItem.dealerCode}-${Math.random()}`}>
-                          <button
-                            type="button"
-                            className={`admin-chat-thread-button ${activeReplyItem?.replyId === replyItem.replyId ? 'active' : ''}`}
-                            onClick={() => setActiveReplyItem(replyItem)}
-                          >
-                            <strong>{replyItem.text?.slice(0, 40) || 'Your feedback'}</strong>
-                            <small>{(replyItem.reply || '').slice(0, 40)}</small>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div className="admin-chat-content">
-                  {activeReplyItem ? (
-                    <>
-                      <div className="admin-chat-conversation">
-                        <div className="admin-chat-message user-message">
-                          <strong>You:</strong>
-                          <p>{activeReplyItem.text || activeReplyItem.feedback || 'No message content.'}</p>
-                        </div>
-                        <div className="admin-chat-message admin-message">
-                          <strong>Admin:</strong>
-                          <p>{activeReplyItem.reply}</p>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="admin-chat-empty">
-                      <p>Select a reply thread or type a new message below to chat with admin.</p>
-                    </div>
-                  )}
-                  <textarea
-                    className="form-input"
-                    rows="4"
-                    value={adminReplyMessage}
-                    onChange={(e) => setAdminReplyMessage(e.target.value)}
-                    placeholder="Type your message to admin here..."
-                  />
-                  <div className="admin-chat-actions">
-                    <button type="button" className="form-button" onClick={submitAdminChatReply}>Send</button>
-                    <button type="button" className="form-button secondary" onClick={handleCloseAdminChat}>Close</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="profile-form">
-          <span className="profile-label">Name</span>
-          <input
-            className="form-input"
-            name="name"
-            type="text"
-            value={form.name}
-            onChange={handleChange}
-            placeholder="Enter your name"
-          />
-          <span className="profile-label">Mobile</span>
-          <input
-            className="form-input"
-            name="mobile"
-            type="text"
-            value={form.mobile}
-            onChange={handleChange}
-            placeholder="Enter mobile number"
-          />
-          <span className="profile-label">Email</span>
-          <input
-            className="form-input"
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={handleChange}
-            placeholder="Enter email"
-          />
-          <span className="profile-label">Feedback</span>
-          <textarea
-            className="form-textarea"
-            name="feedback"
-            rows="5"
-            value={form.feedback}
-            onChange={handleChange}
-            placeholder="Kindly provide your feedback or Suggestion here"
-          />
-        </div>
-        <div className="form-actions">
-          <button onClick={submitFeedback}>Submit</button>
-          <button onClick={onClose}>Close</button>
-        </div>
-      </div>
-    );
-  };
-
-  const DictionaryRequestForm = ({ mode = 'default', onClose }) => {
-    const [form, setForm] = useState({ englishWord: '', hindiTranslation: '' });
-    const [entries, setEntries] = useState([{ englishWord: '', hindiTranslation: '' }]);
-    const pendingCount = getPendingDictionaryRequestCount(loggedInUser);
-    const isDeliveryAreaMode = mode === 'deliveryArea';
-    const isDeliveryStaffMode = mode === 'deliveryStaff';
-    const title = isDeliveryAreaMode ? 'Delivery Area Update' : isDeliveryStaffMode ? 'Delivery Staff Update' : 'Dictionary';
-    const englishPlaceholder = isDeliveryAreaMode ? 'e.g. Khera Bazar' : isDeliveryStaffMode ? 'e.g. Rajesh' : 'e.g. Mr.';
-    const hindiPlaceholder = isDeliveryAreaMode ? 'उदा: खेरा बाजार' : isDeliveryStaffMode ? 'उदा: राजेश' : 'उदाहरण: श्री';
-    const [showApprovedList, setShowApprovedList] = useState(false);
-    const approvedItems = isDeliveryAreaMode ? deliveryAreaUpdates : isDeliveryStaffMode ? deliveryStaffUpdates : [];
-    const approvedListTitle = isDeliveryAreaMode ? 'Approved Delivery Areas' : 'Approved Delivery Staff';
-
-    const editApprovedItem = (item) => {
-      setEntries([{ englishWord: item.englishWord || item.english || '', hindiTranslation: item.hindiTranslation || item.hindi || '' }]);
-      setShowApprovedList(false);
-    };
-
-    useEffect(() => {
-      if (isDeliveryAreaMode || isDeliveryStaffMode) {
-        setEntries(Array.from({ length: 5 }, () => ({ englishWord: '', hindiTranslation: '' })));
-      } else {
-        setEntries([{ englishWord: '', hindiTranslation: '' }]);
-        setForm({ englishWord: '', hindiTranslation: '' });
-      }
-      setShowApprovedList(false);
-    }, [mode, isDeliveryAreaMode, isDeliveryStaffMode]);
-
-    const updateEntry = (index, field, value) => {
-      setEntries((prev) => prev.map((entry, entryIndex) => (
-        entryIndex === index
-          ? { ...entry, [field]: value }
-          : entry
-      )));
-    };
-
-    const addEntry = () => {
-      setEntries((prev) => [...prev, { englishWord: '', hindiTranslation: '' }]);
-    };
-
-    const removeEntry = (index) => {
-      setEntries((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
-    };
-
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setForm((prev) => ({ ...prev, [name]: value }));
-    };
-
-    const submitDictionaryRequest = async () => {
-      const type = isDeliveryAreaMode ? 'deliveryArea' : isDeliveryStaffMode ? 'deliveryStaff' : 'dictionary';
-      const successMessage = isDeliveryAreaMode
-        ? 'Delivery area update request submitted. Your request is pending with admin for approval.'
-        : isDeliveryStaffMode
-        ? 'Delivery staff update request submitted. Your request is pending with admin for approval.'
-        : 'Dictionary request submitted. Your request is pending with admin for approval.';
-
-      if (!loggedInUser?.id) {
-        alert('Please login first.');
-        return;
-      }
-
-      if (isDeliveryAreaMode || isDeliveryStaffMode) {
-        const normalizedEntries = entries.map((entry) => ({
-          englishWord: String(entry.englishWord || '').trim(),
-          hindiTranslation: String(entry.hindiTranslation || '').trim(),
-        })).filter((entry) => entry.englishWord || entry.hindiTranslation);
-
-        if (normalizedEntries.length === 0 || normalizedEntries.some((entry) => !entry.englishWord || !entry.hindiTranslation)) {
-          alert('Har row mein English aur Hindi dono values bharen.');
-          return;
-        }
-
-        const ok = await submitUpdateApprovalRequest({
-          type,
-          payload: normalizedEntries,
-          localKey: type === 'deliveryArea' ? 'deliveryAreaUpdates' : 'deliveryStaffUpdates',
-          successMessage,
-        });
-        if (ok) {
-          setEntries([{ englishWord: '', hindiTranslation: '' }]);
-          onClose();
-        }
-        return;
-      }
-
-      const englishWord = form.englishWord.trim();
-      const hindiTranslation = form.hindiTranslation.trim();
-      if (!englishWord || !hindiTranslation) {
-        alert('English word aur Hindi translation required hai.');
-        return;
-      }
-
-      const nextPendingCount = pendingCount + 1;
-      const clientRequestId = `dict-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const payload = {
-        clientRequestId,
-        englishWord,
-        hindiTranslation,
-        requestedBy: loggedInUser?.dealerCode || '',
-        requestedAt: new Date().toISOString(),
-      };
-
-      let approvalId = '';
-      let approvalSaved = false;
-      try {
-        try {
-          const approvalRef = await addDoc(collection(db, 'updateApprovals'), {
-            userId: loggedInUser.id,
-            dealerCode: loggedInUser.dealerCode || '',
-            dealerName: loggedInUser.dealerName || '',
-            type: 'dictionary',
-            payload,
-            status: 'pending',
-            requestedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          approvalId = approvalRef.id;
-          approvalSaved = true;
-        } catch (e) { void e; }
-
-        try {
-          await updateDoc(doc(db, 'users', loggedInUser.id), {
-            dictionaryPendingCount: nextPendingCount,
-            pendingDictionaryRequests: arrayUnion({
-              id: clientRequestId,
-              approvalId,
-              status: 'pending',
-              payload,
-              dealerCode: loggedInUser.dealerCode || '',
-              dealerName: loggedInUser.dealerName || '',
-              requestedAt: payload.requestedAt,
-            }),
-            updatedAt: serverTimestamp(),
-          });
-        } catch {
-          if (!approvalSaved) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
-        }
-
-        updateUserInStore(
-          loggedInUser.id,
-          (user) => ({
-            ...user,
-            dictionaryPendingCount: nextPendingCount,
-            pendingDictionaryRequests: [
-              ...(Array.isArray(user.pendingDictionaryRequests) ? user.pendingDictionaryRequests : []),
-              {
-                id: clientRequestId,
-                approvalId,
-                status: 'pending',
-                payload,
-                dealerCode: loggedInUser.dealerCode || '',
-                dealerName: loggedInUser.dealerName || '',
-                requestedAt: payload.requestedAt,
-              },
-            ],
-          }),
-          loggedInUser.dealerCode
-        );
-        setForm({ englishWord: '', hindiTranslation: '' });
-        alert('Dictionary request submitted. Your request is pending with admin for approval.');
-      } catch {
-        alert('Dictionary request submit failed. Check Firebase permissions.');
-      }
-    };
-
-    return (
-      <div className="placeholder-container dictionary-request-panel">
-        <h2>{title}</h2>
-        {mode === 'default' ? (
-          <div className="dictionary-pending-count">{pendingCount} request pending</div>
-        ) : null}
-        {(isDeliveryAreaMode || isDeliveryStaffMode) && (
-          <div className="dictionary-approved-toggle">
-            <button
-              type="button"
-              className="dictionary-approved-toggle-button"
-              onClick={() => setShowApprovedList((prev) => !prev)}
-            >
-              {approvedListTitle}
-            </button>
-            {showApprovedList && (
-              <div className="dictionary-approved-list">
-                {approvedItems.length > 0 ? (
-                  <table className="dictionary-approved-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{isDeliveryAreaMode ? 'Approved Area' : 'Approved Staff'}</th>
-                        <th>Hindi Translation</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {approvedItems.map((item, index) => (
-                        <tr key={`${mode}-approved-${index}`}>
-                          <td>{index + 1}</td>
-                          <td>{String(item.englishWord || item.english || '').trim() || '-'}</td>
-                          <td>{String(item.hindiTranslation || item.hindi || '').trim() || '-'}</td>
-                          <td className="dictionary-approved-actions">
-                            <button
-                              type="button"
-                              className="dictionary-approved-action"
-                              onClick={() => editApprovedItem(item)}
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="dictionary-approved-empty">No approved items found yet.</div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        <div className="profile-form">
-          {isDeliveryAreaMode || isDeliveryStaffMode ? (
-            <>
-              <div className="dictionary-multi-header">
-                <span>Sr.</span>
-                <span>{isDeliveryAreaMode ? 'English Area' : 'English Staff'}</span>
-                <span>Hindi Translation</span>
-                <span>Action</span>
-              </div>
-              {entries.map((entry, index) => (
-                <div key={index} className="dictionary-multi-entry">
-                  <span>{index + 1}</span>
-                  <input
-                    className="form-input"
-                    value={entry.englishWord}
-                    onChange={(e) => updateEntry(index, 'englishWord', e.target.value)}
-                    placeholder={englishPlaceholder}
-                  />
-                  <input
-                    className="form-input"
-                    value={entry.hindiTranslation}
-                    onChange={(e) => updateEntry(index, 'hindiTranslation', e.target.value)}
-                    placeholder={hindiPlaceholder}
-                  />
-                  <button
-                    type="button"
-                    className="dictionary-row-remove"
-                    onClick={() => removeEntry(index)}
-                    disabled={entries.length <= 1}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              <button type="button" className="dictionary-request-add-row" onClick={addEntry}>
-                Add Another Row
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="profile-label">English Word</span>
-              <input
-                className="form-input"
-                name="englishWord"
-                value={form.englishWord}
-                onChange={handleChange}
-                placeholder={englishPlaceholder}
-              />
-              <span className="profile-label">Hindi Translation</span>
-              <input
-                className="form-input"
-                name="hindiTranslation"
-                value={form.hindiTranslation}
-                onChange={handleChange}
-                placeholder={hindiPlaceholder}
-              />
-            </>
-          )}
-        </div>
-        <div className="form-actions">
-          <button onClick={submitDictionaryRequest}>Send Request</button>
-          <button onClick={onClose}>Close</button>
-        </div>
-      </div>
-    );
-  };
 
   const UpgradePlanForm = ({ onClose }) => {
     const hasPendingUpgrade = String(loggedInUser?.pendingUpdates?.planUpgrade?.status || '').toLowerCase() === 'pending'
@@ -2690,7 +1682,7 @@ function App() {
     const submitAdminReply = () => {
       if (!activeAdminFeedback) return;
       if (!adminReplyDraft.trim()) {
-        alert('Please enter a reply before saving.');
+        pushToast('Please enter a reply before saving.', 'error');
         return;
       }
       const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
@@ -2746,7 +1738,7 @@ function App() {
     const submitApprovalReply = async () => {
       if (!activeApprovalReply) return;
       if (!approvalReplyDraft.trim()) {
-        alert('Please enter a reply before saving.');
+        pushToast('Please enter a reply before saving.', 'error');
         return;
       }
       const replyMessage = approvalReplyDraft.trim();
@@ -3040,21 +2032,35 @@ function App() {
     };
 
     const saveCurrentAdminView = () => {
-      const label = window.prompt('Saved view name?');
-      if (!label) return;
-      const nextViews = [
-        {
-          id: `view-${Date.now()}`,
-          label,
-          activeAdminTab,
-          adminSearchTerm,
-          adminDateRange,
-          adminSubFilter,
+      openInputDialog({
+        title: 'Save Admin View',
+        message: 'Enter a label for this saved admin view.',
+        placeholder: 'e.g. Pending approvals today',
+        defaultValue: '',
+        confirmLabel: 'Save View',
+        onSubmit: (label) => {
+          const trimmedLabel = String(label || '').trim();
+          if (!trimmedLabel) {
+            pushToast('Saved view name is required.', 'error');
+            return false;
+          }
+          const nextViews = [
+            {
+              id: `view-${Date.now()}`,
+              label: trimmedLabel,
+              activeAdminTab,
+              adminSearchTerm,
+              adminDateRange,
+              adminSubFilter,
+            },
+            ...savedAdminViews,
+          ].slice(0, 20);
+          persistSavedAdminViews(nextViews);
+          logAdminActivity('saved_view_created', { label: trimmedLabel });
+          pushToast('Admin view saved.', 'success');
+          return true;
         },
-        ...savedAdminViews,
-      ].slice(0, 20);
-      persistSavedAdminViews(nextViews);
-      logAdminActivity('saved_view_created', { label });
+      });
     };
 
     const applySavedAdminView = (view) => {
@@ -3092,12 +2098,12 @@ function App() {
           const nextUsers = [...users, ...importedUsers];
           writeUsersLocal(nextUsers);
           logAdminActivity('bulk_users_imported', { count: importedUsers.length });
-          alert(`${importedUsers.length} users imported locally.`);
+          pushToast(`${importedUsers.length} users imported locally.`, 'success');
         };
         reader.readAsArrayBuffer(file);
       } catch (error) {
         void error;
-        alert('Import failed.');
+        pushToast('Import failed.', 'error');
       } finally {
         event.target.value = null;
       }
@@ -3228,7 +2234,7 @@ function App() {
           setRequests((prev) => prev.filter((r) => r.id !== id));
         }
       } catch {
-        alert('Approve failed. Firestore rules/permission check karo.');
+        pushToast('Approve failed. Firestore rules/permission check karo.', 'error');
       }
     };
 
@@ -3252,13 +2258,13 @@ function App() {
         await loadData();
         logAdminActivity('registration_rejected', { id, dealerCode: req?.dealerCode || '' });
       } catch {
-        alert('Reject failed. Check Firestore rules.');
+        pushToast('Reject failed. Check Firestore rules.', 'error');
       }
     };
 
     const addManualUser = async () => {
       if (!newUser.dealerCode || !newUser.dealerName || !newUser.pin || !newUser.package) {
-        alert('Dealer code, dealer name, package and PIN required.');
+        pushToast('Dealer code, dealer name, package and PIN required.', 'error');
         return;
       }
       if (!confirmAdminAction(`Create manual user ${newUser.dealerCode.trim()}?`)) return;
@@ -3284,7 +2290,7 @@ function App() {
         await loadData();
         logAdminActivity('manual_user_created', { dealerCode: newUser.dealerCode.trim() });
       } catch {
-        alert('Create user failed.');
+        pushToast('Create user failed.', 'error');
       }
     };
 
@@ -3311,7 +2317,7 @@ function App() {
         const nextUsers = users.map((u) => (isSameUserByToken(u, token) ? { ...u, status: nextStatus } : u));
         writeUsersLocal(nextUsers);
         logAdminActivity('user_status_changed_local', { dealerCode: target.dealerCode || '', status: nextStatus });
-        alert('Status updated locally.');
+        pushToast('Status updated locally.', 'info');
       }
     };
 
@@ -3335,7 +2341,7 @@ function App() {
         const nextUsers = users.filter((u) => !isSameUserByToken(u, token));
         writeUsersLocal(nextUsers);
         logAdminActivity('user_deleted_local', { dealerCode: target.dealerCode || '' });
-        alert('User deleted locally.');
+        pushToast('User deleted locally.', 'info');
       }
     };
 
@@ -3374,7 +2380,7 @@ function App() {
       if (!editingUserId) return;
       const targetUser = users.find((u) => isSameUserByToken(u, editingUserId));
       if (!targetUser) {
-        alert('User not found.');
+        pushToast('User not found.', 'error');
         return;
       }
       if (!confirmAdminAction(`Save changes for ${targetUser.dealerCode || 'this user'}?`)) return;
@@ -3433,7 +2439,7 @@ function App() {
         writeUsersLocal(nextUsers);
         setEditingUserId('');
         logAdminActivity('user_updated_local', { dealerCode: targetUser.dealerCode || '' });
-        alert('User updated locally. Firebase permission denied.');
+        pushToast('User updated locally. Firebase permission denied.', 'info');
       }
     };
 
@@ -3555,14 +2561,14 @@ function App() {
       };
       const targetField = fieldByType[approvalType];
       if (!targetField && approvalType !== 'planUpgrade' && approvalType !== 'dictionary') {
-        alert(`Unsupported approval type: ${approval.type || 'unknown'}`);
+        pushToast(`Unsupported approval type: ${approval.type || 'unknown'}`, 'error');
         return;
       }
       if (!options.skipConfirm && !confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return;
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (!targetUser?.id) {
-          alert('User not found for approval.');
+          pushToast('User not found for approval.', 'error');
           return;
         }
         const nextStatus = { ...(targetUser.approvalStatus || {}), [approvalType]: 'approved' };
@@ -3584,7 +2590,7 @@ function App() {
           const englishWord = String(dictionaryPayload?.englishWord || dictionaryPayload?.eng || '').trim();
           const hindiTranslation = String(dictionaryPayload?.hindiTranslation || dictionaryPayload?.hin || '').trim();
           if (!englishWord || !hindiTranslation) {
-            alert('Dictionary request needs both English word and Hindi translation.');
+            pushToast('Dictionary request needs both English word and Hindi translation.', 'error');
             return;
           }
           const nextDict = { ...translationDictionary, [englishWord]: hindiTranslation };
@@ -3624,7 +2630,7 @@ function App() {
         } else if (approvalType === 'planUpgrade') {
           const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
           if (!nextPackage) {
-            alert('Plan upgrade request has no selected package.');
+            pushToast('Plan upgrade request has no selected package.', 'error');
             return;
           }
           const validity = computeValidityDates(nextPackage);
@@ -3689,10 +2695,10 @@ function App() {
         await loadData();
         logAdminActivity('update_approved', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
         if (!options.skipAlert) {
-          alert('Request approved successfully.');
+          pushToast('Request approved successfully.', 'success');
         }
       } catch {
-        alert('Approval failed.');
+        pushToast('Approval failed.', 'error');
       }
     };
 
@@ -3758,7 +2764,7 @@ function App() {
         await loadData();
         logAdminActivity('update_rejected', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
       } catch {
-        alert('Reject failed.');
+        pushToast('Reject failed.', 'error');
       }
     };
 
@@ -3778,7 +2784,7 @@ function App() {
         localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
         logAdminActivity('feedback_read_toggle', { id: item.id, read: nextRead });
       } catch {
-        alert('Unable to update feedback status.');
+        pushToast('Unable to update feedback status.', 'error');
       }
     };
 
@@ -3820,7 +2826,7 @@ function App() {
         localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
         logAdminActivity('feedback_deleted', { id: item.id, dealerCode: item?.dealerCode || '' });
       } catch {
-        alert('Unable to delete feedback.');
+        pushToast('Unable to delete feedback.', 'error');
       }
     };
 
@@ -3983,7 +2989,7 @@ function App() {
     ].filter(Boolean);
     const exportRowsAsCsv = (filename, rows) => {
       if (!Array.isArray(rows) || rows.length === 0) {
-        alert('No data available to export.');
+        pushToast('No data available to export.', 'error');
         return;
       }
       const columns = Array.from(
@@ -4176,7 +3182,7 @@ function App() {
         await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} requests approved.`);
+      pushToast(`${targets.length} requests approved.`, 'success');
     };
     const bulkRejectUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -4186,7 +3192,7 @@ function App() {
         await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} requests rejected.`);
+      pushToast(`${targets.length} requests rejected.`, 'info');
     };
     const bulkApproveDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -4196,7 +3202,7 @@ function App() {
         await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} dictionary requests approved.`);
+      pushToast(`${targets.length} dictionary requests approved.`, 'success');
     };
     const bulkRejectDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -4206,7 +3212,7 @@ function App() {
         await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} dictionary requests rejected.`);
+      pushToast(`${targets.length} dictionary requests rejected.`, 'info');
     };
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
@@ -4227,7 +3233,7 @@ function App() {
         .filter((row) => row.englishWord && row.hindiTranslation);
 
       if (entries.length === 0) {
-        alert('No valid dictionary rows found. Use columns like English Word and Hindi Translation.');
+        pushToast('No valid dictionary rows found. Use columns like English Word and Hindi Translation.', 'error');
         return;
       }
 
@@ -4246,7 +3252,7 @@ function App() {
       })));
       setTranslationDictionary(nextDict);
       logAdminActivity('dictionary_bulk_imported', { count: entries.length, source });
-      alert(`${entries.length} dictionary words saved to Firebase.`);
+      pushToast(`${entries.length} dictionary words saved to Firebase.`, 'success');
     };
 
     const handleDictionaryImport = async (event) => {
@@ -4263,12 +3269,12 @@ function App() {
             const rows = XLSX.utils.sheet_to_json(worksheet);
             await saveDictionaryRowsToFirebase(rows, 'admin-excel');
           } catch {
-            alert('Dictionary import failed.');
+            pushToast('Dictionary import failed.', 'error');
           }
         };
         reader.readAsArrayBuffer(file);
       } catch {
-        alert('Dictionary import failed.');
+        pushToast('Dictionary import failed.', 'error');
       } finally {
         event.target.value = null;
       }
@@ -5144,6 +4150,7 @@ function App() {
                                 persistDeletedUsersBin,
                                 logAdminActivity,
                                 loadData,
+                                pushToast,
                               )}
                               disabled={!canMutateAdminData}
                             >Restore</button>
@@ -5155,6 +4162,7 @@ function App() {
                                 deletedUsersBin,
                                 persistDeletedUsersBin,
                                 logAdminActivity,
+                                pushToast,
                               )}
                               disabled={!canMutateAdminData}
                             >Permanently Delete</button>
@@ -5222,129 +4230,6 @@ function App() {
     );
   };
 
-  const HomeInfo = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayOrders = parsedData.filter((row) => {
-      const raw = row?.['Order Date'];
-      if (!raw) return false;
-      const dt = getNormalizedRowDate(raw);
-      if (!dt || Number.isNaN(dt.getTime())) return false;
-      dt.setHours(0, 0, 0, 0);
-      return dt.getTime() === today.getTime();
-    }).length;
-
-    const pendingEkycCount = parsedData.filter((row) => {
-      const status = String(row?.['EKYC Status'] || '').toLowerCase().trim();
-      return status === 'pending' || status === 'ekyc not done';
-    }).length;
-
-    const activePackageStatus = loggedInUser?.package
-      ? `${loggedInUser.package} (Valid till: ${formatDisplayDate(loggedInUser.validTill)})`
-      : 'N/A';
-
-    const homeQuickActions = [
-      'CSV / XLSX Pending Booking डेटा अपलोड करें',
-      'रिपोर्ट और फ़िल्टर से रिकॉर्ड जांचें',
-      'Cashmemo और Tax Invoice प्रिंट करें',
-      'Profile / Bank / Rate update request भेजें',
-    ];
-
-    const homeTodayFocus = [
-      `आज की bookings: ${todayOrders}`,
-      `eKYC pending records: ${pendingEkycCount}`,
-      'Pending SV और long pending bookings को प्राथमिकता दें',
-      'Online paid bookings और selected rows verify करें',
-    ];
-
-    const homeSupportPoints = [
-      'Data mismatch होने पर fresh file दोबारा upload करें',
-      'Print से पहले selected rows एक बार verify करें',
-      'Profile, bank और rate changes admin approval के बाद लागू होंगे',
-    ];
-
-    const homeAccountDetails = [
-      { label: 'Dealer Code', value: loggedInUser?.dealerCode || 'N/A' },
-      { label: 'Dealer Name', value: loggedInUser?.dealerName || 'N/A' },
-      { label: 'Active Package', value: activePackageStatus },
-      { label: 'Account Status', value: loggedInUser?.status || 'N/A' },
-    ];
-
-    return (
-      <div className="placeholder-container home-dashboard">
-        <h2 className="home-info-title">🏠 होम (Home Dashboard)</h2>
-
-        <div className="home-important-note">
-          {!isLoggedIn && <h2>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>}
-          <h3>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
-          <p>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
-          <p><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS -&gt; Order Fulfillment -&gt; Pending Booking</p>
-          <p>डाउनलोड की गई फ़ाइल को इस पोर्टल के Top Navbar में Upload करें, फिर “Show Data” पर क्लिक करके डेटा प्रदर्शित करें।</p>
-          <p><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</strong></p>
-        </div>
-
-        <div className="home-section">
-          <h3>स्वागत संदेश</h3>
-          <p>HPCL LPG Distributor Dashboard में आपका स्वागत है।</p>
-          <p>यहाँ से आप cDCMS से Pending Booking डेटा upload करके, उसे validate और review करके, Cashmemo और Tax Invoice print कर सकते हैं।</p>
-          <p>इसके साथ ही आप Profile, Bank, Rate, Delivery Area और Delivery Staff update requests भेज सकते हैं तथा approval workflow को ट्रैक कर सकते हैं।</p>
-        </div>
-
-        <div className="home-hero-grid">
-          <div className="home-section home-highlight-card">
-            <h3>काम करने का आसान क्रम</h3>
-            <ol className="home-steps-list">
-              <li>cDCMS से Pending Booking डेटा download करके upload करें</li>
-              <li>Filters और report cards से records verify करें</li>
-              <li>Cashmemo / Invoice generate और print करें</li>
-              <li>ज़रूरत होने पर profile, bank या rate update request भेजें</li>
-            </ol>
-          </div>
-
-          <div className="home-section home-highlight-card">
-            <h3>अकाउंट की झलक</h3>
-            <div className="home-account-grid">
-              {homeAccountDetails.map((item) => (
-                <div key={item.label} className="home-account-item">
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="home-layout">
-          <div className="home-section">
-            <h3>त्वरित कार्य</h3>
-            <ul>
-              {homeQuickActions.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="home-section">
-            <h3>आज का फोकस</h3>
-            <ul>
-              {homeTodayFocus.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="home-section">
-            <h3>सहायता और सुझाव</h3>
-            <ul>
-              {homeSupportPoints.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
-  };
   const AboutInfo = () => {
     const summaryCards = [
       {
@@ -5740,24 +4625,27 @@ function App() {
   };
 
   const handleSaveCurrentPreset = () => {
-    const presetName = window.prompt('Preset name', '');
-    if (!presetName || !presetName.trim()) {
-      pushToast('Preset save cancelled.', 'info');
-      return;
-    }
-    const trimmedName = presetName.trim();
-    const nextPreset = {
-      id: `preset-${Date.now()}`,
-      name: trimmedName,
-      updatedAt: new Date().toISOString(),
-      filters: buildCurrentFilterPreset(),
-    };
-    const dedupedPresets = savedFilterPresets.filter(
-      (preset) => String(preset?.name || '').trim().toLowerCase() !== trimmedName.toLowerCase(),
-    );
-    const nextPresets = [nextPreset, ...dedupedPresets].slice(0, 8);
-    persistFilterPresets(nextPresets);
-    pushToast(`Saved preset: ${trimmedName}`, 'success');
+    openInputDialog({
+      title: 'Save Filter Preset',
+      message: 'Preset ka naam dijiye. Ye current filters ko future use ke liye save karega.',
+      value: '',
+      submitLabel: 'Save Preset',
+      onSubmit: (presetName) => {
+        const trimmedName = presetName.trim();
+        const nextPreset = {
+          id: `preset-${Date.now()}`,
+          name: trimmedName,
+          updatedAt: new Date().toISOString(),
+          filters: buildCurrentFilterPreset(),
+        };
+        const dedupedPresets = savedFilterPresets.filter(
+          (preset) => String(preset?.name || '').trim().toLowerCase() !== trimmedName.toLowerCase(),
+        );
+        const nextPresets = [nextPreset, ...dedupedPresets].slice(0, 8);
+        persistFilterPresets(nextPresets);
+        pushToast(`Saved preset: ${trimmedName}`, 'success');
+      },
+    });
   };
 
   const handleDeletePreset = (presetId) => {
@@ -6629,6 +5517,7 @@ function App() {
       persistDeletedUsersBinFn,
       logAdminActivityFn,
       loadDataFn,
+      notifyFn,
     ) => {
       if (!item) return;
       const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
@@ -6669,7 +5558,9 @@ function App() {
         if (typeof writeUsersLocalFn === 'function') {
           writeUsersLocalFn(nextUsers);
         }
-        alert(`Restore failed in Firestore, restored locally for ${item.dealerCode || 'user'}.`);
+        if (typeof notifyFn === 'function') {
+          notifyFn(`Restore failed in Firestore, restored locally for ${item.dealerCode || 'user'}.`, 'info');
+        }
       } finally {
         if (typeof persistDeletedUsersBinFn === 'function') {
           persistDeletedUsersBinFn(nextBin);
@@ -6679,7 +5570,9 @@ function App() {
       if (typeof logAdminActivityFn === 'function') {
         logAdminActivityFn('user_restored', { dealerCode: item.dealerCode || '' });
       }
-      alert(`${item.dealerCode || 'User'} restored from recycle bin.`);
+      if (typeof notifyFn === 'function') {
+        notifyFn(`${item.dealerCode || 'User'} restored from recycle bin.`, 'success');
+      }
     };
 
     const permanentlyDeleteBinItem = async (
@@ -6688,6 +5581,7 @@ function App() {
       currentDeletedUsersBin,
       persistDeletedUsersBinFn,
       logAdminActivityFn,
+      notifyFn,
     ) => {
       if (!item) return;
       const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
@@ -6711,7 +5605,9 @@ function App() {
       if (typeof logAdminActivityFn === 'function') {
         logAdminActivityFn('user_deleted_permanently', { dealerCode: item.dealerCode || '' });
       }
-      alert(`${item.dealerCode || 'Deleted user'} removed permanently.`);
+      if (typeof notifyFn === 'function') {
+        notifyFn(`${item.dealerCode || 'Deleted user'} removed permanently.`, 'info');
+      }
     };
 
   const matchesReportFilter = (row, reportKey) => {
@@ -7620,7 +6516,22 @@ function App() {
   const runUserMenuItem = (item) => () => {
     closeUserMenu(false);
     if (item?.viewKey && item.viewKey === currentUserView && !item?.allowSameView) return;
-    if (item?.requiresConfirm && !window.confirm(item.confirmMessage || `Open ${item.label}?`)) return;
+    if (item?.requiresConfirm) {
+      openConfirmDialog({
+        title: item.label || 'Please Confirm',
+        message: item.confirmMessage || `Open ${item.label}?`,
+        confirmLabel: 'Open',
+        onConfirm: () => {
+          if (typeof item?.beforeOpen === 'function') {
+            item.beforeOpen();
+          }
+          if (typeof item?.onClick === 'function') {
+            item.onClick();
+          }
+        },
+      });
+      return;
+    }
     if (typeof item?.beforeOpen === 'function') {
       item.beforeOpen();
     }
@@ -7725,6 +6636,102 @@ function App() {
                 viewKey: 'dataUpload',
                 allowSameView: true,
               };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayOrders = parsedData.filter((row) => {
+    const raw = row?.['Order Date'];
+    if (!raw) return false;
+    const dt = getNormalizedRowDate(raw);
+    if (!dt || Number.isNaN(dt.getTime())) return false;
+    dt.setHours(0, 0, 0, 0);
+    return dt.getTime() === today.getTime();
+  }).length;
+  const pendingEkycCount = parsedData.filter((row) => isEkycNotDoneStatus(row?.['EKYC Status'])).length;
+  const activePackageStatus = loggedInUser?.package
+    ? `${formatPackageNameForNavbar(loggedInUser.package)} (Valid till: ${formatDisplayDate(loggedInUser.validTill)})`
+    : 'No active package';
+  const homeQuickActions = [
+    'cDCMS से Pending Booking डेटा download करके upload करें',
+    'Filters और report cards से records verify करें',
+    'Cashmemo / Invoice generate और print करें',
+    'ज़रूरत होने पर profile, bank या rate update request भेजें',
+  ];
+  const homeTodayFocus = [
+    `आज की bookings: ${todayOrders}`,
+    `eKYC pending records: ${pendingEkycCount}`,
+    hasWorkingData ? `${filteredData.length} rows current filters में visible हैं` : 'Fresh upload karke working data ready kijiye',
+    selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} row print/export ke liye selected हैं` : 'Online paid ya priority rows select kijiye',
+  ];
+  const homeSupportPoints = [
+    'Data mismatch होने पर fresh file दोबारा upload करें',
+    'Print से पहले selected rows एक बार verify करें',
+    'Profile, bank और rate changes admin approval के बाद लागू होंगे',
+  ];
+  const homeAccountDetails = [
+    { label: 'Dealer Code', value: loggedInUser?.dealerCode || 'N/A' },
+    { label: 'Dealer Name', value: loggedInUser?.dealerName || 'N/A' },
+    { label: 'Active Package', value: activePackageStatus },
+    { label: 'Account Status', value: loggedInUser?.status || 'N/A' },
+  ];
+  const dashboardActionCenterCards = [
+    {
+      key: 'continue',
+      label: 'Recommended',
+      title: recommendedAction?.actionLabel || 'Continue',
+      description: recommendedAction?.description || 'Agla best step yahan se continue kijiye.',
+      cta: recommendedAction?.label || 'Open next step',
+      badge: recommendedAction?.label,
+      tone: 'primary',
+      action: recommendedAction || primaryQuickAction,
+      disabled: recommendedAction?.disabled,
+    },
+    {
+      key: 'profile',
+      label: 'Profile Setup',
+      title: `${profileCompletionPercent}% complete`,
+      description: incompleteProfileAreas.length > 0
+        ? `${incompleteProfileAreas.map((item) => item.label).join(', ')} abhi pending hai.`
+        : 'Profile, bank, header, aur rates sab ready hain.',
+      cta: incompleteProfileActionItems[0]?.label || 'View Profile',
+      badge: profileCompletenessLabel,
+      tone: incompleteProfileAreas.length > 0 ? 'warning' : 'success',
+      action: incompleteProfileActionItems[0] || primaryQuickAction,
+      disabled: incompleteProfileActionItems[0]?.disabled,
+    },
+    {
+      key: 'updates',
+      label: 'Updates Inbox',
+      title: updateInboxCount > 0 ? `${updateInboxCount} update waiting` : 'No pending updates',
+      description: contactReplyCount > 0
+        ? `${contactReplyCount} unread admin repl${contactReplyCount > 1 ? 'ies' : 'y'} available.`
+        : pendingRequestCount > 0
+          ? `${pendingRequestCount} request approval mein hai.`
+          : 'Support replies aur approval history yahan se track kijiye.',
+      cta: contactReplyCount > 0 ? 'Open Support' : 'Open History',
+      badge: updateInboxCount > 0 ? String(updateInboxCount) : '',
+      tone: updateInboxCount > 0 ? 'info' : 'default',
+      action: contactReplyCount > 0 ? secondaryQuickAction : { label: 'Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true },
+    },
+    {
+      key: 'work',
+      label: 'Work Status',
+      title: hasWorkingData ? `${parsedData.length} rows ready` : 'No working data',
+      description: hasWorkingData
+        ? `${uploadMetadata?.fileName || 'Latest file'} loaded hai. ${selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} rows selected hain.` : 'Ab filters ya selection continue kijiye.'}`
+        : 'Pending Booking file upload karke data flow start kijiye.',
+      cta: hasWorkingData ? (selectedCustomerIds.length > 0 ? 'Open Data View' : 'Filter Data') : 'Upload Data',
+      badge: uploadMetadata?.fileName ? 'Uploaded' : '',
+      tone: hasWorkingData ? 'success' : 'default',
+      action: hasWorkingData
+        ? { label: 'Open Data View', onClick: handleShowData, viewKey: 'dataUpload', allowSameView: true }
+        : { label: 'Upload Data', onClick: handleReUploadClick, viewKey: 'dataUpload' },
+      disabled: isPlanExpired && !hasWorkingData,
+    },
+  ];
+  const handleDashboardQuickAction = (action) => {
+    if (!action) return;
+    runUserMenuItem(action)();
+  };
   const handleOpenRenewalHistory = () => {
     setUserProfileInitialSection('history');
     handleRequestHistoryOpen();
@@ -7992,8 +6999,41 @@ function App() {
       {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
-          {showDictionaryForm && <DictionaryRequestForm mode={dictionaryFormMode} onClose={navigateToHome} />}
-          {showHomeInfo && <HomeInfo />}
+          {showDictionaryForm && (
+            <Suspense fallback={<div className="placeholder-container">Loading request form...</div>}>
+              <LazyDictionaryRequestPanel
+                loggedInUser={loggedInUser}
+                pushToast={pushToast}
+                getPendingDictionaryRequestCount={getPendingDictionaryRequestCount}
+                deliveryAreaUpdates={deliveryAreaUpdates}
+                deliveryStaffUpdates={deliveryStaffUpdates}
+                submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+                updateUserInStore={updateUserInStore}
+                mode={dictionaryFormMode}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
+          {showHomeInfo && (
+            <Suspense fallback={<div className="placeholder-container">Loading dashboard...</div>}>
+              <LazyHomeDashboard
+                isLoggedIn={isLoggedIn}
+                todayOrders={todayOrders}
+                pendingEkycCount={pendingEkycCount}
+                activePackageStatus={activePackageStatus}
+                homeQuickActions={homeQuickActions}
+                homeTodayFocus={homeTodayFocus}
+                homeSupportPoints={homeSupportPoints}
+                homeAccountDetails={homeAccountDetails}
+                actionCenterCards={dashboardActionCenterCards}
+                recentActivities={recentActivities.map((item) => ({
+                  ...item,
+                  createdAt: formatDisplayDateTime(item.createdAt),
+                }))}
+                onQuickAction={handleDashboardQuickAction}
+              />
+            </Suspense>
+          )}
           {showAboutInfo && <AboutInfo />}
           {showInvoicePage && (
             <Suspense fallback={<div className="placeholder-container">Loading invoice...</div>}>
@@ -8004,137 +7044,46 @@ function App() {
           {showHeaderUpdate && <HeaderUpdateForm onClose={navigateToHome} />}
           {showAdminPanel && <AdminPanel onClose={navigateToHome} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
-            <div className="placeholder-container auth-panel auth-panel--login">
-              <div className="auth-panel__hero">
-                <div>
-                  <span className="auth-panel__eyebrow">Secure Access</span>
-                  <h2>Admin Login</h2>
-                  <p className="auth-panel__subtitle">
-                    Admin dashboard access ke liye approved email aur password use kijiye.
-                  </p>
-                </div>
-                <div className="auth-panel__hero-badges">
-                  <span className="auth-panel__badge">Protected access</span>
-                  <span className="auth-panel__badge">Firebase auth</span>
-                </div>
-              </div>
-              <div className="auth-panel__content">
-                <div className="auth-section-card">
-                  <div className="auth-section-card__header">
-                    <h3>Welcome Back</h3>
-                    <p>Sign in to manage users, approvals, and support replies.</p>
-                  </div>
-                  <form
-                    className="register-form register-form--enhanced"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleAdminLoginSubmit();
-                    }}
-                  >
-                    <div>
-                      <label className="auth-field-label">Admin Email</label>
-                      <input
-                        className="form-input"
-                        placeholder="Admin Email"
-                        autoComplete="username"
-                        value={adminLoginId}
-                        onChange={(e) => setAdminLoginId(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="auth-field-label">Password</label>
-                      <input
-                        className="form-input"
-                        type="password"
-                        placeholder="Password"
-                        autoComplete="current-password"
-                        value={adminPassword}
-                        onChange={(e) => setAdminPassword(e.target.value)}
-                      />
-                    </div>
-                  </form>
-                  <div className="form-actions auth-panel__actions">
-                    <button className="auth-primary-button" onClick={handleAdminLoginSubmit} type="button" disabled={isAdminLoginSubmitting}>{isAdminLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-                    <button className="auth-secondary-button" onClick={navigateToHome} disabled={isAdminLoginSubmitting}>Close</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <Suspense fallback={<div className="placeholder-container">Loading admin login...</div>}>
+              <LazyAdminLoginPanel
+                adminLoginId={adminLoginId}
+                setAdminLoginId={setAdminLoginId}
+                adminPassword={adminPassword}
+                setAdminPassword={setAdminPassword}
+                isAdminLoginSubmitting={isAdminLoginSubmitting}
+                handleAdminLoginSubmit={handleAdminLoginSubmit}
+                navigateToHome={navigateToHome}
+              />
+            </Suspense>
           )}
           {showUserLogin && (
-            <div className="placeholder-container auth-panel auth-panel--login">
-              <div className="auth-panel__hero">
-                <div>
-                  <span className="auth-panel__eyebrow">Dealer Access</span>
-                  <h2>User Login</h2>
-                  <p className="auth-panel__subtitle">
-                    Dealer Code aur 4-digit PIN se secure login kijiye aur apna workflow continue kijiye.
-                  </p>
-                </div>
-                <div className="auth-panel__hero-badges">
-                  <span className="auth-panel__badge">Fast sign in</span>
-                  <span className="auth-panel__badge">Support ready</span>
-                </div>
-              </div>
-              <div className="auth-panel__content">
-                <div className="auth-section-card">
-                  <div className="auth-section-card__header">
-                    <h3>Welcome Back</h3>
-                    <p className="login-helper-text">
-                      Agar PIN yaad nahi hai, to Support & Replies ya admin contact use karke help le sakte hain.
-                    </p>
-                  </div>
-                  <form
-                    className="register-form register-form--enhanced"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleUserLoginSubmit();
-                    }}
-                  >
-                    <div>
-                      <label className="auth-field-label">Dealer Code</label>
-                      <input
-                        className="form-input"
-                        placeholder="Dealer Code"
-                        autoComplete="username"
-                        value={userDealerCode}
-                        onChange={(e) => setUserDealerCode(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="auth-field-label">PIN</label>
-                      <input
-                        className="form-input"
-                        type={userPinVisible ? 'text' : 'password'}
-                        placeholder="PIN"
-                        autoComplete="current-password"
-                        value={userPin}
-                        onChange={(e) => setUserPin(e.target.value)}
-                      />
-                    </div>
-                    <div className="login-help-row">
-                      <label className="login-help-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={userPinVisible}
-                          onChange={(e) => setUserPinVisible(e.target.checked)}
-                        />
-                        <span>Show PIN</span>
-                      </label>
-                      <button type="button" className="login-help-link" onClick={handleContactOpen}>
-                        Forgot PIN / Contact Admin
-                      </button>
-                    </div>
-                  </form>
-                  <div className="form-actions auth-panel__actions">
-                    <button className="auth-primary-button" onClick={handleUserLoginSubmit} type="button" disabled={isUserLoginSubmitting}>{isUserLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-                    <button className="auth-secondary-button" onClick={navigateToHome} disabled={isUserLoginSubmitting}>Close</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <Suspense fallback={<div className="placeholder-container">Loading login...</div>}>
+              <LazyUserLoginPanel
+                userDealerCode={userDealerCode}
+                setUserDealerCode={setUserDealerCode}
+                userPinVisible={userPinVisible}
+                setUserPinVisible={setUserPinVisible}
+                userPin={userPin}
+                setUserPin={setUserPin}
+                isUserLoginSubmitting={isUserLoginSubmitting}
+                handleUserLoginSubmit={handleUserLoginSubmit}
+                navigateToHome={navigateToHome}
+                handleContactOpen={handleContactOpen}
+              />
+            </Suspense>
           )}
-          {showProfileUpdate && <ProfileUpdateForm onClose={navigateToHome} />}
+          {showProfileUpdate && (
+            <Suspense fallback={<div className="placeholder-container">Loading profile update...</div>}>
+              <LazyProfileUpdatePanel
+                loggedInUser={loggedInUser}
+                pushToast={pushToast}
+                readImageFileAsDataUrl={readImageFileAsDataUrl}
+                submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+                logRecentActivity={logRecentActivity}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
           {showRateUpdate && (
             <RateUpdatePage
               onClose={navigateToHome}
@@ -8142,10 +7091,53 @@ function App() {
               onSaveRates={handleSaveRatesForUser}
             />
           )}
-          {showBankDetails && <BankDetailsForm onClose={navigateToHome} />}
-          {showRegisterForm && <RegisterForm onClose={navigateToHome} />}
-          {showUserProfile && <UserProfile onClose={navigateToHome} initialSection={userProfileInitialSection} />}
-          {showContactForm && <ContactForm onClose={navigateToHome} />}
+          {showBankDetails && (
+            <Suspense fallback={<div className="placeholder-container">Loading bank details...</div>}>
+              <LazyBankDetailsPanel
+                loggedInUser={loggedInUser}
+                submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+                logRecentActivity={logRecentActivity}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
+          {showRegisterForm && (
+            <Suspense fallback={<div className="placeholder-container">Loading registration...</div>}>
+              <LazyRegisterPanel
+                packageOptions={PACKAGE_OPTIONS}
+                packagePricing={PACKAGE_PRICING}
+                paymentUpiId={PAYMENT_UPI_ID}
+                computeValidityDates={computeValidityDates}
+                pushToast={pushToast}
+                logRecentActivity={logRecentActivity}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
+          {showUserProfile && (
+            <Suspense fallback={<div className="placeholder-container">Loading profile...</div>}>
+              <LazyUserProfilePanel
+                loggedInUser={loggedInUser}
+                formatDisplayDate={formatDisplayDate}
+                initialSection={userProfileInitialSection}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
+          {showContactForm && (
+            <Suspense fallback={<div className="placeholder-container">Loading support...</div>}>
+              <LazyContactSupportPanel
+                loggedInUser={loggedInUser}
+                pushToast={pushToast}
+                readFeedbackDataFromStorage={readFeedbackDataFromStorage}
+                readFeedbackRepliesFromStorage={readFeedbackRepliesFromStorage}
+                updateUserInFirebase={updateUserInFirebase}
+                updateUserInStore={updateUserInStore}
+                formatDisplayDateTime={formatDisplayDateTime}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
         </div>
       )}
       
@@ -8176,447 +7168,118 @@ function App() {
 
 
       {!isPlanExpired && parsedData.length > 0 && showParsedData && (
-        <div className="filters-shell">
-
-          {showBookingReport && (
-            <div className="booking-report-panel">
-              <div className="booking-report-header">
-                <div>
-                  <h3>Pending Booking Report</h3>
-                </div>
-                <div className="booking-report-actions">
-                  <span className="booking-report-badge">Records: {filteredData.length}</span>
-                  {activeReportFilter && (
-                    <button className="booking-report-clear" onClick={() => setActiveReportFilter('')}>
-                      Clear Report Filter
-                    </button>
-                  )}
-                  <button className="booking-report-clear" onClick={() => setShowBookingReport(false)}>
-                    Hide Report
-                  </button>
-                </div>
-              </div>
-
-              <div className="booking-report-grid">
-                {reportCards.map((card) => (
-                  <button
-                    key={card.key}
-                    type="button"
-                    className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''}`}
-                    onClick={() => setActiveReportFilter((prev) => (prev === card.key || card.key === 'totalPendingBooking' ? '' : card.key))}
-                  >
-                    <span className="booking-report-label">{card.label}</span>
-                    <strong>{card.value}</strong>
-                  </button>
-                ))}
-              </div>
-
-            </div>
-          )}
-
-
-
-
-
-          <div className="filters-overview">
-            {uploadInProgress && (
-              <div className="inline-status-banner inline-status-banner--info">
-                <span className="inline-status-banner__spinner" />
-                <span>Uploading and preparing your file...</span>
-              </div>
-            )}
-            <div className="upload-journey-card">
-              <div className="upload-journey-card__header">
-                <div>
-                  <p className="upload-journey-card__eyebrow">Next Steps</p>
-                  <h4>Upload se print tak ka fast flow</h4>
-                </div>
-                <span className="upload-journey-card__badge">
-                  {selectedCustomerIds.length > 0 ? 'Ready to print' : hasActiveDataFilters ? 'Selection next' : 'Filters next'}
-                </span>
-              </div>
-              <div className="upload-journey-card__steps">
-                <div className={`upload-journey-step ${parsedData.length > 0 ? 'is-complete' : ''}`}>
-                  <strong>1. Upload done</strong>
-                  <span>{uploadMetadata?.fileName ? `${uploadMetadata.fileName} loaded` : `${parsedData.length} rows ready`}</span>
-                </div>
-                <div className={`upload-journey-step ${hasActiveDataFilters ? 'is-complete' : ''}`}>
-                  <strong>2. Filter lagao</strong>
-                  <span>{hasActiveDataFilters ? `${filteredData.length} matching rows found` : 'Area, eKYC, payment ya date filters apply kijiye'}</span>
-                </div>
-                <div className={`upload-journey-step ${selectedCustomerIds.length > 0 ? 'is-complete' : ''}`}>
-                  <strong>3. Select & Print</strong>
-                  <span>{selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} row selected` : 'Rows select karke cashmemo ya export run kijiye'}</span>
-                </div>
-              </div>
-            </div>
-            {/* {uploadMetadata && (
-              <div className="upload-info-card">
-                <div>
-                  <p className="upload-info-card__eyebrow">Last Uploaded File</p>
-                  <h4>{uploadMetadata.fileName}</h4>
-                </div>
-                <div className="upload-info-card__stats">
-                  <span>{uploadMetadata.totalRows} rows</span>
-                  <span>{uploadMetadata.validConsumerRows} valid consumers</span>
-                  <span>{formatDisplayDateTime(uploadMetadata.uploadedAt)}</span>
-                </div>
-              </div>
-            )} */}
-            {activeFilterChips.length > 0 && (
-              <div className="filter-chip-row">
-                {activeFilterChips.map((chip) => (
-                  <button key={chip.key} type="button" className="filter-chip" onClick={chip.clear}>
-                    <span>{chip.label}</span>
-                    <strong>×</strong>
-                  </button>
-                ))}
-                <button type="button" className="filter-chip filter-chip--clear" onClick={handleResetAllFilters}>
-                  Clear All
-                </button>
-              </div>
-            )}
-            <div className="preset-toolbar">
-              <div className="preset-toolbar__actions">
-                <button type="button" className="filter-action filter-action--secondary" onClick={handleSaveCurrentPreset}>
-                  Save Current Preset
-                </button>
-                <button type="button" className="filter-action filter-action--secondary" onClick={() => setShowAdvancedFilters((prev) => !prev)}>
-                  {showAdvancedFilters ? 'Hide Advanced Filters' : 'Show Advanced Filters'}
-                </button>
-              </div>
-              {savedFilterPresets.length > 0 && (
-                <div className="preset-chip-row">
-                  {savedFilterPresets.map((preset) => (
-                    <div key={preset.id} className="preset-chip">
-                      <button type="button" onClick={() => applyFilterPreset({ ...preset.filters, name: preset.name })}>
-                        {preset.name}
-                      </button>
-                      <button type="button" className="preset-chip__delete" onClick={() => handleDeletePreset(preset.id)}>
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            {selectedCustomerIds.length > 0 && (
-              <div className="bulk-action-bar">
-                <strong>{selectedCustomerIds.length} selected</strong>
-                <span>{selectedFilteredRows.length} visible in current filters</span>
-                <div className="bulk-action-bar__actions">
-                  <button type="button" className="table-action table-action--blue" onClick={handlePrintCashmemo}>
-                    Print Selected
-                  </button>
-                  <button
-                    type="button"
-                    className="table-action table-action--green"
-                    onClick={exportSelectedBusinessRows}
-                  >
-                    Export Selected Business
-                  </button>
-                  <button
-                    type="button"
-                    className="filter-action filter-action--secondary"
-                    onClick={() => exportRowsToCsvFile(buildExportFilename('selected-visible'), selectedFilteredRows, visibleHeaders)}
-                  >
-                    Export Selected Visible
-                  </button>
-                  <button
-                    type="button"
-                    className="filter-action filter-action--secondary"
-                    onClick={() => {
-                      clearSelection();
-                      pushToast('Selection cleared.', 'info');
-                    }}
-                  >
-                    Clear Selection
-                  </button>
-                </div>
-              </div>
-            )}
-            {/* {recentActivities.length > 0 && (
-              <div className="recent-activity-panel">
-                <div className="recent-activity-panel__header">
-                  <h4>Recent Activity</h4>
-                  <span>{recentActivities.length} recent actions</span>
-                </div>
-                <div className="recent-activity-list">
-                  {recentActivities.map((item) => (
-                    <div key={item.id} className="recent-activity-item">
-                      <strong>{item.message}</strong>
-                      <span>{formatDisplayDateTime(item.createdAt)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )} */}
-          </div>
-
-          <div className="filters-container filters-container--basic">
-            <select className="filter-select" value={activeReportFilter || 'All'} onChange={(e) => setActiveReportFilter(e.target.value === 'All' ? '' : e.target.value)}>
-              <option value="All">All Report Filters</option>
-              {reportFilterOptions.map((item) => (
-                <option key={item.key} value={item.key}>{item.label}</option>
-              ))}
-            </select>
-            <select className="filter-select" value={eKycFilter} onChange={(e) => setEKycFilter(e.target.value)}>
-              <option value="All">All eKYC</option>
-              {availableEkycOptions.map((status, index) => (
-                <option key={index} value={status}>{status}</option>
-              ))}
-            </select>
-            <select className="filter-select" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
-              <option value="All">All Areas</option>
-              {availableAreaOptions.map((area, index) => (
-                <option key={index} value={area}>{area}</option>
-              ))}
-            </select>
-            <select className="filter-select" value={onlineRefillPaymentStatusFilter} onChange={(e) => setOnlineRefillPaymentStatusFilter(e.target.value)}>
-              <option value="All">All Online Refill Payment Status</option>
-              {availableOnlinePaymentOptions.map((status, index) => (
-                <option key={index} value={status}>{status}</option>
-              ))}
-            </select>
-            <select className="filter-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
-              <option value="All">All Order Type</option>
-              {availableOrderTypeOptions.map((type, index) => (
-                <option key={index} value={type}>{type}</option>
-              ))}
-            </select>
-            <div className="filter-date-group">
-              <span className="filter-date-label">Order Date</span>
-              <input className="filter-date-input" type="date" value={orderDateStart} onChange={(e) => setOrderDateStart(e.target.value)} />
-              <span className="filter-date-divider">to</span>
-              <input className="filter-date-input" type="date" value={orderDateEnd} onChange={(e) => setOrderDateEnd(e.target.value)} />
-            </div>
-          </div>
-
-          {showAdvancedFilters && (
-            <div className="filters-container">
-              <select className="filter-select" value={natureFilter} onChange={(e) => setNatureFilter(e.target.value)}>
-                <option value="All">All Nature</option>
-                {availableNatureOptions.map((nature, index) => (
-                  <option key={index} value={nature}>{nature}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={mobileStatusFilter} onChange={(e) => setMobileStatusFilter(e.target.value)}>
-                <option value="All">All Mobile Status</option>
-                {availableMobileStatusOptions.map((status, index) => (
-                  <option key={index} value={status}>{status}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={consumerStatusFilter} onChange={(e) => setConsumerStatusFilter(e.target.value)}>
-                <option value="All">All Consumer Status</option>
-                {availableConsumerStatusOptions.map((status, index) => (
-                  <option key={index} value={status}>{status}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={connectionTypeFilter} onChange={(e) => setConnectionTypeFilter(e.target.value)}>
-                <option value="All">All Connection Types</option>
-                {availableConnectionTypeOptions.map((type, index) => (
-                  <option key={index} value={type}>{type}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)}>
-                <option value="All">All Order Status</option>
-                {availableOrderStatusOptions.map((status, index) => (
-                  <option key={index} value={status}>{status}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={orderSourceFilter} onChange={(e) => setOrderSourceFilter(e.target.value)}>
-                <option value="All">All Order Source</option>
-                {availableOrderSourceOptions.map((source, index) => (
-                  <option key={index} value={source}>{source}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={cashMemoStatusFilter} onChange={(e) => setCashMemoStatusFilter(e.target.value)}>
-                <option value="All">All Cash Memo Status</option>
-                {availableCashMemoStatusOptions.map((status, index) => (
-                  <option key={index} value={status}>{status}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={deliveryManFilter} onChange={(e) => setDeliveryManFilter(e.target.value)}>
-                <option value="All">All Delivery Man</option>
-                {availableDeliveryManOptions.map((man, index) => (
-                  <option key={index} value={man}>{man}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={isRegMobileFilter} onChange={(e) => setIsRegMobileFilter(e.target.value)}>
-                <option value="All">All Is Reg Mobile</option>
-                {availableIsRegMobileOptions.map((status, index) => (
-                  <option key={index} value={status}>{status}</option>
-                ))}
-              </select>
-              <div className="filter-date-group">
-                <span className="filter-date-label">Cash Memo Date</span>
-                <input className="filter-date-input" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
-                <span className="filter-date-divider">to</span>
-                <input className="filter-date-input" type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} />
-              </div>
-              <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                <option value="">Sort By</option>
-                {headers.map((header, index) => (
-                  <option key={index} value={header}>{header}</option>
-                ))}
-              </select>
-              <select className="filter-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-                <option value="asc">asc</option>
-                <option value="desc">desc</option>
-              </select>
-              <div className="filters-reset-wrap">
-                <button className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>Reset Filters</button>
-              </div>
-            </div>
-          )}
-
-          <div className="table-controls">
-            <div className="table-control-group">
-              <label className="table-control-label" htmlFor="searchDataInput">Search</label>
-              <input id="searchDataInput" className="search-input" type="text" placeholder="Search within data..." value={searchTerm} onChange={handleSearchChange} />
-            </div>
-
-            <div className="table-control-group">
-              <label className="table-control-label" htmlFor="addColumnSelect">Add Column</label>
-              <select className="table-select" id="addColumnSelect" onChange={(e) => addColumn(e.target.value)} value="">
-              <option value="" disabled>Select a column</option>
-              {availableHeadersToAdd.map(header => <option key={header} value={header}>{header}</option>)}
-              </select>
-            </div>
-
-            <div className="table-control-group">
-              <label className="table-control-label" htmlFor="removeColumnSelect">Remove Column</label>
-              <select className="table-select" id="removeColumnSelect" onChange={(e) => removeColumn(e.target.value)} value="">
-              <option value="" disabled>Select a column</option>
-              {visibleHeaders.map(header => <option key={header} value={header}>{header}</option>)}
-              </select>
-            </div>
-
-            <div className="table-control-group">
-              <label className="table-control-label" htmlFor="pageTypeSelect">Page Type</label>
-              <select className="table-select" id="pageTypeSelect" onChange={(e) => setPageType(e.target.value)} value={pageType}>
-              <option value="2 Cashmemo/Page">2 Cashmemo/Page</option>
-              <option value="3 Cashmemo/Page">3 Cashmemo/Page</option>
-              <option value="4 Cashmemo/Page">4 Cashmemo/Page</option>
-              </select>
-            </div>
-
-            {isHindiEnterprisePackage(loggedInUser?.package) && (
-              <div className="table-control-group">
-                <label className="table-control-label" htmlFor="printLanguageSelect">Print Language</label>
-                <select className="table-select" id="printLanguageSelect" onChange={(e) => setPrintLanguage(e.target.value)} value={printLanguage}>
-                <option value="English">English</option>
-                <option value="Hindi">Hindi</option>
-                </select>
-              </div>
-            )}
-
-            <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
-            <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
-            <button className="filter-action filter-action--secondary action-button" onClick={exportFilteredRows}>Export Filtered</button>
-            <button className="filter-action filter-action--secondary action-button" onClick={exportReportSummary}>Export Report Summary</button>
-
-            </div>
-
-          <div className="table-container">
-            {shouldShowFilteredEmptyState ? (
-              <div className="data-empty-state">
-                <p className="data-empty-state__eyebrow">No Records Found</p>
-                <h3>No bookings match the current filters.</h3>
-                <p>
-                  {hasActiveDataFilters
-                    ? 'Try clearing one or more filters, changing the date range, or searching with a broader term.'
-                    : 'No visible rows are available right now. Try re-uploading the latest Pending Booking file.'}
-                </p>
-                <div className="data-empty-state__actions">
-                  {hasActiveDataFilters && (
-                    <button type="button" className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>
-                      Reset Filters
-                    </button>
-                  )}
-                  <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
-                    Re-Upload Data
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <table className="data-table">
-                <thead>
-                  <tr>
-                        <th className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
-                          <input
-                            type="checkbox"
-                            onChange={handleSelectAllChange}
-                            checked={isAllFilteredRowsSelected}
-                          />
-                        </th>
-                        {visibleHeaders.map((header, index) => (
-                      <th key={index} style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
-                        {header}
-                      </th>
-                    ))}
-      
-                  </tr>
-                </thead>
-                <tbody>
-                      {currentTableData.map((customer, index) => {
-                        const isEkycStatusPending = customer['EKYC Status'] === 'Pending' || customer['EKYC Status'] === 'EKYC NOT DONE';
-                        return (
-                          <tr
-                            key={index}
-                            style={{
-                              border: '1px solid black',
-                              color: isEkycStatusPending ? '#ff5252' : 'inherit',
-                              fontWeight: isEkycStatusPending ? 'bold' : 'normal',
-                            }}
-                          >
-                            <td className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px' }}>
-                              <input
-                                  type="checkbox"
-                                  checked={selectedCustomerIds.includes(String(customer['Consumer No.']))}
-                                  onChange={() => handleCheckboxChange(customer['Consumer No.'])}
-                                />
-                            </td>
-                        {visibleHeaders.map((header, colIndex) => {
-                              return (
-                                <td
-                                  key={colIndex}
-                                  style={{
-                                    border: '1px solid black',
-                                    padding: '8px',
-                                  }}
-                                >
-                                  {String(
-                                      header === 'Online Refill Payment status'
-                                        ? (customer[header] === 'PAID' ? 'PAID' : 'COD')
-                                        : (header === 'Order Date' || header === 'Cash Memo Date'
-                                          ? formatDateToDDMMYYYY(
-                                              typeof customer[header] === 'number'
-                                                ? excelSerialDateToJSDate(customer[header])
-                                                : parseDateString(customer[header])
-                                            )
-                                          : (customer[header] === undefined || customer[header] === null ? '' : customer[header]))
-                                     )}
-                                </td>
-                              );
-                            })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              <p>Total Records: {filteredData.length}</p>
-
-            <div className="pagination">
-              <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}>Previous</button>
-              <span>Page {currentPage} of {totalPages}</span>
-              <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages}>Next</button>
-            </div>
-              </>
-            )}
-          </div>
-        </div>
+        <Suspense fallback={<div className="filters-shell"><div className="data-empty-state">Loading data workspace...</div></div>}>
+          <LazyDataWorkspace
+            showBookingReport={showBookingReport}
+            filteredData={filteredData}
+            activeReportFilter={activeReportFilter}
+            setActiveReportFilter={setActiveReportFilter}
+            setShowBookingReport={setShowBookingReport}
+            reportCards={reportCards}
+            uploadInProgress={uploadInProgress}
+            selectedCustomerIds={selectedCustomerIds}
+            hasActiveDataFilters={hasActiveDataFilters}
+            parsedData={parsedData}
+            uploadMetadata={uploadMetadata}
+            formatDisplayDateTime={formatDisplayDateTime}
+            activeFilterChips={activeFilterChips}
+            handleResetAllFilters={handleResetAllFilters}
+            handleSaveCurrentPreset={handleSaveCurrentPreset}
+            showAdvancedFilters={showAdvancedFilters}
+            setShowAdvancedFilters={setShowAdvancedFilters}
+            savedFilterPresets={savedFilterPresets}
+            applyFilterPreset={applyFilterPreset}
+            handleDeletePreset={handleDeletePreset}
+            selectedFilteredRows={selectedFilteredRows}
+            handlePrintCashmemo={handlePrintCashmemo}
+            exportSelectedBusinessRows={exportSelectedBusinessRows}
+            exportRowsToCsvFile={exportRowsToCsvFile}
+            buildExportFilename={buildExportFilename}
+            visibleHeaders={visibleHeaders}
+            clearSelection={clearSelection}
+            pushToast={pushToast}
+            recentActivities={recentActivities}
+            reportFilterOptions={reportFilterOptions}
+            eKycFilter={eKycFilter}
+            setEKycFilter={setEKycFilter}
+            availableEkycOptions={availableEkycOptions}
+            areaFilter={areaFilter}
+            setAreaFilter={setAreaFilter}
+            availableAreaOptions={availableAreaOptions}
+            onlineRefillPaymentStatusFilter={onlineRefillPaymentStatusFilter}
+            setOnlineRefillPaymentStatusFilter={setOnlineRefillPaymentStatusFilter}
+            availableOnlinePaymentOptions={availableOnlinePaymentOptions}
+            orderTypeFilter={orderTypeFilter}
+            setOrderTypeFilter={setOrderTypeFilter}
+            availableOrderTypeOptions={availableOrderTypeOptions}
+            orderDateStart={orderDateStart}
+            setOrderDateStart={setOrderDateStart}
+            orderDateEnd={orderDateEnd}
+            setOrderDateEnd={setOrderDateEnd}
+            natureFilter={natureFilter}
+            setNatureFilter={setNatureFilter}
+            availableNatureOptions={availableNatureOptions}
+            mobileStatusFilter={mobileStatusFilter}
+            setMobileStatusFilter={setMobileStatusFilter}
+            availableMobileStatusOptions={availableMobileStatusOptions}
+            consumerStatusFilter={consumerStatusFilter}
+            setConsumerStatusFilter={setConsumerStatusFilter}
+            availableConsumerStatusOptions={availableConsumerStatusOptions}
+            connectionTypeFilter={connectionTypeFilter}
+            setConnectionTypeFilter={setConnectionTypeFilter}
+            availableConnectionTypeOptions={availableConnectionTypeOptions}
+            orderStatusFilter={orderStatusFilter}
+            setOrderStatusFilter={setOrderStatusFilter}
+            availableOrderStatusOptions={availableOrderStatusOptions}
+            orderSourceFilter={orderSourceFilter}
+            setOrderSourceFilter={setOrderSourceFilter}
+            availableOrderSourceOptions={availableOrderSourceOptions}
+            cashMemoStatusFilter={cashMemoStatusFilter}
+            setCashMemoStatusFilter={setCashMemoStatusFilter}
+            availableCashMemoStatusOptions={availableCashMemoStatusOptions}
+            deliveryManFilter={deliveryManFilter}
+            setDeliveryManFilter={setDeliveryManFilter}
+            availableDeliveryManOptions={availableDeliveryManOptions}
+            isRegMobileFilter={isRegMobileFilter}
+            setIsRegMobileFilter={setIsRegMobileFilter}
+            availableIsRegMobileOptions={availableIsRegMobileOptions}
+            cashMemoDateStart={cashMemoDateStart}
+            setCashMemoDateStart={setCashMemoDateStart}
+            cashMemoDateEnd={cashMemoDateEnd}
+            setCashMemoDateEnd={setCashMemoDateEnd}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            headers={headers}
+            sortOrder={sortOrder}
+            setSortOrder={setSortOrder}
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            handleSearchChange={handleSearchChange}
+            addColumn={addColumn}
+            removeColumn={removeColumn}
+            pageType={pageType}
+            setPageType={setPageType}
+            isHindiEnterprisePackage={isHindiEnterprisePackage}
+            loggedInUser={loggedInUser}
+            printLanguage={printLanguage}
+            setPrintLanguage={setPrintLanguage}
+            handlePrintData={handlePrintData}
+            exportFilteredRows={exportFilteredRows}
+            exportReportSummary={exportReportSummary}
+            shouldShowFilteredEmptyState={shouldShowFilteredEmptyState}
+            handleReUploadClick={handleReUploadClick}
+            currentTableData={currentTableData}
+            handleSelectAllChange={handleSelectAllChange}
+            isAllFilteredRowsSelected={isAllFilteredRowsSelected}
+            handleCheckboxChange={handleCheckboxChange}
+            formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+            excelSerialDateToJSDate={excelSerialDateToJSDate}
+            parseDateString={parseDateString}
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            totalPages={totalPages}
+          />
+        </Suspense>
       )}
       {!isPlanExpired && shouldShowEmptyUploadState && (
         <div className="filters-shell">
@@ -8659,6 +7322,45 @@ function App() {
                   <CashMemoEnglish customerData={item.customer} />
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {confirmDialog.open && (
+        <div className="app-dialog-overlay" onClick={closeConfirmDialog}>
+          <div className="app-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+            <div className="app-dialog__header">
+              <h3 id="confirm-dialog-title">{confirmDialog.title}</h3>
+              <button type="button" className="app-dialog__close" onClick={closeConfirmDialog}>×</button>
+            </div>
+            <p className="app-dialog__message">{confirmDialog.message}</p>
+            <div className="app-dialog__actions">
+              <button type="button" className="auth-secondary-button" onClick={closeConfirmDialog}>Cancel</button>
+              <button type="button" className="auth-primary-button" onClick={handleConfirmDialogSubmit}>{confirmDialog.confirmLabel}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {inputDialog.open && (
+        <div className="app-dialog-overlay" onClick={closeInputDialog}>
+          <div className="app-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="input-dialog-title">
+            <div className="app-dialog__header">
+              <h3 id="input-dialog-title">{inputDialog.title}</h3>
+              <button type="button" className="app-dialog__close" onClick={closeInputDialog}>×</button>
+            </div>
+            <p className="app-dialog__message">{inputDialog.message}</p>
+            <input
+              className="form-input app-dialog__input"
+              value={inputDialog.value}
+              onChange={(e) => setInputDialog((prev) => ({ ...prev, value: e.target.value }))}
+              placeholder="Type here"
+              autoFocus
+            />
+            <div className="app-dialog__actions">
+              <button type="button" className="auth-secondary-button" onClick={closeInputDialog}>Cancel</button>
+              <button type="button" className="auth-primary-button" onClick={handleInputDialogSubmit}>{inputDialog.submitLabel}</button>
+            </div>
           </div>
         </div>
       )}
