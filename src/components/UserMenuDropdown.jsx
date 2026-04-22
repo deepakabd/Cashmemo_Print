@@ -22,6 +22,7 @@ const UserMenuDropdown = ({
   updateInboxCount,
   primaryQuickAction,
   secondaryQuickAction,
+  recommendedAction,
   userMenuSections,
   adminContacts,
   handleLogout,
@@ -106,6 +107,25 @@ const UserMenuDropdown = ({
         {userMenuPackageTips[0]?.text || ''}
       </div>
     </div>
+    {recommendedAction && (
+      <div className="dropdown-menu__section dropdown-menu__section--recommended">
+        <div className="dropdown-menu__section-title">Recommended Next Step</div>
+        <button
+          type="button"
+          className="dropdown-menu__recommended-card"
+          onClick={runUserMenuItem(recommendedAction)}
+          disabled={recommendedAction.disabled}
+          title={recommendedAction.disabled ? (recommendedAction.reason || '') : recommendedAction.description}
+          role="menuitem"
+        >
+          <span className="dropdown-menu__recommended-label">{recommendedAction.label}</span>
+          <strong>{recommendedAction.actionLabel}</strong>
+          <span className="dropdown-menu__recommended-text">
+            {recommendedAction.disabled ? (recommendedAction.reason || recommendedAction.description) : recommendedAction.description}
+          </span>
+        </button>
+      </div>
+    )}
     <div className="dropdown-menu__section dropdown-menu__section--quick">
       <div className="dropdown-menu__section-title">Quick Actions</div>
       <div className="dropdown-menu__quick-actions">
