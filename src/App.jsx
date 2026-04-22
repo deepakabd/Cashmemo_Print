@@ -21,6 +21,11 @@ const LazyHomeDashboard = lazy(() => import('./components/HomeDashboard'));
 const LazyRegisterPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.RegisterPanel })));
 const LazyAdminLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.AdminLoginPanel })));
 const LazyUserLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.UserLoginPanel })));
+const LazyProfileUpdatePanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.ProfileUpdatePanel })));
+const LazyBankDetailsPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.BankDetailsPanel })));
+const LazyUserProfilePanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.UserProfilePanel })));
+const LazyContactSupportPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.ContactSupportPanel })));
+const LazyDictionaryRequestPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.DictionaryRequestPanel })));
 
 // Helper function to convert Excel serial date to JavaScript Date object
 const excelSerialDateToJSDate = (serial) => {
@@ -899,213 +904,6 @@ function App() {
     }
   };
 
-  const ProfileUpdateForm = ({ onClose }) => {
-    const [formData, setFormData] = useState({
-      distributorCode: '',
-      distributorName: '',
-      contact: '',
-      email: '',
-      gst: '',
-      address: '',
-      photoDataUrl: '',
-    });
-    const [errors, setErrors] = useState({});
-    const [isSaving, setIsSaving] = useState(false);
-    useEffect(() => {
-      if (loggedInUser?.profileData) {
-        setFormData((prev) => ({ ...prev, ...loggedInUser.profileData }));
-      }
-    }, []);
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setFormData((prev) => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-    const handlePhotoChange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      if (!file.type.startsWith('image/')) {
-        pushToast('Please choose an image file.', 'error');
-        return;
-      }
-      if (file.size > 1024 * 1024) {
-        pushToast('Profile photo must be under 1 MB.', 'error');
-        return;
-      }
-      try {
-        const photoDataUrl = await readImageFileAsDataUrl(file);
-        setFormData((prev) => ({ ...prev, photoDataUrl }));
-      } catch {
-        pushToast('Photo upload failed. Please try another image.', 'error');
-      }
-    };
-    const handlePhotoRemove = () => {
-      setFormData((prev) => ({ ...prev, photoDataUrl: '' }));
-    };
-    const validateProfileForm = () => {
-      const nextErrors = {};
-      if (!formData.distributorCode.trim()) nextErrors.distributorCode = 'Distributor code is required.';
-      if (!formData.distributorName.trim()) nextErrors.distributorName = 'Distributor name is required.';
-      if (!/^\d{10}$/.test(formData.contact.trim())) nextErrors.contact = 'Enter a valid 10-digit contact number.';
-      if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) nextErrors.email = 'Enter a valid email address.';
-      if (!formData.gst.trim()) nextErrors.gst = 'GST is required.';
-      if (!formData.address.trim()) nextErrors.address = 'Address is required.';
-      setErrors(nextErrors);
-      return Object.keys(nextErrors).length === 0;
-    };
-    const handleSave = async () => {
-      if (!validateProfileForm()) return;
-      setIsSaving(true);
-      const ok = await submitUpdateApprovalRequest({
-        type: 'profile',
-        payload: formData,
-        localKey: 'profileData',
-        successMessage: 'Profile update request submitted. Your request is pending with admin for approval.',
-      });
-      setIsSaving(false);
-      if (ok) {
-        logRecentActivity('Submitted profile update request');
-        onClose();
-      }
-    };
-    return (
-      <div className="placeholder-container">
-        <h2>Profile Update</h2>
-        <div className="profile-form">
-          <span className="profile-label">Profile Photo</span>
-          <div className="profile-photo-field">
-            {formData.photoDataUrl ? (
-              <img className="profile-photo-preview" src={formData.photoDataUrl} alt="Profile preview" />
-            ) : (
-              <div className="profile-photo-placeholder">No photo selected</div>
-            )}
-            <div className="profile-photo-actions">
-              <input className="form-input" type="file" accept="image/*" onChange={handlePhotoChange} />
-              {formData.photoDataUrl && (
-                <button type="button" className="profile-photo-remove" onClick={handlePhotoRemove}>Remove Photo</button>
-              )}
-            </div>
-          </div>
-          <span className="profile-label">Distributor Code</span>
-          <div>
-            <input className={`form-input${errors.distributorCode ? ' form-input--error' : ''}`} name="distributorCode" type="text" value={formData.distributorCode} onChange={handleChange} />
-            {errors.distributorCode && <div className="form-error">{errors.distributorCode}</div>}
-          </div>
-          <span className="profile-label">Distributor Name</span>
-          <div>
-            <input className={`form-input${errors.distributorName ? ' form-input--error' : ''}`} name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} />
-            {errors.distributorName && <div className="form-error">{errors.distributorName}</div>}
-          </div>
-          <span className="profile-label">Contact</span>
-          <div>
-            <input className={`form-input${errors.contact ? ' form-input--error' : ''}`} name="contact" type="text" value={formData.contact} onChange={handleChange} />
-            {errors.contact && <div className="form-error">{errors.contact}</div>}
-          </div>
-          <span className="profile-label">Email</span>
-          <div>
-            <input className={`form-input${errors.email ? ' form-input--error' : ''}`} name="email" type="email" value={formData.email} onChange={handleChange} />
-            {errors.email && <div className="form-error">{errors.email}</div>}
-          </div>
-          <span className="profile-label">GST</span>
-          <div>
-            <input className={`form-input${errors.gst ? ' form-input--error' : ''}`} name="gst" type="text" value={formData.gst} onChange={handleChange} />
-            {errors.gst && <div className="form-error">{errors.gst}</div>}
-          </div>
-          <span className="profile-label">Address</span>
-          <div>
-            <textarea className={`form-textarea${errors.address ? ' form-input--error' : ''}`} name="address" rows="3" value={formData.address} onChange={handleChange} />
-            {errors.address && <div className="form-error">{errors.address}</div>}
-          </div>
-        </div>
-        <div className="form-actions">
-          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-          <button onClick={onClose} disabled={isSaving}>Close</button>
-        </div>
-      </div>
-    );
-  };
-
-  const BankDetailsForm = ({ onClose }) => {
-    const defaultBankDetails = {
-      bankName: '',
-      branch: '',
-      accountNo: '',
-      ifsc: '',
-    };
-    const [formData, setFormData] = useState(defaultBankDetails);
-    const [errors, setErrors] = useState({});
-    const [isSaving, setIsSaving] = useState(false);
-
-    useEffect(() => {
-      if (loggedInUser?.bankDetailsData) {
-        setFormData((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
-      }
-    }, []);
-
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setFormData((prev) => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-
-    const validateBankForm = () => {
-      const nextErrors = {};
-      if (!formData.bankName.trim()) nextErrors.bankName = 'Bank name is required.';
-      if (!formData.branch.trim()) nextErrors.branch = 'Branch is required.';
-      if (!/^\d{8,20}$/.test(formData.accountNo.trim())) nextErrors.accountNo = 'Enter a valid account number.';
-      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(formData.ifsc.trim())) nextErrors.ifsc = 'Enter a valid IFSC code.';
-      setErrors(nextErrors);
-      return Object.keys(nextErrors).length === 0;
-    };
-
-    const handleSave = async () => {
-      if (!validateBankForm()) return;
-      setIsSaving(true);
-      const ok = await submitUpdateApprovalRequest({
-        type: 'bank',
-        payload: formData,
-        localKey: 'bankDetailsData',
-        successMessage: 'Bank details update request submitted. Your request is pending with admin for approval.',
-      });
-      setIsSaving(false);
-      if (ok) {
-        logRecentActivity('Submitted bank details update request');
-        onClose();
-      }
-    };
-
-    return (
-      <div className="placeholder-container">
-        <h2>Bank Details</h2>
-        <div className="profile-form">
-          <span className="profile-label">Bank Name</span>
-          <div>
-            <input className={`form-input${errors.bankName ? ' form-input--error' : ''}`} name="bankName" type="text" value={formData.bankName} onChange={handleChange} />
-            {errors.bankName && <div className="form-error">{errors.bankName}</div>}
-          </div>
-          <span className="profile-label">Branch</span>
-          <div>
-            <input className={`form-input${errors.branch ? ' form-input--error' : ''}`} name="branch" type="text" value={formData.branch} onChange={handleChange} />
-            {errors.branch && <div className="form-error">{errors.branch}</div>}
-          </div>
-          <span className="profile-label">Account No</span>
-          <div>
-            <input className={`form-input${errors.accountNo ? ' form-input--error' : ''}`} name="accountNo" type="text" value={formData.accountNo} onChange={handleChange} />
-            {errors.accountNo && <div className="form-error">{errors.accountNo}</div>}
-          </div>
-          <span className="profile-label">IFSC Code</span>
-          <div>
-            <input className={`form-input${errors.ifsc ? ' form-input--error' : ''}`} name="ifsc" type="text" value={formData.ifsc} onChange={handleChange} />
-            {errors.ifsc && <div className="form-error">{errors.ifsc}</div>}
-          </div>
-        </div>
-        <div className="form-actions">
-          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-          <button onClick={onClose} disabled={isSaving}>Close</button>
-        </div>
-      </div>
-    );
-  };
 
   const HeaderUpdateForm = ({ onClose }) => {
     const [formData, setFormData] = useState({
@@ -1614,723 +1412,6 @@ function App() {
     setIsAdminLoginSubmitting(false);
   };
 
-  const UserProfile = ({ onClose, initialSection = 'overview' }) => {
-    const [data, setData] = useState(null);
-    useEffect(() => {
-      if (loggedInUser?.profileData) {
-        setData(loggedInUser.profileData);
-      } else {
-        setData(null);
-      }
-    }, [loggedInUser]);
-
-    const currentPackage = loggedInUser?.package || '-';
-    const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
-    const profilePhotoDataUrl = data?.photoDataUrl || '';
-    const summaryItems = [
-      { label: 'Distributor Name', value: loggedInUser?.profileData?.distributorName || '-' },
-      { label: 'Bank Details', value: loggedInUser?.bankDetailsData?.bankName ? 'Available' : 'Missing' },
-      { label: 'Header', value: loggedInUser?.hindiHeaderData?.distributorName ? 'Available' : 'Missing' },
-      { label: 'Rates', value: Array.isArray(loggedInUser?.ratesData) && loggedInUser.ratesData.length > 0 ? `${loggedInUser.ratesData.length} rows` : 'Missing' },
-    ];
-    const requestHistoryRows = Object.entries(loggedInUser?.pendingUpdates || {})
-      .map(([type, info]) => {
-        const normalizedType = normalizePendingTypeLabel(type);
-        const status = String(info?.status || loggedInUser?.approvalStatus?.[type] || '').toLowerCase() || 'draft';
-        const mostRecentAt = info?.approvedAt || info?.rejectedAt || info?.adminReplyAt || info?.requestedAt || '';
-        return {
-          type: normalizedType,
-          status,
-          requestedAt: info?.requestedAt || '',
-          lastUpdatedAt: mostRecentAt,
-          adminReply: String(info?.adminReply || '').trim(),
-        };
-      })
-      .sort((a, b) => new Date(b.lastUpdatedAt || b.requestedAt || 0).getTime() - new Date(a.lastUpdatedAt || a.requestedAt || 0).getTime());
-
-    useEffect(() => {
-      if (initialSection !== 'history') return;
-      const historyBlock = document.getElementById('user-request-history');
-      historyBlock?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, [initialSection]);
-
-    return (
-      <div className="placeholder-container">
-        <h2>User Profile</h2>
-        {profilePhotoDataUrl && (
-          <div className="user-profile-photo-wrap">
-            <img className="user-profile-photo" src={profilePhotoDataUrl} alt="User profile" />
-          </div>
-        )}
-        <div className="home-account-grid user-profile-summary-grid">
-          {summaryItems.map((item) => (
-            <div key={item.label} className="home-account-item">
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </div>
-          ))}
-        </div>
-        <div className="profile-form">
-          <span className="profile-label">Current Package</span>
-          <span>{currentPackage}</span>
-          <span className="profile-label">Package Validity</span>
-          <span>{validity}</span>
-          {data && (
-            <>
-              <span className="profile-label">Distributor Code</span>
-              <span>{data.distributorCode || '-'}</span>
-              <span className="profile-label">Distributor Name</span>
-              <span>{data.distributorName || '-'}</span>
-              <span className="profile-label">Contact</span>
-              <span>{data.contact || '-'}</span>
-              <span className="profile-label">Email</span>
-              <span>{data.email || '-'}</span>
-              <span className="profile-label">GST</span>
-              <span>{data.gst || '-'}</span>
-              <span className="profile-label">Address</span>
-              <span>{data.address || '-'}</span>
-            </>
-          )}
-        </div>
-        {!data && (
-          <div style={{ marginTop: '15px' }}>No additional profile details found. Please update your profile.</div>
-        )}
-        <div id="user-request-history" className="user-profile-history">
-          <h3>Request History</h3>
-          {requestHistoryRows.length === 0 ? (
-            <div className="user-profile-history-empty">No update requests submitted yet.</div>
-          ) : (
-            <div className="user-profile-history-list">
-              {requestHistoryRows.map((item) => (
-                <div key={`${item.type}-${item.requestedAt}-${item.lastUpdatedAt}`} className="user-profile-history-item">
-                  <strong>{item.type}</strong>
-                  <span>Status: {item.status || '-'}</span>
-                  <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
-                  <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
-                  {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="form-actions">
-          <button onClick={onClose}>Close</button>
-        </div>
-      </div>
-    );
-  };
-
-  const ContactForm = ({ onClose }) => {
-    const [form, setForm] = useState({
-      name: '',
-      mobile: '',
-      email: '',
-      feedback: '',
-    });
-    const [showAdminChatPopup, setShowAdminChatPopup] = useState(false);
-    const [activeReplyItem, setActiveReplyItem] = useState(null);
-    const [adminReplyMessage, setAdminReplyMessage] = useState('');
-    const [localFeedbackEntries, setLocalFeedbackEntries] = useState(() => readFeedbackDataFromStorage());
-    const [feedbackErrors, setFeedbackErrors] = useState({});
-    const [adminChatError, setAdminChatError] = useState('');
-
-    useEffect(() => {
-      setForm((prev) => ({
-        ...prev,
-        name: loggedInUser?.dealerName || '',
-        mobile: loggedInUser?.mobile || '',
-        email: loggedInUser?.email || '',
-      }));
-    }, []);
-
-    const storedFeedbackReplies = readFeedbackRepliesFromStorage();
-    const userReplies = useMemo(() => loggedInUser
-      ? localFeedbackEntries
-          .filter((item) => item.userId === loggedInUser?.id || item.dealerCode === loggedInUser?.dealerCode)
-          .map((item) => {
-            const idKey = item.id || item.clientFeedbackId || '';
-            return { ...item, reply: storedFeedbackReplies[idKey] || '', replyId: idKey };
-          })
-          .filter((item) => item.reply)
-      : [], [localFeedbackEntries, storedFeedbackReplies]);
-
-    useEffect(() => {
-      if (!showAdminChatPopup) return;
-      if (userReplies.length > 0) {
-        setActiveReplyItem((prev) => prev || userReplies[0]);
-      }
-    }, [showAdminChatPopup, userReplies]);
-
-    const handleOpenAdminChat = () => {
-      setShowAdminChatPopup(true);
-    };
-
-    const handleCloseAdminChat = () => {
-      setShowAdminChatPopup(false);
-      setAdminReplyMessage('');
-      setAdminChatError('');
-    };
-
-    const submitAdminChatReply = async () => {
-      if (!adminReplyMessage.trim()) {
-        setAdminChatError('Please type your message before sending.');
-        pushToast('Please type your message before sending.', 'error');
-        return;
-      }
-      if (!loggedInUser && (!form.name.trim() || !form.mobile.trim())) {
-        setAdminChatError('Name and mobile number are required to send a chat message.');
-        pushToast('Name and mobile number are required to send a chat message.', 'error');
-        return;
-      }
-      setAdminChatError('');
-      const key = 'feedbackData';
-      const feedbackEntry = {
-        clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        userId: loggedInUser?.id || '',
-        name: loggedInUser?.dealerName || form.name.trim() || '',
-        mobile: loggedInUser?.mobile || form.mobile.trim() || '',
-        dealerCode: loggedInUser?.dealerCode || '',
-        dealerName: loggedInUser?.dealerName || form.name.trim() || '',
-        email: loggedInUser?.email || form.email.trim() || '',
-        text: adminReplyMessage.trim(),
-        parentFeedbackId: activeReplyItem?.id || activeReplyItem?.clientFeedbackId || '',
-        read: false,
-        createdAt: new Date().toISOString(),
-      };
-      let anySaved = false;
-      try {
-        await addDoc(collection(db, 'feedback'), {
-          ...feedbackEntry,
-          createdAt: serverTimestamp(),
-        });
-        anySaved = true;
-      } catch (e) { void e; }
-      if (loggedInUser?.id) {
-        try {
-          const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
-          updateUserInStore(
-            resolvedId,
-            (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
-            loggedInUser.dealerCode
-          );
-          anySaved = true;
-        } catch (e) { void e; }
-      }
-      try {
-        const existing = localStorage.getItem(key);
-        const arr = existing ? JSON.parse(existing) : [];
-        const next = Array.isArray(arr) ? arr : [];
-        next.push({ ...feedbackEntry, source: 'local' });
-        localStorage.setItem(key, JSON.stringify(next));
-        setLocalFeedbackEntries(next);
-        anySaved = true;
-      } catch (e) { void e; }
-
-      if (anySaved) {
-        pushToast('Your chat message has been sent. Admin will reply shortly.', 'success');
-        setAdminReplyMessage('');
-      } else {
-        setAdminChatError('Unable to send your chat message. Please try again.');
-        pushToast('Unable to send your chat message. Please try again.', 'error');
-      }
-    };
-
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setForm((prev) => ({ ...prev, [name]: value }));
-      setFeedbackErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-
-    const submitFeedback = async () => {
-      const nextErrors = {};
-      if (!form.name.trim()) nextErrors.name = 'Name is required.';
-      if (!form.mobile.trim()) nextErrors.mobile = 'Mobile number is required.';
-      if (!form.email.trim()) nextErrors.email = 'Email is required.';
-      if (!form.feedback.trim()) nextErrors.feedback = 'Feedback is required.';
-      if (Object.keys(nextErrors).length > 0) {
-        setFeedbackErrors(nextErrors);
-        pushToast('Name, Mobile, Email and Feedback are required.', 'error');
-        return;
-      }
-      setFeedbackErrors({});
-      const key = 'feedbackData';
-      const feedbackEntry = {
-        clientFeedbackId: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        userId: loggedInUser?.id || '',
-        name: form.name.trim(),
-        mobile: form.mobile.trim(),
-        dealerCode: loggedInUser?.dealerCode || '',
-        dealerName: loggedInUser?.dealerName || form.name.trim(),
-        email: form.email.trim(),
-        text: form.feedback.trim(),
-        read: false,
-        createdAt: new Date().toISOString(),
-      };
-      let anySaved = false;
-      try {
-        await addDoc(collection(db, 'feedback'), {
-          ...feedbackEntry,
-          createdAt: serverTimestamp(),
-        });
-        anySaved = true;
-      } catch (e) { void e; }
-      if (loggedInUser?.id) {
-        try {
-          const resolvedId = await updateUserInFirebase(loggedInUser.id, { feedbackEntries: arrayUnion(feedbackEntry) }, loggedInUser.dealerCode);
-          updateUserInStore(
-            resolvedId,
-            (u) => ({ ...u, feedbackEntries: [...(Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : []), feedbackEntry] }),
-            loggedInUser.dealerCode
-          );
-          anySaved = true;
-        } catch (e) { void e; }
-      }
-      try {
-        const existing = localStorage.getItem(key);
-        const arr = existing ? JSON.parse(existing) : [];
-        const next = Array.isArray(arr) ? arr : [];
-        next.push({ ...feedbackEntry, source: 'local' });
-        localStorage.setItem(key, JSON.stringify(next));
-        anySaved = true;
-      } catch (error) {
-        void error;
-      }
-
-      if (anySaved) {
-        pushToast('Feedback submitted. Thank you!', 'success');
-        onClose();
-      } else {
-        pushToast('Unable to save feedback.', 'error');
-      }
-    };
-    return (
-      <div className="placeholder-container">
-        <h2>Contact Us</h2>
-        <div className="contact-us-links">
-          <a className="contact-us-link" href="mailto:deepak.youvi@gmail.com" aria-label="Email Us">
-            <span className="contact-us-icon">📧</span> Email Us
-          </a>
-          <a className="contact-us-link" href="https://wa.me/918789358400" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp Us">
-            <span className="contact-us-icon">💬</span> WhatsApp Us
-          </a>
-          {loggedInUser && (
-            <button type="button" className="contact-us-link" onClick={handleOpenAdminChat}>
-              <span className="contact-us-icon">💬</span> Open Admin Replies Chat
-            </button>
-          )}
-        </div>
-        {showAdminChatPopup && (
-          <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
-            <div className="admin-chat-popup">
-              <div className="admin-chat-popup-header">
-                <h3>Admin Chat</h3>
-                <button type="button" className="admin-chat-popup-close" onClick={handleCloseAdminChat}>Close</button>
-              </div>
-              <div className="admin-chat-popup-body">
-                <div className="admin-chat-sidebar">
-                  <h4>Conversations</h4>
-                  {userReplies.length === 0 ? (
-                    <p>No admin replies yet. Send a message below to start chat with admin.</p>
-                  ) : (
-                    <ul className="admin-chat-thread-list">
-                      {userReplies.map((replyItem) => (
-                        <li key={replyItem.id || replyItem.clientFeedbackId || `${replyItem.dealerCode}-${Math.random()}`}>
-                          <button
-                            type="button"
-                            className={`admin-chat-thread-button ${activeReplyItem?.replyId === replyItem.replyId ? 'active' : ''}`}
-                            onClick={() => setActiveReplyItem(replyItem)}
-                          >
-                            <strong>{replyItem.text?.slice(0, 40) || 'Your feedback'}</strong>
-                            <small>{(replyItem.reply || '').slice(0, 40)}</small>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div className="admin-chat-content">
-                  {activeReplyItem ? (
-                    <>
-                      <div className="admin-chat-conversation">
-                        <div className="admin-chat-message user-message">
-                          <strong>You:</strong>
-                          <p>{activeReplyItem.text || activeReplyItem.feedback || 'No message content.'}</p>
-                        </div>
-                        <div className="admin-chat-message admin-message">
-                          <strong>Admin:</strong>
-                          <p>{activeReplyItem.reply}</p>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="admin-chat-empty">
-                      <p>Select a reply thread or type a new message below to chat with admin.</p>
-                    </div>
-                  )}
-                  <textarea
-                    className="form-input"
-                    rows="4"
-                    value={adminReplyMessage}
-                    onChange={(e) => {
-                      setAdminReplyMessage(e.target.value);
-                      setAdminChatError('');
-                    }}
-                    placeholder="Type your message to admin here..."
-                  />
-                  {adminChatError && <div className="form-error">{adminChatError}</div>}
-                  <div className="admin-chat-actions">
-                    <button type="button" className="form-button" onClick={submitAdminChatReply}>Send</button>
-                    <button type="button" className="form-button secondary" onClick={handleCloseAdminChat}>Close</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="profile-form">
-          <span className="profile-label">Name</span>
-          <input
-            className={`form-input${feedbackErrors.name ? ' form-input--error' : ''}`}
-            name="name"
-            type="text"
-            value={form.name}
-            onChange={handleChange}
-            placeholder="Enter your name"
-          />
-          {feedbackErrors.name && <div className="form-error profile-form__error">{feedbackErrors.name}</div>}
-          <span className="profile-label">Mobile</span>
-          <input
-            className={`form-input${feedbackErrors.mobile ? ' form-input--error' : ''}`}
-            name="mobile"
-            type="text"
-            value={form.mobile}
-            onChange={handleChange}
-            placeholder="Enter mobile number"
-          />
-          {feedbackErrors.mobile && <div className="form-error profile-form__error">{feedbackErrors.mobile}</div>}
-          <span className="profile-label">Email</span>
-          <input
-            className={`form-input${feedbackErrors.email ? ' form-input--error' : ''}`}
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={handleChange}
-            placeholder="Enter email"
-          />
-          {feedbackErrors.email && <div className="form-error profile-form__error">{feedbackErrors.email}</div>}
-          <span className="profile-label">Feedback</span>
-          <textarea
-            className={`form-textarea${feedbackErrors.feedback ? ' form-input--error' : ''}`}
-            name="feedback"
-            rows="5"
-            value={form.feedback}
-            onChange={handleChange}
-            placeholder="Kindly provide your feedback or Suggestion here"
-          />
-          {feedbackErrors.feedback && <div className="form-error profile-form__error">{feedbackErrors.feedback}</div>}
-        </div>
-        <div className="form-actions">
-          <button onClick={submitFeedback}>Submit</button>
-          <button onClick={onClose}>Close</button>
-        </div>
-      </div>
-    );
-  };
-
-  const DictionaryRequestForm = ({ mode = 'default', onClose }) => {
-    const [form, setForm] = useState({ englishWord: '', hindiTranslation: '' });
-    const [entries, setEntries] = useState([{ englishWord: '', hindiTranslation: '' }]);
-    const [dictionaryError, setDictionaryError] = useState('');
-    const pendingCount = getPendingDictionaryRequestCount(loggedInUser);
-    const isDeliveryAreaMode = mode === 'deliveryArea';
-    const isDeliveryStaffMode = mode === 'deliveryStaff';
-    const title = isDeliveryAreaMode ? 'Delivery Area Update' : isDeliveryStaffMode ? 'Delivery Staff Update' : 'Dictionary';
-    const englishPlaceholder = isDeliveryAreaMode ? 'e.g. Khera Bazar' : isDeliveryStaffMode ? 'e.g. Rajesh' : 'e.g. Mr.';
-    const hindiPlaceholder = isDeliveryAreaMode ? 'उदा: खेरा बाजार' : isDeliveryStaffMode ? 'उदा: राजेश' : 'उदाहरण: श्री';
-    const [showApprovedList, setShowApprovedList] = useState(false);
-    const approvedItems = isDeliveryAreaMode ? deliveryAreaUpdates : isDeliveryStaffMode ? deliveryStaffUpdates : [];
-    const approvedListTitle = isDeliveryAreaMode ? 'Approved Delivery Areas' : 'Approved Delivery Staff';
-
-    const editApprovedItem = (item) => {
-      setEntries([{ englishWord: item.englishWord || item.english || '', hindiTranslation: item.hindiTranslation || item.hindi || '' }]);
-      setShowApprovedList(false);
-    };
-
-    useEffect(() => {
-      if (isDeliveryAreaMode || isDeliveryStaffMode) {
-        setEntries(Array.from({ length: 5 }, () => ({ englishWord: '', hindiTranslation: '' })));
-      } else {
-        setEntries([{ englishWord: '', hindiTranslation: '' }]);
-        setForm({ englishWord: '', hindiTranslation: '' });
-      }
-      setShowApprovedList(false);
-    }, [mode, isDeliveryAreaMode, isDeliveryStaffMode]);
-
-    const updateEntry = (index, field, value) => {
-      setDictionaryError('');
-      setEntries((prev) => prev.map((entry, entryIndex) => (
-        entryIndex === index
-          ? { ...entry, [field]: value }
-          : entry
-      )));
-    };
-
-    const addEntry = () => {
-      setEntries((prev) => [...prev, { englishWord: '', hindiTranslation: '' }]);
-    };
-
-    const removeEntry = (index) => {
-      setEntries((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
-    };
-
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setForm((prev) => ({ ...prev, [name]: value }));
-      setDictionaryError('');
-    };
-
-    const submitDictionaryRequest = async () => {
-      const type = isDeliveryAreaMode ? 'deliveryArea' : isDeliveryStaffMode ? 'deliveryStaff' : 'dictionary';
-      const successMessage = isDeliveryAreaMode
-        ? 'Delivery area update request submitted. Your request is pending with admin for approval.'
-        : isDeliveryStaffMode
-        ? 'Delivery staff update request submitted. Your request is pending with admin for approval.'
-        : 'Dictionary request submitted. Your request is pending with admin for approval.';
-
-      if (!loggedInUser?.id) {
-        setDictionaryError('Please login first.');
-        pushToast('Please login first.', 'error');
-        return;
-      }
-
-      if (isDeliveryAreaMode || isDeliveryStaffMode) {
-        const normalizedEntries = entries.map((entry) => ({
-          englishWord: String(entry.englishWord || '').trim(),
-          hindiTranslation: String(entry.hindiTranslation || '').trim(),
-        })).filter((entry) => entry.englishWord || entry.hindiTranslation);
-
-        if (normalizedEntries.length === 0 || normalizedEntries.some((entry) => !entry.englishWord || !entry.hindiTranslation)) {
-          setDictionaryError('Har row mein English aur Hindi dono values bharen.');
-          pushToast('Har row mein English aur Hindi dono values bharen.', 'error');
-          return;
-        }
-
-        const ok = await submitUpdateApprovalRequest({
-          type,
-          payload: normalizedEntries,
-          localKey: type === 'deliveryArea' ? 'deliveryAreaUpdates' : 'deliveryStaffUpdates',
-          successMessage,
-        });
-        if (ok) {
-          setEntries([{ englishWord: '', hindiTranslation: '' }]);
-          onClose();
-        }
-        return;
-      }
-
-      const englishWord = form.englishWord.trim();
-      const hindiTranslation = form.hindiTranslation.trim();
-      if (!englishWord || !hindiTranslation) {
-        setDictionaryError('English word aur Hindi translation required hai.');
-        pushToast('English word aur Hindi translation required hai.', 'error');
-        return;
-      }
-      setDictionaryError('');
-
-      const nextPendingCount = pendingCount + 1;
-      const clientRequestId = `dict-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const payload = {
-        clientRequestId,
-        englishWord,
-        hindiTranslation,
-        requestedBy: loggedInUser?.dealerCode || '',
-        requestedAt: new Date().toISOString(),
-      };
-
-      let approvalId = '';
-      let approvalSaved = false;
-      try {
-        try {
-          const approvalRef = await addDoc(collection(db, 'updateApprovals'), {
-            userId: loggedInUser.id,
-            dealerCode: loggedInUser.dealerCode || '',
-            dealerName: loggedInUser.dealerName || '',
-            type: 'dictionary',
-            payload,
-            status: 'pending',
-            requestedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          approvalId = approvalRef.id;
-          approvalSaved = true;
-        } catch (e) { void e; }
-
-        try {
-          await updateDoc(doc(db, 'users', loggedInUser.id), {
-            dictionaryPendingCount: nextPendingCount,
-            pendingDictionaryRequests: arrayUnion({
-              id: clientRequestId,
-              approvalId,
-              status: 'pending',
-              payload,
-              dealerCode: loggedInUser.dealerCode || '',
-              dealerName: loggedInUser.dealerName || '',
-              requestedAt: payload.requestedAt,
-            }),
-            updatedAt: serverTimestamp(),
-          });
-        } catch {
-          if (!approvalSaved) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
-        }
-
-        updateUserInStore(
-          loggedInUser.id,
-          (user) => ({
-            ...user,
-            dictionaryPendingCount: nextPendingCount,
-            pendingDictionaryRequests: [
-              ...(Array.isArray(user.pendingDictionaryRequests) ? user.pendingDictionaryRequests : []),
-              {
-                id: clientRequestId,
-                approvalId,
-                status: 'pending',
-                payload,
-                dealerCode: loggedInUser.dealerCode || '',
-                dealerName: loggedInUser.dealerName || '',
-                requestedAt: payload.requestedAt,
-              },
-            ],
-          }),
-          loggedInUser.dealerCode
-        );
-        setForm({ englishWord: '', hindiTranslation: '' });
-        pushToast('Dictionary request submitted. Your request is pending with admin for approval.', 'success');
-      } catch {
-        setDictionaryError('Dictionary request submit failed. Check Firebase permissions.');
-        pushToast('Dictionary request submit failed. Check Firebase permissions.', 'error');
-      }
-    };
-
-    return (
-      <div className="placeholder-container dictionary-request-panel">
-        <h2>{title}</h2>
-        {mode === 'default' ? (
-          <div className="dictionary-pending-count">{pendingCount} request pending</div>
-        ) : null}
-        {dictionaryError && <div className="form-error dictionary-request-panel__error">{dictionaryError}</div>}
-        {(isDeliveryAreaMode || isDeliveryStaffMode) && (
-          <div className="dictionary-approved-toggle">
-            <button
-              type="button"
-              className="dictionary-approved-toggle-button"
-              onClick={() => setShowApprovedList((prev) => !prev)}
-            >
-              {approvedListTitle}
-            </button>
-            {showApprovedList && (
-              <div className="dictionary-approved-list">
-                {approvedItems.length > 0 ? (
-                  <table className="dictionary-approved-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{isDeliveryAreaMode ? 'Approved Area' : 'Approved Staff'}</th>
-                        <th>Hindi Translation</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {approvedItems.map((item, index) => (
-                        <tr key={`${mode}-approved-${index}`}>
-                          <td>{index + 1}</td>
-                          <td>{String(item.englishWord || item.english || '').trim() || '-'}</td>
-                          <td>{String(item.hindiTranslation || item.hindi || '').trim() || '-'}</td>
-                          <td className="dictionary-approved-actions">
-                            <button
-                              type="button"
-                              className="dictionary-approved-action"
-                              onClick={() => editApprovedItem(item)}
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="dictionary-approved-empty">No approved items found yet.</div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        <div className="profile-form">
-          {isDeliveryAreaMode || isDeliveryStaffMode ? (
-            <>
-              <div className="dictionary-multi-header">
-                <span>Sr.</span>
-                <span>{isDeliveryAreaMode ? 'English Area' : 'English Staff'}</span>
-                <span>Hindi Translation</span>
-                <span>Action</span>
-              </div>
-              {entries.map((entry, index) => (
-                <div key={index} className="dictionary-multi-entry">
-                  <span>{index + 1}</span>
-                  <input
-                    className="form-input"
-                    value={entry.englishWord}
-                    onChange={(e) => updateEntry(index, 'englishWord', e.target.value)}
-                    placeholder={englishPlaceholder}
-                  />
-                  <input
-                    className="form-input"
-                    value={entry.hindiTranslation}
-                    onChange={(e) => updateEntry(index, 'hindiTranslation', e.target.value)}
-                    placeholder={hindiPlaceholder}
-                  />
-                  <button
-                    type="button"
-                    className="dictionary-row-remove"
-                    onClick={() => removeEntry(index)}
-                    disabled={entries.length <= 1}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              <button type="button" className="dictionary-request-add-row" onClick={addEntry}>
-                Add Another Row
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="profile-label">English Word</span>
-              <input
-                className="form-input"
-                name="englishWord"
-                value={form.englishWord}
-                onChange={handleChange}
-                placeholder={englishPlaceholder}
-              />
-              <span className="profile-label">Hindi Translation</span>
-              <input
-                className="form-input"
-                name="hindiTranslation"
-                value={form.hindiTranslation}
-                onChange={handleChange}
-                placeholder={hindiPlaceholder}
-              />
-            </>
-          )}
-        </div>
-        <div className="form-actions">
-          <button onClick={submitDictionaryRequest}>Send Request</button>
-          <button onClick={onClose}>Close</button>
-        </div>
-      </div>
-    );
-  };
 
   const UpgradePlanForm = ({ onClose }) => {
     const hasPendingUpgrade = String(loggedInUser?.pendingUpdates?.planUpgrade?.status || '').toLowerCase() === 'pending'
@@ -2600,7 +1681,7 @@ function App() {
     const submitAdminReply = () => {
       if (!activeAdminFeedback) return;
       if (!adminReplyDraft.trim()) {
-        alert('Please enter a reply before saving.');
+        pushToast('Please enter a reply before saving.', 'error');
         return;
       }
       const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
@@ -2656,7 +1737,7 @@ function App() {
     const submitApprovalReply = async () => {
       if (!activeApprovalReply) return;
       if (!approvalReplyDraft.trim()) {
-        alert('Please enter a reply before saving.');
+        pushToast('Please enter a reply before saving.', 'error');
         return;
       }
       const replyMessage = approvalReplyDraft.trim();
@@ -2950,21 +2031,35 @@ function App() {
     };
 
     const saveCurrentAdminView = () => {
-      const label = window.prompt('Saved view name?');
-      if (!label) return;
-      const nextViews = [
-        {
-          id: `view-${Date.now()}`,
-          label,
-          activeAdminTab,
-          adminSearchTerm,
-          adminDateRange,
-          adminSubFilter,
+      openInputDialog({
+        title: 'Save Admin View',
+        message: 'Enter a label for this saved admin view.',
+        placeholder: 'e.g. Pending approvals today',
+        defaultValue: '',
+        confirmLabel: 'Save View',
+        onSubmit: (label) => {
+          const trimmedLabel = String(label || '').trim();
+          if (!trimmedLabel) {
+            pushToast('Saved view name is required.', 'error');
+            return false;
+          }
+          const nextViews = [
+            {
+              id: `view-${Date.now()}`,
+              label: trimmedLabel,
+              activeAdminTab,
+              adminSearchTerm,
+              adminDateRange,
+              adminSubFilter,
+            },
+            ...savedAdminViews,
+          ].slice(0, 20);
+          persistSavedAdminViews(nextViews);
+          logAdminActivity('saved_view_created', { label: trimmedLabel });
+          pushToast('Admin view saved.', 'success');
+          return true;
         },
-        ...savedAdminViews,
-      ].slice(0, 20);
-      persistSavedAdminViews(nextViews);
-      logAdminActivity('saved_view_created', { label });
+      });
     };
 
     const applySavedAdminView = (view) => {
@@ -3002,12 +2097,12 @@ function App() {
           const nextUsers = [...users, ...importedUsers];
           writeUsersLocal(nextUsers);
           logAdminActivity('bulk_users_imported', { count: importedUsers.length });
-          alert(`${importedUsers.length} users imported locally.`);
+          pushToast(`${importedUsers.length} users imported locally.`, 'success');
         };
         reader.readAsArrayBuffer(file);
       } catch (error) {
         void error;
-        alert('Import failed.');
+        pushToast('Import failed.', 'error');
       } finally {
         event.target.value = null;
       }
@@ -3138,7 +2233,7 @@ function App() {
           setRequests((prev) => prev.filter((r) => r.id !== id));
         }
       } catch {
-        alert('Approve failed. Firestore rules/permission check karo.');
+        pushToast('Approve failed. Firestore rules/permission check karo.', 'error');
       }
     };
 
@@ -3162,13 +2257,13 @@ function App() {
         await loadData();
         logAdminActivity('registration_rejected', { id, dealerCode: req?.dealerCode || '' });
       } catch {
-        alert('Reject failed. Check Firestore rules.');
+        pushToast('Reject failed. Check Firestore rules.', 'error');
       }
     };
 
     const addManualUser = async () => {
       if (!newUser.dealerCode || !newUser.dealerName || !newUser.pin || !newUser.package) {
-        alert('Dealer code, dealer name, package and PIN required.');
+        pushToast('Dealer code, dealer name, package and PIN required.', 'error');
         return;
       }
       if (!confirmAdminAction(`Create manual user ${newUser.dealerCode.trim()}?`)) return;
@@ -3194,7 +2289,7 @@ function App() {
         await loadData();
         logAdminActivity('manual_user_created', { dealerCode: newUser.dealerCode.trim() });
       } catch {
-        alert('Create user failed.');
+        pushToast('Create user failed.', 'error');
       }
     };
 
@@ -3221,7 +2316,7 @@ function App() {
         const nextUsers = users.map((u) => (isSameUserByToken(u, token) ? { ...u, status: nextStatus } : u));
         writeUsersLocal(nextUsers);
         logAdminActivity('user_status_changed_local', { dealerCode: target.dealerCode || '', status: nextStatus });
-        alert('Status updated locally.');
+        pushToast('Status updated locally.', 'info');
       }
     };
 
@@ -3245,7 +2340,7 @@ function App() {
         const nextUsers = users.filter((u) => !isSameUserByToken(u, token));
         writeUsersLocal(nextUsers);
         logAdminActivity('user_deleted_local', { dealerCode: target.dealerCode || '' });
-        alert('User deleted locally.');
+        pushToast('User deleted locally.', 'info');
       }
     };
 
@@ -3284,7 +2379,7 @@ function App() {
       if (!editingUserId) return;
       const targetUser = users.find((u) => isSameUserByToken(u, editingUserId));
       if (!targetUser) {
-        alert('User not found.');
+        pushToast('User not found.', 'error');
         return;
       }
       if (!confirmAdminAction(`Save changes for ${targetUser.dealerCode || 'this user'}?`)) return;
@@ -3343,7 +2438,7 @@ function App() {
         writeUsersLocal(nextUsers);
         setEditingUserId('');
         logAdminActivity('user_updated_local', { dealerCode: targetUser.dealerCode || '' });
-        alert('User updated locally. Firebase permission denied.');
+        pushToast('User updated locally. Firebase permission denied.', 'info');
       }
     };
 
@@ -3465,14 +2560,14 @@ function App() {
       };
       const targetField = fieldByType[approvalType];
       if (!targetField && approvalType !== 'planUpgrade' && approvalType !== 'dictionary') {
-        alert(`Unsupported approval type: ${approval.type || 'unknown'}`);
+        pushToast(`Unsupported approval type: ${approval.type || 'unknown'}`, 'error');
         return;
       }
       if (!options.skipConfirm && !confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return;
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (!targetUser?.id) {
-          alert('User not found for approval.');
+          pushToast('User not found for approval.', 'error');
           return;
         }
         const nextStatus = { ...(targetUser.approvalStatus || {}), [approvalType]: 'approved' };
@@ -3494,7 +2589,7 @@ function App() {
           const englishWord = String(dictionaryPayload?.englishWord || dictionaryPayload?.eng || '').trim();
           const hindiTranslation = String(dictionaryPayload?.hindiTranslation || dictionaryPayload?.hin || '').trim();
           if (!englishWord || !hindiTranslation) {
-            alert('Dictionary request needs both English word and Hindi translation.');
+            pushToast('Dictionary request needs both English word and Hindi translation.', 'error');
             return;
           }
           const nextDict = { ...translationDictionary, [englishWord]: hindiTranslation };
@@ -3534,7 +2629,7 @@ function App() {
         } else if (approvalType === 'planUpgrade') {
           const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
           if (!nextPackage) {
-            alert('Plan upgrade request has no selected package.');
+            pushToast('Plan upgrade request has no selected package.', 'error');
             return;
           }
           const validity = computeValidityDates(nextPackage);
@@ -3599,10 +2694,10 @@ function App() {
         await loadData();
         logAdminActivity('update_approved', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
         if (!options.skipAlert) {
-          alert('Request approved successfully.');
+          pushToast('Request approved successfully.', 'success');
         }
       } catch {
-        alert('Approval failed.');
+        pushToast('Approval failed.', 'error');
       }
     };
 
@@ -3668,7 +2763,7 @@ function App() {
         await loadData();
         logAdminActivity('update_rejected', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
       } catch {
-        alert('Reject failed.');
+        pushToast('Reject failed.', 'error');
       }
     };
 
@@ -3688,7 +2783,7 @@ function App() {
         localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
         logAdminActivity('feedback_read_toggle', { id: item.id, read: nextRead });
       } catch {
-        alert('Unable to update feedback status.');
+        pushToast('Unable to update feedback status.', 'error');
       }
     };
 
@@ -3730,7 +2825,7 @@ function App() {
         localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
         logAdminActivity('feedback_deleted', { id: item.id, dealerCode: item?.dealerCode || '' });
       } catch {
-        alert('Unable to delete feedback.');
+        pushToast('Unable to delete feedback.', 'error');
       }
     };
 
@@ -3893,7 +2988,7 @@ function App() {
     ].filter(Boolean);
     const exportRowsAsCsv = (filename, rows) => {
       if (!Array.isArray(rows) || rows.length === 0) {
-        alert('No data available to export.');
+        pushToast('No data available to export.', 'error');
         return;
       }
       const columns = Array.from(
@@ -4086,7 +3181,7 @@ function App() {
         await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} requests approved.`);
+      pushToast(`${targets.length} requests approved.`, 'success');
     };
     const bulkRejectUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -4096,7 +3191,7 @@ function App() {
         await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} requests rejected.`);
+      pushToast(`${targets.length} requests rejected.`, 'info');
     };
     const bulkApproveDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -4106,7 +3201,7 @@ function App() {
         await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} dictionary requests approved.`);
+      pushToast(`${targets.length} dictionary requests approved.`, 'success');
     };
     const bulkRejectDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
@@ -4116,7 +3211,7 @@ function App() {
         await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
       }
       clearSelectedApprovalIds();
-      alert(`${targets.length} dictionary requests rejected.`);
+      pushToast(`${targets.length} dictionary requests rejected.`, 'info');
     };
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
@@ -4137,7 +3232,7 @@ function App() {
         .filter((row) => row.englishWord && row.hindiTranslation);
 
       if (entries.length === 0) {
-        alert('No valid dictionary rows found. Use columns like English Word and Hindi Translation.');
+        pushToast('No valid dictionary rows found. Use columns like English Word and Hindi Translation.', 'error');
         return;
       }
 
@@ -4156,7 +3251,7 @@ function App() {
       })));
       setTranslationDictionary(nextDict);
       logAdminActivity('dictionary_bulk_imported', { count: entries.length, source });
-      alert(`${entries.length} dictionary words saved to Firebase.`);
+      pushToast(`${entries.length} dictionary words saved to Firebase.`, 'success');
     };
 
     const handleDictionaryImport = async (event) => {
@@ -4173,12 +3268,12 @@ function App() {
             const rows = XLSX.utils.sheet_to_json(worksheet);
             await saveDictionaryRowsToFirebase(rows, 'admin-excel');
           } catch {
-            alert('Dictionary import failed.');
+            pushToast('Dictionary import failed.', 'error');
           }
         };
         reader.readAsArrayBuffer(file);
       } catch {
-        alert('Dictionary import failed.');
+        pushToast('Dictionary import failed.', 'error');
       } finally {
         event.target.value = null;
       }
@@ -5054,6 +4149,7 @@ function App() {
                                 persistDeletedUsersBin,
                                 logAdminActivity,
                                 loadData,
+                                pushToast,
                               )}
                               disabled={!canMutateAdminData}
                             >Restore</button>
@@ -5065,6 +4161,7 @@ function App() {
                                 deletedUsersBin,
                                 persistDeletedUsersBin,
                                 logAdminActivity,
+                                pushToast,
                               )}
                               disabled={!canMutateAdminData}
                             >Permanently Delete</button>
@@ -6419,6 +5516,7 @@ function App() {
       persistDeletedUsersBinFn,
       logAdminActivityFn,
       loadDataFn,
+      notifyFn,
     ) => {
       if (!item) return;
       const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
@@ -6459,7 +5557,9 @@ function App() {
         if (typeof writeUsersLocalFn === 'function') {
           writeUsersLocalFn(nextUsers);
         }
-        alert(`Restore failed in Firestore, restored locally for ${item.dealerCode || 'user'}.`);
+        if (typeof notifyFn === 'function') {
+          notifyFn(`Restore failed in Firestore, restored locally for ${item.dealerCode || 'user'}.`, 'info');
+        }
       } finally {
         if (typeof persistDeletedUsersBinFn === 'function') {
           persistDeletedUsersBinFn(nextBin);
@@ -6469,7 +5569,9 @@ function App() {
       if (typeof logAdminActivityFn === 'function') {
         logAdminActivityFn('user_restored', { dealerCode: item.dealerCode || '' });
       }
-      alert(`${item.dealerCode || 'User'} restored from recycle bin.`);
+      if (typeof notifyFn === 'function') {
+        notifyFn(`${item.dealerCode || 'User'} restored from recycle bin.`, 'success');
+      }
     };
 
     const permanentlyDeleteBinItem = async (
@@ -6478,6 +5580,7 @@ function App() {
       currentDeletedUsersBin,
       persistDeletedUsersBinFn,
       logAdminActivityFn,
+      notifyFn,
     ) => {
       if (!item) return;
       const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
@@ -6501,7 +5604,9 @@ function App() {
       if (typeof logAdminActivityFn === 'function') {
         logAdminActivityFn('user_deleted_permanently', { dealerCode: item.dealerCode || '' });
       }
-      alert(`${item.dealerCode || 'Deleted user'} removed permanently.`);
+      if (typeof notifyFn === 'function') {
+        notifyFn(`${item.dealerCode || 'Deleted user'} removed permanently.`, 'info');
+      }
     };
 
   const matchesReportFilter = (row, reportKey) => {
@@ -7893,7 +6998,21 @@ function App() {
       {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
-          {showDictionaryForm && <DictionaryRequestForm mode={dictionaryFormMode} onClose={navigateToHome} />}
+          {showDictionaryForm && (
+            <Suspense fallback={<div className="placeholder-container">Loading request form...</div>}>
+              <LazyDictionaryRequestPanel
+                loggedInUser={loggedInUser}
+                pushToast={pushToast}
+                getPendingDictionaryRequestCount={getPendingDictionaryRequestCount}
+                deliveryAreaUpdates={deliveryAreaUpdates}
+                deliveryStaffUpdates={deliveryStaffUpdates}
+                submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+                updateUserInStore={updateUserInStore}
+                mode={dictionaryFormMode}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
           {showHomeInfo && (
             <Suspense fallback={<div className="placeholder-container">Loading dashboard...</div>}>
               <LazyHomeDashboard
@@ -7952,7 +7071,18 @@ function App() {
               />
             </Suspense>
           )}
-          {showProfileUpdate && <ProfileUpdateForm onClose={navigateToHome} />}
+          {showProfileUpdate && (
+            <Suspense fallback={<div className="placeholder-container">Loading profile update...</div>}>
+              <LazyProfileUpdatePanel
+                loggedInUser={loggedInUser}
+                pushToast={pushToast}
+                readImageFileAsDataUrl={readImageFileAsDataUrl}
+                submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+                logRecentActivity={logRecentActivity}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
           {showRateUpdate && (
             <RateUpdatePage
               onClose={navigateToHome}
@@ -7960,7 +7090,16 @@ function App() {
               onSaveRates={handleSaveRatesForUser}
             />
           )}
-          {showBankDetails && <BankDetailsForm onClose={navigateToHome} />}
+          {showBankDetails && (
+            <Suspense fallback={<div className="placeholder-container">Loading bank details...</div>}>
+              <LazyBankDetailsPanel
+                loggedInUser={loggedInUser}
+                submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+                logRecentActivity={logRecentActivity}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
           {showRegisterForm && (
             <Suspense fallback={<div className="placeholder-container">Loading registration...</div>}>
               <LazyRegisterPanel
@@ -7974,8 +7113,30 @@ function App() {
               />
             </Suspense>
           )}
-          {showUserProfile && <UserProfile onClose={navigateToHome} initialSection={userProfileInitialSection} />}
-          {showContactForm && <ContactForm onClose={navigateToHome} />}
+          {showUserProfile && (
+            <Suspense fallback={<div className="placeholder-container">Loading profile...</div>}>
+              <LazyUserProfilePanel
+                loggedInUser={loggedInUser}
+                formatDisplayDate={formatDisplayDate}
+                initialSection={userProfileInitialSection}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
+          {showContactForm && (
+            <Suspense fallback={<div className="placeholder-container">Loading support...</div>}>
+              <LazyContactSupportPanel
+                loggedInUser={loggedInUser}
+                pushToast={pushToast}
+                readFeedbackDataFromStorage={readFeedbackDataFromStorage}
+                readFeedbackRepliesFromStorage={readFeedbackRepliesFromStorage}
+                updateUserInFirebase={updateUserInFirebase}
+                updateUserInStore={updateUserInStore}
+                formatDisplayDateTime={formatDisplayDateTime}
+                onClose={navigateToHome}
+              />
+            </Suspense>
+          )}
         </div>
       )}
       
@@ -8080,7 +7241,7 @@ function App() {
                 </div>
               </div>
             </div>
-            {/* {uploadMetadata && (
+            {uploadMetadata && (
               <div className="upload-info-card">
                 <div>
                   <p className="upload-info-card__eyebrow">Last Uploaded File</p>
@@ -8092,7 +7253,7 @@ function App() {
                   <span>{formatDisplayDateTime(uploadMetadata.uploadedAt)}</span>
                 </div>
               </div>
-            )} */}
+            )}
             {activeFilterChips.length > 0 && (
               <div className="filter-chip-row">
                 {activeFilterChips.map((chip) => (
@@ -8165,7 +7326,7 @@ function App() {
                 </div>
               </div>
             )}
-            {/* {recentActivities.length > 0 && (
+            {recentActivities.length > 0 && (
               <div className="recent-activity-panel">
                 <div className="recent-activity-panel__header">
                   <h4>Recent Activity</h4>
@@ -8180,7 +7341,7 @@ function App() {
                   ))}
                 </div>
               </div>
-            )} */}
+            )}
           </div>
 
           <div className="filters-container filters-container--basic">

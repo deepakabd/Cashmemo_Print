@@ -1571,6 +1571,100 @@
   white-space: nowrap;
 }
 
+.support-status-panel {
+  margin: 18px 0;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #d8e5f1;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%);
+  box-shadow: 0 14px 32px rgba(18, 52, 91, 0.07);
+}
+
+.support-status-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.support-status-panel__header h3 {
+  margin: 0;
+  color: #12345b;
+}
+
+.support-status-panel__header span {
+  font-size: 12px;
+  color: #5d7693;
+}
+
+.support-status-panel__empty {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f7fbff;
+  border: 1px dashed #c9dbef;
+  color: #476483;
+}
+
+.support-status-panel__list {
+  display: grid;
+  gap: 10px;
+}
+
+.support-status-card {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #dce7f3;
+  background: #fff;
+}
+
+.support-status-card--submitted {
+  background: linear-gradient(180deg, #fffdf4 0%, #fff7dc 100%);
+  border-color: #f1df9e;
+}
+
+.support-status-card--reply {
+  background: linear-gradient(180deg, #f4fbff 0%, #e8f4ff 100%);
+  border-color: #bfd8f4;
+}
+
+.support-status-card--resolved {
+  background: linear-gradient(180deg, #f4fff7 0%, #e6f7ec 100%);
+  border-color: #bfe2c7;
+}
+
+.support-status-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.support-status-card__top strong {
+  color: #163d68;
+}
+
+.support-status-card__top span {
+  font-size: 11px;
+  color: #627994;
+  white-space: nowrap;
+}
+
+.support-status-card p {
+  margin: 0;
+  color: #294d74;
+  line-height: 1.5;
+}
+
+.support-status-card small {
+  display: block;
+  margin-top: 8px;
+  color: #476685;
+  line-height: 1.4;
+}
+
 .booking-report-panel {
   margin-bottom: 14px;
   padding: 16px;
