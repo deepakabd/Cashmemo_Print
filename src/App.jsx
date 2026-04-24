@@ -6996,10 +6996,30 @@ function App() {
   const headerData = loggedInUser?.hindiHeaderData || {};
   const ratesData = Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : [];
   const profileCompletenessChecks = [
-    { key: 'profile', label: 'Profile', complete: Boolean(profileData.distributorName && profileData.contact && profileData.address && profileData.gst) },
-    { key: 'bank', label: 'Bank', complete: Boolean(bankDetailsData.bankName && bankDetailsData.accountNo && bankDetailsData.ifsc) },
-    { key: 'header', label: 'Header', complete: Boolean(headerData.distributorName && headerData.address && headerData.email) },
-    { key: 'rates', label: 'Rates', complete: ratesData.length > 0 },
+    {
+      key: 'profile',
+      label: 'Profile',
+      complete: Boolean(profileData.distributorName && profileData.contact && profileData.address && profileData.gst),
+      reason: 'Distributor identity aur billing details complete rahenge.',
+    },
+    {
+      key: 'bank',
+      label: 'Bank',
+      complete: Boolean(bankDetailsData.bankName && bankDetailsData.accountNo && bankDetailsData.ifsc),
+      reason: 'Bank missing hone par payout aur billing follow-up delay ho sakta hai.',
+    },
+    {
+      key: 'header',
+      label: 'Header',
+      complete: Boolean(headerData.distributorName && headerData.address && headerData.email),
+      reason: 'Hindi print output aur distributor header consistency ke liye needed hai.',
+    },
+    {
+      key: 'rates',
+      label: 'Rates',
+      complete: ratesData.length > 0,
+      reason: 'Rates ready hone se invoice aur cashmemo work smooth hota hai.',
+    },
   ];
   const incompleteProfileAreas = profileCompletenessChecks.filter((item) => !item.complete);
   const profileCompletenessLabel = `${profileCompletenessChecks.length - incompleteProfileAreas.length}/${profileCompletenessChecks.length} complete`;
@@ -7014,6 +7034,20 @@ function App() {
     return source.slice(0, 2).toUpperCase();
   })();
   const userAvatarImage = profileData.photoDataUrl || '';
+  const remainingDays = getRemainingDays(loggedInUser?.validTill);
+  const renewalUrgencyLabel = isPlanExpired
+    ? 'Plan expired. Renew to unlock tools again.'
+    : remainingDays === null
+      ? 'Validity not available.'
+      : remainingDays < 0
+        ? `Expired ${Math.abs(remainingDays)} day${Math.abs(remainingDays) === 1 ? '' : 's'} ago.`
+        : remainingDays === 0
+          ? 'Expires today.'
+          : remainingDays === 1
+            ? 'Expires tomorrow.'
+            : remainingDays <= 7
+              ? `${remainingDays} days left. Renewal recommended.`
+              : `${remainingDays} days left on current plan.`;
   const userMenuPackageTips = isHindiEnterprisePackage(loggedInUser?.package)
     ? [
         {
@@ -7068,13 +7102,6 @@ function App() {
           },
         ];
   const hasWorkingData = Array.isArray(parsedData) && parsedData.length > 0;
-  const collectMenuNames = (labels = [], predicate) => labels.filter((label) => {
-    try {
-      return Boolean(predicate(label));
-    } catch {
-      return false;
-    }
-  });
   const menuAccessRules = {
     profileOverview: () => true,
     requestHistory: () => true,
@@ -7095,6 +7122,36 @@ function App() {
     const rule = menuAccessRules[featureKey];
     return typeof rule === 'function' ? rule() : true;
   };
+  const packageAccessBreakdown = {
+    availableNow: [
+      canAccessMenuFeature('profileUpdate') ? 'Profile update' : '',
+      canAccessMenuFeature('bankUpdate') ? 'Bank update' : '',
+      canAccessMenuFeature('rateUpdate') ? 'Rate update' : '',
+      hasWorkingData && canAccessMenuFeature('invoice') ? 'Invoice tools' : '',
+      hasWorkingData && !isPlanExpired ? 'Data view' : '',
+      canAccessMenuFeature('support') ? 'Support & replies' : '',
+    ].filter(Boolean),
+    lockedUntilRenewal: [
+      !canAccessMenuFeature('invoice') ? 'Invoice tools' : '',
+      !canAccessMenuFeature('rateUpdate') ? 'Rate update' : '',
+      !canAccessMenuFeature('labelUpdate') ? 'Label update' : '',
+      !canAccessMenuFeature('profileUpdate') ? 'Profile update' : '',
+      !canAccessMenuFeature('bankUpdate') ? 'Bank update' : '',
+    ].filter(Boolean),
+    hindiPackageOnly: [
+      !isEnterpriseHindiPackage(loggedInUser?.package) ? 'Dictionary update' : '',
+      !isHindiEnterprisePackage(loggedInUser?.package) ? 'Delivery area update' : '',
+      !isHindiEnterprisePackage(loggedInUser?.package) ? 'Delivery staff update' : '',
+      !isHindiEnterprisePackage(loggedInUser?.package) ? 'Header update' : '',
+    ].filter(Boolean),
+  };
+  const collectMenuNames = (labels = [], predicate) => labels.filter((label) => {
+    try {
+      return Boolean(predicate(label));
+    } catch {
+      return false;
+    }
+  });
 
   const getRequestBadge = (type) => {
     const pendingUpdate = loggedInUser?.pendingUpdates?.[type];
@@ -7632,9 +7689,13 @@ function App() {
                     navbarPackageName={navbarPackageName}
                     userMenuStatusText={userMenuStatusText}
                     userMenuSummaryPills={userMenuSummaryPills}
+                    profileCompletenessChecks={profileCompletenessChecks}
                     profileCompletionPercent={profileCompletionPercent}
                     userRole={userRole}
                     userMenuPackageTips={userMenuPackageTips}
+                    packageAccessBreakdown={packageAccessBreakdown}
+                    renewalUrgencyLabel={renewalUrgencyLabel}
+                    recentActivities={recentActivities}
                     userMenuEmptyGuidance={userMenuEmptyGuidance}
                     incompleteProfileAreas={incompleteProfileAreas}
                     incompleteProfileActionItems={incompleteProfileActionItems}
