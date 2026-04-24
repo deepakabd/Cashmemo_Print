@@ -4232,6 +4232,20 @@
   font-weight: 700;
 }
 
+.admin-bulk-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #eef6ff;
+  border: 1px solid #cfe0ff;
+  color: #244c7b;
+  font-size: 12px;
+}
+
 .admin-bulk-actions {
   display: flex;
   gap: 8px;
@@ -4246,6 +4260,12 @@
 
 .admin-inline-select {
   min-width: 88px;
+  min-height: 30px;
+  font-size: 11px;
+}
+
+.admin-inline-input {
+  min-width: 120px;
   min-height: 30px;
   font-size: 11px;
 }
@@ -4286,6 +4306,13 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.admin-feedback-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
 
 .admin-empty-cell {
@@ -4353,6 +4380,72 @@
   border: 1px solid #d7e0ee;
   border-radius: 12px;
   padding: 12px;
+  font-size: 12px;
+}
+
+.admin-drawer-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.admin-drawer-summary-card {
+  border: 1px solid #d7e0ee;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 10px 12px;
+}
+
+.admin-drawer-summary-card span {
+  display: block;
+  color: #5f7a97;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.admin-drawer-summary-card strong {
+  color: #123d77;
+  font-size: 13px;
+}
+
+.admin-drawer-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-drawer-section {
+  border: 1px solid #d7e0ee;
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.admin-drawer-section h4 {
+  margin: 0 0 10px;
+  color: #123d77;
+}
+
+.admin-drawer-section ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #35516f;
+  font-size: 12px;
+}
+
+.admin-drawer-section li + li {
+  margin-top: 6px;
+}
+
+.admin-drawer-field-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-drawer-empty {
+  color: #5f7a97;
   font-size: 12px;
 }
 
@@ -4440,6 +4533,14 @@
   .admin-bulk-bar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .admin-bulk-progress,
+  .admin-drawer-summary-grid,
+  .admin-drawer-sections {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .home-hero-grid,

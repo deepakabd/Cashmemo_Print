@@ -11,6 +11,11 @@ import './App.css';
 import {
   buildPrintDataHtml,
 } from './utils/printSelection';
+import {
+  buildFeedbackStatusHistory,
+  getFeedbackSlaTone,
+  getFeedbackWorkflowState,
+} from './utils/feedbackWorkflow';
 import { useAdminData } from './hooks/useAdminData';
 import { useApprovalQueue } from './hooks/useApprovalQueue';
 import { useCashmemoSelection } from './hooks/useCashmemoSelection';
@@ -263,6 +268,7 @@ const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
 
 const USER_SESSION_STORAGE_KEY = 'cashmemoUserSession';
 const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
+const ADMIN_AUDIT_COLLECTION = 'adminAuditTrail';
 const FILTER_PRESET_STORAGE_KEY_PREFIX = 'cashmemoFilterPresets_';
 const RECENT_ACTIVITY_STORAGE_KEY_PREFIX = 'cashmemoRecentActivity_';
 
@@ -392,6 +398,136 @@ const sanitizeFilenamePart = (value = '') => String(value || '')
 const getDictionaryDocId = (englishWord = '') => (
   encodeURIComponent(String(englishWord || '').trim().toLowerCase()).replace(/\./g, '%2E') || `word-${Date.now()}`
 );
+
+const sanitizeUserForCache = (user = {}) => {
+  if (!user || typeof user !== 'object') return user;
+  const nextUser = { ...user };
+  delete nextUser.pin;
+  return nextUser;
+};
+
+const sanitizeUsersForCache = (users = []) => (
+  Array.isArray(users) ? users.map((user) => sanitizeUserForCache(user)) : []
+);
+
+const maskSecret = (value = '', visibleCount = 0) => {
+  const text = String(value || '').trim();
+  if (!text) return 'Not stored';
+  const safeVisibleCount = Math.max(0, Number(visibleCount) || 0);
+  const maskedLength = Math.max(0, text.length - safeVisibleCount);
+  return `${'*'.repeat(maskedLength)}${text.slice(-safeVisibleCount)}`;
+};
+
+const toTagList = (value = '') => (
+  String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+);
+
+const upsertStatusHistoryEntry = (history = [], entry = {}) => {
+  const nextHistory = Array.isArray(history) ? [...history] : [];
+  const entryKey = String(entry.key || '').trim();
+  if (!entryKey) return nextHistory;
+  const existingIndex = nextHistory.findIndex((item) => item?.key === entryKey);
+  if (existingIndex >= 0) {
+    nextHistory[existingIndex] = { ...nextHistory[existingIndex], ...entry };
+  } else {
+    nextHistory.push(entry);
+  }
+  return nextHistory;
+};
+
+const getFeedbackSlaDaysValue = (item) => {
+  const createdAt = item?.createdAt || item?.date || '';
+  const createdDate = new Date(createdAt);
+  if (Number.isNaN(createdDate.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24)));
+};
+
+const getDrawerSummaryRows = (drawer = {}, users = []) => {
+  const data = drawer?.data || {};
+  if (drawer?.type === 'detail' && /^User - /.test(drawer?.title || '')) {
+    const pendingUpdates = Object.entries(data?.pendingUpdates || {})
+      .filter(([, value]) => String(value?.status || '').toLowerCase() === 'pending')
+      .length;
+    const feedbackEntries = Array.isArray(data?.feedbackEntries) ? data.feedbackEntries.length : 0;
+    return [
+      { label: 'Dealer Code', value: data?.dealerCode || '-' },
+      { label: 'Role', value: data?.role || '-' },
+      { label: 'Status', value: data?.status || '-' },
+      { label: 'Package', value: data?.package || '-' },
+      { label: 'Valid Till', value: formatDisplayDate(data?.validTill) },
+      { label: 'Pending Requests', value: pendingUpdates || 0 },
+      { label: 'Dictionary Queue', value: Number(data?.dictionaryPendingCount || 0) },
+      { label: 'Support Messages', value: feedbackEntries },
+    ];
+  }
+  if (drawer?.type === 'approval') {
+    return [
+      { label: 'Dealer Code', value: drawer?.dealerCode || data?.dealerCode || '-' },
+      { label: 'Request Type', value: drawer?.typeLabel || drawer?.approvalType || drawer?.rawType || '-' },
+      { label: 'Requested At', value: formatDisplayDateTime(drawer?.requestedAt || data?.requestedAt) },
+      { label: 'Existing Users', value: users.filter((user) => String(user?.dealerCode || '').trim() === String(drawer?.dealerCode || '').trim()).length },
+    ];
+  }
+  if (drawer?.type === 'request') {
+    return [
+      { label: 'Dealer Code', value: data?.dealerCode || '-' },
+      { label: 'Dealer Name', value: data?.dealerName || '-' },
+      { label: 'Package', value: data?.package || '-' },
+      { label: 'Requested At', value: formatDisplayDateTime(data?.createdAt || data?.approvedAt) },
+    ];
+  }
+  return Object.entries(data || {})
+    .slice(0, 8)
+    .map(([label, value]) => ({
+      label,
+      value: typeof value === 'object' ? JSON.stringify(value) : String(value || '-'),
+    }));
+};
+
+const formatDrawerFieldLabel = (label = '') => (
+  String(label || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+);
+
+const formatDrawerFieldValue = (value) => {
+  if (value === null || value === undefined || value === '') return '-';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value);
+};
+
+const getDrawerDetailSections = (data = {}) => {
+  const entries = Object.entries(data || {});
+  const hiddenKeys = new Set(['approvalStatus', 'profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates']);
+  const simpleFields = [];
+  const groupedFields = [];
+  const listFields = [];
+
+  entries.forEach(([key, value]) => {
+    if (hiddenKeys.has(key)) return;
+    if (Array.isArray(value)) {
+      listFields.push({ key, value });
+      return;
+    }
+    if (value && typeof value === 'object') {
+      groupedFields.push({ key, value });
+      return;
+    }
+    simpleFields.push({ key, value });
+  });
+
+  return {
+    simpleFields,
+    groupedFields,
+    listFields,
+  };
+};
 
 const getExistingDictionaryEntry = (dictionary = {}, englishWord = '') => {
   const normalized = String(englishWord || '').trim().toLowerCase();
@@ -770,7 +906,7 @@ function App() {
   };
 
   const writeUsersData = (users) => {
-    localStorage.setItem('usersData', JSON.stringify(users));
+    localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(users)));
   };
 
   const persistUserSession = (user) => {
@@ -1539,7 +1675,8 @@ function App() {
     const adminImportRef = useRef(null);
     const dictionaryImportRef = useRef(null);
     const [adminItemsPerPage] = useState(10);
-    const [adminRoleMode, setAdminRoleMode] = useState(() => localStorage.getItem('adminRoleMode') || 'super-admin');
+    const [adminRoleMode, setAdminRoleMode] = useState('viewer');
+    const [adminRoleLoading, setAdminRoleLoading] = useState(true);
     const {
       requests,
       setRequests,
@@ -1651,6 +1788,57 @@ function App() {
     const [activeApprovalReply, setActiveApprovalReply] = useState(null);
     const [approvalReplyDraft, setApprovalReplyDraft] = useState('');
     const [allFeedbackEntries, setAllFeedbackEntries] = useState([]);
+    const [auditSyncState, setAuditSyncState] = useState({ source: 'local fallback', lastSyncAt: '', detail: '' });
+    const [auditSyncDisabled, setAuditSyncDisabled] = useState(false);
+    const [bulkActionState, setBulkActionState] = useState({ active: false, label: '', processed: 0, total: 0, failures: [] });
+    const activeAdminEmail = String(auth?.currentUser?.email || '').trim().toLowerCase();
+
+    const resetBulkActionState = () => {
+      setBulkActionState({ active: false, label: '', processed: 0, total: 0, failures: [] });
+    };
+
+    const runBulkAdminAction = async (label, items, runner, { onComplete } = {}) => {
+      const targets = Array.isArray(items) ? items : [];
+      if (targets.length === 0) return;
+      setBulkActionState({ active: true, label, processed: 0, total: targets.length, failures: [] });
+      const failures = [];
+      for (let index = 0; index < targets.length; index += 1) {
+        const item = targets[index];
+        try {
+          const result = await runner(item, index);
+          if (result?.ok === false) {
+            failures.push({
+              key: item?.id || item?.dealerCode || `${label}-${index}`,
+              target: item?.dealerCode || item?.dealerName || item?.id || `Row ${index + 1}`,
+              reason: result?.reason || 'Action was not completed.',
+            });
+          }
+        } catch (error) {
+          failures.push({
+            key: item?.id || item?.dealerCode || `${label}-${index}`,
+            target: item?.dealerCode || item?.dealerName || item?.id || `Row ${index + 1}`,
+            reason: error instanceof Error ? error.message : 'Unexpected failure.',
+          });
+        } finally {
+          setBulkActionState((prev) => ({
+            ...prev,
+            processed: index + 1,
+          }));
+        }
+      }
+      setBulkActionState((prev) => ({ ...prev, active: false, failures }));
+      if (typeof onComplete === 'function') {
+        onComplete(failures);
+      }
+    };
+
+    const exportBulkFailureReport = () => {
+      if (!bulkActionState.failures.length) {
+        pushToast('No bulk failures to export.', 'info');
+        return;
+      }
+      exportRowsAsCsv('admin-bulk-failures.csv', bulkActionState.failures);
+    };
 
     const getConversationKey = (item) => {
       if (!item) return '';
@@ -1686,12 +1874,34 @@ function App() {
         return;
       }
       const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
+      const replyAt = new Date().toISOString();
       const nextReplies = {
         ...feedbackReplies,
         [replyKey]: adminReplyDraft.trim(),
       };
       persistFeedbackReplies(nextReplies);
+      const existingHistory = buildFeedbackStatusHistory(activeAdminFeedback, feedbackReplies, feedbackMetaOverrides);
+      const nextOverrides = {
+        ...feedbackMetaOverrides,
+        [activeAdminFeedback.id]: {
+          ...(feedbackMetaOverrides[activeAdminFeedback.id] || {}),
+          workflowState: 'awaiting-user',
+          lastAdminReplyAt: replyAt,
+          statusHistory: upsertStatusHistoryEntry(existingHistory, {
+            key: 'awaiting-user',
+            label: 'Admin Replied',
+            at: replyAt,
+          }),
+        },
+      };
+      persistFeedbackMetaOverrides(nextOverrides);
       logAdminActivity('feedback_reply_saved', { id: replyKey, dealerCode: activeAdminFeedback.dealerCode || '' });
+      if (activeAdminFeedback?.id && activeAdminFeedback?.source !== 'userDoc' && !String(activeAdminFeedback.id).startsWith('userfb-')) {
+        void updateDoc(doc(db, 'feedback', activeAdminFeedback.id), {
+          adminReply: adminReplyDraft.trim(),
+          updatedAt: serverTimestamp(),
+        });
+      }
       closeAdminReplyPopup();
     };
 
@@ -1802,6 +2012,7 @@ function App() {
         let firebaseUsers = [];
         let firebaseApprovals = [];
         let firebaseFeedback = [];
+        let firebaseAuditTrail = [];
 
         try {
           const reqSnap = await getDocs(collection(db, 'registrationRequests'));
@@ -1836,6 +2047,17 @@ function App() {
             ...d.data(),
             createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
           }));
+        } catch (e) { void e; }
+
+        try {
+          const auditSnap = await getDocs(collection(db, ADMIN_AUDIT_COLLECTION));
+          firebaseAuditTrail = auditSnap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+            createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
+          }))
+            .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
+            .slice(0, 150);
         } catch (e) { void e; }
 
         if (firebaseRequests.length === 0) {
@@ -1923,8 +2145,24 @@ function App() {
         setUpdateApprovals(firebaseApprovals);
         setFeedback(mergedFeedback);
         setAllFeedbackEntries(fullFeedbackEntries);
+        if (firebaseAuditTrail.length > 0) {
+          setAuditTrail(firebaseAuditTrail);
+          localStorage.setItem('adminAuditTrail', JSON.stringify(firebaseAuditTrail));
+          setAuditSyncState({
+            source: 'firebase',
+            lastSyncAt: new Date().toISOString(),
+            detail: 'Firestore audit active',
+          });
+        }
+        if (firebaseAuditTrail.length === 0) {
+          setAuditSyncState((prev) => ({
+            source: prev.source === 'firebase' ? prev.source : 'local fallback',
+            lastSyncAt: prev.lastSyncAt || new Date().toISOString(),
+            detail: prev.detail || 'Using browser audit history',
+          }));
+        }
         localStorage.setItem('registrationRequests', JSON.stringify(reqWithOverrides));
-        localStorage.setItem('usersData', JSON.stringify(firebaseUsers));
+        localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(firebaseUsers)));
         localStorage.setItem('feedbackData', JSON.stringify(fullFeedbackEntries));
         setAdminDataHealth({
           source: firebaseUsers.length > 0 || firebaseRequests.length > 0 || firebaseApprovals.length > 0 || firebaseFeedback.length > 0 ? 'firebase+local' : 'local',
@@ -1939,6 +2177,8 @@ function App() {
           const userList = usersRaw ? JSON.parse(usersRaw) : [];
           const fbRaw = localStorage.getItem('feedbackData');
           const fbList = fbRaw ? JSON.parse(fbRaw) : [];
+          const auditRaw = localStorage.getItem('adminAuditTrail');
+          const auditList = auditRaw ? JSON.parse(auditRaw) : [];
           const reqArray = Array.isArray(reqList) ? reqList : [];
           const reqWithOverrides = reqArray.map((r) => {
             const overriddenStatus = registrationStatusOverrides[r.id];
@@ -1948,6 +2188,12 @@ function App() {
           setUsers(Array.isArray(userList) ? userList : []);
           setFeedback(Array.isArray(fbList) ? fbList : []);
           setUpdateApprovals([]);
+          setAuditTrail(Array.isArray(auditList) ? auditList : []);
+          setAuditSyncState({
+            source: 'local fallback',
+            lastSyncAt: new Date().toISOString(),
+            detail: 'Using browser audit history',
+          });
           setAdminDataHealth({
             source: 'local',
             lastSyncAt: new Date().toISOString(),
@@ -1958,6 +2204,11 @@ function App() {
           setUsers([]);
           setFeedback([]);
           setUpdateApprovals([]);
+          setAuditSyncState({
+            source: 'unavailable',
+            lastSyncAt: new Date().toISOString(),
+            detail: 'Admin data sync unavailable.',
+          });
           setAdminDataHealth({
             source: 'unavailable',
             lastSyncAt: new Date().toISOString(),
@@ -1969,7 +2220,7 @@ function App() {
 
     const writeUsersLocal = (nextUsers) => {
       setUsers(nextUsers);
-      localStorage.setItem('usersData', JSON.stringify(nextUsers));
+      localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(nextUsers)));
     };
 
     const toDateInputValue = (value) => {
@@ -1992,12 +2243,44 @@ function App() {
         action,
         details,
         createdAt: new Date().toISOString(),
+        actor: activeAdminEmail || 'admin',
       };
       setAuditTrail((prev) => {
         const next = [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 150);
         localStorage.setItem('adminAuditTrail', JSON.stringify(next));
         return next;
       });
+      if (auditSyncDisabled) {
+        setAuditSyncState({
+          source: 'local fallback',
+          lastSyncAt: new Date().toISOString(),
+          detail: 'Firestore audit unavailable, saving locally',
+        });
+        return;
+      }
+      void (async () => {
+        try {
+          await addDoc(collection(db, ADMIN_AUDIT_COLLECTION), {
+            action,
+            details,
+            actor: activeAdminEmail || 'admin',
+            createdAt: serverTimestamp(),
+          });
+          setAuditSyncState({
+            source: 'firebase',
+            lastSyncAt: new Date().toISOString(),
+            detail: 'Firestore audit active',
+          });
+        } catch (error) {
+          void error;
+          setAuditSyncDisabled(true);
+          setAuditSyncState({
+            source: 'local fallback',
+            lastSyncAt: new Date().toISOString(),
+            detail: 'Firestore audit unavailable, saving locally',
+          });
+        }
+      })();
     };
 
     const persistAdminNotes = (nextNotes) => {
@@ -2083,22 +2366,58 @@ function App() {
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json(worksheet);
-          const importedUsers = rows.map((row) => ({
-            dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
-            dealerName: String(row.dealerName || row['Dealer Name'] || '').trim(),
-            mobile: String(row.mobile || row.Mobile || '').trim(),
-            email: String(row.email || row.Email || '').trim(),
-            package: String(row.package || row.Package || '').trim(),
-            pin: String(row.pin || row.PIN || '').trim(),
-            role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
-            status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
-            validFrom: toIsoDate(row.validFrom || row['Valid From']) || new Date().toISOString(),
-            validTill: toIsoDate(row.validTill || row['Valid Till']) || computeValidityDates(String(row.package || row.Package || '')).validTill,
-          })).filter((row) => row.dealerCode && row.dealerName && row.package && row.pin);
+          const seenDealerCodes = new Set(users.map((user) => String(user?.dealerCode || '').trim().toLowerCase()).filter(Boolean));
+          const validationFailures = [];
+          const importedUsers = rows.reduce((acc, row, index) => {
+            const candidate = {
+              dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
+              dealerName: String(row.dealerName || row['Dealer Name'] || '').trim(),
+              mobile: String(row.mobile || row.Mobile || '').trim(),
+              email: String(row.email || row.Email || '').trim(),
+              package: String(row.package || row.Package || '').trim(),
+              pin: String(row.pin || row.PIN || '').trim(),
+              role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
+              status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
+              validFrom: toIsoDate(row.validFrom || row['Valid From']) || new Date().toISOString(),
+              validTill: toIsoDate(row.validTill || row['Valid Till']) || computeValidityDates(String(row.package || row.Package || '')).validTill,
+            };
+            const failureReason = !candidate.dealerCode || !candidate.dealerName
+              ? 'Dealer code and dealer name required.'
+              : !PACKAGE_OPTIONS.includes(candidate.package)
+                ? 'Invalid package.'
+                : !/^\d{4,6}$/.test(candidate.pin)
+                  ? 'PIN must be 4 to 6 digits.'
+                  : seenDealerCodes.has(candidate.dealerCode.toLowerCase())
+                    ? 'Duplicate dealer code.'
+                    : '';
+            if (failureReason) {
+              validationFailures.push({
+                row: index + 2,
+                dealerCode: candidate.dealerCode || '-',
+                reason: failureReason,
+              });
+              return acc;
+            }
+            seenDealerCodes.add(candidate.dealerCode.toLowerCase());
+            acc.push(candidate);
+            return acc;
+          }, []);
           const nextUsers = [...users, ...importedUsers];
           writeUsersLocal(nextUsers);
           logAdminActivity('bulk_users_imported', { count: importedUsers.length });
-          pushToast(`${importedUsers.length} users imported locally.`, 'success');
+          if (validationFailures.length > 0) {
+            setBulkActionState({
+              active: false,
+              label: 'Import validation',
+              processed: importedUsers.length,
+              total: rows.length,
+              failures: validationFailures,
+            });
+            pushToast(`${importedUsers.length} users imported. ${validationFailures.length} rows skipped.`, importedUsers.length > 0 ? 'info' : 'error');
+          } else {
+            resetBulkActionState();
+            pushToast(`${importedUsers.length} users imported locally.`, 'success');
+          }
         };
         reader.readAsArrayBuffer(file);
       } catch (error) {
@@ -2150,12 +2469,40 @@ function App() {
     }, []);
 
     useEffect(() => {
-      localStorage.setItem('adminRoleMode', adminRoleMode);
       if (!canAccessTab(activeAdminTab)) {
         setActiveAdminTab('dashboard');
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [adminRoleMode, activeAdminTab]);
+
+    useEffect(() => {
+      let cancelled = false;
+      const resolveAdminRole = async () => {
+        setAdminRoleLoading(true);
+        let nextRole = activeAdminEmail === ADMIN_CONTACTS.email ? 'super-admin' : 'viewer';
+        if (activeAdminEmail) {
+          try {
+            const adminProfileSnap = await getDoc(doc(db, 'adminUsers', activeAdminEmail));
+            if (adminProfileSnap.exists()) {
+              const role = String(adminProfileSnap.data()?.role || '').trim();
+              if (adminRolePermissions[role]) {
+                nextRole = role;
+              }
+            }
+          } catch (error) {
+            void error;
+          }
+        }
+        if (!cancelled) {
+          setAdminRoleMode(nextRole);
+          setAdminRoleLoading(false);
+        }
+      };
+      void resolveAdminRole();
+      return () => {
+        cancelled = true;
+      };
+    }, [activeAdminEmail]);
 
     useEffect(() => {
       setAdminSubFilter('all');
@@ -2167,8 +2514,8 @@ function App() {
 
     const approveRequest = async (id, options = {}) => {
       const req = requests.find((r) => r.id === id);
-      if (!req) return;
-      if (!options.skipConfirm && !confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`)) return;
+      if (!req) return { ok: false, reason: 'Registration request not found.' };
+      if (!options.skipConfirm && !confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
       try {
         setRegistrationOverride(id, 'approved');
         const validity = computeValidityDates(req.package || '');
@@ -2233,14 +2580,17 @@ function App() {
         if (!isLocalOnlyRequest && !requestStatusUpdated) {
           setRequests((prev) => prev.filter((r) => r.id !== id));
         }
+        return { ok: true };
       } catch {
         pushToast('Approve failed. Firestore rules/permission check karo.', 'error');
+        return { ok: false, reason: 'Approve failed. Firestore rules/permission check karo.' };
       }
     };
 
     const rejectRequest = async (id, options = {}) => {
       const req = requests.find((r) => r.id === id);
-      if (!options.skipConfirm && !confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`)) return;
+      if (!req) return { ok: false, reason: 'Registration request not found.' };
+      if (!options.skipConfirm && !confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
       try {
         setRegistrationOverride(id, 'rejected');
         const requestId = String(id || '');
@@ -2257,8 +2607,10 @@ function App() {
         }
         await loadData();
         logAdminActivity('registration_rejected', { id, dealerCode: req?.dealerCode || '' });
+        return { ok: true };
       } catch {
         pushToast('Reject failed. Check Firestore rules.', 'error');
+        return { ok: false, reason: 'Reject failed. Check Firestore rules.' };
       }
     };
 
@@ -2298,9 +2650,9 @@ function App() {
       const target = typeof userOrId === 'object'
         ? userOrId
         : users.find((u) => u.id === userOrId);
-      if (!target) return;
+      if (!target) return { ok: false, reason: 'User not found.' };
       const nextStatus = target.status === 'active' ? 'disabled' : 'active';
-      if (!options.skipConfirm && !confirmAdminAction(`${nextStatus === 'disabled' ? 'Disable' : 'Enable'} ${target.dealerCode || 'this user'}?`)) return;
+      if (!options.skipConfirm && !confirmAdminAction(`${nextStatus === 'disabled' ? 'Disable' : 'Enable'} ${target.dealerCode || 'this user'}?`)) return { ok: false, reason: 'Action cancelled.' };
       try {
         if (target.id) {
           await updateDoc(doc(db, 'users', target.id), {
@@ -2309,7 +2661,7 @@ function App() {
           });
           await loadData();
           logAdminActivity('user_status_changed', { dealerCode: target.dealerCode || '', status: nextStatus });
-          return;
+          return { ok: true };
         }
         throw new Error('LOCAL_ONLY_USER');
       } catch {
@@ -2318,6 +2670,7 @@ function App() {
         writeUsersLocal(nextUsers);
         logAdminActivity('user_status_changed_local', { dealerCode: target.dealerCode || '', status: nextStatus });
         pushToast('Status updated locally.', 'info');
+        return { ok: true, reason: 'Updated locally.' };
       }
     };
 
@@ -2326,23 +2679,36 @@ function App() {
         ? userOrId
         : users.find((u) => u.id === userOrId);
       if (!target) return;
-      if (!confirmAdminAction(`Delete ${target.dealerCode || 'this user'} permanently?`)) return;
-      try {
-        persistDeletedUsersBin([{ ...target, deletedAt: new Date().toISOString() }, ...deletedUsersBin].slice(0, 200));
-        if (target.id) {
-          await deleteDoc(doc(db, 'users', target.id));
-          await loadData();
-          logAdminActivity('user_deleted', { dealerCode: target.dealerCode || '' });
-          return;
-        }
-        throw new Error('LOCAL_ONLY_USER');
-      } catch {
-        const token = resolveEditToken(target);
-        const nextUsers = users.filter((u) => !isSameUserByToken(u, token));
-        writeUsersLocal(nextUsers);
-        logAdminActivity('user_deleted_local', { dealerCode: target.dealerCode || '' });
-        pushToast('User deleted locally.', 'info');
-      }
+      openInputDialog({
+        title: 'Delete User',
+        message: `Enter a delete reason for ${target.dealerCode || 'this user'}.`,
+        submitLabel: 'Delete User',
+        onSubmit: async (deleteReason) => {
+          try {
+            persistDeletedUsersBin([{
+              ...target,
+              deletedAt: new Date().toISOString(),
+              deletedBy: activeAdminEmail || 'admin',
+              deleteReason,
+              restoreCount: Number(target?.restoreCount || 0),
+            }, ...deletedUsersBin].slice(0, 200));
+            if (target.id) {
+              await deleteDoc(doc(db, 'users', target.id));
+              await loadData();
+              logAdminActivity('user_deleted', { dealerCode: target.dealerCode || '', deleteReason });
+              return true;
+            }
+            throw new Error('LOCAL_ONLY_USER');
+          } catch {
+            const token = resolveEditToken(target);
+            const nextUsers = users.filter((u) => !isSameUserByToken(u, token));
+            writeUsersLocal(nextUsers);
+            logAdminActivity('user_deleted_local', { dealerCode: target.dealerCode || '', deleteReason });
+            pushToast('User deleted locally.', 'info');
+            return true;
+          }
+        },
+      });
     };
 
     const startEditUser = (u) => {
@@ -2549,7 +2915,7 @@ function App() {
     };
 
     const approveUpdateRequest = async (approval, options = {}) => {
-      if (!approval?.id) return;
+      if (!approval?.id) return { ok: false, reason: 'Approval request missing.' };
       const approvalType = normalizeApprovalType(approval.type);
       const fieldByType = {
         profile: 'profileData',
@@ -2562,14 +2928,14 @@ function App() {
       const targetField = fieldByType[approvalType];
       if (!targetField && approvalType !== 'planUpgrade' && approvalType !== 'dictionary') {
         pushToast(`Unsupported approval type: ${approval.type || 'unknown'}`, 'error');
-        return;
+        return { ok: false, reason: `Unsupported approval type: ${approval.type || 'unknown'}` };
       }
-      if (!options.skipConfirm && !confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return;
+      if (!options.skipConfirm && !confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (!targetUser?.id) {
           pushToast('User not found for approval.', 'error');
-          return;
+          return { ok: false, reason: 'User not found for approval.' };
         }
         const nextStatus = { ...(targetUser.approvalStatus || {}), [approvalType]: 'approved' };
         if (approvalType === 'rates') {
@@ -2591,7 +2957,7 @@ function App() {
           const hindiTranslation = String(dictionaryPayload?.hindiTranslation || dictionaryPayload?.hin || '').trim();
           if (!englishWord || !hindiTranslation) {
             pushToast('Dictionary request needs both English word and Hindi translation.', 'error');
-            return;
+            return { ok: false, reason: 'Dictionary request needs both English word and Hindi translation.' };
           }
           const nextDict = { ...translationDictionary, [englishWord]: hindiTranslation };
           await setDoc(doc(db, 'settings', 'translationDictionary'), nextDict);
@@ -2631,7 +2997,7 @@ function App() {
           const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
           if (!nextPackage) {
             pushToast('Plan upgrade request has no selected package.', 'error');
-            return;
+            return { ok: false, reason: 'Plan upgrade request has no selected package.' };
           }
           const validity = computeValidityDates(nextPackage);
           await updateDoc(doc(db, 'users', targetUser.id), {
@@ -2697,15 +3063,17 @@ function App() {
         if (!options.skipAlert) {
           pushToast('Request approved successfully.', 'success');
         }
+        return { ok: true };
       } catch {
         pushToast('Approval failed.', 'error');
+        return { ok: false, reason: 'Approval failed.' };
       }
     };
 
     const rejectUpdateRequest = async (approval, options = {}) => {
-      if (!approval?.id) return;
+      if (!approval?.id) return { ok: false, reason: 'Approval request missing.' };
       const approvalType = normalizeApprovalType(approval.type);
-      if (!options.skipConfirm && !confirmAdminAction(`Reject ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return;
+      if (!options.skipConfirm && !confirmAdminAction(`Reject ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (targetUser?.id) {
@@ -2763,8 +3131,10 @@ function App() {
         setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
         await loadData();
         logAdminActivity('update_rejected', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
+        return { ok: true };
       } catch {
         pushToast('Reject failed.', 'error');
+        return { ok: false, reason: 'Reject failed.' };
       }
     };
 
@@ -2848,9 +3218,51 @@ function App() {
       logAdminActivity('feedback_priority', { id: item.id, priority });
     };
 
+    const setFeedbackAssignee = async (item, assignee) => {
+      await updateFeedbackMeta(item, { assignee: String(assignee || '').trim() });
+      logAdminActivity('feedback_assignee_updated', { id: item.id, assignee: String(assignee || '').trim() });
+    };
+
+    const setFeedbackTags = async (item, tags) => {
+      const normalizedTags = toTagList(tags).join(', ');
+      await updateFeedbackMeta(item, { tags: normalizedTags });
+      logAdminActivity('feedback_tags_updated', { id: item.id, tags: normalizedTags });
+    };
+
+    const setFeedbackFollowUpDate = async (item, followUpDate) => {
+      await updateFeedbackMeta(item, { followUpDate: String(followUpDate || '').trim() });
+      logAdminActivity('feedback_followup_updated', { id: item.id, followUpDate: String(followUpDate || '').trim() });
+    };
+
+    const setFeedbackWorkflow = async (item, workflowState) => {
+      const nextState = String(workflowState || '').trim().toLowerCase();
+      const nextHistory = upsertStatusHistoryEntry(
+        buildFeedbackStatusHistory(item, feedbackReplies, feedbackMetaOverrides),
+        {
+          key: nextState,
+          label: nextState.replace(/-/g, ' '),
+          at: new Date().toISOString(),
+        },
+      );
+      await updateFeedbackMeta(item, { workflowState: nextState, statusHistory: nextHistory });
+      logAdminActivity('feedback_workflow_updated', { id: item.id, workflowState: nextState });
+    };
+
     const toggleFeedbackResolved = async (item) => {
       const resolved = !item?.resolved;
-      await updateFeedbackMeta(item, { resolved });
+      const history = resolved
+        ? upsertStatusHistoryEntry(buildFeedbackStatusHistory(item, feedbackReplies, feedbackMetaOverrides), {
+          key: 'resolved',
+          label: 'Resolved',
+          at: new Date().toISOString(),
+        })
+        : buildFeedbackStatusHistory(item, feedbackReplies, feedbackMetaOverrides).filter((entry) => entry?.key !== 'resolved');
+      await updateFeedbackMeta(item, {
+        resolved,
+        workflowState: resolved ? 'resolved' : 'awaiting-admin',
+        resolvedAt: resolved ? new Date().toISOString() : '',
+        statusHistory: history,
+      });
       logAdminActivity('feedback_resolved', { id: item.id, resolved });
     };
 
@@ -2927,7 +3339,7 @@ function App() {
         || String(u.role || '').toLowerCase() === adminSubFilter;
       return isWithinAdminDateRange(u.createdAt || u.approvedAt || u.updatedAt)
         && matchesSubFilter
-        && matchesAdminSearch([u.dealerCode, u.dealerName, u.mobile, u.email, u.package, u.pin, u.status, u.role]);
+        && matchesAdminSearch([u.dealerCode, u.dealerName, u.mobile, u.email, u.package, u.status, u.role]);
     });
     const filteredApprovals = nonDictionaryPendingApprovals.filter((a) =>
       isWithinAdminDateRange(a.requestedAt || a.approvedAt || a.rejectedAt) &&
@@ -2949,13 +3361,18 @@ function App() {
     const filteredFeedback = feedback.filter((f) => {
       const priority = String(f.priority || 'medium').toLowerCase();
       const feedbackState = f.resolved ? 'resolved' : (f.read ? 'read' : 'unread');
+      const workflowState = getFeedbackWorkflowState(f, feedbackReplies, feedbackMetaOverrides);
+      const assignee = String(f.assignee || feedbackMetaOverrides[f.id]?.assignee || '').toLowerCase();
       const matchesSubFilter = adminSubFilter === 'all'
         || adminSubFilter === priority
         || adminSubFilter === feedbackState
+        || adminSubFilter === workflowState
+        || (adminSubFilter === 'assigned' && Boolean(assignee))
+        || (adminSubFilter === 'unassigned' && !assignee)
         || (adminSubFilter === 'open' && !f.resolved);
       return isWithinAdminDateRange(f.createdAt || f.date) &&
         matchesSubFilter &&
-        matchesAdminSearch([f.dealerCode, f.dealerName, f.email, f.text, f.createdAt, f.date, f.read ? 'read' : 'unread', priority, f.resolved ? 'resolved' : 'open']);
+        matchesAdminSearch([f.dealerCode, f.dealerName, f.email, f.text, f.createdAt, f.date, f.read ? 'read' : 'unread', priority, f.resolved ? 'resolved' : 'open', workflowState, assignee, f.tags, f.followUpDate]);
     });
     const currentTabRows = activeAdminTab === 'pending-registration'
       ? filteredPendingRegistrationRequests
@@ -3100,6 +3517,10 @@ function App() {
         { value: 'read', label: 'Read' },
         { value: 'open', label: 'Open' },
         { value: 'resolved', label: 'Resolved' },
+        { value: 'awaiting-admin', label: 'Awaiting Admin' },
+        { value: 'awaiting-user', label: 'Awaiting User' },
+        { value: 'assigned', label: 'Assigned' },
+        { value: 'unassigned', label: 'Unassigned' },
         { value: 'high', label: 'High Priority' },
         { value: 'medium', label: 'Medium Priority' },
         { value: 'low', label: 'Low Priority' },
@@ -3156,72 +3577,148 @@ function App() {
         : viewRequest
           ? { title: `Request - ${viewRequest?.dealerCode || ''}`, data: viewRequest || {}, noteKey: `request:${viewRequest?.id || ''}`, type: 'request' }
           : null;
+    const activeDrawerData = activeDrawer?.type === 'detail' && /^User - /.test(activeDrawer?.title || '')
+      ? sanitizeUserForCache(activeDrawer?.data || {})
+      : activeDrawer?.type === 'request'
+        ? { ...(activeDrawer?.data || {}), pin: activeDrawer?.data?.pin ? maskSecret(activeDrawer.data.pin, 0) : undefined }
+        : activeDrawer?.data || {};
+    const activeDrawerDetailSections = getDrawerDetailSections(activeDrawerData);
     const activeSubFilterOptions = adminSubFilterOptions[activeAdminTab] || [{ value: 'all', label: 'All' }];
 
     const bulkApproveRegistrations = async () => {
       if (selectedRequestIds.length === 0) return;
       if (!confirmAdminAction(`Approve ${selectedRequestIds.length} selected registration requests?`)) return;
-      for (const id of selectedRequestIds) {
-        await approveRequest(id, { skipConfirm: true });
-      }
-      clearSelectedRequestIds();
+      await runBulkAdminAction(
+        'Approve registrations',
+        selectedRequestIds,
+        (id) => approveRequest(id, { skipConfirm: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedRequestIds();
+            pushToast(
+              failures.length === 0
+                ? `${selectedRequestIds.length} registration requests approved.`
+                : `${selectedRequestIds.length - failures.length} approved, ${failures.length} failed.`,
+              failures.length === 0 ? 'success' : 'info',
+            );
+          },
+        },
+      );
     };
     const bulkRejectRegistrations = async () => {
       if (selectedRequestIds.length === 0) return;
       if (!confirmAdminAction(`Reject ${selectedRequestIds.length} selected registration requests?`)) return;
-      for (const id of selectedRequestIds) {
-        await rejectRequest(id, { skipConfirm: true });
-      }
-      clearSelectedRequestIds();
+      await runBulkAdminAction(
+        'Reject registrations',
+        selectedRequestIds,
+        (id) => rejectRequest(id, { skipConfirm: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedRequestIds();
+            pushToast(
+              failures.length === 0
+                ? `${selectedRequestIds.length} registration requests rejected.`
+                : `${selectedRequestIds.length - failures.length} rejected, ${failures.length} failed.`,
+              failures.length === 0 ? 'info' : 'error',
+            );
+          },
+        },
+      );
     };
     const bulkApproveUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Approve ${targets.length} selected update requests?`)) return;
-      for (const item of targets) {
-        await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
-      }
-      clearSelectedApprovalIds();
-      pushToast(`${targets.length} requests approved.`, 'success');
+      await runBulkAdminAction(
+        'Approve updates',
+        targets,
+        (item) => approveUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedApprovalIds();
+            pushToast(
+              failures.length === 0 ? `${targets.length} requests approved.` : `${targets.length - failures.length} approved, ${failures.length} failed.`,
+              failures.length === 0 ? 'success' : 'info',
+            );
+          },
+        },
+      );
     };
     const bulkRejectUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Reject ${targets.length} selected update requests?`)) return;
-      for (const item of targets) {
-        await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
-      }
-      clearSelectedApprovalIds();
-      pushToast(`${targets.length} requests rejected.`, 'info');
+      await runBulkAdminAction(
+        'Reject updates',
+        targets,
+        (item) => rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedApprovalIds();
+            pushToast(
+              failures.length === 0 ? `${targets.length} requests rejected.` : `${targets.length - failures.length} rejected, ${failures.length} failed.`,
+              failures.length === 0 ? 'info' : 'error',
+            );
+          },
+        },
+      );
     };
     const bulkApproveDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Approve ${targets.length} selected dictionary requests?`)) return;
-      for (const item of targets) {
-        await approveUpdateRequest(item, { skipConfirm: true, skipAlert: true });
-      }
-      clearSelectedApprovalIds();
-      pushToast(`${targets.length} dictionary requests approved.`, 'success');
+      await runBulkAdminAction(
+        'Approve dictionary requests',
+        targets,
+        (item) => approveUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedApprovalIds();
+            pushToast(
+              failures.length === 0 ? `${targets.length} dictionary requests approved.` : `${targets.length - failures.length} approved, ${failures.length} failed.`,
+              failures.length === 0 ? 'success' : 'info',
+            );
+          },
+        },
+      );
     };
     const bulkRejectDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Reject ${targets.length} selected dictionary requests?`)) return;
-      for (const item of targets) {
-        await rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true });
-      }
-      clearSelectedApprovalIds();
-      pushToast(`${targets.length} dictionary requests rejected.`, 'info');
+      await runBulkAdminAction(
+        'Reject dictionary requests',
+        targets,
+        (item) => rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedApprovalIds();
+            pushToast(
+              failures.length === 0 ? `${targets.length} dictionary requests rejected.` : `${targets.length - failures.length} rejected, ${failures.length} failed.`,
+              failures.length === 0 ? 'info' : 'error',
+            );
+          },
+        },
+      );
     };
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
       if (targets.length === 0) return;
       if (!confirmAdminAction(`Toggle status for ${targets.length} selected users?`)) return;
-      for (const item of targets) {
-        await toggleUserStatus(item, { skipConfirm: true });
-      }
-      clearSelectedUserTokens();
+      await runBulkAdminAction(
+        'Toggle user status',
+        targets,
+        (item) => toggleUserStatus(item, { skipConfirm: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedUserTokens();
+            pushToast(
+              failures.length === 0 ? `${targets.length} user statuses updated.` : `${targets.length - failures.length} updated, ${failures.length} failed.`,
+              failures.length === 0 ? 'success' : 'info',
+            );
+          },
+        },
+      );
     };
 
     const saveDictionaryRowsToFirebase = async (rows, source = 'admin') => {
@@ -3299,12 +3796,9 @@ function App() {
             <p>Registrations, approvals, users, and feedback ko ek jagah se manage kijiye.</p>
           </div>
           <div className="admin-header-actions">
-            <select className="form-input admin-role-select" value={adminRoleMode} onChange={(e) => setAdminRoleMode(e.target.value)}>
-              <option value="super-admin">Super Admin</option>
-              <option value="approval-admin">Approval Admin</option>
-              <option value="support-admin">Support Admin</option>
-              <option value="viewer">Viewer</option>
-            </select>
+            <div className="form-input admin-role-select" aria-live="polite">
+              {adminRoleLoading ? 'Resolving role...' : `Role: ${adminRoleMode}`}
+            </div>
             <button className="admin-ghost-btn" onClick={loadData}>Refresh Data</button>
             <button className="admin-logout-btn" onClick={onAdminLogout}>Log Out</button>
           </div>
@@ -3471,6 +3965,27 @@ function App() {
           </div>
         )}
 
+        {(bulkActionState.active || bulkActionState.failures.length > 0) && (
+          <div className="admin-bulk-progress" aria-live="polite">
+            <div>
+              <strong>{bulkActionState.label || 'Bulk action'}</strong>
+              <span>
+                {bulkActionState.active
+                  ? ` ${bulkActionState.processed}/${bulkActionState.total} processed`
+                  : ` completed with ${bulkActionState.failures.length} failure${bulkActionState.failures.length === 1 ? '' : 's'}`}
+              </span>
+            </div>
+            <div className="admin-bulk-actions">
+              {bulkActionState.failures.length > 0 && (
+                <button className="admin-ghost-btn" onClick={exportBulkFailureReport}>Export Failures</button>
+              )}
+              {!bulkActionState.active && (
+                <button className="admin-ghost-btn" onClick={resetBulkActionState}>Clear</button>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeAdminTab === 'dashboard' && (
           <div className="admin-dashboard-grid">
             <div className="admin-section">
@@ -3513,6 +4028,10 @@ function App() {
                 <div className="admin-health-card">
                   <span>Last Sync</span>
                   <strong>{formatDisplayDate(adminDataHealth.lastSyncAt)}</strong>
+                </div>
+                <div className="admin-health-card">
+                  <span>Audit Sync</span>
+                  <strong>{`${auditSyncState.source || 'local fallback'}${auditSyncState.lastSyncAt ? ` - ${formatDisplayDate(auditSyncState.lastSyncAt)}` : ''}`}</strong>
                 </div>
               </div>
             </div>
@@ -3623,7 +4142,7 @@ function App() {
                   <th>Email</th>
                   <th>Package</th>
                   <th>Validity</th>
-                  <th>Pin</th>
+                  <th>PIN</th>
                   <th>Profile Updated</th>
                   <th>Bank Updated</th>
                   <th>Rate Updated</th>
@@ -3652,7 +4171,7 @@ function App() {
                         {formatDisplayDate(u.validTill)}
                         {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
                       </td>
-                      <td>{u.pin || '-'}</td>
+                      <td>{maskSecret(u.pin, 0)}</td>
                       <td>{u.profileData ? <button onClick={() => openDetailView(u, 'profile')}>View</button> : '-'}</td>
                       <td>{u.bankDetailsData ? <button onClick={() => openDetailView(u, 'bank')}>View</button> : '-'}</td>
                       <td>{Array.isArray(u.ratesData) && u.ratesData.length > 0 ? <button onClick={() => openDetailView(u, 'rates')}>View</button> : '-'}</td>
@@ -3861,7 +4380,8 @@ function App() {
                     <th>Name</th>
                     <th>Email</th>
                     <th>Feedback</th>
-                    <th>Status</th>
+                    <th>Workflow</th>
+                    <th>Owner</th>
                     <th>Date</th>
                     <th>Actions</th>
                   </tr>
@@ -3869,68 +4389,97 @@ function App() {
                 <tbody>
                   {pagedFeedback.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="admin-empty-cell">No feedback entries match the current search.</td>
+                      <td colSpan="8" className="admin-empty-cell">No feedback entries match the current search.</td>
                     </tr>
                   ) : (
-                    pagedFeedback.map((f, index) => (
-                      <tr key={f.id || index}>
-                        <td>{f.dealerCode || '-'}</td>
-                        <td>{f.dealerName || '-'}</td>
-                        <td>{f.email || '-'}</td>
-                        <td>
-                          <div>{f.text || '-'}</div>
-                          {feedbackReplies && (feedbackReplies[f.id] || feedbackReplies[f.clientFeedbackId]) && (
-                            <div className="admin-feedback-chat">
-                              <div className="admin-feedback-chat-message user-message">
-                                <strong>User:</strong>
-                                <span>{f.text || '-'}</span>
+                    pagedFeedback.map((f, index) => {
+                      const replyText = feedbackReplies[f.id] || feedbackReplies[f.clientFeedbackId];
+                      const workflowState = getFeedbackWorkflowState(f, feedbackReplies, feedbackMetaOverrides);
+                      const slaDays = getFeedbackSlaDaysValue(f);
+                      const feedbackTags = toTagList(f.tags);
+                      return (
+                        <tr key={f.id || index}>
+                          <td>{f.dealerCode || '-'}</td>
+                          <td>{f.dealerName || '-'}</td>
+                          <td>{f.email || '-'}</td>
+                          <td>
+                            <div>{f.text || '-'}</div>
+                            {feedbackTags.length > 0 && (
+                              <div className="admin-feedback-tags">
+                                {feedbackTags.map((tag) => (
+                                  <span key={`${f.id}-${tag}`} className="admin-status-chip admin-status-chip--info">{tag}</span>
+                                ))}
                               </div>
-                              <div className="admin-feedback-chat-message admin-message">
-                                <strong>Admin:</strong>
-                                <span>{feedbackReplies[f.id] || feedbackReplies[f.clientFeedbackId]}</span>
+                            )}
+                            {replyText && (
+                              <div className="admin-feedback-chat">
+                                <div className="admin-feedback-chat-message user-message">
+                                  <strong>User:</strong>
+                                  <span>{f.text || '-'}</span>
+                                </div>
+                                <div className="admin-feedback-chat-message admin-message">
+                                  <strong>Admin:</strong>
+                                  <span>{replyText}</span>
+                                </div>
                               </div>
+                            )}
+                          </td>
+                          <td>
+                            <div className="feedback-status-stack">
+                              <span className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</span>
+                              <span className={`admin-status-chip admin-status-chip--${getFeedbackSlaTone(slaDays, workflowState)}`}>{workflowState}</span>
+                              <span className={`admin-status-chip admin-status-chip--${getFeedbackSlaTone(slaDays, workflowState)}`}>SLA {slaDays}d</span>
+                              {f.followUpDate && <span className="admin-status-chip admin-status-chip--info">Follow-up {formatDisplayDate(f.followUpDate)}</span>}
                             </div>
-                          )}
-                        </td>
-                        <td>
-                          <div className="feedback-status-stack">
-                            <span className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</span>
-                            <span className={f.resolved ? 'feedback-read' : 'feedback-unread'}>{f.resolved ? 'Resolved' : 'Open'}</span>
-                          </div>
-                        </td>
-                        <td>{formatDisplayDate(f.createdAt || f.date)}</td>
-                        <td>
-                          <div className="admin-actions">
-                            <select className="form-input admin-inline-select" value={f.priority || 'medium'} onChange={(e) => setFeedbackPriority(f, e.target.value)} disabled={!canMutateAdminData}>
-                              <option value="high">High</option>
-                              <option value="medium">Medium</option>
-                              <option value="low">Low</option>
-                            </select>
-                            <button type="button" className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
-                              {f.resolved ? 'Reopen' : 'Resolve'}
-                            </button>
-                            <button type="button" className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
-                              {f.read ? 'Mark Unread' : 'Mark Read'}
-                            </button>
-                            <button
-                              type="button"
-                              className="admin-ghost-btn"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                openAdminReplyPopup(f);
-                              }}
-                              disabled={!canMutateAdminData}
-                            >
-                              Feedback Reply
-                            </button>
-                            <button type="button" className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                          <td>
+                            <div className="feedback-status-stack">
+                              <span>{f.assignee || 'Unassigned'}</span>
+                              <span>{f.priority || 'medium'} priority</span>
+                            </div>
+                          </td>
+                          <td>{formatDisplayDate(f.createdAt || f.date)}</td>
+                          <td>
+                            <div className="admin-actions">
+                              <select className="form-input admin-inline-select" value={f.priority || 'medium'} onChange={(e) => setFeedbackPriority(f, e.target.value)} disabled={!canMutateAdminData}>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                              </select>
+                              <select className="form-input admin-inline-select" value={workflowState} onChange={(e) => setFeedbackWorkflow(f, e.target.value)} disabled={!canMutateAdminData}>
+                                <option value="awaiting-admin">Awaiting Admin</option>
+                                <option value="awaiting-user">Awaiting User</option>
+                                <option value="resolved">Resolved</option>
+                              </select>
+                              <input className="form-input admin-inline-input" value={f.assignee || ''} onChange={(e) => setFeedbackAssignee(f, e.target.value)} placeholder="Assignee" disabled={!canMutateAdminData} />
+                              <input className="form-input admin-inline-input" value={f.tags || ''} onChange={(e) => setFeedbackTags(f, e.target.value)} placeholder="tags, comma separated" disabled={!canMutateAdminData} />
+                              <input className="form-input admin-inline-input" type="date" value={String(f.followUpDate || '').slice(0, 10)} onChange={(e) => setFeedbackFollowUpDate(f, e.target.value)} disabled={!canMutateAdminData} />
+                              <button type="button" className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
+                                {f.resolved ? 'Reopen' : 'Resolve'}
+                              </button>
+                              <button type="button" className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
+                                {f.read ? 'Mark Unread' : 'Mark Read'}
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-ghost-btn"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openAdminReplyPopup(f);
+                                }}
+                                disabled={!canMutateAdminData}
+                              >
+                                Feedback Reply
+                              </button>
+                              <button type="button" className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -4109,7 +4658,145 @@ function App() {
                   placeholder="Write internal note..."
                 />
               </div>
-              <pre>{JSON.stringify(activeDrawer.data || {}, null, 2)}</pre>
+              <div className="admin-drawer-summary-grid">
+                {getDrawerSummaryRows({
+                  ...activeDrawer,
+                  data: activeDrawerData,
+                  typeLabel: activeDrawer?.type === 'approval' ? normalizeApprovalType(viewApproval?.type) : '',
+                  rawType: viewApproval?.type || '',
+                  requestedAt: viewApproval?.requestedAt || viewRequest?.createdAt || '',
+                  dealerCode: viewApproval?.dealerCode || viewRequest?.dealerCode || activeDrawerData?.dealerCode || '',
+                }, users).map((item) => (
+                  <div key={`${activeDrawer.noteKey}-${item.label}`} className="admin-drawer-summary-card">
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+              {activeDrawer?.type === 'detail' && /^User - /.test(activeDrawer?.title || '') && (
+                <div className="admin-drawer-sections">
+                  <div className="admin-drawer-section">
+                    <h4>Profile Completeness</h4>
+                    <ul>
+                      <li>Profile: {activeDrawerData?.profileData?.distributorName ? 'Available' : 'Missing'}</li>
+                      <li>Bank: {activeDrawerData?.bankDetailsData?.bankName ? 'Available' : 'Missing'}</li>
+                      <li>Rates: {Array.isArray(activeDrawerData?.ratesData) && activeDrawerData.ratesData.length > 0 ? 'Available' : 'Missing'}</li>
+                      <li>Header: {activeDrawerData?.hindiHeaderData ? 'Available' : 'Missing'}</li>
+                    </ul>
+                  </div>
+                  <div className="admin-drawer-section">
+                    <h4>Request History</h4>
+                    <ul>
+                      {Object.entries(activeDrawerData?.approvalStatus || {}).length === 0 ? (
+                        <li>No approval history recorded.</li>
+                      ) : (
+                        Object.entries(activeDrawerData?.approvalStatus || {}).map(([key, value]) => (
+                          <li key={`${activeDrawer.noteKey}-${key}`}>{key}: {String(value || '-')}</li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              )}
+              {activeDrawer?.type === 'approval' && (
+                <div className="admin-drawer-section">
+                  <h4>Approval Payload</h4>
+                  <div className="admin-drawer-field-list">
+                    {activeDrawerDetailSections.simpleFields.length === 0 && activeDrawerDetailSections.groupedFields.length === 0 && activeDrawerDetailSections.listFields.length === 0 ? (
+                      <div className="admin-drawer-empty">No approval payload available.</div>
+                    ) : (
+                      <>
+                        {activeDrawerDetailSections.simpleFields.length > 0 && (
+                          <div className="admin-drawer-section">
+                            <h4>Basic Details</h4>
+                            <ul>
+                              {activeDrawerDetailSections.simpleFields.map((item) => (
+                                <li key={`approval-basic-${item.key}`}>{formatDrawerFieldLabel(item.key)}: {formatDrawerFieldValue(item.value)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {activeDrawerDetailSections.groupedFields.map((group) => (
+                          <div key={`approval-group-${group.key}`} className="admin-drawer-section">
+                            <h4>{formatDrawerFieldLabel(group.key)}</h4>
+                            <ul>
+                              {Object.entries(group.value || {}).map(([nestedKey, nestedValue]) => (
+                                <li key={`approval-group-${group.key}-${nestedKey}`}>{formatDrawerFieldLabel(nestedKey)}: {formatDrawerFieldValue(nestedValue)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                        {activeDrawerDetailSections.listFields.map((group) => (
+                          <div key={`approval-list-${group.key}`} className="admin-drawer-section">
+                            <h4>{formatDrawerFieldLabel(group.key)}</h4>
+                            {group.value.length === 0 ? (
+                              <div className="admin-drawer-empty">No items available.</div>
+                            ) : (
+                              <ul>
+                                {group.value.map((item, index) => (
+                                  <li key={`approval-list-${group.key}-${index}`}>
+                                    {typeof item === 'object'
+                                      ? Object.entries(item || {}).map(([nestedKey, nestedValue]) => `${formatDrawerFieldLabel(nestedKey)}: ${formatDrawerFieldValue(nestedValue)}`).join(', ')
+                                      : formatDrawerFieldValue(item)}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {activeDrawer?.type !== 'approval' && (
+                <div className="admin-drawer-sections">
+                  {activeDrawerDetailSections.simpleFields.length > 0 && (
+                    <div className="admin-drawer-section">
+                      <h4>Basic Details</h4>
+                      <ul>
+                        {activeDrawerDetailSections.simpleFields.map((item) => (
+                          <li key={`drawer-basic-${item.key}`}>{formatDrawerFieldLabel(item.key)}: {formatDrawerFieldValue(item.value)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {activeDrawerDetailSections.groupedFields.map((group) => (
+                    <div key={`drawer-group-${group.key}`} className="admin-drawer-section">
+                      <h4>{formatDrawerFieldLabel(group.key)}</h4>
+                      <ul>
+                        {Object.entries(group.value || {}).map(([nestedKey, nestedValue]) => (
+                          <li key={`drawer-group-${group.key}-${nestedKey}`}>{formatDrawerFieldLabel(nestedKey)}: {formatDrawerFieldValue(nestedValue)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                  {activeDrawerDetailSections.listFields.map((group) => (
+                    <div key={`drawer-list-${group.key}`} className="admin-drawer-section">
+                      <h4>{formatDrawerFieldLabel(group.key)}</h4>
+                      {group.value.length === 0 ? (
+                        <div className="admin-drawer-empty">No items available.</div>
+                      ) : (
+                        <ul>
+                          {group.value.map((item, index) => (
+                            <li key={`drawer-list-${group.key}-${index}`}>
+                              {typeof item === 'object'
+                                ? Object.entries(item || {}).map(([nestedKey, nestedValue]) => `${formatDrawerFieldLabel(nestedKey)}: ${formatDrawerFieldValue(nestedValue)}`).join(', ')
+                                : formatDrawerFieldValue(item)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                  {activeDrawerDetailSections.simpleFields.length === 0 && activeDrawerDetailSections.groupedFields.length === 0 && activeDrawerDetailSections.listFields.length === 0 && (
+                    <div className="admin-drawer-section">
+                      <h4>Details</h4>
+                      <div className="admin-drawer-empty">No structured data available.</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -4123,13 +4810,16 @@ function App() {
                     <th>Code</th>
                     <th>Name</th>
                     <th>Deleted At</th>
+                    <th>Deleted By</th>
+                    <th>Reason</th>
+                    <th>Restores</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedDeletedUsers.length === 0 ? (
                     <tr>
-                      <td colSpan="4" className="admin-empty-cell">Recycle bin is empty.</td>
+                      <td colSpan="7" className="admin-empty-cell">Recycle bin is empty.</td>
                     </tr>
                   ) : (
                     pagedDeletedUsers.map((user, index) => (
@@ -4137,6 +4827,9 @@ function App() {
                         <td>{user.dealerCode || '-'}</td>
                         <td>{user.dealerName || '-'}</td>
                         <td>{formatDisplayDate(user.deletedAt)}</td>
+                        <td>{user.deletedBy || '-'}</td>
+                        <td>{user.deleteReason || '-'}</td>
+                        <td>{Number(user.restoreCount || 0)}</td>
                         <td>
                           <div className="admin-actions">
                             <button
@@ -5526,7 +6219,12 @@ function App() {
       const nextBin = (Array.isArray(currentDeletedUsersBin) ? currentDeletedUsersBin : []).filter(
         (user) => !(user.id === item.id && user.dealerCode === item.dealerCode),
       );
-      const restoredUser = { ...item, status: item.status || 'active' };
+      const restoredUser = {
+        ...item,
+        status: item.status || 'active',
+        restoreCount: Number(item?.restoreCount || 0) + 1,
+        restoredBy: String(auth?.currentUser?.email || '').trim().toLowerCase() || 'admin',
+      };
       delete restoredUser.deletedAt;
 
       try {
@@ -5568,7 +6266,7 @@ function App() {
       }
 
       if (typeof logAdminActivityFn === 'function') {
-        logAdminActivityFn('user_restored', { dealerCode: item.dealerCode || '' });
+        logAdminActivityFn('user_restored', { dealerCode: item.dealerCode || '', restoreCount: restoredUser.restoreCount });
       }
       if (typeof notifyFn === 'function') {
         notifyFn(`${item.dealerCode || 'User'} restored from recycle bin.`, 'success');
