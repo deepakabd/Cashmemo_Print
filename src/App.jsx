@@ -7939,6 +7939,38 @@ function App() {
           font-size: 12px;
           color: #000; /* Or any color that makes it visible */
         }
+
+        .user-icon {
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #007bff, #0056b3);
+          color: white;
+          border: 2px solid #fff;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          cursor: pointer;
+          position: relative;
+          transition: transform 0.2s ease;
+        }
+        .user-icon:hover {
+          transform: scale(1.05);
+        }
+        .user-icon__photo {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 50%;
+        }
+        .user-icon__avatar {
+          font-weight: 700;
+          font-size: 16px;
+          letter-spacing: 0.5px;
+          line-height: 1;
+        }
       `}</style>
 
 
