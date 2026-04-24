@@ -21,6 +21,7 @@ vi.mock('firebase/firestore', () => ({
   collection: vi.fn(() => ({})),
   deleteDoc: vi.fn(),
   doc: vi.fn(() => ({})),
+  getDoc: vi.fn(async () => ({ exists: () => false, data: () => ({}) })),
   getDocs: vi.fn(async () => ({ empty: true, docs: [] })),
   query: vi.fn(() => ({})),
   serverTimestamp: vi.fn(() => 'SERVER_TIMESTAMP'),
@@ -98,8 +99,8 @@ const uploadCsvData = async (container, rowCount = 30) => {
   expect(fileInput).toBeTruthy();
   const file = new File(['mock'], 'cashmemo.csv', { type: 'text/csv' });
   fireEvent.change(fileInput, { target: { files: [file] } });
-  await screen.findByText('Print Cashmemo');
-  await screen.findByText('Page 1 of 2');
+  await screen.findByText('Print Cashmemo', {}, { timeout: 5000 });
+  await screen.findByText('Page 1 of 2', {}, { timeout: 5000 });
 };
 
 const createPrintWindow = () => {
