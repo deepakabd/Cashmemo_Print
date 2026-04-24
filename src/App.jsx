@@ -4924,95 +4924,77 @@ function App() {
   };
 
   const AboutInfo = () => {
-    const summaryCards = [
-      {
-        title: 'मुख्य मॉड्यूल',
-        items: [
-          'Pending Booking डेटा upload और parsing engine',
-          'Report cards, filters और searchable data grid',
-          'Cashmemo Print और GST Tax Invoice generation',
-          'Profile / Bank / Rate / Delivery update requests',
-          'Admin approval workflow और user control dashboard',
-        ],
-      },
-      {
-        title: 'डेटा और अपलोड सिस्टम',
-        items: [
-          'CSV / XLSX upload support और dynamic column mapping',
-          'Excel dates, mixed formats और numeric normalization',
-          'Top Navbar से re-upload, show data और data visibility control',
-          'Firebase primary storage के साथ local fallback backup',
-        ],
-      },
-      {
-        title: 'रिपोर्ट और ऑपरेशन कंट्रोल',
-        items: [
-          'Pending booking analysis और clickable report cards',
-          'eKYC, area, order type, status और date range filters',
-          'Cascading filters जो available data के हिसाब से options दिखाते हैं',
-          'Printable table view, selected rows verify और bulk actions',
-        ],
-      },
-      {
-        title: 'Cashmemo और Invoice सुविधाएँ',
-        items: [
-          'Bulk cashmemo print और multiple layout modes',
-          'Online paid और regular booking handling',
-          'GST invoice generation, round-off और amount in words',
-          'Print-friendly invoice rendering, declaration और signature section',
-        ],
-      },
-      {
-        title: 'Admin कंट्रोल और गवर्नेंस',
-        items: [
-          'Pending registration और approval request workflow',
-          'User creation, package control और account status management',
-          'Dictionary, delivery area/staff और profile approval queue',
-          'Feedback handling, audit trail, recycle bin और CSV export tools',
-        ],
-      },
-      {
-        title: 'सुरक्षा और प्रोडक्टिविटी',
-        items: [
-          'Dealer Code + PIN based user login',
-          'Package validity, pending, active, disabled और expired access control',
-          'Saved views, quick summaries और expiry alerts',
-          'Daily distributor operations को fast और structured रखने वाला workflow',
-        ],
-      },
-    ];
 
     return (
-      <div className="placeholder-container about-summary">
-        <h2 className="about-info-title">📊 डैशबोर्ड (System Summary)</h2>
-        <div className="home-important-note">
-          {!isLoggedIn && <h2>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>}
-          <h3>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
-          <p>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
-          <p><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS -&gt; Order Fulfillment -&gt; Pending Booking</p>
-          <p>डाउनलोड की गई फ़ाइल को इस पोर्टल के Top Navbar में Upload करें, फिर “Show Data” पर क्लिक करके डेटा प्रदर्शित करें।</p>
-          <p><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</strong></p>
+      <div className="placeholder-container about-summary-modern">
+        <style>{`
+          .about-summary-modern { max-width: 1200px; margin: 40px auto; padding: 40px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8fafd; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.04); }
+          .about-info-title-modern { font-size: 2.6rem; text-align: center; background: linear-gradient(90deg, #1e3c72, #2a5298); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 45px; position: relative; padding-bottom: 20px; font-weight: 800; }
+          .about-info-title-modern::after { content: ''; position: absolute; width: 100px; height: 6px; background: linear-gradient(90deg, #1e3c72, #007bff); bottom: 0; left: 50%; transform: translateX(-50%); border-radius: 4px; }
+          .about-content-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 30px; margin-bottom: 40px; }
+          .about-card { background: #fff; padding: 35px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.05); border-left: 6px solid #007bff; transition: all 0.3s ease; }
+          .about-card:hover { box-shadow: 0 12px 30px rgba(0,0,0,0.1); transform: translateY(-5px); }
+          .about-card h3 { margin-top: 0; color: #1e3c72; font-size: 1.5em; margin-bottom: 20px; border-bottom: 2px solid #f0f4f8; padding-bottom: 12px; }
+          .about-card p { line-height: 1.7; color: #333; font-size: 1.05em; margin-bottom: 15px; }
+          .about-card p.hindi-text { color: #666; font-size: 0.95em; }
+          .about-card ul { padding-left: 20px; margin: 0; }
+          .about-card ul li { margin-bottom: 15px; font-size: 1.05em; color: #333; line-height: 1.6; }
+          .about-cta-block { background: linear-gradient(135deg, #1e3c72, #2a5298); color: #fff; padding: 40px 30px; border-radius: 16px; text-align: center; box-shadow: 0 12px 30px rgba(30, 60, 114, 0.3); margin-top: 30px; }
+          .about-cta-block p { color: #f8f9fa; font-size: 1.3em; margin: 10px 0; font-weight: 500; }
+        `}</style>
+        <h2 className="about-info-title-modern">ℹ️ About Cashmemo_Print / Cashmemo_Print के बारे में</h2>
+        <div className="home-important-note" style={{ background: '#fff3cd', borderLeft: '6px solid #ffecb5', padding: '15px 20px', borderRadius: '8px', marginBottom: '30px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+          {!isLoggedIn && <h2 style={{ margin: '0 0 15px 0', color: '#856404', fontSize: '1.2em' }}>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>}
+          <h3 style={{ color: '#856404', margin: '0 0 10px 0', fontSize: '1.15em' }}>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
+          <p style={{ color: '#856404', margin: '0 0 8px 0', lineHeight: '1.5' }}>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
+          <p style={{ color: '#856404', margin: '0 0 8px 0', lineHeight: '1.5' }}><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS -&gt; Order Fulfillment -&gt; Pending Booking</p>
+          <p style={{ color: '#856404', margin: '0 0 8px 0', lineHeight: '1.5' }}>डाउनलोड की गई फ़ाइल को इस पोर्टल के Top Navbar में Upload करें, फिर “Show Data” पर क्लिक करके डेटा प्रदर्शित करें।</p>
+          <p style={{ color: '#856404', margin: '0', lineHeight: '1.5' }}><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</strong></p>
         </div>
-        <p>
-          यह प्लेटफ़ॉर्म LPG Distributor के daily workflow को end-to-end संभालने के लिए बनाया गया है।
-          cDCMS की Pending Booking फ़ाइल upload करना, डेटा को verify करना, filter करना और रिपोर्ट करना यहाँ मुख्य काम हैं।
-        </p>
-        <p>
-          इसके बाद Cashmemo / Tax Invoice print करना, update requests भेजना और admin approval स्टेटस देखना आसान रहता है।
-          यह सिस्टम आपकी daily operations को तेज, structured और error-prone कम करने के लिए डिज़ाइन किया गया है।
-        </p>
 
-        <div className="about-summary-grid">
-          {summaryCards.map((card) => (
-            <section key={card.title} className="about-summary-card">
-              <h3>{card.title}</h3>
-              <ul>
-                {card.items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </section>
-          ))}
+        <div className="about-content-grid">
+          <div className="about-card" style={{ gridColumn: '1 / -1' }}>
+            <h3>Detailed Description / विस्तृत विवरण</h3>
+            <p>Cashmemo_Print is a web-based application developed for Hindustan Petroleum Corporation Limited (HPCL) LPG distributors. Its primary goal is to simplify and streamline the process of generating cash memos with speed and accuracy.</p>
+            <p className="hindi-text">Cashmemo_Print एक वेब-आधारित एप्लिकेशन है जिसे Hindustan Petroleum Corporation Limited (HPCL) LPG डिस्ट्रीब्यूटर्स के लिए विकसित किया गया है। इसका उद्देश्य कैश मेमो बनाने की प्रक्रिया को सरल, तेज़ और त्रुटि-रहित बनाना है।</p>
+            <p>The system is designed based on real LPG distribution workflows, enabling instant and accurate billing during delivery.</p>
+            <p className="hindi-text">यह सिस्टम LPG वितरण के वास्तविक कार्यप्रवाह को ध्यान में रखकर डिज़ाइन किया गया है, जिससे डिलीवरी के समय तुरंत और सही बिलिंग की जा सके।</p>
+          </div>
+
+          <div className="about-card" style={{ borderLeftColor: '#17a2b8' }}>
+            <h3>Workflow / कार्यप्रणाली</h3>
+            <ul>
+              <li>Enter consumer details <br/><span className="hindi-text">उपभोक्ता विवरण दर्ज करें</span></li>
+              <li>Add cylinder and transaction details <br/><span className="hindi-text">सिलेंडर और ट्रांजैक्शन जानकारी जोड़ें</span></li>
+              <li>Generate cash memo automatically <br/><span className="hindi-text">ऑटोमैटिक कैश मेमो जनरेट करें</span></li>
+              <li>Print instantly <br/><span className="hindi-text">तुरंत प्रिंट निकालें</span></li>
+            </ul>
+          </div>
+
+          <div className="about-card" style={{ borderLeftColor: '#28a745' }}>
+            <h3>Core Objectives / मुख्य उद्देश्य</h3>
+            <ul>
+              <li>Simplify billing process <br/><span className="hindi-text">बिलिंग प्रक्रिया को सरल बनाना</span></li>
+              <li>Reduce errors <br/><span className="hindi-text">गलतियों को कम करना</span></li>
+              <li>Provide fast printing system <br/><span className="hindi-text">तेज़ प्रिंटिंग सिस्टम देना</span></li>
+              <li>Improve data management <br/><span className="hindi-text">डेटा मैनेजमेंट सुधारना</span></li>
+            </ul>
+          </div>
+
+          <div className="about-card" style={{ borderLeftColor: '#ffc107' }}>
+            <h3>Technology / तकनीक</h3>
+            <p>The system is built using HTML, CSS, and JavaScript, making it lightweight and fast.</p>
+            <p className="hindi-text">यह सिस्टम HTML, CSS और JavaScript पर आधारित है और हल्का एवं तेज़ है।</p>
+            
+            <h3 style={{ marginTop: '25px' }}>Vision / दृष्टिकोण</h3>
+            <p>To provide a smart and reliable digital solution for HPCL LPG distributors.</p>
+            <p className="hindi-text">HPCL LPG डिस्ट्रीब्यूटर्स के लिए एक स्मार्ट और विश्वसनीय डिजिटल समाधान बनाना।</p>
+          </div>
+        </div>
+
+        <div className="about-cta-block">
+          <p><strong>This is not just a billing software, but a practical solution for simplifying daily operations.</strong></p>
+          <p style={{ color: '#cce5ff' }}>यह सिर्फ एक बिलिंग सॉफ्टवेयर नहीं, बल्कि दैनिक कार्यों को आसान बनाने का समाधान है।</p>
         </div>
       </div>
     );
