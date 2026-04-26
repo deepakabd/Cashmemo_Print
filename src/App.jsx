@@ -861,7 +861,7 @@ function App() {
 
   useEffect(() => {
     if (showUserMenu) {
-      firstUserMenuActionRef.current?.focus();
+      firstUserMenuActionRef.current?.focus({ preventScroll: true });
     }
   }, [showUserMenu]);
 
@@ -4961,14 +4961,30 @@ function App() {
             <p className="hindi-text">यह सिस्टम LPG वितरण के वास्तविक कार्यप्रवाह को ध्यान में रखकर डिज़ाइन किया गया है, जिससे डिलीवरी के समय तुरंत और सही बिलिंग की जा सके।</p>
           </div>
 
-          <div className="about-card" style={{ borderLeftColor: '#17a2b8' }}>
-            <h3>Workflow / कार्यप्रणाली</h3>
-            <ul>
-              <li>Enter consumer details <br/><span className="hindi-text">उपभोक्ता विवरण दर्ज करें</span></li>
-              <li>Add cylinder and transaction details <br/><span className="hindi-text">सिलेंडर और ट्रांजैक्शन जानकारी जोड़ें</span></li>
-              <li>Generate cash memo automatically <br/><span className="hindi-text">ऑटोमैटिक कैश मेमो जनरेट करें</span></li>
-              <li>Print instantly <br/><span className="hindi-text">तुरंत प्रिंट निकालें</span></li>
-            </ul>
+          <div className="about-card" style={{ gridColumn: '1 / -1', borderLeftColor: '#6f42c1' }}>
+            <h3>Key System Capabilities / सिस्टम की मुख्य क्षमताएं</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginTop: '15px' }}>
+              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
+                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>📊 Smart Data & Reports</strong>
+                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>cDCMS file upload, aging reports (2-5 days, etc.), and advanced filters (eKYC, Payment, Area).</p>
+                <p className="hindi-text" style={{ fontSize: '0.85em' }}>डेटा अपलोड, पेंडिंग बुकिंग रिपोर्ट और स्मार्ट फिल्टर्स।</p>
+              </div>
+              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
+                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>🖨️ Bulk Printing & Invoicing</strong>
+                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>Print 2, 3, or 4 cashmemos per page. Auto GST calculation, dynamic rates, and Tax Invoice generation.</p>
+                <p className="hindi-text" style={{ fontSize: '0.85em' }}>बल्क प्रिंटिंग (2, 3 या 4 प्रति पेज), ऑटोमैटिक GST कैलकुलेशन और टैक्स इनवॉइस।</p>
+              </div>
+              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
+                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>🌐 Multi-Language & Customization</strong>
+                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>Auto English-to-Hindi dictionary, customizable headers, and delivery staff/area management.</p>
+                <p className="hindi-text" style={{ fontSize: '0.85em' }}>ऑटोमैटिक हिंदी अनुवाद (Dictionary), कस्टमाइज़्ड हेडर और स्टाफ मैनेजमेंट।</p>
+              </div>
+              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
+                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>🛡️ Secure Access & Support</strong>
+                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>Role-based access, PIN security, approval workflows, and direct admin support chat.</p>
+                <p className="hindi-text" style={{ fontSize: '0.85em' }}>सुरक्षित पिन-लॉगिन, अप्रूवल सिस्टम और एडमिन सपोर्ट चैट।</p>
+              </div>
+            </div>
           </div>
 
           <div className="about-card" style={{ borderLeftColor: '#28a745' }}>
@@ -4989,6 +5005,24 @@ function App() {
             <h3 style={{ marginTop: '25px' }}>Vision / दृष्टिकोण</h3>
             <p>To provide a smart and reliable digital solution for HPCL LPG distributors.</p>
             <p className="hindi-text">HPCL LPG डिस्ट्रीब्यूटर्स के लिए एक स्मार्ट और विश्वसनीय डिजिटल समाधान बनाना।</p>
+          </div>
+
+          <div className="about-card" style={{ borderLeftColor: '#e83e8c' }}>
+            <h3>Subscription Packages / सदस्यता पैकेज</h3>
+            <ul>
+              <li><strong>Demo Package:</strong> 7-day free trial for testing. <br/><span className="hindi-text">सिस्टम को टेस्ट करने के लिए 7-दिन का फ्री ट्रायल।</span></li>
+              <li><strong>Premium Package:</strong> Full access to standard billing tools. <br/><span className="hindi-text">रेगुलर बिलिंग और रिपोर्टिंग टूल्स का पूरा एक्सेस।</span></li>
+              <li><strong>Enterprise (Hindi):</strong> Advanced Hindi localization and customization. <br/><span className="hindi-text">एडवांस हिंदी डिक्शनरी और कस्टम हेडर/स्टाफ फीचर्स।</span></li>
+            </ul>
+          </div>
+
+          <div className="about-card" style={{ borderLeftColor: '#fd7e14' }}>
+            <h3>Security & Support / सुरक्षा और सहायता</h3>
+            <ul>
+              <li><strong>PIN-Based Login:</strong> Secure access for all operators. <br/><span className="hindi-text">सभी ऑपरेटरों के लिए सुरक्षित पिन-लॉगिन सुविधा।</span></li>
+              <li><strong>Admin Approvals:</strong> Profile, Bank, and Rate changes are strictly verified. <br/><span className="hindi-text">प्रोफाइल, बैंक और रेट बदलाव के लिए एडमिन अप्रूवल सिस्टम।</span></li>
+              <li><strong>Direct Chat:</strong> Built-in feedback and support ticket workflow. <br/><span className="hindi-text">किसी भी सहायता के लिए इन-ऐप सपोर्ट और एडमिन चैट।</span></li>
+            </ul>
           </div>
         </div>
 
@@ -7595,6 +7629,11 @@ function App() {
         <nav className="navbar">
           <div className="navbar-left">
             <button className="navbar-button" onClick={handleHomeOpen} disabled={isPlanExpired}>Home</button>
+            {isLoggedIn && (
+              <button className="navbar-button" onClick={handleInvoiceOpen} disabled={!canAccessMenuFeature('invoice')}>
+                Invoice
+              </button>
+            )}
             <button className="navbar-button" onClick={handleContactOpen}>
               Support & Replies{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
             </button>
@@ -7904,6 +7943,38 @@ function App() {
           transform: translate(-50%, -50%);
           font-size: 12px;
           color: #000; /* Or any color that makes it visible */
+        }
+
+        .user-icon {
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #007bff, #0056b3);
+          color: white;
+          border: 2px solid #fff;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          cursor: pointer;
+          position: relative;
+          transition: transform 0.2s ease;
+        }
+        .user-icon:hover {
+          transform: scale(1.05);
+        }
+        .user-icon__photo {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 50%;
+        }
+        .user-icon__avatar {
+          font-weight: 700;
+          font-size: 16px;
+          letter-spacing: 0.5px;
+          line-height: 1;
         }
       `}</style>
 
