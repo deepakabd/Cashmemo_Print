@@ -35,15 +35,18 @@ const UserMenuDropdown = ({
   formatDisplayDate,
 }) => {
   const [showTips, setShowTips] = useState(false);
-  const [showMenuDetails, setShowMenuDetails] = useState(false);
   const [menuSearch, setMenuSearch] = useState('');
-  const [collapsedSections, setCollapsedSections] = useState({});
+  const [collapsedSections, setCollapsedSections] = useState({
+    'Account Setup': true,
+  });
+  const navbarOnlyViewKeys = new Set(['support', 'invoice', 'about']);
   const searchLower = menuSearch.trim().toLowerCase();
   const filteredSections = useMemo(() => (
     userMenuSections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => {
+          if (navbarOnlyViewKeys.has(item.viewKey)) return false;
           if (!searchLower) return true;
           return [section.title, item.label, item.reason, item.hint, item.badge?.label]
             .some((value) => String(value || '').toLowerCase().includes(searchLower));
@@ -51,10 +54,10 @@ const UserMenuDropdown = ({
       }))
       .filter((section) => section.items.length > 0)
   ), [searchLower, userMenuSections]);
-  const visibleRecentActivities = Array.isArray(recentActivities) ? recentActivities.slice(0, 5) : [];
   const toggleSection = (title) => {
     setCollapsedSections((prev) => ({ ...prev, [title]: !prev[title] }));
   };
+  const isSectionCollapsed = (title) => collapsedSections[title] ?? true;
 
   return (
   <div className="dropdown-menu" id="user-menu-dropdown" role="menu" aria-label="User menu">
@@ -81,44 +84,52 @@ const UserMenuDropdown = ({
         </div>
         <div className="dropdown-menu__summary-zone">Status</div>
       </div>
-      <div className="dropdown-menu__progress">
-        <div className="dropdown-menu__progress-label">
-          <span>Account Setup</span>
-          <strong>{profileCompletionPercent}%</strong>
-        </div>
-        <div className="dropdown-menu__progress-track">
-          <span className="dropdown-menu__progress-fill" style={{ width: `${profileCompletionPercent}%` }} />
-        </div>
-      </div>
-      <div className="dropdown-menu__summary-pills">
-        {userMenuSummaryPills.map((pill) => (
-          <span key={pill.label} className={`dropdown-menu__summary-pill dropdown-menu__summary-pill--${pill.tone}`}>
-            {pill.label}
-          </span>
-        ))}
-      </div>
-      <div className="dropdown-menu__summary-note dropdown-menu__summary-note--secondary">
-        Role: {userRole} | Missing: {incompleteProfileAreas.length > 0 ? incompleteProfileAreas.map((item) => item.label).join(', ') : 'None'}
-      </div>
-      <div className="dropdown-menu__summary-drilldown">
-        {profileCompletenessChecks.map((item) => (
-          <div key={item.key} className="dropdown-menu__summary-drilldown-item">
-            <strong>{item.label}</strong>
-            <span className={`dropdown-menu__summary-status dropdown-menu__summary-status--${item.complete ? 'ready' : 'missing'}`}>
-              {item.complete ? 'Available' : 'Missing'}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="dropdown-menu__summary-actions dropdown-menu__summary-actions--compact">
+      <div className="dropdown-menu__summary-toggle-row">
         <button
           type="button"
-          className="dropdown-menu__summary-action dropdown-menu__summary-action--toggle"
-          onClick={() => setShowMenuDetails((prev) => !prev)}
+          className="dropdown-menu__section-toggle-icon dropdown-menu__section-toggle-icon--summary"
+          onClick={() => toggleSection('Account Setup')}
+          aria-expanded={!isSectionCollapsed('Account Setup')}
         >
-          {showMenuDetails ? 'Hide Menu' : 'Show Menu'}
+          {isSectionCollapsed('Account Setup') ? 'Show Account Setup' : 'Hide Account Setup'}
         </button>
       </div>
+      {!isSectionCollapsed('Account Setup') && (
+        <>
+          <div className="dropdown-menu__progress">
+            <div className="dropdown-menu__progress-label">
+              <span>Account Setup</span>
+              <strong>{profileCompletionPercent}%</strong>
+            </div>
+            <div className="dropdown-menu__progress-track">
+              <span className="dropdown-menu__progress-fill" style={{ width: `${profileCompletionPercent}%` }} />
+            </div>
+          </div>
+          <div className="dropdown-menu__summary-pills">
+            {userMenuSummaryPills.map((pill) => (
+              <span key={pill.label} className={`dropdown-menu__summary-pill dropdown-menu__summary-pill--${pill.tone}`}>
+                {pill.label}
+              </span>
+            ))}
+          </div>
+          <div className="dropdown-menu__summary-note dropdown-menu__summary-note--secondary">
+            Role: {userRole} | Missing: {incompleteProfileAreas.length > 0 ? incompleteProfileAreas.map((item) => item.label).join(', ') : 'None'}
+          </div>
+          <div className="dropdown-menu__summary-drilldown">
+            {profileCompletenessChecks.map((item) => (
+              <div key={item.key} className="dropdown-menu__summary-drilldown-item">
+                <strong>{item.label}</strong>
+                <span className={`dropdown-menu__summary-status dropdown-menu__summary-status--${item.complete ? 'ready' : 'missing'}`}>
+                  {item.complete ? 'Available' : 'Missing'}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="dropdown-menu__summary-note dropdown-menu__summary-note--tip">
+            {userMenuPackageTips[0]?.text || ''}
+          </div>
+        </>
+      )}
       {incompleteProfileActionItems.length > 0 && (
         <div className="dropdown-menu__summary-actions">
           {incompleteProfileActionItems.map((item) => (
@@ -147,54 +158,18 @@ const UserMenuDropdown = ({
               ].filter(Boolean).join(' | ')}
         </div>
       )}
-      <div className="dropdown-menu__summary-note dropdown-menu__summary-note--tip">
-        {userMenuPackageTips[0]?.text || ''}
-      </div>
     </div>
-    {showMenuDetails && (
-      <>
-    <div className="dropdown-menu__section">
-      <div className="dropdown-menu__section-title">Search Menu</div>
-      <div className="dropdown-menu__search-wrap">
-        <input
-          type="text"
-          className="dropdown-menu__search-input"
-          placeholder="Search actions..."
-          value={menuSearch}
-          onChange={(e) => setMenuSearch(e.target.value)}
-        />
-      </div>
-    </div>
-    {recommendedAction && (
-      <div className="dropdown-menu__section dropdown-menu__section--recommended">
-        <div className="dropdown-menu__section-title">Recommended Next Step</div>
-        <button
-          type="button"
-          className="dropdown-menu__recommended-card"
-          onClick={runUserMenuItem(recommendedAction)}
-          disabled={recommendedAction.disabled}
-          title={recommendedAction.disabled ? (recommendedAction.reason || '') : recommendedAction.description}
-          role="menuitem"
-        >
-          <span className="dropdown-menu__recommended-label">{recommendedAction.label}</span>
-          <strong>{recommendedAction.actionLabel}</strong>
-          <span className="dropdown-menu__recommended-text">
-            {recommendedAction.disabled ? (recommendedAction.reason || recommendedAction.description) : recommendedAction.description}
-          </span>
-        </button>
-      </div>
-    )}
     <div className="dropdown-menu__section">
       <button
         type="button"
         className="dropdown-menu__section-toggle"
         onClick={() => toggleSection('Package & Access')}
-        aria-expanded={!collapsedSections['Package & Access']}
+        aria-expanded={!isSectionCollapsed('Package & Access')}
       >
         <span className="dropdown-menu__section-title">Package & Access</span>
-        <span className="dropdown-menu__section-toggle-icon">{collapsedSections['Package & Access'] ? 'Show' : 'Hide'}</span>
+        <span className="dropdown-menu__section-toggle-icon">{isSectionCollapsed('Package & Access') ? 'Show' : 'Hide'}</span>
       </button>
-      {!collapsedSections['Package & Access'] && (
+      {!isSectionCollapsed('Package & Access') && (
         <div className="dropdown-menu__insight-grid">
           <div className="dropdown-menu__insight-card">
             <strong>Available Now</strong>
@@ -208,42 +183,6 @@ const UserMenuDropdown = ({
             <strong>Hindi Package Only</strong>
             <span>{packageAccessBreakdown.hindiPackageOnly.length > 0 ? packageAccessBreakdown.hindiPackageOnly.join(', ') : 'Hindi tools active in current package.'}</span>
           </div>
-        </div>
-      )}
-    </div>
-    <div className="dropdown-menu__section dropdown-menu__section--quick">
-      <div className="dropdown-menu__section-title">Quick Actions</div>
-      <div className="dropdown-menu__quick-actions">
-        <button type="button" className="dropdown-menu__quick-action" onClick={runUserMenuItem(primaryQuickAction)} role="menuitem">
-          {primaryQuickAction.label}
-        </button>
-        <button type="button" className="dropdown-menu__quick-action" onClick={runUserMenuItem(secondaryQuickAction)} role="menuitem">
-          {secondaryQuickAction.label}
-        </button>
-      </div>
-    </div>
-    <div className="dropdown-menu__section">
-      <button
-        type="button"
-        className="dropdown-menu__section-toggle"
-        onClick={() => toggleSection('Recent Activity')}
-        aria-expanded={!collapsedSections['Recent Activity']}
-      >
-        <span className="dropdown-menu__section-title">Recent Activity</span>
-        <span className="dropdown-menu__section-toggle-icon">{collapsedSections['Recent Activity'] ? 'Show' : 'Hide'}</span>
-      </button>
-      {!collapsedSections['Recent Activity'] && (
-        <div className="dropdown-menu__activity-list">
-          {visibleRecentActivities.length === 0 ? (
-            <div className="dropdown-menu__empty-state">Abhi recent activity available nahi hai.</div>
-          ) : (
-            visibleRecentActivities.map((item) => (
-              <div key={item.id || `${item.message}-${item.createdAt}`} className="dropdown-menu__activity-item">
-                <strong>{item.message}</strong>
-                <span>{item.createdAt}</span>
-              </div>
-            ))
-          )}
         </div>
       )}
     </div>
@@ -286,12 +225,12 @@ const UserMenuDropdown = ({
           type="button"
           className="dropdown-menu__section-toggle"
           onClick={() => toggleSection(section.title)}
-          aria-expanded={!collapsedSections[section.title]}
+          aria-expanded={!isSectionCollapsed(section.title)}
         >
           <span className="dropdown-menu__section-title">{section.title}</span>
-          <span className="dropdown-menu__section-toggle-icon">{collapsedSections[section.title] ? 'Show' : 'Hide'}</span>
+          <span className="dropdown-menu__section-toggle-icon">{isSectionCollapsed(section.title) ? 'Show' : 'Hide'}</span>
         </button>
-        {!collapsedSections[section.title] && section.items.map((item, itemIndex) => (
+        {!isSectionCollapsed(section.title) && section.items.map((item, itemIndex) => (
           <button
             key={item.label}
             type="button"
@@ -332,8 +271,6 @@ const UserMenuDropdown = ({
         <a className="dropdown-menu__contact-link" href={adminContacts.whatsapp} target="_blank" rel="noopener noreferrer">WhatsApp Admin</a>
       </div>
     </div>
-      </>
-    )}
   </div>
   );
 };

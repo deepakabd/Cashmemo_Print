@@ -7634,6 +7634,9 @@ function App() {
                 Invoice
               </button>
             )}
+            <button className="navbar-button" onClick={handleAboutOpen} disabled={isLoggedIn && !canAccessMenuFeature('about')}>
+              About
+            </button>
             <button className="navbar-button" onClick={handleContactOpen}>
               Support & Replies{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
             </button>
