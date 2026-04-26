@@ -35,6 +35,7 @@ const UserMenuDropdown = ({
   formatDisplayDate,
 }) => {
   const [showTips, setShowTips] = useState(false);
+  const [showMenuDetails, setShowMenuDetails] = useState(false);
   const [menuSearch, setMenuSearch] = useState('');
   const [collapsedSections, setCollapsedSections] = useState({});
   const searchLower = menuSearch.trim().toLowerCase();
@@ -102,10 +103,21 @@ const UserMenuDropdown = ({
       <div className="dropdown-menu__summary-drilldown">
         {profileCompletenessChecks.map((item) => (
           <div key={item.key} className="dropdown-menu__summary-drilldown-item">
-            <strong>{item.label}: {item.complete ? 'Available' : 'Missing'}</strong>
-            <span>{item.complete ? `${item.label} setup ready hai.` : item.reason}</span>
+            <strong>{item.label}</strong>
+            <span className={`dropdown-menu__summary-status dropdown-menu__summary-status--${item.complete ? 'ready' : 'missing'}`}>
+              {item.complete ? 'Available' : 'Missing'}
+            </span>
           </div>
         ))}
+      </div>
+      <div className="dropdown-menu__summary-actions dropdown-menu__summary-actions--compact">
+        <button
+          type="button"
+          className="dropdown-menu__summary-action dropdown-menu__summary-action--toggle"
+          onClick={() => setShowMenuDetails((prev) => !prev)}
+        >
+          {showMenuDetails ? 'Hide Menu' : 'Show Menu'}
+        </button>
       </div>
       {incompleteProfileActionItems.length > 0 && (
         <div className="dropdown-menu__summary-actions">
@@ -139,6 +151,8 @@ const UserMenuDropdown = ({
         {userMenuPackageTips[0]?.text || ''}
       </div>
     </div>
+    {showMenuDetails && (
+      <>
     <div className="dropdown-menu__section">
       <div className="dropdown-menu__section-title">Search Menu</div>
       <div className="dropdown-menu__search-wrap">
@@ -318,6 +332,8 @@ const UserMenuDropdown = ({
         <a className="dropdown-menu__contact-link" href={adminContacts.whatsapp} target="_blank" rel="noopener noreferrer">WhatsApp Admin</a>
       </div>
     </div>
+      </>
+    )}
   </div>
   );
 };

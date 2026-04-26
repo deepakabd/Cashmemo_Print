@@ -861,7 +861,7 @@ function App() {
 
   useEffect(() => {
     if (showUserMenu) {
-      firstUserMenuActionRef.current?.focus();
+      firstUserMenuActionRef.current?.focus({ preventScroll: true });
     }
   }, [showUserMenu]);
 
@@ -7629,6 +7629,11 @@ function App() {
         <nav className="navbar">
           <div className="navbar-left">
             <button className="navbar-button" onClick={handleHomeOpen} disabled={isPlanExpired}>Home</button>
+            {isLoggedIn && (
+              <button className="navbar-button" onClick={handleInvoiceOpen} disabled={!canAccessMenuFeature('invoice')}>
+                Invoice
+              </button>
+            )}
             <button className="navbar-button" onClick={handleContactOpen}>
               Support & Replies{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
             </button>
