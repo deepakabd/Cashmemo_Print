@@ -1039,8 +1039,39 @@
 }
 
 .upgrade-plan-panel {
-  max-width: 520px;
+  max-width: 980px;
   width: 100%;
+}
+
+.upgrade-plan-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.upgrade-plan-summary__item {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #d7e3f2;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8fe 100%);
+}
+
+.upgrade-plan-summary__label {
+  display: block;
+  margin-bottom: 6px;
+  color: #5a6f8b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.upgrade-plan-summary__item strong {
+  color: #102f54;
+  font-size: 15px;
+}
+
+.upgrade-plan-field--full {
+  grid-column: 1 / -1;
 }
 
 .upgrade-plan-pending {
@@ -1050,9 +1081,16 @@
 }
 
 .upgrade-plan-upi {
-  color: #b91c1c;
+  min-height: 45px;
+  padding: 11px 12px;
+  border: 1px solid #fdba74;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #9f1239;
   font-weight: 800;
   word-break: break-word;
+  display: flex;
+  align-items: center;
 }
 
 .dictionary-request-panel {
@@ -5330,6 +5368,18 @@
   }
 
   .app-dialog__actions button {
+    width: 100%;
+  }
+
+  .upgrade-plan-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .upgrade-plan-panel .form-actions {
+    flex-direction: column;
+  }
+
+  .upgrade-plan-panel .form-actions button {
     width: 100%;
   }
 }

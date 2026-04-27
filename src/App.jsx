@@ -1601,72 +1601,111 @@ function App() {
     };
 
     return (
-      <div className="placeholder-container upgrade-plan-panel">
-        <h2>Upgrade Plan</h2>
-        <div className="profile-form">
-          <span className="profile-label">Current Package</span>
-          <span>{formatPackageNameForNavbar(loggedInUser?.package)}</span>
-          <span className="profile-label">Expired On</span>
-          <span>{formatDisplayDate(loggedInUser?.validTill)}</span>
-          <span className="profile-label">Choose New Plan</span>
-          <select
-            className={`form-input${errors.selectedPackage ? ' form-input--error' : ''}`}
-            value={selectedPackage}
-            onChange={(e) => {
-              setSelectedPackage(e.target.value);
-              setErrors((prev) => ({ ...prev, selectedPackage: '' }));
-            }}
-            disabled={hasPendingUpgrade || isSubmitting}
-          >
-            {PLAN_UPGRADE_OPTIONS.map((pkg) => (
-              <option key={pkg} value={pkg}>
-                {formatPackageOptionLabel(pkg)}
-              </option>
-            ))}
-          </select>
-          {errors.selectedPackage ? <div className="form-error">{errors.selectedPackage}</div> : <span />}
-          <span className="profile-label">Payment UPI ID</span>
-          <span className="upgrade-plan-upi">{PAYMENT_UPI_ID}</span>
-          <span className="profile-label">UTR Number</span>
+      <div className="placeholder-container auth-panel upgrade-plan-panel">
+        <div className="auth-panel__hero">
           <div>
-            <input
-              className={`form-input${errors.utr ? ' form-input--error' : ''}`}
-              name="utr"
-              value={paymentDetails.utr}
-              onChange={handlePaymentDetailsChange}
-              placeholder="Enter UTR / Transaction ID"
-              disabled={hasPendingUpgrade || isSubmitting}
-            />
-            {errors.utr && <div className="form-error">{errors.utr}</div>}
+            <span className="auth-panel__eyebrow">Plan Renewal</span>
+            <h2>Upgrade Plan</h2>
+            <p className="auth-panel__subtitle">
+              Naya package select kijiye, payment details bhariye, aur request admin approval ke liye bhejiye.
+            </p>
           </div>
-          <span className="profile-label">Payment Date</span>
-          <div>
-            <input
-              className={`form-input${errors.paymentDate ? ' form-input--error' : ''}`}
-              name="paymentDate"
-              type="date"
-              value={paymentDetails.paymentDate}
-              onChange={handlePaymentDetailsChange}
-              disabled={hasPendingUpgrade || isSubmitting}
-            />
-            {errors.paymentDate && <div className="form-error">{errors.paymentDate}</div>}
+          <div className="auth-panel__hero-badges">
+            <span className="auth-panel__badge">Approval based</span>
+            <span className="auth-panel__badge">Secure payment proof</span>
           </div>
-          <span className="profile-label">Payment Remark</span>
-          <textarea
-            className="form-textarea"
-            name="paymentNote"
-            value={paymentDetails.paymentNote}
-            onChange={handlePaymentDetailsChange}
-            placeholder="Optional payment note"
-            disabled={hasPendingUpgrade || isSubmitting}
-          />
         </div>
-        {hasPendingUpgrade && (
-          <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
-        )}
-        <div className="form-actions">
-          <button onClick={submitUpgradeRequest} disabled={hasPendingUpgrade || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Send Request'}</button>
-          <button onClick={onClose} disabled={isSubmitting}>Close</button>
+        <div className="auth-panel__content auth-panel__content--wide">
+          <div className="auth-section-card">
+            <div className="auth-section-card__header">
+              <h3>Renewal Details</h3>
+              <p>Current plan review karke next package aur payment reference submit kijiye.</p>
+            </div>
+            <div className="upgrade-plan-summary">
+              <div className="upgrade-plan-summary__item">
+                <span className="upgrade-plan-summary__label">Current Package</span>
+                <strong>{formatPackageNameForNavbar(loggedInUser?.package)}</strong>
+              </div>
+              <div className="upgrade-plan-summary__item">
+                <span className="upgrade-plan-summary__label">Expired On</span>
+                <strong>{formatDisplayDate(loggedInUser?.validTill)}</strong>
+              </div>
+            </div>
+            <form
+              className="register-form register-form--enhanced"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitUpgradeRequest();
+              }}
+            >
+              <div>
+                <label className="auth-field-label">Choose New Plan</label>
+                <select
+                  className={`form-input${errors.selectedPackage ? ' form-input--error' : ''}`}
+                  value={selectedPackage}
+                  onChange={(e) => {
+                    setSelectedPackage(e.target.value);
+                    setErrors((prev) => ({ ...prev, selectedPackage: '' }));
+                  }}
+                  disabled={hasPendingUpgrade || isSubmitting}
+                >
+                  {PLAN_UPGRADE_OPTIONS.map((pkg) => (
+                    <option key={pkg} value={pkg}>
+                      {formatPackageOptionLabel(pkg)}
+                    </option>
+                  ))}
+                </select>
+                {errors.selectedPackage && <div className="form-error">{errors.selectedPackage}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Payment UPI ID</label>
+                <div className="upgrade-plan-upi">{PAYMENT_UPI_ID}</div>
+              </div>
+              <div>
+                <label className="auth-field-label">UTR Number</label>
+                <input
+                  className={`form-input${errors.utr ? ' form-input--error' : ''}`}
+                  name="utr"
+                  value={paymentDetails.utr}
+                  onChange={handlePaymentDetailsChange}
+                  placeholder="Enter UTR / Transaction ID"
+                  disabled={hasPendingUpgrade || isSubmitting}
+                />
+                {errors.utr && <div className="form-error">{errors.utr}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Payment Date</label>
+                <input
+                  className={`form-input${errors.paymentDate ? ' form-input--error' : ''}`}
+                  name="paymentDate"
+                  type="date"
+                  value={paymentDetails.paymentDate}
+                  onChange={handlePaymentDetailsChange}
+                  disabled={hasPendingUpgrade || isSubmitting}
+                />
+                {errors.paymentDate && <div className="form-error">{errors.paymentDate}</div>}
+              </div>
+              <div className="upgrade-plan-field upgrade-plan-field--full">
+                <label className="auth-field-label">Payment Remark</label>
+                <textarea
+                  className="form-textarea"
+                  name="paymentNote"
+                  value={paymentDetails.paymentNote}
+                  onChange={handlePaymentDetailsChange}
+                  placeholder="Optional payment note"
+                  disabled={hasPendingUpgrade || isSubmitting}
+                />
+              </div>
+            </form>
+            {hasPendingUpgrade && (
+              <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
+            )}
+            <div className="upi-note upi-note--card">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
+            <div className="form-actions auth-panel__actions">
+              <button className="auth-primary-button" onClick={submitUpgradeRequest} type="button" disabled={hasPendingUpgrade || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Send Request'}</button>
+              <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
+            </div>
+          </div>
         </div>
       </div>
     );
