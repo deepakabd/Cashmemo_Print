@@ -11,7 +11,7 @@ import './App.css';
 import {
   buildPrintDataHtml,
 } from './utils/printSelection';
-import { getHindiValue } from './hindiPrint';
+import { getHindiValue, setHindiRuntimeDictionary } from './hindiPrint';
 import {
   buildFeedbackStatusHistory,
   getFeedbackSlaTone,
@@ -895,6 +895,10 @@ function App() {
     };
     loadDict();
   }, [isLoggedIn, showAdminPanel]);
+
+  useEffect(() => {
+    setHindiRuntimeDictionary(translationDictionary);
+  }, [translationDictionary]);
 
   const readUsersData = () => {
     try {

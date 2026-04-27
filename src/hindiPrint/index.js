@@ -9,6 +9,7 @@ export { transliterateLatinToHindi } from './transliterator';
 export {
   getHindiLabel,
   getHindiValue,
+  setHindiRuntimeDictionary,
   translateCashMemoRecordToHindi,
   createHindiPrintAdapter,
 } from './translator';

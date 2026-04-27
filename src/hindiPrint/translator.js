@@ -3,6 +3,8 @@ import { HINDI_EXACT_OVERRIDES, HINDI_TOKEN_OVERRIDES, HINDI_VALUE_DICTIONARY } 
 import { HINDI_FIELD_LABELS } from './labels';
 import { transliterateLatinToHindi } from './transliterator';
 
+let runtimeHindiDictionary = {};
+
 function normalizeKey(value) {
   return String(value || '')
     .trim()
@@ -14,6 +16,23 @@ function titleCaseFromFieldName(fieldName) {
   return String(fieldName || '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function sanitizeRuntimeDictionary(dictionary = {}) {
+  return Object.entries(dictionary || {}).reduce((acc, [key, value]) => {
+    const englishWord = String(key || '').trim();
+    const hindiTranslation = String(value || '').trim();
+    if (englishWord && hindiTranslation) {
+      acc[englishWord] = hindiTranslation;
+    }
+    return acc;
+  }, {});
+}
+
+function findRuntimeDictionaryMatch(rawValue) {
+  const normalized = normalizeKey(rawValue);
+  const match = Object.entries(runtimeHindiDictionary).find(([key]) => normalizeKey(key) === normalized);
+  return match ? match[1] : '';
 }
 
 function applyExactOverride(rawValue, overrideGroupNames = []) {
@@ -76,6 +95,9 @@ function formatDateValue(rawValue) {
 }
 
 function convertDynamicValue(fieldName, rawValue, overrideGroups) {
+  const runtimeMatch = findRuntimeDictionaryMatch(rawValue);
+  if (runtimeMatch) return runtimeMatch;
+
   const exactOverride = applyExactOverride(rawValue, overrideGroups);
   if (exactOverride) return exactOverride;
 
@@ -89,6 +111,10 @@ function convertDynamicValue(fieldName, rawValue, overrideGroups) {
   if (transliterated && normalizeKey(transliterated) !== normalizeKey(rawValue)) return transliterated;
 
   return String(rawValue);
+}
+
+export function setHindiRuntimeDictionary(dictionary = {}) {
+  runtimeHindiDictionary = sanitizeRuntimeDictionary(dictionary);
 }
 
 export function getHindiLabel(fieldName) {
