@@ -11,6 +11,7 @@ import './App.css';
 import {
   buildPrintDataHtml,
 } from './utils/printSelection';
+import { getHindiValue } from './hindiPrint';
 import {
   buildFeedbackStatusHistory,
   getFeedbackSlaTone,
@@ -2005,7 +2006,7 @@ function App() {
       await loadData();
       closeApprovalReplyPopup();
     };
-
+//test check
     const loadData = async () => {
       try {
         let firebaseRequests = [];
@@ -5453,71 +5454,14 @@ function App() {
       });
 
       if (isHindiPrint) {
-        const transliterateText = async (text) => {
-          if (!text) return '';
-          let processedText = text;
-          try {
-            const localCacheKey = `transCache_${text.toLowerCase().trim()}`;
-            const cached = localStorage.getItem(localCacheKey);
-            if (cached) return cached;
-            
-            const exactMatch = Object.keys(translationDictionary).find(k => k.toLowerCase() === text.toLowerCase().trim());
-            if (exactMatch) return translationDictionary[exactMatch];
-
-            const sortedKeys = Object.keys(translationDictionary).sort((a, b) => b.length - a.length);
-            sortedKeys.forEach(engWord => {
-              const escapedWord = engWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const regex = new RegExp(`(^|\\s)${escapedWord}(?=\\s|[,.-]|$)`, 'gi');
-              processedText = processedText.replace(regex, `$1${translationDictionary[engWord]}`);
-            });
-
-            if (!/[a-zA-Z]/.test(processedText)) {
-              localStorage.setItem(localCacheKey, processedText);
-              return processedText;
-            }
-
-            const GOOGLE_CLOUD_API_KEY = import.meta.env.VITE_GOOGLE_CLOUD_API_KEY;
-            const response = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_CLOUD_API_KEY}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                q: processedText,
-                source: 'en',
-                target: 'hi',
-                format: 'text'
-              })
-            });
-
-            const data = await response.json();
-            if (data && data.data && data.data.translations && data.data.translations[0]) {
-              const result = data.data.translations[0].translatedText;
-              localStorage.setItem(localCacheKey, result);
-              return result;
-            }
-          } catch (error) {
-            console.error('Translation failed:', error);
-          }
-          return processedText || text;
-        };
-//test
-        customersToPrint = await Promise.all(
-          customersToPrint.map(async (customer) => {
-            const translatedCustomer = { ...customer };
-            if (customer['Consumer Name']) {
-              translatedCustomer['Consumer Name Hindi'] = await transliterateText(customer['Consumer Name']);
-            }
-            if (customer['Address']) {
-              translatedCustomer['Address Hindi'] = await transliterateText(customer['Address']);
-            }
-            if (customer['Delivery Area']) {
-              translatedCustomer['Delivery Area'] = await transliterateText(customer['Delivery Area']);
-            }
-            if (customer['Delivery Man']) {
-              translatedCustomer['Delivery Man'] = await transliterateText(customer['Delivery Man']);
-            }
-            return translatedCustomer;
-          })
-        );
+        customersToPrint = customersToPrint.map((customer) => {
+          const translatedCustomer = { ...customer };
+          translatedCustomer['Consumer Name Hindi'] = getHindiValue('Consumer Name', customer['Consumer Name'] || '');
+          translatedCustomer['Address Hindi'] = getHindiValue('Address', customer['Address'] || '');
+          translatedCustomer['Delivery Area'] = getHindiValue('Delivery Area', customer['Delivery Area'] || '');
+          translatedCustomer['Delivery Man'] = getHindiValue('Delivery Man', customer['Delivery Man'] || '');
+          return translatedCustomer;
+        });
       }
 
       let allCashMemosHtml = '';
@@ -5527,7 +5471,6 @@ function App() {
       const baseDealerName = pd?.distributorName
         ? (pd?.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
         : '-';
-//test
       const dealerDetails = {
         name: (isHindiPrint && hd?.distributorName) ? hd.distributorName : baseDealerName,
         gstn: (isHindiPrint && hd?.gstn) ? hd.gstn : (pd?.gst || '-'),
@@ -7634,6 +7577,9 @@ function App() {
                 Invoice
               </button>
             )}
+            <button className="navbar-button" onClick={handleAboutOpen} disabled={isLoggedIn && !canAccessMenuFeature('about')}>
+              About
+            </button>
             <button className="navbar-button" onClick={handleContactOpen}>
               Support & Replies{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
             </button>
