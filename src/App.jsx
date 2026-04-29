@@ -1,17 +1,17 @@
-﻿﻿import { useState, useEffect, useMemo, useRef } from 'react';
+﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef } from 'react';
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { addDoc, arrayUnion, collection, deleteDoc, doc, getDocs, getDoc, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 
 import './App.css';
 import {
   buildPrintDataHtml,
 } from './utils/printSelection';
-import { getHindiValue } from './hindiPrint';
+import { getHindiValue, setHindiRuntimeDictionary } from './hindiPrint';
 import {
   buildFeedbackStatusHistory,
   getFeedbackSlaTone,
@@ -541,6 +541,10 @@ const getExistingDictionaryEntry = (dictionary = {}, englishWord = '') => {
   };
 };
 
+const getDictionaryTranslation = (dictionary = {}, englishWord = '') => (
+  getExistingDictionaryEntry(dictionary, englishWord)?.hindiTranslation || ''
+);
+
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS.filter((pkg) => !pkg.toLowerCase().includes('demo'));
 
 const normalizePendingTypeLabel = (type) => {
@@ -600,6 +604,13 @@ const normalizeData = (data) => {
   });
 };
 
+const ADMIN_ROLE_PERMISSIONS = {
+  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'recycle-bin', 'audit'], mutate: true },
+  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'feedback', 'audit'], mutate: true },
+  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: true },
+  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
+};
+
 
 
 
@@ -609,6 +620,7 @@ const normalizeData = (data) => {
 
 function App() {
   const fileInputRef = useRef(null);
+  const translationMemoryCacheRef = useRef(new Map());
   const [translationDictionary, setTranslationDictionary] = useState({});
   const [toastItems, setToastItems] = useState([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -895,6 +907,10 @@ function App() {
     };
     loadDict();
   }, [isLoggedIn, showAdminPanel]);
+
+  useEffect(() => {
+    setHindiRuntimeDictionary(translationDictionary);
+  }, [translationDictionary]);
 
   const readUsersData = () => {
     try {
@@ -1601,72 +1617,111 @@ function App() {
     };
 
     return (
-      <div className="placeholder-container upgrade-plan-panel">
-        <h2>Upgrade Plan</h2>
-        <div className="profile-form">
-          <span className="profile-label">Current Package</span>
-          <span>{formatPackageNameForNavbar(loggedInUser?.package)}</span>
-          <span className="profile-label">Expired On</span>
-          <span>{formatDisplayDate(loggedInUser?.validTill)}</span>
-          <span className="profile-label">Choose New Plan</span>
-          <select
-            className={`form-input${errors.selectedPackage ? ' form-input--error' : ''}`}
-            value={selectedPackage}
-            onChange={(e) => {
-              setSelectedPackage(e.target.value);
-              setErrors((prev) => ({ ...prev, selectedPackage: '' }));
-            }}
-            disabled={hasPendingUpgrade || isSubmitting}
-          >
-            {PLAN_UPGRADE_OPTIONS.map((pkg) => (
-              <option key={pkg} value={pkg}>
-                {formatPackageOptionLabel(pkg)}
-              </option>
-            ))}
-          </select>
-          {errors.selectedPackage ? <div className="form-error">{errors.selectedPackage}</div> : <span />}
-          <span className="profile-label">Payment UPI ID</span>
-          <span className="upgrade-plan-upi">{PAYMENT_UPI_ID}</span>
-          <span className="profile-label">UTR Number</span>
+      <div className="placeholder-container auth-panel upgrade-plan-panel">
+        <div className="auth-panel__hero">
           <div>
-            <input
-              className={`form-input${errors.utr ? ' form-input--error' : ''}`}
-              name="utr"
-              value={paymentDetails.utr}
-              onChange={handlePaymentDetailsChange}
-              placeholder="Enter UTR / Transaction ID"
-              disabled={hasPendingUpgrade || isSubmitting}
-            />
-            {errors.utr && <div className="form-error">{errors.utr}</div>}
+            <span className="auth-panel__eyebrow">Plan Renewal</span>
+            <h2>Upgrade Plan</h2>
+            <p className="auth-panel__subtitle">
+              Naya package select kijiye, payment details bhariye, aur request admin approval ke liye bhejiye.
+            </p>
           </div>
-          <span className="profile-label">Payment Date</span>
-          <div>
-            <input
-              className={`form-input${errors.paymentDate ? ' form-input--error' : ''}`}
-              name="paymentDate"
-              type="date"
-              value={paymentDetails.paymentDate}
-              onChange={handlePaymentDetailsChange}
-              disabled={hasPendingUpgrade || isSubmitting}
-            />
-            {errors.paymentDate && <div className="form-error">{errors.paymentDate}</div>}
+          <div className="auth-panel__hero-badges">
+            <span className="auth-panel__badge">Approval based</span>
+            <span className="auth-panel__badge">Secure payment proof</span>
           </div>
-          <span className="profile-label">Payment Remark</span>
-          <textarea
-            className="form-textarea"
-            name="paymentNote"
-            value={paymentDetails.paymentNote}
-            onChange={handlePaymentDetailsChange}
-            placeholder="Optional payment note"
-            disabled={hasPendingUpgrade || isSubmitting}
-          />
         </div>
-        {hasPendingUpgrade && (
-          <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
-        )}
-        <div className="form-actions">
-          <button onClick={submitUpgradeRequest} disabled={hasPendingUpgrade || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Send Request'}</button>
-          <button onClick={onClose} disabled={isSubmitting}>Close</button>
+        <div className="auth-panel__content auth-panel__content--wide">
+          <div className="auth-section-card">
+            <div className="auth-section-card__header">
+              <h3>Renewal Details</h3>
+              <p>Current plan review karke next package aur payment reference submit kijiye.</p>
+            </div>
+            <div className="upgrade-plan-summary">
+              <div className="upgrade-plan-summary__item">
+                <span className="upgrade-plan-summary__label">Current Package</span>
+                <strong>{formatPackageNameForNavbar(loggedInUser?.package)}</strong>
+              </div>
+              <div className="upgrade-plan-summary__item">
+                <span className="upgrade-plan-summary__label">Expired On</span>
+                <strong>{formatDisplayDate(loggedInUser?.validTill)}</strong>
+              </div>
+            </div>
+            <form
+              className="register-form register-form--enhanced"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitUpgradeRequest();
+              }}
+            >
+              <div>
+                <label className="auth-field-label">Choose New Plan</label>
+                <select
+                  className={`form-input${errors.selectedPackage ? ' form-input--error' : ''}`}
+                  value={selectedPackage}
+                  onChange={(e) => {
+                    setSelectedPackage(e.target.value);
+                    setErrors((prev) => ({ ...prev, selectedPackage: '' }));
+                  }}
+                  disabled={hasPendingUpgrade || isSubmitting}
+                >
+                  {PLAN_UPGRADE_OPTIONS.map((pkg) => (
+                    <option key={pkg} value={pkg}>
+                      {formatPackageOptionLabel(pkg)}
+                    </option>
+                  ))}
+                </select>
+                {errors.selectedPackage && <div className="form-error">{errors.selectedPackage}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Payment UPI ID</label>
+                <div className="upgrade-plan-upi">{PAYMENT_UPI_ID}</div>
+              </div>
+              <div>
+                <label className="auth-field-label">UTR Number</label>
+                <input
+                  className={`form-input${errors.utr ? ' form-input--error' : ''}`}
+                  name="utr"
+                  value={paymentDetails.utr}
+                  onChange={handlePaymentDetailsChange}
+                  placeholder="Enter UTR / Transaction ID"
+                  disabled={hasPendingUpgrade || isSubmitting}
+                />
+                {errors.utr && <div className="form-error">{errors.utr}</div>}
+              </div>
+              <div>
+                <label className="auth-field-label">Payment Date</label>
+                <input
+                  className={`form-input${errors.paymentDate ? ' form-input--error' : ''}`}
+                  name="paymentDate"
+                  type="date"
+                  value={paymentDetails.paymentDate}
+                  onChange={handlePaymentDetailsChange}
+                  disabled={hasPendingUpgrade || isSubmitting}
+                />
+                {errors.paymentDate && <div className="form-error">{errors.paymentDate}</div>}
+              </div>
+              <div className="upgrade-plan-field upgrade-plan-field--full">
+                <label className="auth-field-label">Payment Remark</label>
+                <textarea
+                  className="form-textarea"
+                  name="paymentNote"
+                  value={paymentDetails.paymentNote}
+                  onChange={handlePaymentDetailsChange}
+                  placeholder="Optional payment note"
+                  disabled={hasPendingUpgrade || isSubmitting}
+                />
+              </div>
+            </form>
+            {hasPendingUpgrade && (
+              <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
+            )}
+            <div className="upi-note upi-note--card">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
+            <div className="form-actions auth-panel__actions">
+              <button className="auth-primary-button" onClick={submitUpgradeRequest} type="button" disabled={hasPendingUpgrade || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Send Request'}</button>
+              <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -2434,13 +2489,7 @@ function App() {
       localStorage.setItem('deletedUsersBin', JSON.stringify(nextBin));
     };
 
-    const adminRolePermissions = {
-      'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'recycle-bin', 'audit'], mutate: true },
-      'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'feedback', 'audit'], mutate: true },
-      'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: true },
-      viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
-    };
-    const currentRolePermissions = adminRolePermissions[adminRoleMode] || adminRolePermissions['super-admin'];
+    const currentRolePermissions = ADMIN_ROLE_PERMISSIONS[adminRoleMode] || ADMIN_ROLE_PERMISSIONS['super-admin'];
     const canAccessTab = (tabKey) => currentRolePermissions.tabs.includes(tabKey);
     const canMutateAdminData = Boolean(currentRolePermissions.mutate);
 
@@ -2486,7 +2535,7 @@ function App() {
             const adminProfileSnap = await getDoc(doc(db, 'adminUsers', activeAdminEmail));
             if (adminProfileSnap.exists()) {
               const role = String(adminProfileSnap.data()?.role || '').trim();
-              if (adminRolePermissions[role]) {
+              if (ADMIN_ROLE_PERMISSIONS[role]) {
                 nextRole = role;
               }
             }
@@ -5153,7 +5202,13 @@ function App() {
       `Uploaded ${uploadMetadata.fileName} with ${uploadMetadata.totalRows} rows`,
       loggedInUser?.dealerCode,
     );
-  }, [uploadMetadata?.uploadedAt]);
+  }, [
+    logRecentActivity,
+    loggedInUser?.dealerCode,
+    uploadMetadata?.fileName,
+    uploadMetadata?.totalRows,
+    uploadMetadata?.uploadedAt,
+  ]);
 
   const loadTestSampleFile = useCallback(async () => {
     if (sampleDataLoaded || sampleDataLoading) return;
@@ -5389,6 +5444,7 @@ function App() {
       }
 
       const isHindiPrint = printLanguage === 'Hindi';
+      const translationMemoryCache = translationMemoryCacheRef.current;
       const [{ renderToString }, { default: CashMemoTemplate }] = await Promise.all([
         import('react-dom/server'),
         isHindiPrint ? import('./CashMemoHindi') : import('./CashMemoEnglish'),
@@ -5454,12 +5510,116 @@ function App() {
       });
 
       if (isHindiPrint) {
+        pushToast('Preparing translations, please wait...', 'info');
+        const wordsToTranslate = new Set();
+
+        customersToPrint.forEach((customer) => {
+          const processField = (text) => {
+            if (!text) return;
+            const fullLower = String(text).toLowerCase().trim();
+            if (getDictionaryTranslation(translationDictionary, fullLower)) return;
+            if (translationMemoryCache.has(fullLower)) return;
+
+            const tokens = String(text).split(/(\s+|,|\/|-|\(|\))/);
+            tokens.forEach(token => {
+              if (!token || /^(\s+|,|\/|-|\(|\))$/.test(token) || /^\d+$/.test(token)) return;
+              const lowerToken = token.toLowerCase();
+              if (!getDictionaryTranslation(translationDictionary, lowerToken) && !translationMemoryCache.has(lowerToken)) {
+                wordsToTranslate.add(token);
+              }
+            });
+          };
+
+          processField(customer['Consumer Name']);
+          processField(customer['Address']);
+        });
+
+        if (wordsToTranslate.size > 0) {
+          const uniqueWords = Array.from(wordsToTranslate);
+          const chunkSize = 100;
+          for (let i = 0; i < uniqueWords.length; i += chunkSize) {
+            const chunk = uniqueWords.slice(i, i + chunkSize);
+            const textToTranslate = chunk.join('\n');
+            try {
+              const response = await fetch('/api/translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: textToTranslate,
+                  source: 'en',
+                  target: 'hi',
+                  format: 'text'
+                })
+              });
+
+              if (response.ok) {
+                const data = await response.json();
+                const translatedTextArray = (data.translatedText || '').split('\n');
+                if (translatedTextArray.length === chunk.length) {
+                  chunk.forEach((word, idx) => {
+                    translationMemoryCache.set(word.toLowerCase(), translatedTextArray[idx].trim());
+                  });
+                }
+              }
+            } catch (error) {
+              console.error("Translation API failed:", error);
+            }
+          }
+        }
+
+        if (translationMemoryCache.size > 0) {
+          setHindiRuntimeDictionary({
+            ...translationDictionary,
+            ...Object.fromEntries(translationMemoryCache),
+          });
+        }
+
+        const translateString = (fieldName, text) => {
+          if (!text) return '';
+          const fullLower = String(text).toLowerCase().trim();
+          const directMatch = getDictionaryTranslation(translationDictionary, fullLower);
+          if (directMatch && directMatch.toLowerCase() !== fullLower) {
+            return directMatch;
+          }
+          if (translationMemoryCache.has(fullLower)) {
+            const cachedMatch = translationMemoryCache.get(fullLower);
+            if (cachedMatch && cachedMatch.toLowerCase() !== fullLower) {
+              return cachedMatch;
+            }
+          }
+
+          const tokens = String(text).split(/(\s+|,|\/|-|\(|\))/);
+          const translatedText = tokens.map(token => {
+            if (!token || /^(\s+|,|\/|-|\(|\))$/.test(token) || /^\d+$/.test(token)) return token;
+            const lowerToken = token.toLowerCase();
+            const dictionaryValue = getDictionaryTranslation(translationDictionary, lowerToken);
+            if (dictionaryValue && dictionaryValue.toLowerCase() !== lowerToken) {
+              return dictionaryValue;
+            }
+            if (translationMemoryCache.has(lowerToken)) {
+              const cachedValue = translationMemoryCache.get(lowerToken);
+              if (cachedValue && cachedValue.toLowerCase() !== lowerToken) {
+                return cachedValue;
+              }
+            }
+            return getHindiValue(fieldName, token);
+          }).join('');
+
+          if (/[A-Za-z]/.test(translatedText)) {
+            return getHindiValue(fieldName, text);
+          }
+
+          return translatedText;
+        };
+
         customersToPrint = customersToPrint.map((customer) => {
           const translatedCustomer = { ...customer };
-          translatedCustomer['Consumer Name Hindi'] = getHindiValue('Consumer Name', customer['Consumer Name'] || '');
-          translatedCustomer['Address Hindi'] = getHindiValue('Address', customer['Address'] || '');
-          translatedCustomer['Delivery Area'] = getHindiValue('Delivery Area', customer['Delivery Area'] || '');
-          translatedCustomer['Delivery Man'] = getHindiValue('Delivery Man', customer['Delivery Man'] || '');
+          // Sirf Consumer Name aur Address ko translate karna hai
+          translatedCustomer['Consumer Name Hindi'] = translateString('Consumer Name', customer['Consumer Name'] || '');
+          translatedCustomer['Address Hindi'] = translateString('Address', customer['Address'] || '');
+          // Baaki field as-is (English) rahenge as per request
+          translatedCustomer['Delivery Area'] = customer['Delivery Area'] || '';
+          translatedCustomer['Delivery Man'] = customer['Delivery Man'] || '';
           return translatedCustomer;
         });
       }
@@ -6896,7 +7056,6 @@ function App() {
     );
   };
 
-  const availableHeadersToAdd = headers.filter(header => !visibleHeaders.includes(header));
   const hideUserNavbar = showAdminPanel;
   const pendingTypesFromUpdates = Object.entries(loggedInUser?.pendingUpdates || {})
     .filter(([, value]) => String(value?.status || '').toLowerCase() === 'pending')
