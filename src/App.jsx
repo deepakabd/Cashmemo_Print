@@ -45,7 +45,7 @@ const excelSerialDateToJSDate = (serial) => {
   return isNaN(date.getTime()) ? null : date; // Return null if date is invalid
 };
 
-// Helper function to format a Date object to DD-MM-YYYY
+// Helper function to format a Date object to DD-MM-YYYY OK
 
 
 const formatDateToDDMMYYYY = (date) => {
