@@ -45,7 +45,7 @@ const excelSerialDateToJSDate = (serial) => {
   return isNaN(date.getTime()) ? null : date; // Return null if date is invalid
 };
 
-// Helper function to format a Date object to DD-MM-YYYY
+// Helper function to format a Date object to DD-MM-YYYY OK
 
 
 const formatDateToDDMMYYYY = (date) => {
@@ -7166,14 +7166,15 @@ function App() {
             : remainingDays <= 7
               ? `${remainingDays} days left. Renewal recommended.`
               : `${remainingDays} days left on current plan.`;
-  const userMenuPackageTips = isHindiEnterprisePackage(loggedInUser?.package)
+  const hasHindiPackageAccess = isHindiEnterprisePackage(loggedInUser?.package);
+  const userMenuPackageTips = hasHindiPackageAccess
     ? [
         {
           text: 'Hindi package active: dictionary, delivery area/staff, and header tools are available.',
           actionLabel: 'Open Hindi Tools',
           onClick: handleDictionaryOpen,
           viewKey: 'dictionaryUpdate',
-          disabled: isPlanExpired || !isEnterpriseHindiPackage(loggedInUser?.package),
+          disabled: isPlanExpired || !hasHindiPackageAccess,
         },
         {
           text: 'Use approval badges to quickly track pending Hindi updates.',
@@ -7229,10 +7230,10 @@ function App() {
     bankUpdate: () => !isPlanExpired,
     rateUpdate: () => !isPlanExpired,
     labelUpdate: () => !isPlanExpired,
-    dictionaryUpdate: () => !isPlanExpired && isEnterpriseHindiPackage(loggedInUser?.package),
-    deliveryAreaUpdate: () => !isPlanExpired && isHindiEnterprisePackage(loggedInUser?.package),
-    deliveryStaffUpdate: () => !isPlanExpired && isHindiEnterprisePackage(loggedInUser?.package),
-    headerUpdate: () => !isPlanExpired && isHindiEnterprisePackage(loggedInUser?.package),
+    dictionaryUpdate: () => !isPlanExpired && hasHindiPackageAccess,
+    deliveryAreaUpdate: () => !isPlanExpired && hasHindiPackageAccess,
+    deliveryStaffUpdate: () => !isPlanExpired && hasHindiPackageAccess,
+    headerUpdate: () => !isPlanExpired && hasHindiPackageAccess,
     upgradePlan: () => true,
     support: () => true,
   };
@@ -7257,10 +7258,10 @@ function App() {
       !canAccessMenuFeature('bankUpdate') ? 'Bank update' : '',
     ].filter(Boolean),
     hindiPackageOnly: [
-      !isEnterpriseHindiPackage(loggedInUser?.package) ? 'Dictionary update' : '',
-      !isHindiEnterprisePackage(loggedInUser?.package) ? 'Delivery area update' : '',
-      !isHindiEnterprisePackage(loggedInUser?.package) ? 'Delivery staff update' : '',
-      !isHindiEnterprisePackage(loggedInUser?.package) ? 'Header update' : '',
+      !hasHindiPackageAccess ? 'Dictionary update' : '',
+      !hasHindiPackageAccess ? 'Delivery area update' : '',
+      !hasHindiPackageAccess ? 'Delivery staff update' : '',
+      !hasHindiPackageAccess ? 'Header update' : '',
     ].filter(Boolean),
   };
   const collectMenuNames = (labels = [], predicate) => labels.filter((label) => {
@@ -7633,10 +7634,10 @@ function App() {
           onClick: handleDictionaryOpen,
           viewKey: 'dictionaryUpdate',
           disabled: !canAccessMenuFeature('dictionaryUpdate'),
-          reason: !isEnterpriseHindiPackage(loggedInUser?.package) ? 'Available in Hindi enterprise package.' : getDisabledReason('dictionaryUpdate'),
+          reason: !hasHindiPackageAccess ? 'Available in Hindi package.' : getDisabledReason('dictionaryUpdate'),
           badge: pendingDictionaryCount > 0 ? { label: String(pendingDictionaryCount), tone: 'pending' } : null,
           hint: pendingDictionaryCount > 0 ? 'Dictionary changes are waiting for admin approval.' : 'Manage Hindi translation dictionary updates.',
-          show: isEnterpriseHindiPackage(loggedInUser?.package),
+          show: hasHindiPackageAccess,
         },
         {
           label: 'Upgrade Plan',
@@ -7650,30 +7651,30 @@ function App() {
           onClick: handleDeliveryAreaUpdate,
           viewKey: 'deliveryAreaUpdate',
           disabled: !canAccessMenuFeature('deliveryAreaUpdate'),
-          reason: !isHindiEnterprisePackage(loggedInUser?.package) ? 'Available in Hindi enterprise package.' : getDisabledReason('deliveryAreaUpdate'),
+          reason: !hasHindiPackageAccess ? 'Available in Hindi package.' : getDisabledReason('deliveryAreaUpdate'),
           badge: getRequestBadge('deliveryArea'),
           hint: getRequestHint('deliveryArea', 'Update delivery area mappings for approval.'),
-          show: isHindiEnterprisePackage(loggedInUser?.package),
+          show: hasHindiPackageAccess,
         },
         {
           label: 'Update Delivery Staff',
           onClick: handleDeliveryStaffUpdate,
           viewKey: 'deliveryStaffUpdate',
           disabled: !canAccessMenuFeature('deliveryStaffUpdate'),
-          reason: !isHindiEnterprisePackage(loggedInUser?.package) ? 'Available in Hindi enterprise package.' : getDisabledReason('deliveryStaffUpdate'),
+          reason: !hasHindiPackageAccess ? 'Available in Hindi package.' : getDisabledReason('deliveryStaffUpdate'),
           badge: getRequestBadge('deliveryStaff'),
           hint: getRequestHint('deliveryStaff', 'Update delivery staff list for approval.'),
-          show: isHindiEnterprisePackage(loggedInUser?.package),
+          show: hasHindiPackageAccess,
         },
         {
           label: 'Update Header',
           onClick: handleHeaderUpdate,
           viewKey: 'headerUpdate',
           disabled: !canAccessMenuFeature('headerUpdate'),
-          reason: !isHindiEnterprisePackage(loggedInUser?.package) ? 'Available in Hindi enterprise package.' : getDisabledReason('headerUpdate'),
+          reason: !hasHindiPackageAccess ? 'Available in Hindi package.' : getDisabledReason('headerUpdate'),
           badge: getRequestBadge('header'),
           hint: getRequestHint('header', 'Update Hindi header information for approval.'),
-          show: isHindiEnterprisePackage(loggedInUser?.package),
+          show: hasHindiPackageAccess,
         },
       ],
     },
@@ -7734,6 +7735,11 @@ function App() {
             {isLoggedIn && (
               <button className="navbar-button" onClick={handleInvoiceOpen} disabled={!canAccessMenuFeature('invoice')}>
                 Invoice
+              </button>
+            )}
+            {isLoggedIn && hasHindiPackageAccess && (
+              <button className="navbar-button" onClick={handleDictionaryOpen} disabled={!canAccessMenuFeature('dictionaryUpdate')}>
+                Dictionary{pendingDictionaryCount > 0 ? ` (${pendingDictionaryCount})` : ''}
               </button>
             )}
             <button className="navbar-button" onClick={handleAboutOpen} disabled={isLoggedIn && !canAccessMenuFeature('about')}>

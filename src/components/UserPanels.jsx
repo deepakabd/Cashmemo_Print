@@ -812,8 +812,9 @@ export const DictionaryRequestPanel = ({
   mode = 'default',
   onClose,
 }) => {
-  const [form, setForm] = useState({ englishWord: '', hindiTranslation: '' });
-  const [entries, setEntries] = useState([{ englishWord: '', hindiTranslation: '' }]);
+  const MAX_DICTIONARY_REQUEST_ROWS = 10;
+  const createEmptyEntries = (count) => Array.from({ length: count }, () => ({ englishWord: '', hindiTranslation: '' }));
+  const [entries, setEntries] = useState(createEmptyEntries(MAX_DICTIONARY_REQUEST_ROWS));
   const [dictionaryError, setDictionaryError] = useState('');
   const pendingCount = getPendingDictionaryRequestCount(loggedInUser);
   const isDeliveryAreaMode = mode === 'deliveryArea';
@@ -832,10 +833,9 @@ export const DictionaryRequestPanel = ({
 
   useEffect(() => {
     if (isDeliveryAreaMode || isDeliveryStaffMode) {
-      setEntries(Array.from({ length: 5 }, () => ({ englishWord: '', hindiTranslation: '' })));
+      setEntries(createEmptyEntries(5));
     } else {
-      setEntries([{ englishWord: '', hindiTranslation: '' }]);
-      setForm({ englishWord: '', hindiTranslation: '' });
+      setEntries(createEmptyEntries(MAX_DICTIONARY_REQUEST_ROWS));
     }
     setShowApprovedList(false);
   }, [mode, isDeliveryAreaMode, isDeliveryStaffMode]);
@@ -850,17 +850,17 @@ export const DictionaryRequestPanel = ({
   };
 
   const addEntry = () => {
+    if (entries.length >= MAX_DICTIONARY_REQUEST_ROWS) {
+      setDictionaryError(`Ek baar mein maximum ${MAX_DICTIONARY_REQUEST_ROWS} requests add kar sakte hain.`);
+      pushToast(`Ek baar mein maximum ${MAX_DICTIONARY_REQUEST_ROWS} requests add kar sakte hain.`, 'info');
+      return;
+    }
+    setDictionaryError('');
     setEntries((prev) => [...prev, { englishWord: '', hindiTranslation: '' }]);
   };
 
   const removeEntry = (index) => {
     setEntries((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-    setDictionaryError('');
   };
 
   const submitDictionaryRequest = async () => {
@@ -877,18 +877,24 @@ export const DictionaryRequestPanel = ({
       return;
     }
 
+    const normalizedEntries = entries.map((entry) => ({
+      englishWord: String(entry.englishWord || '').trim(),
+      hindiTranslation: String(entry.hindiTranslation || '').trim(),
+    })).filter((entry) => entry.englishWord || entry.hindiTranslation);
+
+    if (normalizedEntries.length === 0 || normalizedEntries.some((entry) => !entry.englishWord || !entry.hindiTranslation)) {
+      setDictionaryError('Har row mein English aur Hindi dono values bharen.');
+      pushToast('Har row mein English aur Hindi dono values bharen.', 'error');
+      return;
+    }
+
+    if (normalizedEntries.length > MAX_DICTIONARY_REQUEST_ROWS) {
+      setDictionaryError(`Ek baar mein maximum ${MAX_DICTIONARY_REQUEST_ROWS} requests bhej sakte hain.`);
+      pushToast(`Ek baar mein maximum ${MAX_DICTIONARY_REQUEST_ROWS} requests bhej sakte hain.`, 'error');
+      return;
+    }
+
     if (isDeliveryAreaMode || isDeliveryStaffMode) {
-      const normalizedEntries = entries.map((entry) => ({
-        englishWord: String(entry.englishWord || '').trim(),
-        hindiTranslation: String(entry.hindiTranslation || '').trim(),
-      })).filter((entry) => entry.englishWord || entry.hindiTranslation);
-
-      if (normalizedEntries.length === 0 || normalizedEntries.some((entry) => !entry.englishWord || !entry.hindiTranslation)) {
-        setDictionaryError('Har row mein English aur Hindi dono values bharen.');
-        pushToast('Har row mein English aur Hindi dono values bharen.', 'error');
-        return;
-      }
-
       const ok = await submitUpdateApprovalRequest({
         type,
         payload: normalizedEntries,
@@ -896,65 +902,62 @@ export const DictionaryRequestPanel = ({
         successMessage,
       });
       if (ok) {
-        setEntries([{ englishWord: '', hindiTranslation: '' }]);
+        setEntries(isDeliveryAreaMode || isDeliveryStaffMode ? createEmptyEntries(5) : createEmptyEntries(MAX_DICTIONARY_REQUEST_ROWS));
         onClose();
       }
       return;
     }
-
-    const englishWord = form.englishWord.trim();
-    const hindiTranslation = form.hindiTranslation.trim();
-    if (!englishWord || !hindiTranslation) {
-      setDictionaryError('English word aur Hindi translation required hai.');
-      pushToast('English word aur Hindi translation required hai.', 'error');
-      return;
-    }
     setDictionaryError('');
 
-    const nextPendingCount = pendingCount + 1;
-    const clientRequestId = `dict-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const payload = {
-      clientRequestId,
-      englishWord,
-      hindiTranslation,
-      requestedBy: loggedInUser?.dealerCode || '',
-      requestedAt: new Date().toISOString(),
-    };
+    const nextPendingCount = pendingCount + normalizedEntries.length;
+    const pendingRequests = normalizedEntries.map((entry, index) => {
+      const requestedAt = new Date(Date.now() + index).toISOString();
+      const clientRequestId = `dict-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        id: clientRequestId,
+        status: 'pending',
+        payload: {
+          clientRequestId,
+          englishWord: entry.englishWord,
+          hindiTranslation: entry.hindiTranslation,
+          requestedBy: loggedInUser?.dealerCode || '',
+          requestedAt,
+        },
+        dealerCode: loggedInUser.dealerCode || '',
+        dealerName: loggedInUser.dealerName || '',
+        requestedAt,
+      };
+    });
 
-    let approvalId = '';
-    let approvalSaved = false;
+    let approvalSavedCount = 0;
     try {
       try {
-        const approvalRef = await addDoc(collection(db, 'updateApprovals'), {
-          userId: loggedInUser.id,
-          dealerCode: loggedInUser.dealerCode || '',
-          dealerName: loggedInUser.dealerName || '',
-          type: 'dictionary',
-          payload,
-          status: 'pending',
-          requestedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+        const approvalRefs = await Promise.all(
+          pendingRequests.map((request) => addDoc(collection(db, 'updateApprovals'), {
+            userId: loggedInUser.id,
+            dealerCode: loggedInUser.dealerCode || '',
+            dealerName: loggedInUser.dealerName || '',
+            type: 'dictionary',
+            payload: request.payload,
+            status: 'pending',
+            requestedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }))
+        );
+        approvalRefs.forEach((approvalRef, index) => {
+          pendingRequests[index].approvalId = approvalRef.id;
         });
-        approvalId = approvalRef.id;
-        approvalSaved = true;
+        approvalSavedCount = approvalRefs.length;
       } catch (e) { void e; }
 
       try {
         await updateDoc(doc(db, 'users', loggedInUser.id), {
           dictionaryPendingCount: nextPendingCount,
-          pendingDictionaryRequests: arrayUnion({
-            id: clientRequestId,
-            approvalId,
-            status: 'pending',
-            payload,
-            dealerCode: loggedInUser.dealerCode || '',
-            dealerName: loggedInUser.dealerName || '',
-            requestedAt: payload.requestedAt,
-          }),
+          pendingDictionaryRequests: arrayUnion(...pendingRequests),
           updatedAt: serverTimestamp(),
         });
       } catch {
-        if (!approvalSaved) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
+        if (!approvalSavedCount) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
       }
 
       updateUserInStore(
@@ -964,21 +967,13 @@ export const DictionaryRequestPanel = ({
           dictionaryPendingCount: nextPendingCount,
           pendingDictionaryRequests: [
             ...(Array.isArray(user.pendingDictionaryRequests) ? user.pendingDictionaryRequests : []),
-            {
-              id: clientRequestId,
-              approvalId,
-              status: 'pending',
-              payload,
-              dealerCode: loggedInUser.dealerCode || '',
-              dealerName: loggedInUser.dealerName || '',
-              requestedAt: payload.requestedAt,
-            },
+            ...pendingRequests,
           ],
         }),
         loggedInUser.dealerCode,
       );
-      setForm({ englishWord: '', hindiTranslation: '' });
-      pushToast('Dictionary request submitted. Your request is pending with admin for approval.', 'success');
+      setEntries(createEmptyEntries(MAX_DICTIONARY_REQUEST_ROWS));
+      pushToast(`${normalizedEntries.length} dictionary request submitted. Your request is pending with admin for approval.`, 'success');
     } catch {
       setDictionaryError('Dictionary request submit failed. Check Firebase permissions.');
       pushToast('Dictionary request submit failed. Check Firebase permissions.', 'error');
@@ -1032,36 +1027,30 @@ export const DictionaryRequestPanel = ({
         </div>
       )}
       <div className="profile-form">
-        {isDeliveryAreaMode || isDeliveryStaffMode ? (
-          <>
-            <div className="dictionary-multi-header">
-              <span>Sr.</span>
-              <span>{isDeliveryAreaMode ? 'English Area' : 'English Staff'}</span>
-              <span>Hindi Translation</span>
-              <span>Action</span>
+        <>
+          <div className="dictionary-multi-header">
+            <span>Sr.</span>
+            <span>{isDeliveryAreaMode ? 'English Area' : isDeliveryStaffMode ? 'English Staff' : 'English Word'}</span>
+            <span>Hindi Translation</span>
+            <span>Action</span>
+          </div>
+          {entries.map((entry, index) => (
+            <div key={index} className="dictionary-multi-entry">
+              <span>{index + 1}</span>
+              <input className="form-input" value={entry.englishWord} onChange={(e) => updateEntry(index, 'englishWord', e.target.value)} placeholder={englishPlaceholder} />
+              <input className="form-input" value={entry.hindiTranslation} onChange={(e) => updateEntry(index, 'hindiTranslation', e.target.value)} placeholder={hindiPlaceholder} />
+              <button type="button" className="dictionary-row-remove" onClick={() => removeEntry(index)} disabled={entries.length <= 1}>
+                Remove
+              </button>
             </div>
-            {entries.map((entry, index) => (
-              <div key={index} className="dictionary-multi-entry">
-                <span>{index + 1}</span>
-                <input className="form-input" value={entry.englishWord} onChange={(e) => updateEntry(index, 'englishWord', e.target.value)} placeholder={englishPlaceholder} />
-                <input className="form-input" value={entry.hindiTranslation} onChange={(e) => updateEntry(index, 'hindiTranslation', e.target.value)} placeholder={hindiPlaceholder} />
-                <button type="button" className="dictionary-row-remove" onClick={() => removeEntry(index)} disabled={entries.length <= 1}>
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button type="button" className="dictionary-request-add-row" onClick={addEntry}>
-              Add Another Row
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="profile-label">English Word</span>
-            <input className="form-input" name="englishWord" value={form.englishWord} onChange={handleChange} placeholder={englishPlaceholder} />
-            <span className="profile-label">Hindi Translation</span>
-            <input className="form-input" name="hindiTranslation" value={form.hindiTranslation} onChange={handleChange} placeholder={hindiPlaceholder} />
-          </>
-        )}
+          ))}
+          <button type="button" className="dictionary-request-add-row" onClick={addEntry} disabled={entries.length >= MAX_DICTIONARY_REQUEST_ROWS}>
+            {entries.length >= MAX_DICTIONARY_REQUEST_ROWS ? `Maximum ${MAX_DICTIONARY_REQUEST_ROWS} Rows Added` : 'Add Another Row'}
+          </button>
+          {!isDeliveryAreaMode && !isDeliveryStaffMode ? (
+            <div className="dictionary-pending-count">Ek baar mein 1 se {MAX_DICTIONARY_REQUEST_ROWS} dictionary requests bhej sakte hain.</div>
+          ) : null}
+        </>
       </div>
       <div className="form-actions">
         <button onClick={submitDictionaryRequest}>Send Request</button>
