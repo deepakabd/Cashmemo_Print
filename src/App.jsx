@@ -271,7 +271,7 @@ const mergeCashMemoLabelSettings = (savedSettings = {}) => {
   });
   return defaults;
 };
-
+//test 
 const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
   dealerCode ? `cashMemoLabelSettings_${String(dealerCode).trim()}` : 'cashMemoLabelSettings'
 );
