@@ -33,7 +33,7 @@ export const useParsedDataFilters = ({
   const [orderDateEnd, setOrderDateEnd] = useState('');
   const [cashMemoDateStart, setCashMemoDateStart] = useState('');
   const [cashMemoDateEnd, setCashMemoDateEnd] = useState('');
-  const [sortBy, setSortBy] = useState('');
+  const [sortBy, setSortBy] = useState('Delivery Area');
   const [sortOrder, setSortOrder] = useState('asc');
   const [activeReportFilter, setActiveReportFilter] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('All');
@@ -155,7 +155,7 @@ export const useParsedDataFilters = ({
     setOrderDateEnd('');
     setCashMemoDateStart('');
     setCashMemoDateEnd('');
-    setSortBy('');
+    setSortBy('Delivery Area');
     setSortOrder('asc');
     setOrderStatusFilter('All');
     setOrderSourceFilter('All');

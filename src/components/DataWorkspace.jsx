@@ -300,17 +300,24 @@ const DataWorkspace = ({
             <option key={index} value={status}>{status}</option>
           ))}
         </select>
-        <select className="filter-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
-          <option value="All">All Order Type</option>
-          {availableOrderTypeOptions.map((type, index) => (
-            <option key={index} value={type}>{type}</option>
+        <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <option value="">Sort By</option>
+          {headers.map((header, index) => (
+            <option key={index} value={header}>{header}</option>
           ))}
         </select>
-        <div className="filter-date-group">
+        <select className="filter-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+          <option value="asc">asc</option>
+          <option value="desc">desc</option>
+        </select>
+        <div className="filters-reset-wrap">
+          <button className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>Reset Filters</button>
+        </div>
+        <div className="filter-date-group filter-date-group--wide">
           <span className="filter-date-label">Order Date</span>
-          <input className="filter-date-input" type="date" value={orderDateStart} onChange={(e) => setOrderDateStart(e.target.value)} />
+          <input className="filter-date-input filter-date-input--wide" type="date" value={orderDateStart} onChange={(e) => setOrderDateStart(e.target.value)} />
           <span className="filter-date-divider">to</span>
-          <input className="filter-date-input" type="date" value={orderDateEnd} onChange={(e) => setOrderDateEnd(e.target.value)} />
+          <input className="filter-date-input filter-date-input--wide" type="date" value={orderDateEnd} onChange={(e) => setOrderDateEnd(e.target.value)} />
         </div>
       </div>
 
@@ -352,6 +359,12 @@ const DataWorkspace = ({
               <option key={index} value={source}>{source}</option>
             ))}
           </select>
+          <select className="filter-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
+            <option value="All">All Order Type</option>
+            {availableOrderTypeOptions.map((type, index) => (
+              <option key={index} value={type}>{type}</option>
+            ))}
+          </select>
           <select className="filter-select" value={cashMemoStatusFilter} onChange={(e) => setCashMemoStatusFilter(e.target.value)}>
             <option value="All">All Cash Memo Status</option>
             {availableCashMemoStatusOptions.map((status, index) => (
@@ -375,19 +388,6 @@ const DataWorkspace = ({
             <input className="filter-date-input" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
             <span className="filter-date-divider">to</span>
             <input className="filter-date-input" type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} />
-          </div>
-          <select className="filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="">Sort By</option>
-            {headers.map((header, index) => (
-              <option key={index} value={header}>{header}</option>
-            ))}
-          </select>
-          <select className="filter-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-            <option value="asc">asc</option>
-            <option value="desc">desc</option>
-          </select>
-          <div className="filters-reset-wrap">
-            <button className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>Reset Filters</button>
           </div>
         </div>
       )}

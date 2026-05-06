@@ -189,6 +189,15 @@ const isConsumerStatusMatch = (value, target) => {
   return String(value || '').toLowerCase().trim() === String(target || '').toLowerCase().trim();
 };
 
+const hasMeaningfulCellValue = (value) => {
+  const normalized = String(value ?? '').trim();
+  return normalized !== '' && normalized !== '-';
+};
+
+const isRegisteredMobileRow = (row = {}) => (
+  hasMeaningfulCellValue(row['Mobile No.']) && hasMeaningfulCellValue(row['Is Reg Mobile'])
+);
+
 const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
   .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
 
@@ -581,6 +590,7 @@ const headerMapping = {
   refillpaymentstatus: 'Online Refill Payment status',
   ivrsbookingnumber: 'IVR Booking No.',
   mobileno: 'Mobile No.',
+  mobilenumber: 'Mobile No.',
   bookingdonethroughregisteremobile: 'Is Reg Mobile',
   consumeraddress: 'Address',
   isrefillport: 'IsRefillPort',
@@ -5371,7 +5381,7 @@ function App() {
     setOrderDateEnd(String(preset.orderDateEnd || ''));
     setCashMemoDateStart(String(preset.cashMemoDateStart || ''));
     setCashMemoDateEnd(String(preset.cashMemoDateEnd || ''));
-    setSortBy(String(preset.sortBy || ''));
+    setSortBy(String(preset.sortBy || 'Delivery Area'));
     setSortOrder(String(preset.sortOrder || 'asc'));
     setShowAdvancedFilters(true);
     pushToast(`Applied preset: ${preset?.name || 'Saved filter'}`, 'success');
@@ -6438,6 +6448,24 @@ function App() {
         return isOnlinePaidStatus(row['Online Refill Payment status']);
       case 'eKycNotDone':
         return isEkycNotDoneStatus(row['EKYC Status']);
+      case 'aadhaarNotSeeded':
+        return isEkycNotDoneStatus(row['EKYC Status']);
+      case 'unregisteredNumber':
+        return !isRegisteredMobileRow(row);
+      case 'distributorManual':
+        return isConsumerStatusMatch(row['Order Source'], 'Distributor Manual');
+      case 'vitranManual':
+        return isConsumerStatusMatch(row['Order Source'], 'Vitran Manual');
+      case 'natureDomestic':
+        return isConsumerStatusMatch(row['Consumer Nature'], '1 - Domestic');
+      case 'natureUjjwala':
+        return isConsumerStatusMatch(row['Consumer Nature'], '16-Scheme Ujjwala');
+      case 'natureBpl':
+        return isConsumerStatusMatch(row['Consumer Nature'], '11 - Scheme-BPL');
+      case 'natureNonDomesticNonEssential':
+        return isConsumerStatusMatch(row['Consumer Nature'], '4 - Non Domestic Non Essential');
+      case 'natureNonDomesticExempted':
+        return isConsumerStatusMatch(row['Consumer Nature'], '2 - Non Domestic Exempted');
       case 'sbcBooking':
         return isConsumerStatusMatch(row['Consumer Type'], 'SBC');
       case 'dbcBooking':
@@ -6513,7 +6541,9 @@ function App() {
     }
     if (!excluded.has('mobileStatusFilter') && mobileStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row =>
-        mobileStatusFilter === 'Available' ? (row['Mobile No.'] && row['Mobile No.'] !== '') : (!row['Mobile No.'] || row['Mobile No.'] === '')
+        mobileStatusFilter === 'Available'
+          ? hasMeaningfulCellValue(row['Mobile No.'])
+          : !hasMeaningfulCellValue(row['Mobile No.'])
       );
     }
     if (!excluded.has('consumerStatusFilter') && consumerStatusFilter !== 'All') {
@@ -6542,7 +6572,9 @@ function App() {
     }
     if (!excluded.has('isRegMobileFilter') && isRegMobileFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row =>
-        isRegMobileFilter === 'Yes' ? (row['Is Reg Mobile'] && row['Is Reg Mobile'] !== '') : (!row['Is Reg Mobile'] || row['Is Reg Mobile'] === '')
+        isRegMobileFilter === 'Yes'
+          ? isRegisteredMobileRow(row)
+          : !isRegisteredMobileRow(row)
       );
     }
 
@@ -6648,6 +6680,15 @@ function App() {
       totalPendingBooking: baseFilteredData.length,
       onlinePaid: 0,
       eKycNotDone: 0,
+      aadhaarNotSeeded: 0,
+      unregisteredNumber: 0,
+      distributorManual: 0,
+      vitranManual: 0,
+      natureDomestic: 0,
+      natureUjjwala: 0,
+      natureBpl: 0,
+      natureNonDomesticNonEssential: 0,
+      natureNonDomesticExempted: 0,
       sbcBooking: 0,
       dbcBooking: 0,
       pending02To05Days: 0,
@@ -6681,6 +6722,39 @@ function App() {
 
       if (isEkycNotDoneStatus(row['EKYC Status'])) {
         metrics.eKycNotDone += 1;
+        metrics.aadhaarNotSeeded += 1;
+      }
+
+      if (!isRegisteredMobileRow(row)) {
+        metrics.unregisteredNumber += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Order Source'], 'Distributor Manual')) {
+        metrics.distributorManual += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Order Source'], 'Vitran Manual')) {
+        metrics.vitranManual += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Consumer Nature'], '1 - Domestic')) {
+        metrics.natureDomestic += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Consumer Nature'], '16-Scheme Ujjwala')) {
+        metrics.natureUjjwala += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Consumer Nature'], '11 - Scheme-BPL')) {
+        metrics.natureBpl += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Consumer Nature'], '4 - Non Domestic Non Essential')) {
+        metrics.natureNonDomesticNonEssential += 1;
+      }
+
+      if (isConsumerStatusMatch(row['Consumer Nature'], '2 - Non Domestic Exempted')) {
+        metrics.natureNonDomesticExempted += 1;
       }
 
       if (isConsumerStatusMatch(row['Consumer Type'], 'SBC')) {
@@ -6792,7 +6866,7 @@ function App() {
     || orderDateEnd
     || cashMemoDateStart
     || cashMemoDateEnd
-    || sortBy
+    || sortBy !== 'Delivery Area'
     || sortOrder !== 'asc'
   );
   const shouldShowEmptyUploadState = showParsedData && parsedData.length === 0;
@@ -6829,11 +6903,11 @@ function App() {
         setCashMemoDateEnd('');
       },
     } : null,
-    sortBy ? {
+    (sortBy && (sortBy !== 'Delivery Area' || sortOrder !== 'asc')) ? {
       key: 'sort',
       label: `Sort: ${sortBy} (${sortOrder})`,
       clear: () => {
-        setSortBy('');
+        setSortBy('Delivery Area');
         setSortOrder('asc');
       },
     } : null,
@@ -6854,6 +6928,15 @@ function App() {
     { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
     { key: 'onlinePaid', label: 'Online Paid', value: bookingReport.metrics.onlinePaid },
     { key: 'eKycNotDone', label: 'EKYC Pending', value: bookingReport.metrics.eKycNotDone },
+    { key: 'aadhaarNotSeeded', label: 'Aadhaar Not Seeded', value: bookingReport.metrics.aadhaarNotSeeded },
+    { key: 'unregisteredNumber', label: 'Unregisted Number', value: bookingReport.metrics.unregisteredNumber },
+    { key: 'distributorManual', label: 'Distributor Manual', value: bookingReport.metrics.distributorManual },
+    { key: 'vitranManual', label: 'Vitran Manual', value: bookingReport.metrics.vitranManual },
+    { key: 'natureDomestic', label: '1 - Domestic', value: bookingReport.metrics.natureDomestic },
+    { key: 'natureUjjwala', label: '16-Scheme Ujjwala', value: bookingReport.metrics.natureUjjwala },
+    { key: 'natureBpl', label: '11 - Scheme-BPL', value: bookingReport.metrics.natureBpl },
+    { key: 'natureNonDomesticNonEssential', label: '4 - Non Domestic Non Essential', value: bookingReport.metrics.natureNonDomesticNonEssential },
+    { key: 'natureNonDomesticExempted', label: '2 - Non Domestic Exempted', value: bookingReport.metrics.natureNonDomesticExempted },
     { key: 'sbcBooking', label: 'SBC Booking', value: bookingReport.metrics.sbcBooking },
     { key: 'dbcBooking', label: 'DBC Booking', value: bookingReport.metrics.dbcBooking },
     { key: 'pendingSv', label: 'Pending SV', value: bookingReport.metrics.pendingSv },
@@ -6884,7 +6967,7 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableNatureOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['natureFilter']).map(row => row['Consumer Nature'])), [parsedData, searchTerm, eKycFilter, areaFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const availableMobileStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['mobileStatusFilter']).map(row => (row['Mobile No.'] && row['Mobile No.'] !== '' ? 'Available' : 'Not Available'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableMobileStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['mobileStatusFilter']).map(row => (hasMeaningfulCellValue(row['Mobile No.']) ? 'Available' : 'Not Available'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableConsumerStatusOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['consumerStatusFilter']).map(row => row['Consumer Type'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6902,7 +6985,7 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableDeliveryManOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['deliveryManFilter']).map(row => row['Delivery Man'])), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const availableIsRegMobileOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['isRegMobileFilter']).map(row => (row['Is Reg Mobile'] && row['Is Reg Mobile'] !== '' ? 'Yes' : 'No'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
+  const availableIsRegMobileOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['isRegMobileFilter']).map(row => (isRegisteredMobileRow(row) ? 'Yes' : 'No'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
 
   useEffect(() => {
     if (eKycFilter !== 'All' && !availableEkycOptions.includes(eKycFilter)) setEKycFilter('All');
