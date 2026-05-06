@@ -6712,9 +6712,16 @@ function App() {
       pendingSv: 0,
     };
 
+    const areaPendingCounts = new Map();
+
     baseFilteredData.forEach((row) => {
       const ageInDays = getElapsedDays(row['Order Date'], now);
       const orderDate = getStartOfDay(row['Order Date']);
+      const deliveryArea = String(row['Delivery Area'] || '').trim();
+
+      if (deliveryArea) {
+        areaPendingCounts.set(deliveryArea, (areaPendingCounts.get(deliveryArea) || 0) + 1);
+      }
 
       if (isOnlinePaidStatus(row['Online Refill Payment status'])) {
         metrics.onlinePaid += 1;
@@ -6796,15 +6803,36 @@ function App() {
       }
     });
 
-    return { metrics };
+    const topPendingAreas = [...areaPendingCounts.entries()]
+      .sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        return a[0].localeCompare(b[0], undefined, { sensitivity: 'base', numeric: true });
+      })
+      .slice(0, 7)
+      .map(([areaName, value], index) => ({
+        key: `highestPb${index + 1}`,
+        label: `Highest PB ${index + 1}${index === 0 ? 'st' : index === 1 ? 'nd' : index === 2 ? 'rd' : 'th'}`,
+        areaName,
+        value,
+      }));
+
+    return { metrics, topPendingAreas };
   }, [baseFilteredData]);
+
+  const topPendingAreaFilterMap = useMemo(
+    () => Object.fromEntries((bookingReport.topPendingAreas || []).map((item) => [item.key, item.areaName])),
+    [bookingReport.topPendingAreas],
+  );
 
   const filteredData = useMemo(() => {
     if (!activeReportFilter) {
       return baseFilteredData;
     }
+    if (topPendingAreaFilterMap[activeReportFilter]) {
+      return baseFilteredData.filter((row) => String(row['Delivery Area'] || '').trim() === topPendingAreaFilterMap[activeReportFilter]);
+    }
     return baseFilteredData.filter((row) => matchesReportFilter(row, activeReportFilter));
-  }, [activeReportFilter, baseFilteredData]);
+  }, [activeReportFilter, baseFilteredData, topPendingAreaFilterMap]);
 
   useEffect(() => {
     setTimeout(() => {
@@ -6958,6 +6986,7 @@ function App() {
     { key: 'pendingAbove10Days', label: '> 10 Days', value: bookingReport.metrics.pendingAbove10Days },
     { key: 'pendingAbove15Days', label: '> 15 Days', value: bookingReport.metrics.pendingAbove15Days },
     { key: 'pendingAbove21Days', label: '> 21 Days', value: bookingReport.metrics.pendingAbove21Days },
+    ...bookingReport.topPendingAreas,
   ];
   const reportFilterOptions = reportCards.filter((card) => card.key !== 'totalPendingBooking');
   // eslint-disable-next-line react-hooks/exhaustive-deps

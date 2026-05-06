@@ -2093,6 +2093,14 @@
   line-height: 1;
 }
 
+.booking-report-meta {
+  display: block;
+  margin-bottom: 4px;
+  color: #4b678b;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
 .booking-report-clear {
   min-height: 32px;
   padding: 0 12px;

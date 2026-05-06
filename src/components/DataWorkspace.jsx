@@ -69,9 +69,6 @@ const DataWorkspace = ({
   deliveryManFilter,
   setDeliveryManFilter,
   availableDeliveryManOptions,
-  isRegMobileFilter,
-  setIsRegMobileFilter,
-  availableIsRegMobileOptions,
   cashMemoDateStart,
   setCashMemoDateStart,
   cashMemoDateEnd,
@@ -166,6 +163,7 @@ const DataWorkspace = ({
                 onClick={() => setActiveReportFilter((prev) => (prev === card.key || card.key === 'totalPendingBooking' ? '' : card.key))}
               >
                 <span className="booking-report-label">{card.label}</span>
+                {card.areaName ? <span className="booking-report-meta">{card.areaName}</span> : null}
                 <strong>{card.value}</strong>
               </button>
             ))}
@@ -377,17 +375,11 @@ const DataWorkspace = ({
               <option key={index} value={man}>{man}</option>
             ))}
           </select>
-          <select className="filter-select" value={isRegMobileFilter} onChange={(e) => setIsRegMobileFilter(e.target.value)}>
-            <option value="All">All Is Reg Mobile</option>
-            {availableIsRegMobileOptions.map((status, index) => (
-              <option key={index} value={status}>{status}</option>
-            ))}
-          </select>
-          <div className="filter-date-group">
+          <div className="filter-date-group filter-date-group--wide">
             <span className="filter-date-label">Cash Memo Date</span>
-            <input className="filter-date-input" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
+            <input className="filter-date-input filter-date-input--wide" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
             <span className="filter-date-divider">to</span>
-            <input className="filter-date-input" type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} />
+            <input className="filter-date-input filter-date-input--wide" type="date" value={cashMemoDateEnd} onChange={(e) => setCashMemoDateEnd(e.target.value)} />
           </div>
         </div>
       )}
