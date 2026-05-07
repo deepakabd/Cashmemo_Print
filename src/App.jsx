@@ -178,6 +178,43 @@ const isEkycNotDoneStatus = (status) => {
   return normalized === 'pending' || normalized === 'ekyc not done' || normalized === 'not done';
 };
 
+const normalizeMultiValueFilter = (value) => {
+  if (Array.isArray(value)) {
+    const nextValues = [...new Set(value
+      .map((item) => String(item || '').trim())
+      .filter((item) => item && item !== 'All'))];
+    return nextValues.length > 0 ? nextValues : 'All';
+  }
+  const normalized = String(value || '').trim();
+  return normalized && normalized !== 'All' ? [normalized] : 'All';
+};
+
+const getMultiValueFilterValues = (value) => (
+  Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+);
+
+const hasMultiValueFilterSelection = (value) => getMultiValueFilterValues(value).length > 0;
+
+const matchesMultiValueFilter = (filterValue, rowValue) => {
+  const selectedValues = getMultiValueFilterValues(filterValue);
+  if (selectedValues.length === 0) return true;
+  return selectedValues.includes(String(rowValue || '').trim());
+};
+
+const formatMultiValueFilterLabel = (prefix, value) => {
+  const selectedValues = getMultiValueFilterValues(value);
+  if (selectedValues.length === 0) return '';
+  if (selectedValues.length === 1) return `${prefix}: ${selectedValues[0]}`;
+  return `${prefix}: ${selectedValues[0]} +${selectedValues.length - 1}`;
+};
+
+const isAadhaarNotSeededStatus = (status) => {
+  const normalized = String(status || '').toLowerCase().trim();
+  return normalized === 'aadhaar not seeded';
+};
+
 const isOnlinePaidStatus = (status) => String(status || '').toLowerCase().trim() === 'paid';
 
 const isPendingSvRow = (row = {}) => {
@@ -5277,9 +5314,9 @@ function App() {
 
   const getActiveFilterFilenamePart = () => {
     if (activeReportFilter) return sanitizeFilenamePart(activeReportFilter);
-    if (eKycFilter !== 'All') return `ekyc-${sanitizeFilenamePart(eKycFilter)}`;
+    if (hasMultiValueFilterSelection(eKycFilter)) return `ekyc-${sanitizeFilenamePart(getMultiValueFilterValues(eKycFilter).join('-'))}`;
     if (onlineRefillPaymentStatusFilter !== 'All') return `payment-${sanitizeFilenamePart(onlineRefillPaymentStatusFilter)}`;
-    if (areaFilter !== 'All') return `area-${sanitizeFilenamePart(areaFilter)}`;
+    if (hasMultiValueFilterSelection(areaFilter)) return `area-${sanitizeFilenamePart(getMultiValueFilterValues(areaFilter).join('-'))}`;
     if (orderTypeFilter !== 'All') return `order-${sanitizeFilenamePart(orderTypeFilter)}`;
     if (searchTerm) return `search-${sanitizeFilenamePart(searchTerm)}`;
     return hasActiveDataFilters ? 'filtered' : 'all';
@@ -5364,18 +5401,18 @@ function App() {
   const applyFilterPreset = (preset = {}) => {
     setSearchTerm(String(preset.searchTerm || ''));
     setActiveReportFilter(String(preset.activeReportFilter || ''));
-    setEKycFilter(String(preset.eKycFilter || 'All'));
-    setAreaFilter(String(preset.areaFilter || 'All'));
-    setNatureFilter(String(preset.natureFilter || 'All'));
+    setEKycFilter(normalizeMultiValueFilter(preset.eKycFilter));
+    setAreaFilter(normalizeMultiValueFilter(preset.areaFilter));
+    setNatureFilter(normalizeMultiValueFilter(preset.natureFilter));
     setMobileStatusFilter(String(preset.mobileStatusFilter || 'All'));
-    setConsumerStatusFilter(String(preset.consumerStatusFilter || 'All'));
-    setConnectionTypeFilter(String(preset.connectionTypeFilter || 'All'));
+    setConsumerStatusFilter(normalizeMultiValueFilter(preset.consumerStatusFilter));
+    setConnectionTypeFilter(normalizeMultiValueFilter(preset.connectionTypeFilter));
     setOnlineRefillPaymentStatusFilter(String(preset.onlineRefillPaymentStatusFilter || 'All'));
     setOrderStatusFilter(String(preset.orderStatusFilter || 'All'));
-    setOrderSourceFilter(String(preset.orderSourceFilter || 'All'));
+    setOrderSourceFilter(normalizeMultiValueFilter(preset.orderSourceFilter));
     setOrderTypeFilter(String(preset.orderTypeFilter || 'All'));
     setCashMemoStatusFilter(String(preset.cashMemoStatusFilter || 'All'));
-    setDeliveryManFilter(String(preset.deliveryManFilter || 'All'));
+    setDeliveryManFilter(normalizeMultiValueFilter(preset.deliveryManFilter));
     setIsRegMobileFilter(String(preset.isRegMobileFilter || 'All'));
     setOrderDateStart(String(preset.orderDateStart || ''));
     setOrderDateEnd(String(preset.orderDateEnd || ''));
@@ -6449,7 +6486,7 @@ function App() {
       case 'eKycNotDone':
         return isEkycNotDoneStatus(row['EKYC Status']);
       case 'aadhaarNotSeeded':
-        return isEkycNotDoneStatus(row['EKYC Status']);
+        return isAadhaarNotSeededStatus(row['EKYC Status']);
       case 'unregisteredNumber':
         return !isRegisteredMobileRow(row);
       case 'distributorManual':
@@ -6530,14 +6567,14 @@ function App() {
       );
     }
 
-    if (!excluded.has('eKycFilter') && eKycFilter !== 'All') {
-      tempFilteredData = tempFilteredData.filter(row => row['EKYC Status'] === eKycFilter);
+    if (!excluded.has('eKycFilter') && hasMultiValueFilterSelection(eKycFilter)) {
+      tempFilteredData = tempFilteredData.filter(row => matchesMultiValueFilter(eKycFilter, row['EKYC Status']));
     }
-    if (!excluded.has('areaFilter') && areaFilter !== 'All') {
-      tempFilteredData = tempFilteredData.filter(row => row['Delivery Area'] === areaFilter);
+    if (!excluded.has('areaFilter') && hasMultiValueFilterSelection(areaFilter)) {
+      tempFilteredData = tempFilteredData.filter(row => matchesMultiValueFilter(areaFilter, row['Delivery Area']));
     }
-    if (!excluded.has('natureFilter') && natureFilter !== 'All') {
-      tempFilteredData = tempFilteredData.filter(row => row['Consumer Nature'] === natureFilter);
+    if (!excluded.has('natureFilter') && hasMultiValueFilterSelection(natureFilter)) {
+      tempFilteredData = tempFilteredData.filter(row => matchesMultiValueFilter(natureFilter, row['Consumer Nature']));
     }
     if (!excluded.has('mobileStatusFilter') && mobileStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row =>
@@ -6546,11 +6583,11 @@ function App() {
           : !hasMeaningfulCellValue(row['Mobile No.'])
       );
     }
-    if (!excluded.has('consumerStatusFilter') && consumerStatusFilter !== 'All') {
-      tempFilteredData = tempFilteredData.filter(row => row['Consumer Type'] === consumerStatusFilter);
+    if (!excluded.has('consumerStatusFilter') && hasMultiValueFilterSelection(consumerStatusFilter)) {
+      tempFilteredData = tempFilteredData.filter(row => matchesMultiValueFilter(consumerStatusFilter, row['Consumer Type']));
     }
-    if (!excluded.has('connectionTypeFilter') && connectionTypeFilter !== 'All') {
-      tempFilteredData = tempFilteredData.filter(row => row['Consumer Package'] === connectionTypeFilter);
+    if (!excluded.has('connectionTypeFilter') && hasMultiValueFilterSelection(connectionTypeFilter)) {
+      tempFilteredData = tempFilteredData.filter(row => matchesMultiValueFilter(connectionTypeFilter, row['Consumer Package']));
     }
     if (!excluded.has('onlineRefillPaymentStatusFilter') && onlineRefillPaymentStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Online Refill Payment status'] === onlineRefillPaymentStatusFilter);
@@ -6558,8 +6595,8 @@ function App() {
     if (!excluded.has('orderStatusFilter') && orderStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Order Status'] === orderStatusFilter);
     }
-    if (!excluded.has('orderSourceFilter') && orderSourceFilter !== 'All') {
-      tempFilteredData = tempFilteredData.filter(row => row['Order Source'] === orderSourceFilter);
+    if (!excluded.has('orderSourceFilter') && hasMultiValueFilterSelection(orderSourceFilter)) {
+      tempFilteredData = tempFilteredData.filter(row => matchesMultiValueFilter(orderSourceFilter, row['Order Source']));
     }
     if (!excluded.has('orderTypeFilter') && orderTypeFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Order Type'] === orderTypeFilter);
@@ -6567,8 +6604,8 @@ function App() {
     if (!excluded.has('cashMemoStatusFilter') && cashMemoStatusFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row => row['Cash Memo Status'] === cashMemoStatusFilter);
     }
-    if (!excluded.has('deliveryManFilter') && deliveryManFilter !== 'All') {
-      tempFilteredData = tempFilteredData.filter(row => row['Delivery Man'] === deliveryManFilter);
+    if (!excluded.has('deliveryManFilter') && hasMultiValueFilterSelection(deliveryManFilter)) {
+      tempFilteredData = tempFilteredData.filter(row => matchesMultiValueFilter(deliveryManFilter, row['Delivery Man']));
     }
     if (!excluded.has('isRegMobileFilter') && isRegMobileFilter !== 'All') {
       tempFilteredData = tempFilteredData.filter(row =>
@@ -6729,6 +6766,9 @@ function App() {
 
       if (isEkycNotDoneStatus(row['EKYC Status'])) {
         metrics.eKycNotDone += 1;
+      }
+
+      if (isAadhaarNotSeededStatus(row['EKYC Status'])) {
         metrics.aadhaarNotSeeded += 1;
       }
 
@@ -6877,18 +6917,18 @@ function App() {
   const hasActiveDataFilters = Boolean(
     searchTerm
     || activeReportFilter
-    || eKycFilter !== 'All'
-    || areaFilter !== 'All'
-    || natureFilter !== 'All'
+    || hasMultiValueFilterSelection(eKycFilter)
+    || hasMultiValueFilterSelection(areaFilter)
+    || hasMultiValueFilterSelection(natureFilter)
     || mobileStatusFilter !== 'All'
-    || consumerStatusFilter !== 'All'
-    || connectionTypeFilter !== 'All'
+    || hasMultiValueFilterSelection(consumerStatusFilter)
+    || hasMultiValueFilterSelection(connectionTypeFilter)
     || onlineRefillPaymentStatusFilter !== 'All'
     || orderStatusFilter !== 'All'
-    || orderSourceFilter !== 'All'
+    || hasMultiValueFilterSelection(orderSourceFilter)
     || orderTypeFilter !== 'All'
     || cashMemoStatusFilter !== 'All'
-    || deliveryManFilter !== 'All'
+    || hasMultiValueFilterSelection(deliveryManFilter)
     || isRegMobileFilter !== 'All'
     || orderDateStart
     || orderDateEnd
@@ -6902,18 +6942,18 @@ function App() {
   const activeFilterChips = [
     searchTerm ? { key: 'search', label: `Search: ${searchTerm}`, clear: () => setSearchTerm('') } : null,
     activeReportFilter ? { key: 'report', label: `Report: ${activeReportFilter}`, clear: () => setActiveReportFilter('') } : null,
-    eKycFilter !== 'All' ? { key: 'ekyc', label: `EKYC: ${eKycFilter}`, clear: () => setEKycFilter('All') } : null,
-    areaFilter !== 'All' ? { key: 'area', label: `Area: ${areaFilter}`, clear: () => setAreaFilter('All') } : null,
-    natureFilter !== 'All' ? { key: 'nature', label: `Nature: ${natureFilter}`, clear: () => setNatureFilter('All') } : null,
+    hasMultiValueFilterSelection(eKycFilter) ? { key: 'ekyc', label: formatMultiValueFilterLabel('EKYC', eKycFilter), clear: () => setEKycFilter('All') } : null,
+    hasMultiValueFilterSelection(areaFilter) ? { key: 'area', label: formatMultiValueFilterLabel('Area', areaFilter), clear: () => setAreaFilter('All') } : null,
+    hasMultiValueFilterSelection(natureFilter) ? { key: 'nature', label: formatMultiValueFilterLabel('Nature', natureFilter), clear: () => setNatureFilter('All') } : null,
     mobileStatusFilter !== 'All' ? { key: 'mobile', label: `Mobile: ${mobileStatusFilter}`, clear: () => setMobileStatusFilter('All') } : null,
     onlineRefillPaymentStatusFilter !== 'All' ? { key: 'payment', label: `Payment: ${onlineRefillPaymentStatusFilter}`, clear: () => setOnlineRefillPaymentStatusFilter('All') } : null,
     orderTypeFilter !== 'All' ? { key: 'orderType', label: `Order Type: ${orderTypeFilter}`, clear: () => setOrderTypeFilter('All') } : null,
-    consumerStatusFilter !== 'All' ? { key: 'consumerType', label: `Consumer Type: ${consumerStatusFilter}`, clear: () => setConsumerStatusFilter('All') } : null,
-    connectionTypeFilter !== 'All' ? { key: 'connection', label: `Connection: ${connectionTypeFilter}`, clear: () => setConnectionTypeFilter('All') } : null,
+    hasMultiValueFilterSelection(consumerStatusFilter) ? { key: 'consumerType', label: formatMultiValueFilterLabel('Consumer Type', consumerStatusFilter), clear: () => setConsumerStatusFilter('All') } : null,
+    hasMultiValueFilterSelection(connectionTypeFilter) ? { key: 'connection', label: formatMultiValueFilterLabel('Connection', connectionTypeFilter), clear: () => setConnectionTypeFilter('All') } : null,
     orderStatusFilter !== 'All' ? { key: 'orderStatus', label: `Order Status: ${orderStatusFilter}`, clear: () => setOrderStatusFilter('All') } : null,
-    orderSourceFilter !== 'All' ? { key: 'orderSource', label: `Order Source: ${orderSourceFilter}`, clear: () => setOrderSourceFilter('All') } : null,
+    hasMultiValueFilterSelection(orderSourceFilter) ? { key: 'orderSource', label: formatMultiValueFilterLabel('Order Source', orderSourceFilter), clear: () => setOrderSourceFilter('All') } : null,
     cashMemoStatusFilter !== 'All' ? { key: 'cashMemoStatus', label: `Cash Memo: ${cashMemoStatusFilter}`, clear: () => setCashMemoStatusFilter('All') } : null,
-    deliveryManFilter !== 'All' ? { key: 'deliveryMan', label: `Delivery Man: ${deliveryManFilter}`, clear: () => setDeliveryManFilter('All') } : null,
+    hasMultiValueFilterSelection(deliveryManFilter) ? { key: 'deliveryMan', label: formatMultiValueFilterLabel('Delivery Man', deliveryManFilter), clear: () => setDeliveryManFilter('All') } : null,
     isRegMobileFilter !== 'All' ? { key: 'regMobile', label: `Reg Mobile: ${isRegMobileFilter}`, clear: () => setIsRegMobileFilter('All') } : null,
     orderDateStart || orderDateEnd ? {
       key: 'orderDate',
@@ -7017,18 +7057,46 @@ function App() {
   const availableIsRegMobileOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['isRegMobileFilter']).map(row => (isRegisteredMobileRow(row) ? 'Yes' : 'No'))), [parsedData, searchTerm, eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
 
   useEffect(() => {
-    if (eKycFilter !== 'All' && !availableEkycOptions.includes(eKycFilter)) setEKycFilter('All');
-    if (areaFilter !== 'All' && !availableAreaOptions.includes(areaFilter)) setAreaFilter('All');
-    if (natureFilter !== 'All' && !availableNatureOptions.includes(natureFilter)) setNatureFilter('All');
+    if (hasMultiValueFilterSelection(eKycFilter)) {
+      const nextEkycValues = getMultiValueFilterValues(eKycFilter).filter((value) => availableEkycOptions.includes(value));
+      const normalizedEkyc = normalizeMultiValueFilter(nextEkycValues);
+      if (JSON.stringify(normalizedEkyc) !== JSON.stringify(normalizeMultiValueFilter(eKycFilter))) setEKycFilter(normalizedEkyc);
+    }
+    if (hasMultiValueFilterSelection(areaFilter)) {
+      const nextAreaValues = getMultiValueFilterValues(areaFilter).filter((value) => availableAreaOptions.includes(value));
+      const normalizedAreas = normalizeMultiValueFilter(nextAreaValues);
+      if (JSON.stringify(normalizedAreas) !== JSON.stringify(normalizeMultiValueFilter(areaFilter))) setAreaFilter(normalizedAreas);
+    }
+    if (hasMultiValueFilterSelection(natureFilter)) {
+      const nextNatureValues = getMultiValueFilterValues(natureFilter).filter((value) => availableNatureOptions.includes(value));
+      const normalizedNatures = normalizeMultiValueFilter(nextNatureValues);
+      if (JSON.stringify(normalizedNatures) !== JSON.stringify(normalizeMultiValueFilter(natureFilter))) setNatureFilter(normalizedNatures);
+    }
     if (mobileStatusFilter !== 'All' && !availableMobileStatusOptions.includes(mobileStatusFilter)) setMobileStatusFilter('All');
-    if (consumerStatusFilter !== 'All' && !availableConsumerStatusOptions.includes(consumerStatusFilter)) setConsumerStatusFilter('All');
-    if (connectionTypeFilter !== 'All' && !availableConnectionTypeOptions.includes(connectionTypeFilter)) setConnectionTypeFilter('All');
+    if (hasMultiValueFilterSelection(consumerStatusFilter)) {
+      const nextConsumerStatusValues = getMultiValueFilterValues(consumerStatusFilter).filter((value) => availableConsumerStatusOptions.includes(value));
+      const normalizedConsumerStatuses = normalizeMultiValueFilter(nextConsumerStatusValues);
+      if (JSON.stringify(normalizedConsumerStatuses) !== JSON.stringify(normalizeMultiValueFilter(consumerStatusFilter))) setConsumerStatusFilter(normalizedConsumerStatuses);
+    }
+    if (hasMultiValueFilterSelection(connectionTypeFilter)) {
+      const nextConnectionTypeValues = getMultiValueFilterValues(connectionTypeFilter).filter((value) => availableConnectionTypeOptions.includes(value));
+      const normalizedConnectionTypes = normalizeMultiValueFilter(nextConnectionTypeValues);
+      if (JSON.stringify(normalizedConnectionTypes) !== JSON.stringify(normalizeMultiValueFilter(connectionTypeFilter))) setConnectionTypeFilter(normalizedConnectionTypes);
+    }
     if (onlineRefillPaymentStatusFilter !== 'All' && !availableOnlinePaymentOptions.includes(onlineRefillPaymentStatusFilter)) setOnlineRefillPaymentStatusFilter('All');
     if (orderStatusFilter !== 'All' && !availableOrderStatusOptions.includes(orderStatusFilter)) setOrderStatusFilter('All');
-    if (orderSourceFilter !== 'All' && !availableOrderSourceOptions.includes(orderSourceFilter)) setOrderSourceFilter('All');
+    if (hasMultiValueFilterSelection(orderSourceFilter)) {
+      const nextOrderSourceValues = getMultiValueFilterValues(orderSourceFilter).filter((value) => availableOrderSourceOptions.includes(value));
+      const normalizedOrderSources = normalizeMultiValueFilter(nextOrderSourceValues);
+      if (JSON.stringify(normalizedOrderSources) !== JSON.stringify(normalizeMultiValueFilter(orderSourceFilter))) setOrderSourceFilter(normalizedOrderSources);
+    }
     if (orderTypeFilter !== 'All' && !availableOrderTypeOptions.includes(orderTypeFilter)) setOrderTypeFilter('All');
     if (cashMemoStatusFilter !== 'All' && !availableCashMemoStatusOptions.includes(cashMemoStatusFilter)) setCashMemoStatusFilter('All');
-    if (deliveryManFilter !== 'All' && !availableDeliveryManOptions.includes(deliveryManFilter)) setDeliveryManFilter('All');
+    if (hasMultiValueFilterSelection(deliveryManFilter)) {
+      const nextDeliveryManValues = getMultiValueFilterValues(deliveryManFilter).filter((value) => availableDeliveryManOptions.includes(value));
+      const normalizedDeliveryMen = normalizeMultiValueFilter(nextDeliveryManValues);
+      if (JSON.stringify(normalizedDeliveryMen) !== JSON.stringify(normalizeMultiValueFilter(deliveryManFilter))) setDeliveryManFilter(normalizedDeliveryMen);
+    }
     if (isRegMobileFilter !== 'All' && !availableIsRegMobileOptions.includes(isRegMobileFilter)) setIsRegMobileFilter('All');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eKycFilter, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, availableEkycOptions, availableAreaOptions, availableNatureOptions, availableMobileStatusOptions, availableConsumerStatusOptions, availableConnectionTypeOptions, availableOnlinePaymentOptions, availableOrderStatusOptions, availableOrderSourceOptions, availableOrderTypeOptions, availableCashMemoStatusOptions, availableDeliveryManOptions, availableIsRegMobileOptions]);

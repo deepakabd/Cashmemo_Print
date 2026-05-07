@@ -1,3 +1,85 @@
+import { useEffect, useRef, useState } from 'react';
+
+const getMultiFilterValues = (value) => (
+  Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+);
+
+const MultiValueFilterSelect = ({
+  placeholder,
+  options,
+  value,
+  onChange,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+  const selectedValues = getMultiFilterValues(value);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (!containerRef.current?.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isOpen]);
+
+  const toggleValue = (option) => {
+    const normalizedOption = String(option || '').trim();
+    if (!normalizedOption) return;
+    const nextValues = selectedValues.includes(normalizedOption)
+      ? selectedValues.filter((item) => item !== normalizedOption)
+      : [...selectedValues, normalizedOption];
+    onChange(nextValues.length > 0 ? nextValues : 'All');
+  };
+
+  const buttonLabel = selectedValues.length === 0
+    ? placeholder
+    : selectedValues.length === 1
+      ? selectedValues[0]
+      : `${selectedValues[0]} +${selectedValues.length - 1}`;
+
+  return (
+    <div className={`multi-filter ${isOpen ? 'is-open' : ''}`} ref={containerRef}>
+      <button type="button" className="multi-filter__trigger" onClick={() => setIsOpen((prev) => !prev)}>
+        <span>{buttonLabel}</span>
+        <strong>{isOpen ? '▲' : '▼'}</strong>
+      </button>
+      {isOpen && (
+        <div className="multi-filter__menu">
+          <button
+            type="button"
+            className={`multi-filter__option multi-filter__option--clear ${selectedValues.length === 0 ? 'is-selected' : ''}`}
+            onClick={() => {
+              onChange('All');
+              setIsOpen(false);
+            }}
+          >
+            Clear selection
+          </button>
+          {options.map((option) => {
+            const normalizedOption = String(option || '').trim();
+            const isSelected = selectedValues.includes(normalizedOption);
+            return (
+              <label key={normalizedOption} className={`multi-filter__option ${isSelected ? 'is-selected' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleValue(normalizedOption)}
+                />
+                <span>{normalizedOption}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const DataWorkspace = ({
   showBookingReport,
   filteredData,
@@ -105,18 +187,19 @@ const DataWorkspace = ({
   setCurrentPage,
   totalPages,
 }) => {
+  const areaSelections = getMultiFilterValues(areaFilter);
   const emptyStateActions = [
     searchTerm ? {
       key: 'search',
       label: `Remove search "${searchTerm}"`,
       onClick: () => setSearchTerm(''),
     } : null,
-    eKycFilter !== 'All' ? {
+    getMultiFilterValues(eKycFilter).length > 0 ? {
       key: 'ekyc',
-      label: `Reset eKYC (${eKycFilter})`,
+      label: 'Reset eKYC',
       onClick: () => setEKycFilter('All'),
     } : null,
-    areaFilter !== 'All' ? {
+    areaSelections.length > 0 ? {
       key: 'area',
       label: `Show all areas`,
       onClick: () => setAreaFilter('All'),
@@ -280,18 +363,18 @@ const DataWorkspace = ({
             <option key={item.key} value={item.key}>{item.label}</option>
           ))}
         </select>
-        <select className="filter-select" value={eKycFilter} onChange={(e) => setEKycFilter(e.target.value)}>
-          <option value="All">All eKYC</option>
-          {availableEkycOptions.map((status, index) => (
-            <option key={index} value={status}>{status}</option>
-          ))}
-        </select>
-        <select className="filter-select" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
-          <option value="All">All Areas</option>
-          {availableAreaOptions.map((area, index) => (
-            <option key={index} value={area}>{area}</option>
-          ))}
-        </select>
+        <MultiValueFilterSelect
+          placeholder="All eKYC"
+          options={availableEkycOptions}
+          value={eKycFilter}
+          onChange={setEKycFilter}
+        />
+        <MultiValueFilterSelect
+          placeholder="All Areas"
+          options={availableAreaOptions}
+          value={areaFilter}
+          onChange={setAreaFilter}
+        />
         <select className="filter-select" value={onlineRefillPaymentStatusFilter} onChange={(e) => setOnlineRefillPaymentStatusFilter(e.target.value)}>
           <option value="All">All Online Refill Payment Status</option>
           {availableOnlinePaymentOptions.map((status, index) => (
@@ -321,42 +404,42 @@ const DataWorkspace = ({
 
       {showAdvancedFilters && (
         <div className="filters-container">
-          <select className="filter-select" value={natureFilter} onChange={(e) => setNatureFilter(e.target.value)}>
-            <option value="All">All Nature</option>
-            {availableNatureOptions.map((nature, index) => (
-              <option key={index} value={nature}>{nature}</option>
-            ))}
-          </select>
+          <MultiValueFilterSelect
+            placeholder="All Nature"
+            options={availableNatureOptions}
+            value={natureFilter}
+            onChange={setNatureFilter}
+          />
           <select className="filter-select" value={mobileStatusFilter} onChange={(e) => setMobileStatusFilter(e.target.value)}>
             <option value="All">All Mobile Status</option>
             {availableMobileStatusOptions.map((status, index) => (
               <option key={index} value={status}>{status}</option>
             ))}
           </select>
-          <select className="filter-select" value={consumerStatusFilter} onChange={(e) => setConsumerStatusFilter(e.target.value)}>
-            <option value="All">All Consumer Status</option>
-            {availableConsumerStatusOptions.map((status, index) => (
-              <option key={index} value={status}>{status}</option>
-            ))}
-          </select>
-          <select className="filter-select" value={connectionTypeFilter} onChange={(e) => setConnectionTypeFilter(e.target.value)}>
-            <option value="All">All Connection Types</option>
-            {availableConnectionTypeOptions.map((type, index) => (
-              <option key={index} value={type}>{type}</option>
-            ))}
-          </select>
+          <MultiValueFilterSelect
+            placeholder="All Consumer Status"
+            options={availableConsumerStatusOptions}
+            value={consumerStatusFilter}
+            onChange={setConsumerStatusFilter}
+          />
+          <MultiValueFilterSelect
+            placeholder="All Connection Types"
+            options={availableConnectionTypeOptions}
+            value={connectionTypeFilter}
+            onChange={setConnectionTypeFilter}
+          />
           <select className="filter-select" value={orderStatusFilter} onChange={(e) => setOrderStatusFilter(e.target.value)}>
             <option value="All">All Order Status</option>
             {availableOrderStatusOptions.map((status, index) => (
               <option key={index} value={status}>{status}</option>
             ))}
           </select>
-          <select className="filter-select" value={orderSourceFilter} onChange={(e) => setOrderSourceFilter(e.target.value)}>
-            <option value="All">All Order Source</option>
-            {availableOrderSourceOptions.map((source, index) => (
-              <option key={index} value={source}>{source}</option>
-            ))}
-          </select>
+          <MultiValueFilterSelect
+            placeholder="All Order Source"
+            options={availableOrderSourceOptions}
+            value={orderSourceFilter}
+            onChange={setOrderSourceFilter}
+          />
           <select className="filter-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
             <option value="All">All Order Type</option>
             {availableOrderTypeOptions.map((type, index) => (
@@ -369,12 +452,12 @@ const DataWorkspace = ({
               <option key={index} value={status}>{status}</option>
             ))}
           </select>
-          <select className="filter-select" value={deliveryManFilter} onChange={(e) => setDeliveryManFilter(e.target.value)}>
-            <option value="All">All Delivery Man</option>
-            {availableDeliveryManOptions.map((man, index) => (
-              <option key={index} value={man}>{man}</option>
-            ))}
-          </select>
+          <MultiValueFilterSelect
+            placeholder="All Delivery Man"
+            options={availableDeliveryManOptions}
+            value={deliveryManFilter}
+            onChange={setDeliveryManFilter}
+          />
           <div className="filter-date-group filter-date-group--wide">
             <span className="filter-date-label">Cash Memo Date</span>
             <input className="filter-date-input filter-date-input--wide" type="date" value={cashMemoDateStart} onChange={(e) => setCashMemoDateStart(e.target.value)} />
