@@ -361,7 +361,6 @@ const getPackageValidityDays = (packageName = '') => {
 };
 
 const isHindiEnterprisePackage = (packageName = '') => HINDI_ENTERPRISE_PACKAGE_NAMES.includes(packageName);
-const isEnterpriseHindiPackage = (packageName = '') => String(packageName || '').trim() === 'Enterprise Package with (हिंदी) - 365 Days';
 
 const computeValidityDates = (packageName = '', baseDate = new Date()) => {
   const days = getPackageValidityDays(packageName);

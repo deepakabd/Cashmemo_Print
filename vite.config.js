@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
               return sendJson(res, 500, { error: message })
             }
           })
+
         },
       },
     ],

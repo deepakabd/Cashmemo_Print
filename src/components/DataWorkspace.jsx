@@ -11,10 +11,17 @@ const MultiValueFilterSelect = ({
   options,
   value,
   onChange,
+  searchable = false,
+  searchPlaceholder = 'Type to search',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const containerRef = useRef(null);
   const selectedValues = getMultiFilterValues(value);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const visibleOptions = searchable && normalizedSearch
+    ? options.filter((option) => String(option || '').trim().toLowerCase().includes(normalizedSearch))
+    : options;
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -26,6 +33,12 @@ const MultiValueFilterSelect = ({
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen && searchTerm) {
+      setSearchTerm('');
+    }
+  }, [isOpen, searchTerm]);
 
   const toggleValue = (option) => {
     const normalizedOption = String(option || '').trim();
@@ -50,6 +63,15 @@ const MultiValueFilterSelect = ({
       </button>
       {isOpen && (
         <div className="multi-filter__menu">
+          {searchable && (
+            <input
+              type="text"
+              className="multi-filter__search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder={searchPlaceholder}
+            />
+          )}
           <button
             type="button"
             className={`multi-filter__option multi-filter__option--clear ${selectedValues.length === 0 ? 'is-selected' : ''}`}
@@ -60,7 +82,7 @@ const MultiValueFilterSelect = ({
           >
             Clear selection
           </button>
-          {options.map((option) => {
+          {visibleOptions.map((option) => {
             const normalizedOption = String(option || '').trim();
             const isSelected = selectedValues.includes(normalizedOption);
             return (
@@ -74,6 +96,9 @@ const MultiValueFilterSelect = ({
               </label>
             );
           })}
+          {visibleOptions.length === 0 && (
+            <div className="multi-filter__empty">No matching options found.</div>
+          )}
         </div>
       )}
     </div>
@@ -374,6 +399,8 @@ const DataWorkspace = ({
           options={availableAreaOptions}
           value={areaFilter}
           onChange={setAreaFilter}
+          searchable
+          searchPlaceholder="Search area"
         />
         <select className="filter-select" value={onlineRefillPaymentStatusFilter} onChange={(e) => setOnlineRefillPaymentStatusFilter(e.target.value)}>
           <option value="All">All Online Refill Payment Status</option>
