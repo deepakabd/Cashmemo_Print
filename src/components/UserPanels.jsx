@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, arrayUnion, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import Sanscript from '@indic-transliteration/sanscript';
 
 import { db } from '../firebase';
 
@@ -813,7 +814,13 @@ export const DictionaryRequestPanel = ({
   onClose,
 }) => {
   const MAX_DICTIONARY_REQUEST_ROWS = 10;
-  const createEmptyEntries = (count) => Array.from({ length: count }, () => ({ englishWord: '', hindiTranslation: '' }));
+  const createEntry = (overrides = {}) => ({
+    englishWord: '',
+    hindiTranslation: '',
+    isHindiManual: false,
+    ...overrides,
+  });
+  const createEmptyEntries = (count) => Array.from({ length: count }, () => createEntry());
   const [entries, setEntries] = useState(createEmptyEntries(MAX_DICTIONARY_REQUEST_ROWS));
   const [dictionaryError, setDictionaryError] = useState('');
   const pendingCount = getPendingDictionaryRequestCount(loggedInUser);
@@ -826,8 +833,22 @@ export const DictionaryRequestPanel = ({
   const approvedItems = isDeliveryAreaMode ? deliveryAreaUpdates : isDeliveryStaffMode ? deliveryStaffUpdates : [];
   const approvedListTitle = isDeliveryAreaMode ? 'Approved Delivery Areas' : 'Approved Delivery Staff';
 
+  const transliterateEnglishToHindi = (value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    try {
+      return Sanscript.t(normalized.toLowerCase(), 'itrans_lowercase', 'devanagari', { syncope: true });
+    } catch {
+      return '';
+    }
+  };
+
   const editApprovedItem = (item) => {
-    setEntries([{ englishWord: item.englishWord || item.english || '', hindiTranslation: item.hindiTranslation || item.hindi || '' }]);
+    setEntries([createEntry({
+      englishWord: item.englishWord || item.english || '',
+      hindiTranslation: item.hindiTranslation || item.hindi || '',
+      isHindiManual: true,
+    })]);
     setShowApprovedList(false);
   };
 
@@ -843,9 +864,30 @@ export const DictionaryRequestPanel = ({
   const updateEntry = (index, field, value) => {
     setDictionaryError('');
     setEntries((prev) => prev.map((entry, entryIndex) => (
-      entryIndex === index
-        ? { ...entry, [field]: value }
-        : entry
+      entryIndex !== index
+        ? entry
+        : (() => {
+            if (field === 'englishWord') {
+              const nextEnglishWord = value;
+              const nextAutoHindi = transliterateEnglishToHindi(nextEnglishWord);
+              return {
+                ...entry,
+                englishWord: nextEnglishWord,
+                hindiTranslation: entry.isHindiManual ? entry.hindiTranslation : nextAutoHindi,
+              };
+            }
+
+            if (field === 'hindiTranslation') {
+              const nextHindiTranslation = value;
+              return {
+                ...entry,
+                hindiTranslation: nextHindiTranslation,
+                isHindiManual: String(nextHindiTranslation || '').trim() !== '',
+              };
+            }
+
+            return { ...entry, [field]: value };
+          })()
     )));
   };
 
@@ -856,7 +898,7 @@ export const DictionaryRequestPanel = ({
       return;
     }
     setDictionaryError('');
-    setEntries((prev) => [...prev, { englishWord: '', hindiTranslation: '' }]);
+    setEntries((prev) => [...prev, createEntry()]);
   };
 
   const removeEntry = (index) => {
@@ -1047,6 +1089,7 @@ export const DictionaryRequestPanel = ({
           <button type="button" className="dictionary-request-add-row" onClick={addEntry} disabled={entries.length >= MAX_DICTIONARY_REQUEST_ROWS}>
             {entries.length >= MAX_DICTIONARY_REQUEST_ROWS ? `Maximum ${MAX_DICTIONARY_REQUEST_ROWS} Rows Added` : 'Add Another Row'}
           </button>
+          <div className="dictionary-pending-count">English type karne par Hindi box auto-fill hoga. Aap chahein to submit se pehle Hindi text edit kar sakte hain.</div>
           {!isDeliveryAreaMode && !isDeliveryStaffMode ? (
             <div className="dictionary-pending-count">Ek baar mein 1 se {MAX_DICTIONARY_REQUEST_ROWS} dictionary requests bhej sakte hain.</div>
           ) : null}
