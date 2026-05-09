@@ -14,6 +14,7 @@ export const useParsedDataFilters = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(25);
   const [pageType, setPageType] = useState('3 Cashmemo/Page');
+  const [printHeaderMode, setPrintHeaderMode] = useState('With Header');
   const [printLanguage, setPrintLanguage] = useState('English');
   const [showDataButton, setShowDataButton] = useState(false);
   const [showParsedData, setShowParsedData] = useState(false);
@@ -181,6 +182,8 @@ export const useParsedDataFilters = ({
     itemsPerPage,
     pageType,
     setPageType,
+    printHeaderMode,
+    setPrintHeaderMode,
     printLanguage,
     setPrintLanguage,
     showDataButton,

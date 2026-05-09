@@ -5168,6 +5168,8 @@ function App() {
     itemsPerPage,
     pageType,
     setPageType,
+    printHeaderMode,
+    setPrintHeaderMode,
     printLanguage,
     setPrintLanguage,
     showDataButton,
@@ -5490,6 +5492,7 @@ function App() {
       }
 
       const isHindiPrint = printLanguage === 'Hindi';
+      const shouldShowHeader = printHeaderMode === 'With Header';
       const translationMemoryCache = translationMemoryCacheRef.current;
       const [{ renderToString }, { default: CashMemoTemplate }] = await Promise.all([
         import('react-dom/server'),
@@ -5758,7 +5761,14 @@ function App() {
         }
 
         const cashMemoHtml = renderToString(
-          <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} labelSettings={cashMemoLabelSettings[pageType]} />
+          <CashMemoTemplate
+            customer={processedCustomer}
+            pageType={pageType}
+            dealerDetails={dealerDetails}
+            formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+            labelSettings={cashMemoLabelSettings[pageType]}
+            showHeader={shouldShowHeader}
+          />
         );
 
         const memosPerPage = getCashMemoPerPage(pageType);
@@ -6230,6 +6240,9 @@ function App() {
               }
               .hidden {
                 display: none;
+              }
+              .print-placeholder-block {
+                visibility: hidden;
               }
               .declaration {
                 min-height: 11.2mm;
@@ -8363,6 +8376,8 @@ function App() {
             setPageType={setPageType}
             isHindiEnterprisePackage={isHindiEnterprisePackage}
             loggedInUser={loggedInUser}
+            printHeaderMode={printHeaderMode}
+            setPrintHeaderMode={setPrintHeaderMode}
             printLanguage={printLanguage}
             setPrintLanguage={setPrintLanguage}
             handlePrintData={handlePrintData}
