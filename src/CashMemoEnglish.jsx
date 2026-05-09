@@ -185,7 +185,7 @@ const TaxInvoiceDetails = ({
   );
 };
 
-const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType, labelSettings }) => {
+const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType, labelSettings, showHeader = true }) => {
   if (!customer) {
     return <p>Please select a customer to generate Cash Memo.</p>;
   }
@@ -279,7 +279,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
   return (
     <div className={`cash-memo-single${isCompactPage ? ' cash-memo-single--compact' : ''}`}>
       <div className="distributor-copy">
-        <div className="distributor-header">
+        <div className={`distributor-header${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="distributor-header-logo">
             <img src="/logo.jpg" alt="HP GAS Logo" className="distributor-header-image" />
           </div>
@@ -295,7 +295,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
             <DistributorDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
-        <div className="declaration">
+        <div className={`declaration${showHeader ? '' : ' print-placeholder-block'}`}>
           <p className="declaration-text">
             Declaration : I hereby confirm receipt of filled LPG cylinder in sealed condition and above mentioned price.
             The cylinder was checked in my presence for correct weight & for any leakages to my satisfaction.
@@ -307,7 +307,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
       </div>
 
       <div className="tax-invoice">
-        <div className="tax-invoice-header">
+        <div className={`tax-invoice-header${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="tax-invoice-header-logo">
             <img src="/logo.jpg" alt="HP GAS Logo" className="tax-invoice-header-image" />
           </div>
@@ -319,7 +319,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
           </div>
         </div>
 
-        <div className="contact-info">
+        <div className={`contact-info${showHeader ? '' : ' print-placeholder-block'}`}>
           <div>
             HP ANYTIME 24x7 <br />
             <strong className="contact-info-strong">8888823456</strong>
@@ -338,7 +338,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
           </div>
         </div>
 
-        <div className="header-content">
+        <div className={`header-content${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="header-content-flex-spacer"></div>
           <p className="tax-invoice-title">Tax Invoice</p>
           <div className="header-content-flex-spacer">
@@ -351,9 +351,9 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
             <TaxInvoiceDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
-        <p className="signature-text">{dealerName}......</p>
+        <p className={`signature-text${showHeader ? '' : ' print-placeholder-block'}`}>{dealerName}......</p>
 
-        <div className="instructions-section">
+        <div className={`instructions-section${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="instructions-text-container">
             <ul className="instructions-list">
               <li>Insist deliverymen for Pre Delivery checks of LPG Cylinder at time of delivery</li>

@@ -194,6 +194,8 @@ const DataWorkspace = ({
   setPageType,
   isHindiEnterprisePackage,
   loggedInUser,
+  printHeaderMode,
+  setPrintHeaderMode,
   printLanguage,
   setPrintLanguage,
   handlePrintData,
@@ -522,6 +524,14 @@ const DataWorkspace = ({
             <option value="2 Cashmemo/Page">2 Cashmemo/Page</option>
             <option value="3 Cashmemo/Page">3 Cashmemo/Page</option>
             <option value="4 Cashmemo/Page">4 Cashmemo/Page</option>
+          </select>
+        </div>
+
+        <div className="table-control-group">
+          <label className="table-control-label" htmlFor="printHeaderModeSelect">Print Header</label>
+          <select className="table-select" id="printHeaderModeSelect" onChange={(e) => setPrintHeaderMode(e.target.value)} value={printHeaderMode}>
+            <option value="With Header">With Header</option>
+            <option value="Without Header">Without Header</option>
           </select>
         </div>
 

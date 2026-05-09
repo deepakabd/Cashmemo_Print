@@ -3215,6 +3215,69 @@
   max-width: 1180px;
 }
 
+.cashmemo-layout-page {
+  max-width: 1180px;
+}
+
+.cashmemo-layout-preview-card {
+  border: 1px solid #d7e0ea;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%);
+  padding: 16px;
+}
+
+.cashmemo-layout-preview-caption {
+  margin-bottom: 12px;
+  color: #12345b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cashmemo-layout-preview-page {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  min-height: calc(297mm - 9mm);
+  padding: 4mm 6mm 5mm;
+  border: 1px solid #c7d5e6;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 2mm;
+  box-sizing: border-box;
+}
+
+.cashmemo-layout-preview-slot {
+  width: 100%;
+  border: 1px solid #222;
+  background: #fff;
+  overflow: hidden;
+}
+
+.cashmemo-layout-preview-slot--2 {
+  height: 142mm;
+}
+
+.cashmemo-layout-preview-slot--3 {
+  height: 94mm;
+}
+
+.cashmemo-layout-preview-slot--4 {
+  height: 68.75mm;
+}
+
+.cashmemo-layout-preview-slot .header-layout-sheet {
+  height: 100%;
+}
+
+.cashmemo-layout-placeholder {
+  visibility: hidden;
+}
+
+.cashmemo-layout-placeholder--left,
+.cashmemo-layout-placeholder--right {
+  flex: 1;
+}
+
 .label-update-header {
   display: flex;
   justify-content: space-between;

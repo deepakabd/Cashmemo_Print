@@ -2,6 +2,7 @@
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
+import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
@@ -691,6 +692,7 @@ function App() {
   const [showInvoicePage, setShowInvoicePage] = useState(false);
   const [showLabelUpdate, setShowLabelUpdate] = useState(false);
   const [showHeaderUpdate, setShowHeaderUpdate] = useState(false);
+  const [showCashmemoLayout, setShowCashmemoLayout] = useState(false);
   const [showUpgradePlan, setShowUpgradePlan] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -1401,6 +1403,7 @@ function App() {
     setShowInvoicePage(false);
     setShowLabelUpdate(false);
     setShowHeaderUpdate(false);
+    setShowCashmemoLayout(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -1441,6 +1444,11 @@ function App() {
   const handleHeaderUpdate = () => {
     hideAllViews();
     setShowHeaderUpdate(true);
+    setShowUserMenu(false);
+  };
+  const handleCashmemoLayoutOpen = () => {
+    hideAllViews();
+    setShowCashmemoLayout(true);
     setShowUserMenu(false);
   };
   const handleBankDetails = () => {
@@ -5139,6 +5147,8 @@ function App() {
     }
   });
   const [labelDraftSettings, setLabelDraftSettings] = useState(() => createDefaultCashMemoLabelSettings());
+  const [cashmemoLayoutPageType, setCashmemoLayoutPageType] = useState('3 Cashmemo/Page');
+  const [cashmemoLayoutLanguage, setCashmemoLayoutLanguage] = useState('English');
   const [customersToPrint] = useState([]); // New state to hold multiple customers for printing
   const cashMemoRef = useRef(); // Ref for the cash memo component
 
@@ -5168,6 +5178,8 @@ function App() {
     itemsPerPage,
     pageType,
     setPageType,
+    printHeaderMode,
+    setPrintHeaderMode,
     printLanguage,
     setPrintLanguage,
     showDataButton,
@@ -5465,6 +5477,24 @@ function App() {
     pushToast('Preset removed.', 'info');
   };
 
+  const buildDealerDetails = (isHindiPrint = false) => {
+    const pd = loggedInUser?.profileData || null;
+    const hd = loggedInUser?.hindiHeaderData || null;
+    const baseDealerName = pd?.distributorName
+      ? (pd?.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
+      : '-';
+
+    return {
+      name: (isHindiPrint && hd?.distributorName) ? hd.distributorName : (baseDealerName !== '-' ? baseDealerName : (hd?.distributorName || '-')),
+      gstn: (isHindiPrint && hd?.gstn) ? hd.gstn : (pd?.gst || hd?.gstn || '-'),
+      address: { plotNo: (isHindiPrint && hd?.address) ? hd.address : (pd?.address || hd?.address || '-') },
+      contact: {
+        email: (isHindiPrint && hd?.email) ? hd.email : (pd?.email || hd?.email || '-'),
+        telephone: (isHindiPrint && hd?.telephone) ? hd.telephone : (pd?.contact || hd?.telephone || '-'),
+      },
+    };
+  };
+
   const handlePrintData = () => {
     const printContent = buildPrintDataHtml({
       visibleHeaders,
@@ -5483,6 +5513,68 @@ function App() {
     printWindow.print();
     logRecentActivity(`Printed data view with ${filteredData.length} rows`);
   };
+  const handlePrintCashmemoLayout = async () => {
+    const [{ renderToString }] = await Promise.all([
+      import('react-dom/server'),
+    ]);
+    const isHindiLayout = cashmemoLayoutLanguage === 'Hindi';
+    const dealerDetails = buildDealerDetails(isHindiLayout);
+    const memosPerPage = getCashMemoPerPage(cashmemoLayoutPageType);
+    const previewMarkup = Array.from({ length: memosPerPage }).map((_, index) => (
+      `<div class="cashmemo-print-item cashmemo-print-item--${memosPerPage}" data-index="${index}">${renderToString(
+        <CashmemoHeaderPreviewSheet
+          pageType={cashmemoLayoutPageType}
+          dealerDetails={dealerDetails}
+          language={cashmemoLayoutLanguage}
+        />
+      )}</div>`
+    )).join('');
+    const fullHtml = `
+      <html>
+        <head>
+          <title>Cashmemo Header Layout</title>
+          <style>
+            ${CASHMEMO_LAYOUT_PRINT_STYLES}
+          </style>
+        </head>
+        <body>
+          <div id="print-root">
+            ${previewMarkup}
+          </div>
+        </body>
+      </html>
+    `;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      pushToast('Unable to open print window. Please allow pop-ups.', 'error');
+      return;
+    }
+    printWindow.document.write(fullHtml);
+    printWindow.document.close();
+    const triggerPrint = () => {
+      const images = Array.from(printWindow.document.images || []);
+      Promise.all(
+        images.map((img) => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+          });
+        })
+      ).then(() => {
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+        }, 200);
+      });
+    };
+    if (printWindow.document.readyState === 'complete') {
+      triggerPrint();
+      } else {
+        printWindow.addEventListener('load', triggerPrint, { once: true });
+      }
+    logRecentActivity(`Printed cashmemo header layout (${cashmemoLayoutPageType} - ${cashmemoLayoutLanguage})`);
+  };
   const handlePrintCashmemo = async () => {
       if (selectedCustomerIds.length === 0) {
         pushToast('Please select at least one cashmemo to print.', 'info');
@@ -5490,6 +5582,7 @@ function App() {
       }
 
       const isHindiPrint = printLanguage === 'Hindi';
+      const shouldShowHeader = printHeaderMode === 'With Header';
       const translationMemoryCache = translationMemoryCacheRef.current;
       const [{ renderToString }, { default: CashMemoTemplate }] = await Promise.all([
         import('react-dom/server'),
@@ -5672,20 +5765,7 @@ function App() {
 
       let allCashMemosHtml = '';
 
-      const pd = loggedInUser?.profileData || null;
-      const hd = loggedInUser?.hindiHeaderData || null;
-      const baseDealerName = pd?.distributorName
-        ? (pd?.distributorCode ? `${pd.distributorName} (${pd.distributorCode})` : pd.distributorName)
-        : '-';
-      const dealerDetails = {
-        name: (isHindiPrint && hd?.distributorName) ? hd.distributorName : baseDealerName,
-        gstn: (isHindiPrint && hd?.gstn) ? hd.gstn : (pd?.gst || '-'),
-        address: { plotNo: (isHindiPrint && hd?.address) ? hd.address : (pd?.address || '-') },
-        contact: {
-          email: (isHindiPrint && hd?.email) ? hd.email : (pd?.email || '-'),
-          telephone: (isHindiPrint && hd?.telephone) ? hd.telephone : (pd?.contact || '-'),
-        },
-      };
+      const dealerDetails = buildDealerDetails(isHindiPrint);
 
       customersToPrint.forEach((customer, index) => {
         const processedCustomer = { ...customer };
@@ -5758,7 +5838,14 @@ function App() {
         }
 
         const cashMemoHtml = renderToString(
-          <CashMemoTemplate customer={processedCustomer} pageType={pageType} dealerDetails={dealerDetails} formatDateToDDMMYYYY={formatDateToDDMMYYYY} labelSettings={cashMemoLabelSettings[pageType]} />
+          <CashMemoTemplate
+            customer={processedCustomer}
+            pageType={pageType}
+            dealerDetails={dealerDetails}
+            formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+            labelSettings={cashMemoLabelSettings[pageType]}
+            showHeader={shouldShowHeader}
+          />
         );
 
         const memosPerPage = getCashMemoPerPage(pageType);
@@ -6230,6 +6317,9 @@ function App() {
               }
               .hidden {
                 display: none;
+              }
+              .print-placeholder-block {
+                visibility: hidden;
               }
               .declaration {
                 min-height: 11.2mm;
@@ -7279,6 +7369,7 @@ function App() {
         : dictionaryFormMode === 'deliveryStaff'
           ? 'deliveryStaffUpdate'
           : 'dictionaryUpdate')
+      : showCashmemoLayout ? 'cashmemoLayout'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -7807,6 +7898,7 @@ function App() {
         { label: 'Update Rates', onClick: handleRateUpdate, viewKey: 'rateUpdate', disabled: !canAccessMenuFeature('rateUpdate'), reason: getDisabledReason('rateUpdate'), badge: getRequestBadge('rates'), hint: getRequestHint('rates', 'Send revised rate data for approval.') },
         { label: showParsedData ? 'Open Data View' : 'Upload Data', onClick: showParsedData ? handleShowData : handleReUploadClick, viewKey: 'dataUpload', disabled: isPlanExpired, reason: isPlanExpired ? 'Renew plan to upload and manage working data again.' : '', hint: showParsedData ? `Return to your uploaded data view${hasWorkingData ? ` (${parsedData.length} rows loaded)` : ''}.` : 'Upload distributor working data.' },
         { label: 'Open Invoice', onClick: handleInvoiceOpen, viewKey: 'invoice', disabled: !canAccessMenuFeature('invoice'), reason: getDisabledReason('invoice'), hint: isPlanExpired ? getDisabledReason('invoice') : 'Open invoice tools and exports.' },
+        { label: 'Cashmemo Layout', onClick: handleCashmemoLayoutOpen, viewKey: 'cashmemoLayout', disabled: !canAccessMenuFeature('labelUpdate'), reason: getDisabledReason('labelUpdate'), hint: isPlanExpired ? getDisabledReason('labelUpdate') : 'Preview and print cashmemo header layout by page type.' },
         { label: 'Update Labels', onClick: handleLabelUpdate, viewKey: 'labelUpdate', disabled: !canAccessMenuFeature('labelUpdate'), reason: getDisabledReason('labelUpdate'), hint: isPlanExpired ? getDisabledReason('labelUpdate') : 'Adjust print layout labels for cashmemo output.' },
         {
           label: 'Update Dictionary',
@@ -7914,6 +8006,11 @@ function App() {
             {isLoggedIn && (
               <button className="navbar-button" onClick={handleInvoiceOpen} disabled={!canAccessMenuFeature('invoice')}>
                 Invoice
+              </button>
+            )}
+            {isLoggedIn && (
+              <button className="navbar-button" onClick={handleCashmemoLayoutOpen} disabled={!canAccessMenuFeature('labelUpdate')}>
+                Cashmemo Layout
               </button>
             )}
             {isLoggedIn && hasHindiPackageAccess && (
@@ -8066,7 +8163,7 @@ function App() {
           </div>
         </section>
       )}
-      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && (
@@ -8109,6 +8206,18 @@ function App() {
             <Suspense fallback={<div className="placeholder-container">Loading invoice...</div>}>
               <LazyInvoicePage loggedInUser={loggedInUser} />
             </Suspense>
+          )}
+          {showCashmemoLayout && (
+            <CashmemoLayoutPage
+              pageType={cashmemoLayoutPageType}
+              setPageType={setCashmemoLayoutPageType}
+              language={cashmemoLayoutLanguage}
+              setLanguage={setCashmemoLayoutLanguage}
+              pageTypes={CASHMEMO_PAGE_TYPES}
+              dealerDetails={buildDealerDetails(cashmemoLayoutLanguage === 'Hindi')}
+              onPrint={handlePrintCashmemoLayout}
+              onClose={navigateToHome}
+            />
           )}
           {showLabelUpdate && <LabelUpdatePage />}
           {showHeaderUpdate && <HeaderUpdateForm onClose={navigateToHome} />}
@@ -8363,6 +8472,8 @@ function App() {
             setPageType={setPageType}
             isHindiEnterprisePackage={isHindiEnterprisePackage}
             loggedInUser={loggedInUser}
+            printHeaderMode={printHeaderMode}
+            setPrintHeaderMode={setPrintHeaderMode}
             printLanguage={printLanguage}
             setPrintLanguage={setPrintLanguage}
             handlePrintData={handlePrintData}

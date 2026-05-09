@@ -54,18 +54,14 @@ const DistributorDetails = ({
   orderDate,
   cashMemoNo,
   cashMemoDate,
-  lastDeliveryDate,
   basePrice,
   dlvryCharges,
   cAndCRebate,
   cgst,
   sgst,
   totalAmount,
-  hoseExpiry,
-  miStatus,
   eKyc,
   payment,
-  salesType,
   labelSettings,
 }) => {
   const leftRows = [
@@ -74,7 +70,7 @@ const DistributorDetails = ({
     ['डिलीवरी स्टाफ', deliveryMan, 'deliveryStaff'],
     ['उत्पाद / HSN / मात्रा', `${product} / ${hsn} / ${orderQty}`, 'productHsnQty'],
     ['ऑर्डर नं. और तिथि', `${orderNo} - ${orderDate}`, 'orderNoAndDate'],
-    ['कैशमेमो नं. और तिथि', `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate']
+    ['कैशमेमो नं. और तिथि', `${cashMemoNo} - ${cashMemoDate}`, 'cashMemoNoAndDate'],
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const amountRowsLeft = [
@@ -85,7 +81,7 @@ const DistributorDetails = ({
     ['SGST (2.50%)(रु.)', sgst, 'sgst'],
     ['कुल राशि (रु.)', totalAmount, 'totalAmount'],
     ['ई-केवाईसी', eKyc, 'eKyc'],
-    ['भुगतान', payment, 'payment']
+    ['भुगतान', payment, 'payment'],
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
@@ -109,10 +105,6 @@ const TaxInvoiceDetails = ({
   product,
   hsn,
   connectionQty,
-  ctcStatus,
-  subsidyConsumed,
-  hoseExpiry,
-  miStatus,
   eKyc,
   bookingSource,
   payment,
@@ -127,7 +119,6 @@ const TaxInvoiceDetails = ({
   cgst,
   sgst,
   totalAmount,
-  advanceOnline,
   netPayable,
   labelSettings,
 }) => {
@@ -135,7 +126,7 @@ const TaxInvoiceDetails = ({
     ['उपभोक्ता नाम', consumerName, 'taxConsumerName'],
     ['Consumer No.', consumerNo, 'taxConsumerNo'],
     ['LPD ID', lpgId, 'taxLpgId'],
-    ['पता', address, 'taxAddress']
+    ['पता', address, 'taxAddress'],
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const middleBottomRows = [
@@ -145,7 +136,7 @@ const TaxInvoiceDetails = ({
     ['कनेक्शन / मात्रा', connectionQty, 'connectionQty'],
     ['ई-केवाईसी', eKyc, 'eKyc'],
     ['बुकिंग स्रोत', bookingSource, 'bookingSource'],
-    ['भुगतान', payment, 'payment']
+    ['भुगतान', payment, 'payment'],
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   const normalizedPayment = String(payment || '').trim().toLowerCase();
@@ -166,7 +157,7 @@ const TaxInvoiceDetails = ({
     ['SGST (2.50%)(रु.)', sgst, 'sgst'],
     ['कुल राशि (रु.)', totalAmount, 'totalAmount'],
     ['अग्रिम (ऑनलाइन) (रु.)', displayAdvanceOnline, 'advanceOnline'],
-    ['शुद्ध देय (रु.)', displayNetPayable, 'netPayable']
+    ['शुद्ध देय (रु.)', displayNetPayable, 'netPayable'],
   ].filter(([, , key]) => shouldShowLabel(labelSettings, key));
 
   return (
@@ -185,7 +176,7 @@ const TaxInvoiceDetails = ({
   );
 };
 
-const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType, labelSettings }) => {
+const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType, labelSettings, showHeader = true }) => {
   if (!customer) {
     return <p>Please select a customer to generate Cash Memo.</p>;
   }
@@ -204,17 +195,15 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
   const orderDate = customer['Order Date'] ? formatDateToDDMMYYYY(new Date(customer['Order Date'])) : '';
   const cashMemoNo = customer['Cash Memo No.'] || '';
   const cashMemoDate = customer['Cash Memo Date'] ? formatDateToDDMMYYYY(new Date(customer['Cash Memo Date'])) : '';
-  const lastDeliveryDate = customer['Last Delivery Date'] ? formatDateToDDMMYYYY(new Date(customer['Last Delivery Date'])) : '';
 
-  const basePrice = pickMoney(customer, ['Base Price (₹)', 'Base Price (Ã¢â€šÂ¹)', 'Base Price (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const dlvryCharges = pickMoney(customer, ['Delivery Charges (₹)', 'Delivery Charges (Ã¢â€šÂ¹)', 'Delivery Charges (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const cAndCRebate = pickMoney(customer, ['Cash & Carry Rebate (₹)', 'Cash & Carry Rebate (Ã¢â€šÂ¹)', 'Cash & Carry Rebate (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const cgst = pickMoney(customer, ['CGST (2.50%) (₹)', 'CGST (2.50%) (Ã¢â€šÂ¹)', 'CGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const sgst = pickMoney(customer, ['SGST (2.50%) (₹)', 'SGST (2.50%) (Ã¢â€šÂ¹)', 'SGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const totalAmount = pickMoney(customer, ['Total Amount (₹)', 'Total Amount (Ã¢â€šÂ¹)', 'Total Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const taxableAmount = pickMoney(customer, ['Taxable Amount (₹)', 'Taxable Amount (Ã¢â€šÂ¹)', 'Taxable Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const advanceOnline = pickMoney(customer, ['Advance (Online) (₹)', 'Advance (Online) (Ã¢â€šÂ¹)', 'Advance (Online) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
-  const netPayable = pickMoney(customer, ['Net Payable (₹)', 'Net Payable (Ã¢â€šÂ¹)', 'Net Payable (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)']);
+  const basePrice = pickMoney(customer, ['Base Price (₹)', 'Base Price (â‚¹)', 'Base Price (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Base Price (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const dlvryCharges = pickMoney(customer, ['Delivery Charges (₹)', 'Delivery Charges (â‚¹)', 'Delivery Charges (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Delivery Charges (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const cAndCRebate = pickMoney(customer, ['Cash & Carry Rebate (₹)', 'Cash & Carry Rebate (â‚¹)', 'Cash & Carry Rebate (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Cash & Carry Rebate (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const cgst = pickMoney(customer, ['CGST (2.50%) (₹)', 'CGST (2.50%) (â‚¹)', 'CGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'CGST (2.50%) (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const sgst = pickMoney(customer, ['SGST (2.50%) (₹)', 'SGST (2.50%) (â‚¹)', 'SGST (2.50%) (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'SGST (2.50%) (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const totalAmount = pickMoney(customer, ['Total Amount (₹)', 'Total Amount (â‚¹)', 'Total Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Total Amount (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const taxableAmount = pickMoney(customer, ['Taxable Amount (₹)', 'Taxable Amount (â‚¹)', 'Taxable Amount (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Taxable Amount (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
+  const netPayable = pickMoney(customer, ['Net Payable (₹)', 'Net Payable (â‚¹)', 'Net Payable (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹)', 'Net Payable (ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¹)']);
 
   const category = customer['Consumer Package'] || '';
   const connectionQty = customer['Connection/Qty'] || 'SBC / 1';
@@ -225,17 +214,11 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
 
   const onlineRefillPaymentStatus = customer['Online Refill Payment status'] || '';
   const rawPaymentMethod = customer['Payment Method'] || '';
-  let payment = /paid/i.test(String(onlineRefillPaymentStatus))
+  const payment = /paid/i.test(String(onlineRefillPaymentStatus))
     ? 'ऑनलाइन (Online)'
     : (rawPaymentMethod || 'कैश ऑन डिलीवरी (COD)');
 
   const bookingSource = customer['Order Source'] || 'HP Pay';
-  const hoseExpiry = customer['Hose Expiry'] || '';
-  const miStatus = customer.MI || customer['MI Status'] || '';
-  const salesType = customer['Sales Type'] || '';
-  const ctcStatus = customer['CTC Status'] || '';
-  const subsidyConsumed = customer['Subsidy Consumed'] || '';
-
   const dealerName = dealerDetails?.name || '';
   const dealerPlotNo = dealerDetails?.address?.plotNo || '';
   const dealerEmail = dealerDetails?.contact?.email || '';
@@ -257,7 +240,6 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
     orderDate,
     cashMemoNo,
     cashMemoDate,
-    lastDeliveryDate,
     basePrice,
     dlvryCharges,
     cAndCRebate,
@@ -270,13 +252,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
     payment,
     bookingSource,
     taxableAmount,
-    advanceOnline,
     netPayable,
-    hoseExpiry,
-    miStatus,
-    salesType,
-    ctcStatus,
-    subsidyConsumed
   };
 
   const isCompactPage = pageType === '4 Cashmemo/Page';
@@ -284,13 +260,13 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
   return (
     <div className={`cash-memo-single${isCompactPage ? ' cash-memo-single--compact' : ''}`}>
       <div className="distributor-copy">
-        <div className="distributor-header">
+        <div className={`distributor-header${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="distributor-header-logo">
             <img src="/logo.jpg" alt="HP GAS Logo" className="distributor-header-image" />
           </div>
           <div className="distributor-header-details">
             <p className="distributor-header-detail-text">{dealerName}</p>
-            <p className="distributor-header-detail-text">{dealerPlotNo}</p>
+            {/* <p className="distributor-header-detail-text">{dealerPlotNo}</p> */}
             <p className="distributor-header-detail-text">GSTN : {dealerGstn}</p>
           </div>
         </div>
@@ -300,9 +276,9 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
             <DistributorDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
-        <div className="declaration">
+        <div className={`declaration${showHeader ? '' : ' print-placeholder-block'}`}>
           <p className="declaration-text">
-            घोषणा : मैं भरे हुए एलपीजी सिलेंडर को सीलबंद स्थिति में प्राप्त करने तथा ऊपर लिखी गई राशि की पुष्टि करता/करती हूं। सिलेंडर का वजन तथा रिसाव मेरे सामने जांचा गया।
+            घोषणा : मैं भरे हुए एलपीजी सिलेंडर को सीलबंद स्थिति में प्राप्त करने तथा ऊपर लिखी गई राशि की पुष्टि करता/करती हूँ। सिलेंडर का वजन तथा रिसाव मेरे सामने जाँचा गया।
           </p>
           <div className="signature-section">
             <span>उपभोक्ता के हस्ताक्षर</span>
@@ -311,7 +287,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
       </div>
 
       <div className="tax-invoice">
-        <div className="tax-invoice-header">
+        <div className={`tax-invoice-header${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="tax-invoice-header-logo">
             <img src="/logo.jpg" alt="HP GAS Logo" className="tax-invoice-header-image" />
           </div>
@@ -323,13 +299,13 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
           </div>
         </div>
 
-        <div className="contact-info">
+        <div className={`contact-info${showHeader ? '' : ' print-placeholder-block'}`}>
           <div>
             HP ANYTIME 24x7 <br />
             <strong className="contact-info-strong">8888823456</strong>
           </div>
           <div>
-            Whatsapp Booking No. <br />
+            WhatsApp Booking No. <br />
             <strong className="contact-info-strong">9222201122</strong>
           </div>
           <div>
@@ -342,7 +318,7 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
           </div>
         </div>
 
-        <div className="header-content">
+        <div className={`header-content${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="header-content-flex-spacer"></div>
           <p className="tax-invoice-title">कर चालान</p>
           <div className="header-content-flex-spacer">
@@ -355,13 +331,13 @@ const CashMemoHindi = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageType
             <TaxInvoiceDetails {...commonProps} labelSettings={labelSettings} />
           </div>
         </div>
-        <p className="signature-text">{dealerName}.....</p>
+        <p className={`signature-text${showHeader ? '' : ' print-placeholder-block'}`}>{dealerName}.....</p>
 
-        <div className="instructions-section">
+        <div className={`instructions-section${showHeader ? '' : ' print-placeholder-block'}`}>
           <div className="instructions-text-container">
             <ul className="instructions-list">
-              <li>डिलीवरी के समय एलपीजी सिलेंडर की प्री-डिलीवरी जांच अवश्य कराएं।</li>
-              <li>हर 5 वर्ष में एक बार एलपीजी इंस्टॉलेशन की जांच कराएं।</li>
+              <li>डिलीवरी के समय एलपीजी सिलेंडर की प्री-डिलीवरी जाँच अवश्य कराएँ।</li>
+              <li>हर 5 वर्ष में एक बार एलपीजी इंस्टॉलेशन की जाँच कराएँ।</li>
               <li>सुरक्षा होज को 5 वर्ष बाद या खराब होने पर बदलें।</li>
               <li>होम डिलीवरी न लेने पर ग्राहक कैश एंड कैरी रिबेट के हकदार हैं।</li>
             </ul>
