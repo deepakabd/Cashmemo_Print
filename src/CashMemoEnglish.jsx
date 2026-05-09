@@ -285,7 +285,7 @@ const CashMemoEnglish = ({ customer, dealerDetails, formatDateToDDMMYYYY, pageTy
           </div>
           <div className="distributor-header-details">
             <p className="distributor-header-detail-text">{dealerName}</p>
-            <p className="distributor-header-detail-text">{dealerPlotNo}</p>
+            {/* <p className="distributor-header-detail-text">{dealerPlotNo}</p> */}
             <p className="distributor-header-detail-text">GSTN : {dealerGstn}</p>
           </div>
         </div>
