@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, arrayUnion, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import Sanscript from '@indic-transliteration/sanscript';
 
 import { db } from '../firebase';
 
@@ -833,16 +832,6 @@ export const DictionaryRequestPanel = ({
   const approvedItems = isDeliveryAreaMode ? deliveryAreaUpdates : isDeliveryStaffMode ? deliveryStaffUpdates : [];
   const approvedListTitle = isDeliveryAreaMode ? 'Approved Delivery Areas' : 'Approved Delivery Staff';
 
-  const transliterateEnglishToHindi = (value) => {
-    const normalized = String(value || '').trim();
-    if (!normalized) return '';
-    try {
-      return Sanscript.t(normalized.toLowerCase(), 'itrans_lowercase', 'devanagari', { syncope: true });
-    } catch {
-      return '';
-    }
-  };
-
   const editApprovedItem = (item) => {
     setEntries([createEntry({
       englishWord: item.englishWord || item.english || '',
@@ -863,20 +852,20 @@ export const DictionaryRequestPanel = ({
 
   const updateEntry = (index, field, value) => {
     setDictionaryError('');
+    if (field === 'englishWord') {
+      const nextEnglishWord = value;
+      setEntries((prev) => prev.map((entry, entryIndex) => (
+        entryIndex === index
+          ? { ...entry, englishWord: nextEnglishWord }
+          : entry
+      )));
+      return;
+    }
+
     setEntries((prev) => prev.map((entry, entryIndex) => (
       entryIndex !== index
         ? entry
         : (() => {
-            if (field === 'englishWord') {
-              const nextEnglishWord = value;
-              const nextAutoHindi = transliterateEnglishToHindi(nextEnglishWord);
-              return {
-                ...entry,
-                englishWord: nextEnglishWord,
-                hindiTranslation: entry.isHindiManual ? entry.hindiTranslation : nextAutoHindi,
-              };
-            }
-
             if (field === 'hindiTranslation') {
               const nextHindiTranslation = value;
               return {
@@ -1089,7 +1078,7 @@ export const DictionaryRequestPanel = ({
           <button type="button" className="dictionary-request-add-row" onClick={addEntry} disabled={entries.length >= MAX_DICTIONARY_REQUEST_ROWS}>
             {entries.length >= MAX_DICTIONARY_REQUEST_ROWS ? `Maximum ${MAX_DICTIONARY_REQUEST_ROWS} Rows Added` : 'Add Another Row'}
           </button>
-          <div className="dictionary-pending-count">English type karne par Hindi box auto-fill hoga. Aap chahein to submit se pehle Hindi text edit kar sakte hain.</div>
+          <div className="dictionary-pending-count">Hindi translation manually enter kijiye.</div>
           {!isDeliveryAreaMode && !isDeliveryStaffMode ? (
             <div className="dictionary-pending-count">Ek baar mein 1 se {MAX_DICTIONARY_REQUEST_ROWS} dictionary requests bhej sakte hain.</div>
           ) : null}
