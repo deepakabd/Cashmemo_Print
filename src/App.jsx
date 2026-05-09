@@ -2,7 +2,7 @@
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import RateUpdatePage from './RateUpdatePage';
-import CashmemoLayoutPage, { CashmemoHeaderPreviewSheet } from './CashmemoLayoutPage';
+import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
@@ -5521,7 +5521,7 @@ function App() {
     const dealerDetails = buildDealerDetails(isHindiLayout);
     const memosPerPage = getCashMemoPerPage(cashmemoLayoutPageType);
     const previewMarkup = Array.from({ length: memosPerPage }).map((_, index) => (
-      `<div class="cashmemo-layout-preview-slot cashmemo-layout-preview-slot--${memosPerPage}" data-index="${index}">${renderToString(
+      `<div class="cashmemo-print-item cashmemo-print-item--${memosPerPage}" data-index="${index}">${renderToString(
         <CashmemoHeaderPreviewSheet
           pageType={cashmemoLayoutPageType}
           dealerDetails={dealerDetails}
@@ -5533,62 +5533,12 @@ function App() {
       <html>
         <head>
           <title>Cashmemo Header Layout</title>
-          <link rel="stylesheet" href="CashMemoPrint.css" />
           <style>
-            @page {
-              size: A4 portrait;
-              margin: 4mm 6mm 5mm;
-            }
-            html, body {
-              margin: 0;
-              padding: 0;
-              background: #ffffff;
-              color: #111;
-              font-family: Calibri, sans-serif;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            * {
-              box-sizing: border-box;
-            }
-            .cashmemo-layout-preview-page {
-              width: 100%;
-              min-height: calc(297mm - 9mm);
-              display: flex;
-              flex-direction: column;
-              gap: 2mm;
-            }
-            .cashmemo-layout-preview-slot {
-              width: 100%;
-              border: 1px solid #111;
-              overflow: hidden;
-              background: #fff;
-            }
-            .cashmemo-layout-preview-slot--2 {
-              height: 142mm;
-            }
-            .cashmemo-layout-preview-slot--3 {
-              height: 94mm;
-            }
-            .cashmemo-layout-preview-slot--4 {
-              height: 68.75mm;
-            }
-            .cashmemo-layout-placeholder {
-              visibility: hidden;
-            }
-            .header-layout-sheet {
-              height: 100%;
-            }
-            .cashmemo-layout-placeholder--left {
-              flex: 1;
-            }
-            .cashmemo-layout-placeholder--right {
-              flex: 1;
-            }
+            ${CASHMEMO_LAYOUT_PRINT_STYLES}
           </style>
         </head>
         <body>
-          <div class="cashmemo-layout-preview-page">
+          <div id="print-root">
             ${previewMarkup}
           </div>
         </body>
