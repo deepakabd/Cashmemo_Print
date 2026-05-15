@@ -4699,6 +4699,42 @@
   flex-wrap: wrap;
 }
 
+.dictionary-template-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f4f8ff;
+  border: 1px solid #d8e5fb;
+  color: #36557c;
+  font-size: 12px;
+}
+
+.dictionary-template-preview {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #d9e5f7;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.dictionary-template-preview__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #35506f;
+  font-size: 12px;
+}
+
+.dictionary-template-preview__header span {
+  color: #5b7390;
+}
+
+.dictionary-template-preview__table {
+  min-width: 360px;
+}
+
 .admin-actions button {
   padding: 6px 9px;
   font-size: 11px;
