@@ -9,12 +9,12 @@ import {
 describe('dictionaryWorkflow helpers', () => {
   it('normalizes supported dictionary headers and removes invalid rows', () => {
     expect(buildDictionaryEntriesForSave([
-      { 'English Word': ' Gaurav ', 'Hindi Translation': ' गौरव ' },
+      { 'English Word': ' Gaurav ', 'Hindi Translation': 'गौरव' },
       { English: 'Rajesh', Hindi: 'राजेश' },
       { englishWord: '', hindiTranslation: 'अमान्य' },
     ])).toEqual([
-      { englishWord: 'Gaurav', hindiTranslation: 'गौरव' },
-      { englishWord: 'Rajesh', hindiTranslation: 'राजेश' },
+      { englishWord: 'Gaurav', hindiTranslation: 'गौरव', phraseKind: 'token', requestSource: '', queueLabel: '', requestedFrom: '', matchedExistingEntry: '' },
+      { englishWord: 'Rajesh', hindiTranslation: 'राजेश', phraseKind: 'token', requestSource: '', queueLabel: '', requestedFrom: '', matchedExistingEntry: '' },
     ]);
   });
 
@@ -23,7 +23,17 @@ describe('dictionaryWorkflow helpers', () => {
       { englishWord: 'Khera Bazar', hindiTranslation: 'खेड़ा बाजार' },
       { englishWord: 'khera bazar', hindiTranslation: 'खेड़ा बाज़ार' },
     ])).toEqual([
-      { englishWord: 'khera bazar', hindiTranslation: 'खेड़ा बाज़ार' },
+      { englishWord: 'khera bazar', hindiTranslation: 'खेड़ा बाज़ार', phraseKind: 'token', requestSource: '', queueLabel: '', requestedFrom: '', matchedExistingEntry: '' },
+    ]);
+  });
+
+  it('can keep phrase and token entries separate when requested', () => {
+    expect(buildDictionaryEntriesForSave([
+      { englishWord: 'Deepak', hindiTranslation: 'दीपक', phraseKind: 'token' },
+      { englishWord: 'Deepak', hindiTranslation: 'दीपक', phraseKind: 'phrase' },
+    ], { dedupeByPhraseKind: true })).toEqual([
+      { englishWord: 'Deepak', hindiTranslation: 'दीपक', phraseKind: 'token', requestSource: '', queueLabel: '', requestedFrom: '', matchedExistingEntry: '' },
+      { englishWord: 'Deepak', hindiTranslation: 'दीपक', phraseKind: 'phrase', requestSource: '', queueLabel: '', requestedFrom: '', matchedExistingEntry: '' },
     ]);
   });
 

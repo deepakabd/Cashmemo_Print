@@ -1,59 +1,71 @@
-import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { collection, doc, getDocs, getFirestore, updateDoc } from 'firebase/firestore';
 
 const AdminPage = () => {
   const [users, setUsers] = useState([]);
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [activeUsers, setActiveUsers] = useState(0);
-  const [blockedUsers, setBlockedUsers] = useState(0);
-  const [expiredUsers, setExpiredUsers] = useState(0);
-  const [pendingRegistrations, setPendingRegistrations] = useState(0);
-  const [unreadFeedback, setUnreadFeedback] = useState(0);
-
-  const fetchUsers = async () => {
-    const db = getFirestore();
-    try {
-      const usersCollection = collection(db, 'users');
-      const usersSnapshot = await getDocs(usersCollection);
-      const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(usersList);
-      setTotalUsers(usersList.length);
-      setActiveUsers(usersList.filter((user) => user.active).length);
-      setBlockedUsers(usersList.filter((user) => user.blocked).length);
-      setExpiredUsers(usersList.filter((user) => user.expired).length);
-      setPendingRegistrations(usersList.filter((user) => !user.approved).length);
-      setUnreadFeedback(1); // Placeholder for unread feedback count
-    } catch (err) {
-      setError('Failed to fetch users.');
-      setLoading(false);
-    }
-  };
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchUsers();
+    let cancelled = false;
+
+    const fetchUsers = async () => {
+      const db = getFirestore();
+      setLoading(true);
+      setError('');
+
+      try {
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const usersList = usersSnapshot.docs.map((userDoc) => ({
+          id: userDoc.id,
+          ...userDoc.data(),
+        }));
+
+        if (!cancelled) {
+          setUsers(usersList);
+        }
+      } catch {
+        if (!cancelled) {
+          setError('Failed to fetch users.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchUsers();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleApprove = async (userId) => {
     const db = getFirestore();
-    const userDoc = doc(db, 'users', userId);
+    setError('');
+
     try {
-      await updateDoc(userDoc, {
-        approved: true
+      await updateDoc(doc(db, 'users', userId), {
+        approved: true,
       });
-      // Refresh the user list
-      fetchUsers();
-    } catch (err) {
+      setUsers((prev) => prev.map((user) => (
+        user.id === userId ? { ...user, approved: true } : user
+      )));
+    } catch {
       setError('Failed to approve user.');
     }
   };
 
-  const generateDealerCode = () => {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
-  };
-
-  const generatePin = () => {
-    return Math.floor(1000 + Math.random() * 9000).toString();
-  };
+  const totalUsers = users.length;
+  const activeUsers = users.filter((user) => user.status === 'active' || user.active).length;
+  const blockedUsers = users.filter((user) => user.status === 'disabled' || user.blocked).length;
+  const expiredUsers = users.filter((user) => user.status === 'expired' || user.expired).length;
+  const pendingRegistrations = users.filter((user) => user.status === 'pending' || !user.approved).length;
+  const unreadFeedback = users.filter((user) => (
+    Array.isArray(user.feedbackEntries) && user.feedbackEntries.some((entry) => entry?.read === false)
+  )).length;
 
   if (loading) {
     return <div>Loading...</div>;
@@ -66,6 +78,15 @@ const AdminPage = () => {
   return (
     <div className="admin-container">
       <h2>Admin - User Approval</h2>
+      <div className="admin-summary-grid">
+        <div>Total Users: {totalUsers}</div>
+        <div>Active Users: {activeUsers}</div>
+        <div>Blocked Users: {blockedUsers}</div>
+        <div>Expired Users: {expiredUsers}</div>
+        <div>Pending Registrations: {pendingRegistrations}</div>
+        <div>Unread Feedback Threads: {unreadFeedback}</div>
+      </div>
+
       <table className="user-table">
         <thead>
           <tr>
@@ -78,64 +99,24 @@ const AdminPage = () => {
           </tr>
         </thead>
         <tbody>
-          {users.map(user => (
+          {users.map((user) => (
             <tr key={user.id}>
-              <td>{user.name}</td>
-              <td>{user.email}</td>
-              <td>{user.dealerCode}</td>
-              <td>{user.pin}</td>
+              <td>{user.name || user.dealerName || '-'}</td>
+              <td>{user.email || '-'}</td>
+              <td>{user.dealerCode || '-'}</td>
+              <td>{user.pin || '-'}</td>
               <td>{user.approved ? 'Approved' : 'Pending'}</td>
               <td>
                 {!user.approved && (
-                  <button onClick={() => handleApprove(user.id)}>Approve</button>
+                  <button type="button" onClick={() => handleApprove(user.id)}>
+                    Approve
+                  </button>
                 )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-
-      <h2>Generate Credentials (Book View)</h2>
-      <form>
-        <label>
-          Dealer Name:
-          <input type="text" placeholder="Enter Dealer Name" />
-        </label>
-        <label>
-          Email:
-          <input type="email" placeholder="Enter Email" />
-        </label>
-        <label>
-          Package:
-          <input type="text" placeholder="पैकेज चुनें" />
-        </label>
-        <label>
-          Dealer Code:
-          <input type="text" placeholder="Dealer Code" />
-        </label>
-        <label>
-          Pin:
-          <input type="text" placeholder="Pin" />
-        </label>
-        <label>
-          Activation Date:
-          <input type="date" />
-        </label>
-        <label>
-          Valid Till:
-          <input type="date" />
-        </label>
-        <button type="submit">Generate Credentials</button>
-      </form>
-
-      <h2>Generated Credentials List:</h2>
-      <ul>
-        {users.map((user) => (
-          <li key={user.id}>
-            {user.name} ({user.email}) - Dealer Code: {user.dealerCode}, Pin: {user.pin}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 };

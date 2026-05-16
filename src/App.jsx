@@ -1,7 +1,6 @@
-﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
-import RateUpdatePage from './RateUpdatePage';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -16,6 +15,11 @@ import { getHindiValue, setHindiRuntimeDictionary } from './hindiPrint';
 import {
   buildDictionaryEntriesForSave,
   DICTIONARY_TEMPLATE_ROWS,
+  filterChangedDictionaryEntries,
+  getDictionaryTranslation,
+  getExistingDictionaryEntry,
+  buildDictionaryApprovalPayload,
+  splitDictionaryImportEntries,
   mergeDictionaryWithEntries,
 } from './utils/dictionaryWorkflow';
 import {
@@ -31,6 +35,7 @@ import { useParsedDataFilters } from './hooks/useParsedDataFilters';
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
 const LazyHomeDashboard = lazy(() => import('./components/HomeDashboard'));
 const LazyDataWorkspace = lazy(() => import('./components/DataWorkspace'));
+const LazyRateUpdatePage = lazy(() => import('./RateUpdatePage'));
 const LazyRegisterPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.RegisterPanel })));
 const LazyAdminLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.AdminLoginPanel })));
 const LazyUserLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.UserLoginPanel })));
@@ -447,6 +452,30 @@ const sanitizeFilenamePart = (value = '') => String(value || '')
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '') || 'all';
 
+const normalizeDealerCode = (value = '') => String(value || '').trim().toUpperCase();
+
+const findUsersByDealerCode = (users = [], dealerCode = '') => {
+  const normalizedDealerCode = normalizeDealerCode(dealerCode);
+  if (!normalizedDealerCode) return [];
+  return (Array.isArray(users) ? users : []).filter((user) => (
+    normalizeDealerCode(user?.dealerCode) === normalizedDealerCode
+  ));
+};
+
+const getApiDictionaryPreviewEntry = (entry = {}) => {
+  const payload = entry?.payload || {};
+  return {
+    approvalId: entry?.id || entry?.approvalId || payload?.approvalId || '',
+    englishWord: String(entry?.englishWord || payload?.englishWord || payload?.eng || '').trim(),
+    hindiTranslation: String(entry?.hindiTranslation || payload?.hindiTranslation || payload?.hin || '').trim(),
+    phraseKind: String(entry?.phraseKind || payload?.phraseKind || 'token').trim(),
+    requestSource: String(entry?.requestSource || payload?.requestSource || '').trim(),
+    queueLabel: String(entry?.queueLabel || payload?.queueLabel || '').trim(),
+    requestedFrom: String(entry?.requestedFrom || payload?.requestedFrom || '').trim(),
+    status: String(entry?.status || payload?.status || 'pending').trim(),
+  };
+};
+
 const getDictionaryDocId = (englishWord = '') => (
   encodeURIComponent(String(englishWord || '').trim().toLowerCase()).replace(/\./g, '%2E') || `word-${Date.now()}`
 );
@@ -581,21 +610,6 @@ const getDrawerDetailSections = (data = {}) => {
   };
 };
 
-const getExistingDictionaryEntry = (dictionary = {}, englishWord = '') => {
-  const normalized = String(englishWord || '').trim().toLowerCase();
-  if (!normalized) return null;
-  const existingKey = Object.keys(dictionary || {}).find((key) => String(key || '').trim().toLowerCase() === normalized);
-  if (!existingKey) return null;
-  return {
-    englishWord: existingKey,
-    hindiTranslation: dictionary[existingKey],
-  };
-};
-
-const getDictionaryTranslation = (dictionary = {}, englishWord = '') => (
-  getExistingDictionaryEntry(dictionary, englishWord)?.hindiTranslation || ''
-);
-
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS.filter((pkg) => !pkg.toLowerCase().includes('demo'));
 
 const normalizePendingTypeLabel = (type) => {
@@ -712,6 +726,14 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [translationObservability, setTranslationObservability] = useState({
+    apiCount: 0,
+    dictionaryCount: 0,
+    transliterationCount: 0,
+    queuedCount: 0,
+    lastUpdatedAt: '',
+    apiWords: [],
+  });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
   const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
 
@@ -974,9 +996,7 @@ function App() {
       return [];
     }
 
-    const changedEntries = entries.filter((entry) => (
-      String(getDictionaryTranslation(translationDictionary, entry.englishWord) || '').trim() !== entry.hindiTranslation
-    ));
+    const changedEntries = filterChangedDictionaryEntries(translationDictionary, entries);
 
     if (changedEntries.length === 0) {
       if (options.notifySuccess) {
@@ -1010,10 +1030,11 @@ function App() {
   }, [pushToast, translationDictionary]);
 
   const createDictionaryApprovalRecords = useCallback(async (rows, options = {}) => {
-    const entries = buildDictionaryEntriesForSave(rows);
+    const entries = buildDictionaryEntriesForSave(rows, { dedupeByPhraseKind: true });
     if (entries.length === 0) return [];
 
     const normalizedPendingWords = new Set();
+    const existingPendingApprovalsByWord = new Map();
     if (options.skipExistingApprovals) {
       try {
         const existingApprovalsSnap = await getDocs(collection(db, 'updateApprovals'));
@@ -1023,7 +1044,13 @@ function App() {
           const approvalType = String(data.type || '').trim().toLowerCase();
           if (!['dictionary', 'dict', 'translationdictionary'].includes(approvalType)) return;
           const englishWord = String(data?.payload?.englishWord || data?.payload?.eng || '').trim().toLowerCase();
-          if (englishWord) normalizedPendingWords.add(englishWord);
+          if (englishWord) {
+            normalizedPendingWords.add(englishWord);
+            existingPendingApprovalsByWord.set(englishWord, {
+              id: approvalDoc.id,
+              ...data,
+            });
+          }
         });
       } catch (error) {
         void error;
@@ -1038,34 +1065,65 @@ function App() {
       return true;
     });
 
-    if (filteredEntries.length === 0) return [];
+    if (filteredEntries.length === 0) {
+      if (!options.skipExistingApprovals) return [];
+      return entries
+        .map((entry) => {
+          const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
+          const existingApproval = existingPendingApprovalsByWord.get(normalizedWord);
+          if (!existingApproval) return null;
+          return {
+            id: existingApproval.id,
+            ...existingApproval,
+          };
+        })
+        .filter(Boolean);
+    }
 
     const approvalDocs = await Promise.all(filteredEntries.map((entry, index) => addDoc(collection(db, 'updateApprovals'), {
       userId: options.userId || '',
       dealerCode: options.dealerCode || 'ADMIN-IMPORT',
       dealerName: options.dealerName || 'Admin Bulk Import',
       type: 'dictionary',
-      payload: {
-        englishWord: entry.englishWord,
-        hindiTranslation: entry.hindiTranslation,
-        clientRequestId: options.clientRequestIdPrefix
-          ? `${options.clientRequestIdPrefix}-${index}`
-          : `admin-dict-${Date.now()}-${index}`,
-        importMode: options.importMode || 'duplicate-review',
-        requestSource: options.requestSource || 'manual',
-        queueLabel: options.queueLabel || 'Dictionary',
-        requestedFrom: options.requestedFrom || '',
-      },
+      payload: buildDictionaryApprovalPayload(entry, {
+        ...options,
+        matchedExistingEntry: options.matchedExistingEntry
+          || getExistingDictionaryEntry(translationDictionary, entry.englishWord)?.hindiTranslation
+          || '',
+      }, index),
       status: 'pending',
       requestedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       source: options.source || 'admin-import',
     })));
 
-    return approvalDocs.map((docRef, index) => ({
+    const createdApprovals = approvalDocs.map((docRef, index) => ({
       id: docRef.id,
       ...filteredEntries[index],
     }));
+
+    if (!options.skipExistingApprovals) {
+      return createdApprovals;
+    }
+
+    const reusedApprovals = entries
+      .map((entry) => {
+        const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
+        const existingApproval = existingPendingApprovalsByWord.get(normalizedWord);
+        if (!existingApproval) return null;
+        return {
+          id: existingApproval.id,
+          ...existingApproval,
+        };
+      })
+      .filter(Boolean);
+
+    const mergedApprovals = new Map();
+    [...createdApprovals, ...reusedApprovals].forEach((approval) => {
+      mergedApprovals.set(String(approval.id || ''), approval);
+    });
+
+    return Array.from(mergedApprovals.values());
   }, [translationDictionary]);
 
   const readUsersData = () => {
@@ -1320,6 +1378,7 @@ function App() {
 
   const handleUserLoginSubmit = async () => {
     const dealerCode = userDealerCode.trim();
+    const normalizedDealerCode = normalizeDealerCode(dealerCode);
     const pin = userPin.trim();
     if (!dealerCode || !pin) {
       pushToast('Dealer Code aur PIN required hai.', 'error');
@@ -1333,6 +1392,11 @@ function App() {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('dealerCode', '==', dealerCode));
       const snap = await getDocs(q);
+      if (snap.size > 1) {
+        pushToast('Is dealer code par multiple accounts mil rahe hain. Login block kiya gaya hai, admin se contact kijiye.', 'error');
+        setIsUserLoginSubmitting(false);
+        return;
+      }
       if (!snap.empty) {
         const docData = snap.docs[0].data();
         const status = String(docData?.status || 'active').toLowerCase();
@@ -1413,7 +1477,7 @@ function App() {
     }
 
     let users = readUsersData();
-    const existingIdx = users.findIndex((u) => String(u?.dealerCode || '').trim() === dealerCode);
+    const existingIdx = users.findIndex((u) => normalizeDealerCode(u?.dealerCode) === normalizedDealerCode);
     const localUser = existingIdx >= 0
       ? { ...users[existingIdx], ...firestoreUser, id: firestoreUser.id }
       : {
@@ -1896,7 +1960,7 @@ function App() {
   const AdminPanel = ({ onClose, onAdminLogout }) => {
     const adminImportRef = useRef(null);
     const dictionaryImportRef = useRef(null);
-    const [adminItemsPerPage] = useState(10);
+    const [adminItemsPerPage] = useState(30);
     const [adminRoleMode, setAdminRoleMode] = useState('viewer');
     const [adminRoleLoading, setAdminRoleLoading] = useState(true);
     const {
@@ -1976,6 +2040,8 @@ function App() {
     const [editingUserId, setEditingUserId] = useState('');
     const [dictionaryApprovalEdits, setDictionaryApprovalEdits] = useState({});
     const [dictionaryRequestView, setDictionaryRequestView] = useState('new');
+    const [apiWordsCurrentPage, setApiWordsCurrentPage] = useState(1);
+    const [selectedApiWordApprovalIds, setSelectedApiWordApprovalIds] = useState([]);
     const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
     const [adminReplyDraft, setAdminReplyDraft] = useState('');
     const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
@@ -2738,10 +2804,16 @@ function App() {
         const requestId = String(id || '');
         const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
         let requestStatusUpdated = false;
-        const existingUser = users.find((u) => String(u?.dealerCode || '').trim() === String(req?.dealerCode || '').trim());
+        const normalizedDealerCode = normalizeDealerCode(req?.dealerCode);
+        const existingUsers = findUsersByDealerCode(users, normalizedDealerCode);
+        if (existingUsers.length > 1) {
+          pushToast(`Duplicate dealer code ${normalizedDealerCode} found. Resolve duplicates before approval.`, 'error');
+          return { ok: false, reason: `Duplicate dealer code ${normalizedDealerCode} found.` };
+        }
+        const existingUser = existingUsers[0];
         if (existingUser?.id) {
           await updateDoc(doc(db, 'users', existingUser.id), {
-            dealerCode: req.dealerCode || '',
+            dealerCode: normalizedDealerCode,
             dealerName: req.dealerName || '',
             mobile: req.mobile || '',
             email: req.email || '',
@@ -2757,7 +2829,7 @@ function App() {
           });
         } else {
           await addDoc(collection(db, 'users'), {
-            dealerCode: req.dealerCode || '',
+            dealerCode: normalizedDealerCode,
             dealerName: req.dealerName || '',
             mobile: req.mobile || '',
             email: req.email || '',
@@ -2835,11 +2907,17 @@ function App() {
         pushToast('Dealer code, dealer name, package and PIN required.', 'error');
         return;
       }
-      if (!confirmAdminAction(`Create manual user ${newUser.dealerCode.trim()}?`)) return;
+      const normalizedDealerCode = normalizeDealerCode(newUser.dealerCode);
+      if (!confirmAdminAction(`Create manual user ${normalizedDealerCode}?`)) return;
       try {
+        const matchingUsers = findUsersByDealerCode(users, normalizedDealerCode);
+        if (matchingUsers.length > 0) {
+          pushToast(`Dealer code ${normalizedDealerCode} already exists. Existing user ko edit kijiye, naya duplicate create mat kijiye.`, 'error');
+          return;
+        }
         const validity = computeValidityDates(newUser.package);
         await addDoc(collection(db, 'users'), {
-          dealerCode: newUser.dealerCode.trim(),
+          dealerCode: normalizedDealerCode,
           dealerName: newUser.dealerName.trim(),
           mobile: newUser.mobile.trim(),
           email: newUser.email.trim(),
@@ -2856,7 +2934,7 @@ function App() {
         });
         setNewUser({ dealerCode: '', dealerName: '', mobile: '', email: '', package: '', pin: '', role: 'operator' });
         await loadData();
-        logAdminActivity('manual_user_created', { dealerCode: newUser.dealerCode.trim() });
+        logAdminActivity('manual_user_created', { dealerCode: normalizedDealerCode });
       } catch {
         pushToast('Create user failed.', 'error');
       }
@@ -3073,8 +3151,14 @@ function App() {
         }));
       return [...pendingUpdateApprovals, ...pendingDictionaryApprovals];
     });
+    const collectionDictionaryPendingApprovals = pendingApprovalRequests.filter((approval) => (
+      normalizeApprovalType(approval.type) === 'dictionary'
+    ));
     const collectionPendingApprovals = pendingApprovalRequests.filter((approval) => {
       const approvalType = normalizeApprovalType(approval.type);
+      if (approvalType === 'dictionary') {
+        return false;
+      }
       const user = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
       const pendingStatus = user?.pendingUpdates?.[approvalType]?.status;
       if (!pendingStatus) return true;
@@ -3084,7 +3168,7 @@ function App() {
       if (!approval) return '';
       const approvalType = normalizeApprovalType(approval.type);
       if (approvalType === 'dictionary') {
-        return `${approvalType}-${approval.approvalId || approval.clientRequestId || approval.id || approval.userId || approval.dealerCode || ''}`;
+        return `${approvalType}-${approval.approvalId || approval.clientRequestId || approval?.payload?.clientRequestId || approval.id || approval.userId || approval.dealerCode || ''}`;
       }
       const userKey = approval.userId || approval.dealerCode || approval.dealerName || '';
       if (userKey) {
@@ -3094,7 +3178,7 @@ function App() {
     };
 
     const combinedApprovalMap = new Map();
-    [...collectionPendingApprovals, ...fallbackPendingApprovals].forEach((approval) => {
+    [...collectionPendingApprovals, ...collectionDictionaryPendingApprovals, ...fallbackPendingApprovals].forEach((approval) => {
       const key = getApprovalKey(approval);
       if (!combinedApprovalMap.has(key)) {
         combinedApprovalMap.set(key, approval);
@@ -3110,12 +3194,57 @@ function App() {
       ...(dictionaryApprovalEdits[approval?.id] || {}),
     });
 
-    const isApiDictionaryApproval = (approval) => (
-      String(getDictionaryApprovalPayload(approval)?.requestSource || '').toLowerCase() === 'api'
-    );
+    const isApiDictionaryApproval = (approval) => {
+      const payload = getDictionaryApprovalPayload(approval);
+      const requestSource = String(payload?.requestSource || approval?.requestSource || '').toLowerCase();
+      const queueLabel = String(payload?.queueLabel || approval?.queueLabel || '').toLowerCase();
+      const source = String(approval?.source || '').toLowerCase();
+      const importMode = String(payload?.importMode || approval?.importMode || '').toLowerCase();
+      const requestedFrom = String(payload?.requestedFrom || approval?.requestedFrom || '').toLowerCase();
+
+      return requestSource === 'api'
+        || queueLabel === 'api request dictionary'
+        || source === 'api-print'
+        || importMode === 'api-request'
+        || requestedFrom === 'hindi cashmemo print';
+    };
 
     const apiRequestDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => isApiDictionaryApproval(approval));
     const manualDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => !isApiDictionaryApproval(approval));
+    const apiRequestApprovalMap = new Map(
+      apiRequestDictionaryApprovals.map((approval) => [String(approval.id || ''), approval])
+    );
+    const apiWordDisplayRows = (Array.isArray(translationObservability.apiWords) && translationObservability.apiWords.length > 0
+      ? translationObservability.apiWords
+      : apiRequestDictionaryApprovals.map((approval) => getApiDictionaryPreviewEntry(approval))
+    ).map((entry) => {
+      const normalizedEntry = getApiDictionaryPreviewEntry(entry);
+      const linkedApproval = apiRequestApprovalMap.get(String(normalizedEntry.approvalId || ''))
+        || apiRequestDictionaryApprovals.find((approval) => {
+          const payload = getDictionaryApprovalPayload(approval);
+          return String(payload?.englishWord || approval?.englishWord || '').trim().toLowerCase() === normalizedEntry.englishWord.toLowerCase()
+            && String(payload?.hindiTranslation || approval?.hindiTranslation || '').trim() === normalizedEntry.hindiTranslation;
+        })
+        || null;
+      return {
+        ...normalizedEntry,
+        approval: linkedApproval,
+      };
+    });
+    const apiWordTotalPages = Math.max(1, Math.ceil(apiWordDisplayRows.length / adminItemsPerPage));
+    const pagedApiWordDisplayRows = paginateAdminRows(apiWordDisplayRows, adminItemsPerPage, apiWordsCurrentPage);
+    const toggleApiWordSelection = (approvalId) => {
+      if (!approvalId) return;
+      setSelectedApiWordApprovalIds((prev) => (
+        prev.includes(approvalId)
+          ? prev.filter((item) => item !== approvalId)
+          : [...prev, approvalId]
+      ));
+    };
+    const clearSelectedApiWordApprovalIds = () => setSelectedApiWordApprovalIds([]);
+    const selectedApiWordApprovals = apiWordDisplayRows
+      .filter((entry) => entry.approval && selectedApiWordApprovalIds.includes(entry.approval.id))
+      .map((entry) => entry.approval);
     const duplicateDictionaryApprovals = manualDictionaryApprovals.filter((approval) => {
       const payload = getDictionaryApprovalPayload(approval);
       return Boolean(getExistingDictionaryEntry(translationDictionary, payload?.englishWord || payload?.eng));
@@ -3190,6 +3319,11 @@ function App() {
             dealerName: approval.dealerName || targetUser?.dealerName || '',
             approvalId: approval.id || '',
             status: 'approved',
+            requestSource: dictionaryPayload?.requestSource || 'manual',
+            requestedFrom: dictionaryPayload?.requestedFrom || '',
+            phraseKind: dictionaryPayload?.phraseKind || 'token',
+            matchedExistingEntry: dictionaryPayload?.matchedExistingEntry || '',
+            approvedBy: activeAdminEmail || 'admin',
             approvedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -3938,6 +4072,46 @@ function App() {
         },
       );
     };
+    const bulkApproveApiWords = async () => {
+      if (selectedApiWordApprovals.length === 0) return;
+      if (!confirmAdminAction(`Approve ${selectedApiWordApprovals.length} selected API word requests?`)) return;
+      await runBulkAdminAction(
+        'Approve API word requests',
+        selectedApiWordApprovals,
+        (item) => approveUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedApiWordApprovalIds();
+            pushToast(
+              failures.length === 0
+                ? `${selectedApiWordApprovals.length} API word requests approved.`
+                : `${selectedApiWordApprovals.length - failures.length} approved, ${failures.length} failed.`,
+              failures.length === 0 ? 'success' : 'info',
+            );
+          },
+        },
+      );
+    };
+    const bulkRejectApiWords = async () => {
+      if (selectedApiWordApprovals.length === 0) return;
+      if (!confirmAdminAction(`Reject ${selectedApiWordApprovals.length} selected API word requests?`)) return;
+      await runBulkAdminAction(
+        'Reject API word requests',
+        selectedApiWordApprovals,
+        (item) => rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        {
+          onComplete: (failures) => {
+            clearSelectedApiWordApprovalIds();
+            pushToast(
+              failures.length === 0
+                ? `${selectedApiWordApprovals.length} API word requests rejected.`
+                : `${selectedApiWordApprovals.length - failures.length} rejected, ${failures.length} failed.`,
+              failures.length === 0 ? 'info' : 'error',
+            );
+          },
+        },
+      );
+    };
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
       if (targets.length === 0) return;
@@ -3959,14 +4133,11 @@ function App() {
     };
 
     const saveDictionaryRowsToFirebase = async (rows, source = 'admin') => {
-      const entries = buildDictionaryEntriesForSave(rows);
+      const { entries, newEntries, duplicateEntries } = splitDictionaryImportEntries(translationDictionary, rows);
       if (!entries.length) {
         pushToast('No valid dictionary rows found. Use columns like English Word and Hindi Translation.', 'error');
         return;
       }
-
-      const newEntries = entries.filter((entry) => !getExistingDictionaryEntry(translationDictionary, entry.englishWord));
-      const duplicateEntries = entries.filter((entry) => getExistingDictionaryEntry(translationDictionary, entry.englishWord));
 
       const savedEntries = await persistDictionaryRowsToFirebase(newEntries, {
         source,
@@ -3977,6 +4148,8 @@ function App() {
       const queuedDuplicates = await createDictionaryApprovalRecords(duplicateEntries, {
         source: 'admin-import-duplicate',
         importMode: 'duplicate-review',
+        queueLabel: 'Duplicate Dictionary',
+        requestSource: 'admin-import',
       });
 
       if (savedEntries.length > 0) {
@@ -4036,6 +4209,10 @@ function App() {
       setAdminCurrentPage((prev) => Math.min(prev, adminTotalPages));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [adminTotalPages]);
+
+    useEffect(() => {
+      setApiWordsCurrentPage((prev) => Math.min(prev, apiWordTotalPages));
+    }, [apiWordTotalPages]);
 
     return (
       <div className="placeholder-container admin-panel">
@@ -4838,6 +5015,184 @@ function App() {
             <div className="dictionary-template-note">
               Bulk upload headers: <strong>English Word</strong>, <strong>Hindi Translation</strong>. Sample template button se exact format download kar sakte hain.
             </div>
+            <div className="dictionary-observability-panel">
+              <div className="dictionary-observability-panel__title">Translation Observability</div>
+              <div className="dictionary-observability-grid">
+                <div><span>API Words</span><strong>{translationObservability.apiCount}</strong></div>
+                <div><span>Dictionary Hits</span><strong>{translationObservability.dictionaryCount}</strong></div>
+                <div><span>Transliteration Fallbacks</span><strong>{translationObservability.transliterationCount}</strong></div>
+                <div><span>Queued API Requests</span><strong>{translationObservability.queuedCount}</strong></div>
+              </div>
+              <div className="dictionary-observability-panel__meta">
+                {translationObservability.lastUpdatedAt ? `Last Hindi print: ${formatDisplayDateTime(translationObservability.lastUpdatedAt)}` : 'Hindi print observability data will appear here after a print run.'}
+              </div>
+            </div>
+            <div className="dictionary-template-preview">
+              <div className="dictionary-template-preview__header">
+                <strong>API Words List</strong>
+                <span>Ye words API se aaye hain. Admin yahin se approve karke translation dictionary database me save kar sakta hai.</span>
+              </div>
+              <div className="admin-bulk-bar admin-bulk-bar--compact">
+                <span>{selectedApiWordApprovalIds.length} API word request selected</span>
+                <div className="admin-bulk-actions">
+                  <button
+                    className="admin-ghost-btn"
+                    onClick={() => setSelectedApiWordApprovalIds(apiWordDisplayRows.filter((entry) => entry.approval?.id).map((entry) => entry.approval.id))}
+                  >
+                    Select All API Words
+                  </button>
+                  <button
+                    className="admin-ghost-btn"
+                    onClick={bulkApproveApiWords}
+                    disabled={!canMutateAdminData || selectedApiWordApprovals.length === 0}
+                  >
+                    Bulk Approve
+                  </button>
+                  <button
+                    className="admin-ghost-btn"
+                    onClick={bulkRejectApiWords}
+                    disabled={!canMutateAdminData || selectedApiWordApprovals.length === 0}
+                  >
+                    Bulk Reject
+                  </button>
+                  <button
+                    className="admin-ghost-btn"
+                    onClick={clearSelectedApiWordApprovalIds}
+                    disabled={selectedApiWordApprovalIds.length === 0}
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+              </div>
+              <div className="admin-table-wrap">
+                <table className="admin-table dictionary-template-preview__table">
+                  <thead>
+                    <tr>
+                      <th>Select</th>
+                      <th>English Word</th>
+                      <th>Hindi Translation</th>
+                      <th>Phrase/Token</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedApiWordDisplayRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="admin-empty-cell">No API words captured yet. Hindi print run ke baad yahan list dikhegi.</td>
+                      </tr>
+                    ) : (
+                      pagedApiWordDisplayRows.map((entry, index) => (
+                        <tr key={`${entry.approvalId || entry.englishWord}-${index}`}>
+                          <td>
+                            {entry.approval ? (
+                              <input
+                                type="checkbox"
+                                checked={selectedApiWordApprovalIds.includes(entry.approval.id)}
+                                onChange={() => toggleApiWordSelection(entry.approval.id)}
+                              />
+                            ) : null}
+                          </td>
+                          <td>
+                            {entry.approval ? (
+                              <input
+                                className="form-input admin-inline-input"
+                                value={getDictionaryApprovalPayload(entry.approval)?.englishWord || entry.englishWord}
+                                onChange={(e) => updateDictionaryApprovalEdit(entry.approval, 'englishWord', e.target.value)}
+                                disabled={!canMutateAdminData}
+                              />
+                            ) : entry.englishWord}
+                          </td>
+                          <td>
+                            {entry.approval ? (
+                              <input
+                                className="form-input admin-inline-input"
+                                value={getDictionaryApprovalPayload(entry.approval)?.hindiTranslation || entry.hindiTranslation}
+                                onChange={(e) => updateDictionaryApprovalEdit(entry.approval, 'hindiTranslation', e.target.value)}
+                                disabled={!canMutateAdminData}
+                              />
+                            ) : entry.hindiTranslation}
+                          </td>
+                          <td>{entry.phraseKind || 'token'}</td>
+                          <td>
+                            {entry.approval
+                              ? 'Pending admin approval'
+                              : entry.status && entry.status.toLowerCase() !== 'pending'
+                                ? entry.status
+                                : 'Captured'}
+                          </td>
+                          <td>
+                            <div className="admin-actions">
+                              {entry.approval ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="admin-ghost-btn"
+                                    onClick={() => approveUpdateRequest(entry.approval)}
+                                    disabled={!canMutateAdminData}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="admin-ghost-btn"
+                                    onClick={() => rejectUpdateRequest(entry.approval)}
+                                    disabled={!canMutateAdminData}
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="admin-ghost-btn"
+                                  onClick={() => {
+                                    setDictionaryRequestView('api-request');
+                                    clearSelectedApprovalIds();
+                                  }}
+                                >
+                                  Open API Queue
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {apiWordDisplayRows.length > adminItemsPerPage && (
+                <div className="admin-pagination">
+                  <button
+                    className="admin-ghost-btn"
+                    onClick={() => setApiWordsCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={apiWordsCurrentPage === 1}
+                  >
+                    Previous
+                  </button>
+                  <div className="admin-pagination__numbers">
+                    {Array.from({ length: apiWordTotalPages }, (_, index) => index + 1).map((pageNumber) => (
+                      <button
+                        key={`api-word-page-${pageNumber}`}
+                        type="button"
+                        className={`admin-ghost-btn ${apiWordsCurrentPage === pageNumber ? 'admin-ghost-btn--active' : ''}`}
+                        onClick={() => setApiWordsCurrentPage(pageNumber)}
+                      >
+                        {pageNumber}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="admin-ghost-btn"
+                    onClick={() => setApiWordsCurrentPage((prev) => Math.min(apiWordTotalPages, prev + 1))}
+                    disabled={apiWordsCurrentPage === apiWordTotalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="dictionary-template-preview">
               <div className="dictionary-template-preview__header">
                 <strong>Sample Template View</strong>
@@ -4869,16 +5224,21 @@ function App() {
                     <th>Select</th>
                     <th>Code</th>
                     <th>Name</th>
+                    <th>Request Source</th>
+                    <th>Requested From</th>
+                    <th>Phrase/Token</th>
                     <th>English Word</th>
                     {dictionaryRequestView !== 'new' && <th>Existing Hindi</th>}
                     <th>Hindi Translation</th>
+                    <th>Approved By</th>
+                    <th>Approved At</th>
                     <th>Date</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedDictionaryApprovals.length === 0 ? (
-                    <tr><td colSpan={dictionaryRequestView === 'new' ? 7 : 8} className="admin-empty-cell">No dictionary approval requests pending.</td></tr>
+                    <tr><td colSpan={dictionaryRequestView === 'new' ? 11 : 12} className="admin-empty-cell">No dictionary approval requests pending.</td></tr>
                   ) : (
                     pagedDictionaryApprovals.map((a) => {
                       const dictionaryPayload = getDictionaryApprovalPayload(a);
@@ -4888,6 +5248,9 @@ function App() {
                           <td><input type="checkbox" checked={selectedApprovalIds.includes(a.id)} onChange={() => toggleApprovalSelection(a.id)} /></td>
                           <td>{a.dealerCode || '-'}</td>
                           <td>{a.dealerName || '-'}</td>
+                          <td>{dictionaryPayload?.requestSource || '-'}</td>
+                          <td>{dictionaryPayload?.requestedFrom || '-'}</td>
+                          <td>{dictionaryPayload?.phraseKind || '-'}</td>
                           <td>
                             <input
                               className="form-input"
@@ -4907,6 +5270,8 @@ function App() {
                               placeholder="Hindi translation"
                             />
                           </td>
+                          <td>{dictionaryPayload?.approvedBy || '-'}</td>
+                          <td>{formatDisplayDate(dictionaryPayload?.approvedAt) || '-'}</td>
                           <td>{formatDisplayDate(a.requestedAt)}</td>
                           <td>
                             <div className="admin-actions">
@@ -5835,24 +6200,42 @@ function App() {
         pushToast('Preparing translations, please wait...', 'info');
         const wordsToTranslate = new Set();
         const apiSuggestedDictionaryMap = new Map();
+        const translationCounters = {
+          apiCount: 0,
+          dictionaryCount: 0,
+          transliterationCount: 0,
+        };
 
-        const rememberApiSuggestion = (englishWord, hindiTranslation) => {
+        const rememberApiSuggestion = (englishWord, hindiTranslation, metadata = {}) => {
           const normalizedEnglishWord = String(englishWord || '').trim();
           const normalizedHindiTranslation = String(hindiTranslation || '').trim();
           if (!normalizedEnglishWord || !normalizedHindiTranslation) return;
-          apiSuggestedDictionaryMap.set(normalizedEnglishWord.toLowerCase(), {
+          const phraseKind = metadata.phraseKind || 'token';
+          const dedupeKey = `${phraseKind}:${normalizedEnglishWord.toLowerCase()}`;
+          apiSuggestedDictionaryMap.set(dedupeKey, {
             englishWord: normalizedEnglishWord,
             hindiTranslation: normalizedHindiTranslation,
+            phraseKind,
+            requestSource: 'api',
+            queueLabel: 'API Request Dictionary',
+            requestedFrom: metadata.requestedFrom || 'Hindi Cashmemo Print',
           });
         };
 
         customersToPrint.forEach((customer) => {
-          const processField = (text) => {
+          const processField = (text, options = {}) => {
             if (!text) return;
             const fullLower = String(text).toLowerCase().trim();
-            if (getDictionaryTranslation(translationDictionary, fullLower)) return;
+            if (getDictionaryTranslation(translationDictionary, fullLower)) {
+              translationCounters.dictionaryCount += 1;
+              return;
+            }
             if (translationMemoryCache.has(fullLower)) {
-              rememberApiSuggestion(text, translationMemoryCache.get(fullLower));
+              translationCounters.apiCount += 1;
+              rememberApiSuggestion(text, translationMemoryCache.get(fullLower), { phraseKind: 'phrase' });
+              return;
+            }
+            if (!options.allowApi) {
               return;
             }
 
@@ -5860,9 +6243,13 @@ function App() {
             tokens.forEach(token => {
               if (!token || /^(\s+|,|\/|-|\(|\))$/.test(token) || /^\d+$/.test(token)) return;
               const lowerToken = token.toLowerCase();
-              if (getDictionaryTranslation(translationDictionary, lowerToken)) return;
+              if (getDictionaryTranslation(translationDictionary, lowerToken)) {
+                translationCounters.dictionaryCount += 1;
+                return;
+              }
               if (translationMemoryCache.has(lowerToken)) {
-                rememberApiSuggestion(token, translationMemoryCache.get(lowerToken));
+                translationCounters.apiCount += 1;
+                rememberApiSuggestion(token, translationMemoryCache.get(lowerToken), { phraseKind: 'token' });
                 return;
               }
               if (!translationMemoryCache.has(lowerToken)) {
@@ -5871,10 +6258,10 @@ function App() {
             });
           };
 
-          processField(customer['Consumer Name']);
-          processField(customer['Address']);
-          processField(customer['Delivery Area']);
-          processField(customer['Delivery Man']);
+          processField(customer['Consumer Name'], { allowApi: true });
+          processField(customer['Address'], { allowApi: true });
+          processField(customer['Delivery Area'], { allowApi: false });
+          processField(customer['Delivery Man'], { allowApi: false });
         });
 
         if (wordsToTranslate.size > 0) {
@@ -5903,7 +6290,8 @@ function App() {
                     const hindiTranslation = translatedTextArray[idx].trim();
                     if (!hindiTranslation) return;
                     translationMemoryCache.set(word.toLowerCase(), hindiTranslation);
-                    rememberApiSuggestion(word, hindiTranslation);
+                    translationCounters.apiCount += 1;
+                    rememberApiSuggestion(word, hindiTranslation, { phraseKind: 'token' });
                   });
                 }
               }
@@ -5912,6 +6300,82 @@ function App() {
             }
           }
         }
+
+        const runtimeDictionary = mergeDictionaryWithEntries(translationDictionary, [
+          ...Array.from(translationMemoryCache.entries()).map(([englishWord, hindiTranslation]) => ({
+            englishWord,
+            hindiTranslation,
+          })),
+        ]);
+        setHindiRuntimeDictionary(runtimeDictionary);
+
+        const translateString = (fieldName, text, options = {}) => {
+          if (!text) return { text: '', usedApiSuggestion: false };
+          const fullLower = String(text).toLowerCase().trim();
+          const directMatch = getDictionaryTranslation(runtimeDictionary, fullLower);
+          if (directMatch && directMatch.toLowerCase() !== fullLower) {
+            return { text: directMatch, usedApiSuggestion: false };
+          }
+          if (translationMemoryCache.has(fullLower)) {
+            const cachedMatch = translationMemoryCache.get(fullLower);
+            if (cachedMatch && cachedMatch.toLowerCase() !== fullLower) {
+              translationCounters.apiCount += 1;
+              return { text: cachedMatch, usedApiSuggestion: true };
+            }
+          }
+          if (!options.allowApi) {
+            return { text: String(text), usedApiSuggestion: false };
+          }
+
+          const tokens = String(text).split(/(\s+|,|\/|-|\(|\))/);
+          let usedApiSuggestion = false;
+          const translatedText = tokens.map(token => {
+            if (!token || /^(\s+|,|\/|-|\(|\))$/.test(token) || /^\d+$/.test(token)) return token;
+            const lowerToken = token.toLowerCase();
+            const dictionaryValue = getDictionaryTranslation(runtimeDictionary, lowerToken);
+            if (dictionaryValue && dictionaryValue.toLowerCase() !== lowerToken) {
+              return dictionaryValue;
+            }
+            if (translationMemoryCache.has(lowerToken)) {
+              const cachedValue = translationMemoryCache.get(lowerToken);
+              if (cachedValue && cachedValue.toLowerCase() !== lowerToken) {
+                usedApiSuggestion = true;
+                translationCounters.apiCount += 1;
+                return cachedValue;
+              }
+            }
+            translationCounters.transliterationCount += 1;
+            return getHindiValue(fieldName, token);
+          }).join('');
+
+          if (/[A-Za-z]/.test(translatedText)) {
+            translationCounters.transliterationCount += 1;
+            return { text: getHindiValue(fieldName, text), usedApiSuggestion };
+          }
+
+          return { text: translatedText, usedApiSuggestion };
+        };
+
+        customersToPrint = customersToPrint.map((customer) => {
+          const translatedCustomer = { ...customer };
+          const consumerNameResult = translateString('Consumer Name', customer['Consumer Name'] || '', { allowApi: true });
+          const addressResult = translateString('Address', customer['Address'] || '', { allowApi: true });
+          const deliveryAreaResult = translateString('Delivery Area', customer['Delivery Area'] || '', { allowApi: false });
+          const deliveryManResult = translateString('Delivery Man', customer['Delivery Man'] || '', { allowApi: false });
+
+          translatedCustomer['Consumer Name Hindi'] = consumerNameResult.text;
+          translatedCustomer['Address Hindi'] = addressResult.text;
+          translatedCustomer['Delivery Area'] = deliveryAreaResult.text;
+          translatedCustomer['Delivery Man'] = deliveryManResult.text;
+
+          if (consumerNameResult.usedApiSuggestion) {
+            rememberApiSuggestion(customer['Consumer Name'] || '', consumerNameResult.text, { phraseKind: 'phrase' });
+          }
+          if (addressResult.usedApiSuggestion) {
+            rememberApiSuggestion(customer['Address'] || '', addressResult.text, { phraseKind: 'phrase' });
+          }
+          return translatedCustomer;
+        });
 
         const queuedApiDictionaryRows = await createDictionaryApprovalRecords(Array.from(apiSuggestedDictionaryMap.values()), {
           dealerCode: loggedInUser?.dealerCode || 'PRINT-API',
@@ -5928,81 +6392,20 @@ function App() {
         if (queuedApiDictionaryRows.length > 0) {
           pushToast(`${queuedApiDictionaryRows.length} API translations admin review ke liye API Request Dictionary me bhej di gayi hain.`, 'info');
         }
-
-        const runtimeDictionary = mergeDictionaryWithEntries(translationDictionary, [
-          ...Array.from(translationMemoryCache.entries()).map(([englishWord, hindiTranslation]) => ({
-            englishWord,
-            hindiTranslation,
-          })),
-        ]);
-        setHindiRuntimeDictionary(runtimeDictionary);
-
-        const translateString = (fieldName, text) => {
-          if (!text) return { text: '', usedApiSuggestion: false };
-          const fullLower = String(text).toLowerCase().trim();
-          const directMatch = getDictionaryTranslation(runtimeDictionary, fullLower);
-          if (directMatch && directMatch.toLowerCase() !== fullLower) {
-            return { text: directMatch, usedApiSuggestion: false };
-          }
-          if (translationMemoryCache.has(fullLower)) {
-            const cachedMatch = translationMemoryCache.get(fullLower);
-            if (cachedMatch && cachedMatch.toLowerCase() !== fullLower) {
-              return { text: cachedMatch, usedApiSuggestion: true };
-            }
-          }
-
-          const tokens = String(text).split(/(\s+|,|\/|-|\(|\))/);
-          let usedApiSuggestion = false;
-          const translatedText = tokens.map(token => {
-            if (!token || /^(\s+|,|\/|-|\(|\))$/.test(token) || /^\d+$/.test(token)) return token;
-            const lowerToken = token.toLowerCase();
-            const dictionaryValue = getDictionaryTranslation(runtimeDictionary, lowerToken);
-            if (dictionaryValue && dictionaryValue.toLowerCase() !== lowerToken) {
-              return dictionaryValue;
-            }
-            if (translationMemoryCache.has(lowerToken)) {
-              const cachedValue = translationMemoryCache.get(lowerToken);
-              if (cachedValue && cachedValue.toLowerCase() !== lowerToken) {
-                usedApiSuggestion = true;
-                return cachedValue;
-              }
-            }
-            return getHindiValue(fieldName, token);
-          }).join('');
-
-          if (/[A-Za-z]/.test(translatedText)) {
-            return { text: getHindiValue(fieldName, text), usedApiSuggestion };
-          }
-
-          return { text: translatedText, usedApiSuggestion };
-        };
-
-        customersToPrint = customersToPrint.map((customer) => {
-          const translatedCustomer = { ...customer };
-          const consumerNameResult = translateString('Consumer Name', customer['Consumer Name'] || '');
-          const addressResult = translateString('Address', customer['Address'] || '');
-          const deliveryAreaResult = translateString('Delivery Area', customer['Delivery Area'] || '');
-          const deliveryManResult = translateString('Delivery Man', customer['Delivery Man'] || '');
-
-          translatedCustomer['Consumer Name Hindi'] = consumerNameResult.text;
-          translatedCustomer['Address Hindi'] = addressResult.text;
-          translatedCustomer['Delivery Area'] = deliveryAreaResult.text;
-          translatedCustomer['Delivery Man'] = deliveryManResult.text;
-
-          if (consumerNameResult.usedApiSuggestion) {
-            rememberApiSuggestion(customer['Consumer Name'] || '', consumerNameResult.text);
-          }
-          if (addressResult.usedApiSuggestion) {
-            rememberApiSuggestion(customer['Address'] || '', addressResult.text);
-          }
-          if (deliveryAreaResult.usedApiSuggestion) {
-            rememberApiSuggestion(customer['Delivery Area'] || '', deliveryAreaResult.text);
-          }
-          if (deliveryManResult.usedApiSuggestion) {
-            rememberApiSuggestion(customer['Delivery Man'] || '', deliveryManResult.text);
-          }
-
-          return translatedCustomer;
+        const apiWordPreviewRows = (
+          queuedApiDictionaryRows.length > 0
+            ? queuedApiDictionaryRows
+            : Array.from(apiSuggestedDictionaryMap.values())
+        )
+          .map((entry) => getApiDictionaryPreviewEntry(entry))
+          .filter((entry) => entry.englishWord && entry.hindiTranslation);
+        setTranslationObservability({
+          apiCount: apiWordPreviewRows.length,
+          dictionaryCount: translationCounters.dictionaryCount,
+          transliterationCount: translationCounters.transliterationCount,
+          queuedCount: queuedApiDictionaryRows.length,
+          lastUpdatedAt: new Date().toISOString(),
+          apiWords: apiWordPreviewRows,
         });
       }
 
@@ -8507,11 +8910,13 @@ function App() {
             </Suspense>
           )}
           {showRateUpdate && (
-            <RateUpdatePage
-              onClose={navigateToHome}
-              initialRatesData={Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null}
-              onSaveRates={handleSaveRatesForUser}
-            />
+            <Suspense fallback={<div className="placeholder-container">Loading rate update...</div>}>
+              <LazyRateUpdatePage
+                onClose={navigateToHome}
+                initialRatesData={Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null}
+                onSaveRates={handleSaveRatesForUser}
+              />
+            </Suspense>
           )}
           {showBankDetails && (
             <Suspense fallback={<div className="placeholder-container">Loading bank details...</div>}>

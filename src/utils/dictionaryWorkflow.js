@@ -1,12 +1,14 @@
 export const DICTIONARY_TEMPLATE_ROWS = [
   { 'English Word': 'Gaurav', 'Hindi Translation': 'गौरव' },
-  { 'English Word': 'Khera Bazar', 'Hindi Translation': 'खेड़ा बाजार' },
+  { 'English Word': 'Khera Bazar', 'Hindi Translation': 'खेड़ा बाज़ार' },
   { 'English Word': 'Rajesh', 'Hindi Translation': 'राजेश' },
 ];
 
 export const normalizeDictionaryText = (value = '') => String(value || '').trim();
 
-export const buildDictionaryEntriesForSave = (rows = []) => {
+export const normalizeDictionaryKey = (value = '') => normalizeDictionaryText(value).toLowerCase();
+
+export const buildDictionaryEntriesForSave = (rows = [], options = {}) => {
   const deduped = new Map();
 
   (Array.isArray(rows) ? rows : []).forEach((row) => {
@@ -19,9 +21,17 @@ export const buildDictionaryEntriesForSave = (rows = []) => {
 
     if (!englishWord || !hindiTranslation) return;
 
-    deduped.set(englishWord.toLowerCase(), {
+    const phraseKind = row?.phraseKind || 'token';
+    const dedupeKey = options.dedupeByPhraseKind ? `${phraseKind}:${englishWord.toLowerCase()}` : englishWord.toLowerCase();
+
+    deduped.set(dedupeKey, {
       englishWord,
       hindiTranslation,
+      phraseKind,
+      requestSource: row?.requestSource || '',
+      queueLabel: row?.queueLabel || '',
+      requestedFrom: row?.requestedFrom || '',
+      matchedExistingEntry: row?.matchedExistingEntry || '',
     });
   });
 
@@ -34,4 +44,48 @@ export const mergeDictionaryWithEntries = (dictionary = {}, rows = []) => {
     nextDictionary[englishWord] = hindiTranslation;
   });
   return nextDictionary;
+};
+
+export const getExistingDictionaryEntry = (dictionary = {}, englishWord = '') => {
+  const normalized = normalizeDictionaryKey(englishWord);
+  if (!normalized) return null;
+  const existingKey = Object.keys(dictionary || {}).find((key) => normalizeDictionaryKey(key) === normalized);
+  if (!existingKey) return null;
+  return {
+    englishWord: existingKey,
+    hindiTranslation: dictionary[existingKey],
+  };
+};
+
+export const getDictionaryTranslation = (dictionary = {}, englishWord = '') => (
+  getExistingDictionaryEntry(dictionary, englishWord)?.hindiTranslation || ''
+);
+
+export const filterChangedDictionaryEntries = (dictionary = {}, rows = []) => (
+  buildDictionaryEntriesForSave(rows).filter((entry) => (
+    normalizeDictionaryText(getDictionaryTranslation(dictionary, entry.englishWord)) !== entry.hindiTranslation
+  ))
+);
+
+export const buildDictionaryApprovalPayload = (entry = {}, options = {}, index = 0) => ({
+  englishWord: normalizeDictionaryText(entry.englishWord),
+  hindiTranslation: normalizeDictionaryText(entry.hindiTranslation),
+  clientRequestId: options.clientRequestIdPrefix
+    ? `${options.clientRequestIdPrefix}-${index}`
+    : `admin-dict-${Date.now()}-${index}`,
+  importMode: options.importMode || 'duplicate-review',
+  requestSource: options.requestSource || entry.requestSource || 'manual',
+  queueLabel: options.queueLabel || entry.queueLabel || 'Dictionary',
+  requestedFrom: options.requestedFrom || entry.requestedFrom || '',
+  phraseKind: options.phraseKind || entry.phraseKind || 'token',
+  matchedExistingEntry: options.matchedExistingEntry || entry.matchedExistingEntry || '',
+});
+
+export const splitDictionaryImportEntries = (dictionary = {}, rows = []) => {
+  const entries = buildDictionaryEntriesForSave(rows);
+  return {
+    entries,
+    newEntries: entries.filter((entry) => !getExistingDictionaryEntry(dictionary, entry.englishWord)),
+    duplicateEntries: entries.filter((entry) => getExistingDictionaryEntry(dictionary, entry.englishWord)),
+  };
 };

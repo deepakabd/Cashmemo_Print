@@ -4709,6 +4709,52 @@
   font-size: 12px;
 }
 
+.dictionary-observability-panel {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #d8e3f8;
+  border-radius: 14px;
+  background: #f9fbff;
+}
+
+.dictionary-observability-panel__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #2f4f75;
+  margin-bottom: 10px;
+}
+
+.dictionary-observability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.dictionary-observability-grid div {
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e1e9f8;
+}
+
+.dictionary-observability-grid span {
+  display: block;
+  font-size: 11px;
+  color: #6a7f98;
+  margin-bottom: 4px;
+}
+
+.dictionary-observability-grid strong {
+  font-size: 18px;
+  color: #21466d;
+}
+
+.dictionary-observability-panel__meta {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #627892;
+}
+
 .dictionary-template-preview {
   margin-bottom: 16px;
   padding: 12px;
@@ -4942,6 +4988,20 @@
   color: #4f6c8c;
   font-size: 12px;
   font-weight: 700;
+}
+
+.admin-pagination__numbers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-ghost-btn--active {
+  background: #1d5fbf;
+  color: #fff;
+  border-color: #1d5fbf;
 }
 
 .admin-edit-grid {
