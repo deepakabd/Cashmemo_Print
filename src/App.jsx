@@ -1013,7 +1013,34 @@ function App() {
     const entries = buildDictionaryEntriesForSave(rows);
     if (entries.length === 0) return [];
 
-    const approvalDocs = await Promise.all(entries.map((entry, index) => addDoc(collection(db, 'updateApprovals'), {
+    const normalizedPendingWords = new Set();
+    if (options.skipExistingApprovals) {
+      try {
+        const existingApprovalsSnap = await getDocs(collection(db, 'updateApprovals'));
+        existingApprovalsSnap.docs.forEach((approvalDoc) => {
+          const data = approvalDoc.data() || {};
+          if (String(data.status || 'pending').toLowerCase() !== 'pending') return;
+          const approvalType = String(data.type || '').trim().toLowerCase();
+          if (!['dictionary', 'dict', 'translationdictionary'].includes(approvalType)) return;
+          const englishWord = String(data?.payload?.englishWord || data?.payload?.eng || '').trim().toLowerCase();
+          if (englishWord) normalizedPendingWords.add(englishWord);
+        });
+      } catch (error) {
+        void error;
+      }
+    }
+
+    const filteredEntries = entries.filter((entry) => {
+      const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
+      if (!normalizedWord) return false;
+      if (options.skipExistingStored && getExistingDictionaryEntry(translationDictionary, entry.englishWord)) return false;
+      if (options.skipExistingApprovals && normalizedPendingWords.has(normalizedWord)) return false;
+      return true;
+    });
+
+    if (filteredEntries.length === 0) return [];
+
+    const approvalDocs = await Promise.all(filteredEntries.map((entry, index) => addDoc(collection(db, 'updateApprovals'), {
       userId: options.userId || '',
       dealerCode: options.dealerCode || 'ADMIN-IMPORT',
       dealerName: options.dealerName || 'Admin Bulk Import',
@@ -1025,6 +1052,9 @@ function App() {
           ? `${options.clientRequestIdPrefix}-${index}`
           : `admin-dict-${Date.now()}-${index}`,
         importMode: options.importMode || 'duplicate-review',
+        requestSource: options.requestSource || 'manual',
+        queueLabel: options.queueLabel || 'Dictionary',
+        requestedFrom: options.requestedFrom || '',
       },
       status: 'pending',
       requestedAt: serverTimestamp(),
@@ -1034,9 +1064,9 @@ function App() {
 
     return approvalDocs.map((docRef, index) => ({
       id: docRef.id,
-      ...entries[index],
+      ...filteredEntries[index],
     }));
-  }, []);
+  }, [translationDictionary]);
 
   const readUsersData = () => {
     try {
@@ -3080,11 +3110,17 @@ function App() {
       ...(dictionaryApprovalEdits[approval?.id] || {}),
     });
 
-    const duplicateDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => {
+    const isApiDictionaryApproval = (approval) => (
+      String(getDictionaryApprovalPayload(approval)?.requestSource || '').toLowerCase() === 'api'
+    );
+
+    const apiRequestDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => isApiDictionaryApproval(approval));
+    const manualDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => !isApiDictionaryApproval(approval));
+    const duplicateDictionaryApprovals = manualDictionaryApprovals.filter((approval) => {
       const payload = getDictionaryApprovalPayload(approval);
       return Boolean(getExistingDictionaryEntry(translationDictionary, payload?.englishWord || payload?.eng));
     });
-    const newDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => {
+    const newDictionaryApprovals = manualDictionaryApprovals.filter((approval) => {
       const payload = getDictionaryApprovalPayload(approval);
       return !getExistingDictionaryEntry(translationDictionary, payload?.englishWord || payload?.eng);
     });
@@ -3540,7 +3576,11 @@ function App() {
       (adminSubFilter === 'all' || normalizeApprovalType(a.type) === adminSubFilter) &&
       matchesAdminSearch([a.dealerCode, a.dealerName, a.type, a.requestedAt])
     );
-    const activeDictionaryApprovals = dictionaryRequestView === 'duplicate' ? duplicateDictionaryApprovals : newDictionaryApprovals;
+    const activeDictionaryApprovals = dictionaryRequestView === 'duplicate'
+      ? duplicateDictionaryApprovals
+      : dictionaryRequestView === 'api-request'
+        ? apiRequestDictionaryApprovals
+        : newDictionaryApprovals;
     const filteredDictionaryApprovals = activeDictionaryApprovals.filter((a) =>
       isWithinAdminDateRange(a.requestedAt || a.approvedAt || a.rejectedAt) &&
       matchesAdminSearch([
@@ -3756,7 +3796,7 @@ function App() {
       },
       'dictionary': {
         title: 'Translation Dictionary',
-        subtitle: `${newDictionaryApprovals.length} new requests, ${duplicateDictionaryApprovals.length} duplicate requests waiting.`,
+        subtitle: `${newDictionaryApprovals.length} new requests, ${duplicateDictionaryApprovals.length} duplicate requests, ${apiRequestDictionaryApprovals.length} API requests waiting.`,
       },
       'recycle-bin': {
         title: 'Recycle Bin',
@@ -4778,6 +4818,15 @@ function App() {
                 >
                   Dup-Dictonary ({duplicateDictionaryApprovals.length})
                 </button>
+                <button
+                  className={`admin-ghost-btn ${dictionaryRequestView === 'api-request' ? 'dictionary-submenu-active' : ''}`}
+                  onClick={() => {
+                    setDictionaryRequestView('api-request');
+                    clearSelectedApprovalIds();
+                  }}
+                >
+                  API Request Dictionary ({apiRequestDictionaryApprovals.length})
+                </button>
                 <button className="admin-ghost-btn" onClick={() => dictionaryImportRef.current?.click()} disabled={!canMutateAdminData}>Import Excel</button>
                 <button className="admin-ghost-btn" onClick={downloadDictionaryTemplate}>Sample Template</button>
                 <input ref={dictionaryImportRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleDictionaryImport} />
@@ -4821,7 +4870,7 @@ function App() {
                     <th>Code</th>
                     <th>Name</th>
                     <th>English Word</th>
-                    {dictionaryRequestView === 'duplicate' && <th>Existing Hindi</th>}
+                    {dictionaryRequestView !== 'new' && <th>Existing Hindi</th>}
                     <th>Hindi Translation</th>
                     <th>Date</th>
                     <th>Actions</th>
@@ -4829,7 +4878,7 @@ function App() {
                 </thead>
                 <tbody>
                   {pagedDictionaryApprovals.length === 0 ? (
-                    <tr><td colSpan={dictionaryRequestView === 'duplicate' ? 8 : 7} className="admin-empty-cell">No dictionary approval requests pending.</td></tr>
+                    <tr><td colSpan={dictionaryRequestView === 'new' ? 7 : 8} className="admin-empty-cell">No dictionary approval requests pending.</td></tr>
                   ) : (
                     pagedDictionaryApprovals.map((a) => {
                       const dictionaryPayload = getDictionaryApprovalPayload(a);
@@ -4847,7 +4896,7 @@ function App() {
                               placeholder="English word"
                             />
                           </td>
-                          {dictionaryRequestView === 'duplicate' && (
+                          {dictionaryRequestView !== 'new' && (
                             <td className="dictionary-existing-value">{existingEntry?.hindiTranslation || '-'}</td>
                           )}
                           <td>
@@ -5785,19 +5834,38 @@ function App() {
       if (isHindiPrint) {
         pushToast('Preparing translations, please wait...', 'info');
         const wordsToTranslate = new Set();
+        const apiSuggestedDictionaryMap = new Map();
+
+        const rememberApiSuggestion = (englishWord, hindiTranslation) => {
+          const normalizedEnglishWord = String(englishWord || '').trim();
+          const normalizedHindiTranslation = String(hindiTranslation || '').trim();
+          if (!normalizedEnglishWord || !normalizedHindiTranslation) return;
+          apiSuggestedDictionaryMap.set(normalizedEnglishWord.toLowerCase(), {
+            englishWord: normalizedEnglishWord,
+            hindiTranslation: normalizedHindiTranslation,
+          });
+        };
 
         customersToPrint.forEach((customer) => {
           const processField = (text) => {
             if (!text) return;
             const fullLower = String(text).toLowerCase().trim();
             if (getDictionaryTranslation(translationDictionary, fullLower)) return;
-            if (translationMemoryCache.has(fullLower)) return;
+            if (translationMemoryCache.has(fullLower)) {
+              rememberApiSuggestion(text, translationMemoryCache.get(fullLower));
+              return;
+            }
 
             const tokens = String(text).split(/(\s+|,|\/|-|\(|\))/);
             tokens.forEach(token => {
               if (!token || /^(\s+|,|\/|-|\(|\))$/.test(token) || /^\d+$/.test(token)) return;
               const lowerToken = token.toLowerCase();
-              if (!getDictionaryTranslation(translationDictionary, lowerToken) && !translationMemoryCache.has(lowerToken)) {
+              if (getDictionaryTranslation(translationDictionary, lowerToken)) return;
+              if (translationMemoryCache.has(lowerToken)) {
+                rememberApiSuggestion(token, translationMemoryCache.get(lowerToken));
+                return;
+              }
+              if (!translationMemoryCache.has(lowerToken)) {
                 wordsToTranslate.add(token);
               }
             });
@@ -5835,6 +5903,7 @@ function App() {
                     const hindiTranslation = translatedTextArray[idx].trim();
                     if (!hindiTranslation) return;
                     translationMemoryCache.set(word.toLowerCase(), hindiTranslation);
+                    rememberApiSuggestion(word, hindiTranslation);
                   });
                 }
               }
@@ -5842,6 +5911,22 @@ function App() {
               console.error("Translation API failed:", error);
             }
           }
+        }
+
+        const queuedApiDictionaryRows = await createDictionaryApprovalRecords(Array.from(apiSuggestedDictionaryMap.values()), {
+          dealerCode: loggedInUser?.dealerCode || 'PRINT-API',
+          dealerName: loggedInUser?.dealerName || 'Hindi Print',
+          source: 'api-print',
+          requestSource: 'api',
+          queueLabel: 'API Request Dictionary',
+          requestedFrom: 'Hindi Cashmemo Print',
+          importMode: 'api-request',
+          clientRequestIdPrefix: `api-print-${Date.now()}`,
+          skipExistingStored: true,
+          skipExistingApprovals: true,
+        });
+        if (queuedApiDictionaryRows.length > 0) {
+          pushToast(`${queuedApiDictionaryRows.length} API translations admin review ke liye API Request Dictionary me bhej di gayi hain.`, 'info');
         }
 
         const runtimeDictionary = mergeDictionaryWithEntries(translationDictionary, [
@@ -5853,20 +5938,21 @@ function App() {
         setHindiRuntimeDictionary(runtimeDictionary);
 
         const translateString = (fieldName, text) => {
-          if (!text) return '';
+          if (!text) return { text: '', usedApiSuggestion: false };
           const fullLower = String(text).toLowerCase().trim();
           const directMatch = getDictionaryTranslation(runtimeDictionary, fullLower);
           if (directMatch && directMatch.toLowerCase() !== fullLower) {
-            return directMatch;
+            return { text: directMatch, usedApiSuggestion: false };
           }
           if (translationMemoryCache.has(fullLower)) {
             const cachedMatch = translationMemoryCache.get(fullLower);
             if (cachedMatch && cachedMatch.toLowerCase() !== fullLower) {
-              return cachedMatch;
+              return { text: cachedMatch, usedApiSuggestion: true };
             }
           }
 
           const tokens = String(text).split(/(\s+|,|\/|-|\(|\))/);
+          let usedApiSuggestion = false;
           const translatedText = tokens.map(token => {
             if (!token || /^(\s+|,|\/|-|\(|\))$/.test(token) || /^\d+$/.test(token)) return token;
             const lowerToken = token.toLowerCase();
@@ -5877,6 +5963,7 @@ function App() {
             if (translationMemoryCache.has(lowerToken)) {
               const cachedValue = translationMemoryCache.get(lowerToken);
               if (cachedValue && cachedValue.toLowerCase() !== lowerToken) {
+                usedApiSuggestion = true;
                 return cachedValue;
               }
             }
@@ -5884,18 +5971,37 @@ function App() {
           }).join('');
 
           if (/[A-Za-z]/.test(translatedText)) {
-            return getHindiValue(fieldName, text);
+            return { text: getHindiValue(fieldName, text), usedApiSuggestion };
           }
 
-          return translatedText;
+          return { text: translatedText, usedApiSuggestion };
         };
 
         customersToPrint = customersToPrint.map((customer) => {
           const translatedCustomer = { ...customer };
-          translatedCustomer['Consumer Name Hindi'] = translateString('Consumer Name', customer['Consumer Name'] || '');
-          translatedCustomer['Address Hindi'] = translateString('Address', customer['Address'] || '');
-          translatedCustomer['Delivery Area'] = translateString('Delivery Area', customer['Delivery Area'] || '');
-          translatedCustomer['Delivery Man'] = translateString('Delivery Man', customer['Delivery Man'] || '');
+          const consumerNameResult = translateString('Consumer Name', customer['Consumer Name'] || '');
+          const addressResult = translateString('Address', customer['Address'] || '');
+          const deliveryAreaResult = translateString('Delivery Area', customer['Delivery Area'] || '');
+          const deliveryManResult = translateString('Delivery Man', customer['Delivery Man'] || '');
+
+          translatedCustomer['Consumer Name Hindi'] = consumerNameResult.text;
+          translatedCustomer['Address Hindi'] = addressResult.text;
+          translatedCustomer['Delivery Area'] = deliveryAreaResult.text;
+          translatedCustomer['Delivery Man'] = deliveryManResult.text;
+
+          if (consumerNameResult.usedApiSuggestion) {
+            rememberApiSuggestion(customer['Consumer Name'] || '', consumerNameResult.text);
+          }
+          if (addressResult.usedApiSuggestion) {
+            rememberApiSuggestion(customer['Address'] || '', addressResult.text);
+          }
+          if (deliveryAreaResult.usedApiSuggestion) {
+            rememberApiSuggestion(customer['Delivery Area'] || '', deliveryAreaResult.text);
+          }
+          if (deliveryManResult.usedApiSuggestion) {
+            rememberApiSuggestion(customer['Delivery Man'] || '', deliveryManResult.text);
+          }
+
           return translatedCustomer;
         });
       }
