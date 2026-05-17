@@ -329,10 +329,30 @@ const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
 const ADMIN_AUDIT_COLLECTION = 'adminAuditTrail';
 const FILTER_PRESET_STORAGE_KEY_PREFIX = 'cashmemoFilterPresets_';
 const RECENT_ACTIVITY_STORAGE_KEY_PREFIX = 'cashmemoRecentActivity_';
+const ONBOARDING_TOUR_STORAGE_KEY_PREFIX = 'cashmemoOnboardingTourSeen_';
+const WORKSPACE_MODE_STORAGE_KEY_PREFIX = 'cashmemoWorkspaceMode_';
+const ANNOUNCEMENTS_STORAGE_KEY = 'cashmemoAnnouncements';
 
 const getPlanUpgradeReplyStorageKey = ({ userId = '', dealerCode = '', dealerName = '' } = {}) => {
   const userKey = String(userId || dealerCode || dealerName || '').trim();
   return userKey ? `planUpgrade-${userKey}` : 'planUpgrade';
+};
+
+const getOnboardingTourStorageKey = (dealerCode = '') => (
+  `${ONBOARDING_TOUR_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
+);
+
+const getWorkspaceModeStorageKey = (dealerCode = '') => (
+  `${WORKSPACE_MODE_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
+);
+
+const getAnnouncementScopeLabel = (scope = 'all') => {
+  const normalized = String(scope || 'all').toLowerCase();
+  if (normalized === 'all') return 'All Users';
+  if (normalized === 'active') return 'Active Users';
+  if (normalized === 'expiring') return 'Expiring Soon';
+  if (normalized === 'expired') return 'Expired Users';
+  return scope;
 };
 
 const PACKAGE_OPTIONS = [
@@ -352,46 +372,6 @@ const PACKAGE_PRICING = {
 };
 
 const PAYMENT_UPI_ID = '8002074620@ybl';
-const APPROVAL_REPLY_TEMPLATES = {
-  default: [
-    'Request reviewed. Please wait while we complete the update.',
-    'Please verify the submitted details once from your side as well.',
-    'This request needs a small correction. Update the data and send again.',
-  ],
-  profile: [
-    'Profile details are under review. Distributor name, GST, and address have been checked.',
-    'Profile request is almost ready, but a few details need correction before approval.',
-  ],
-  bank: [
-    'Bank details reviewed. Please re-check account number and IFSC once.',
-    'Bank update needs correction. Submit matching bank name, account number, and IFSC.',
-  ],
-  rates: [
-    'Rate sheet reviewed. Approval will be processed after final amount verification.',
-    'Rate update needs correction. Please verify Basic Price, GST, and RSP values.',
-  ],
-  header: [
-    'Header update reviewed. Hindi layout and distributor details are being checked.',
-    'Header request needs correction. Please review spelling and alignment-related details.',
-  ],
-  planUpgrade: [
-    'Payment received. Plan upgrade is being processed.',
-    'Plan request reviewed. Please wait for final activation confirmation.',
-    'Payment proof needs verification. Share correct transaction details if required.',
-  ],
-  deliveryArea: [
-    'Delivery area update reviewed. New Hindi mappings will be merged after approval.',
-    'Delivery area request has duplicate or mismatched entries. Please verify once.',
-  ],
-  deliveryStaff: [
-    'Delivery staff update reviewed. Staff name mappings are being checked.',
-    'Delivery staff request needs a correction. Please verify name spellings and resend.',
-  ],
-  dictionary: [
-    'Dictionary request reviewed. Translation will be merged after admin verification.',
-    'Dictionary request has a possible duplicate or conflict. Please verify the suggested Hindi once.',
-  ],
-};
 const HINDI_ENTERPRISE_PACKAGE_NAMES = [
   'Enterprise Package with (हिंदी) - 365 Days',
   'Premium Package with (हिंदी) - 365 Days',
@@ -711,9 +691,9 @@ const normalizeData = (data) => {
 };
 
 const ADMIN_ROLE_PERMISSIONS = {
-  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'recycle-bin', 'audit'], mutate: true },
-  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'feedback', 'audit'], mutate: true },
-  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: true },
+  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'announcements', 'recycle-bin', 'audit'], mutate: true },
+  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'feedback', 'announcements', 'audit'], mutate: true },
+  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'announcements', 'audit'], mutate: true },
   viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
 };
 
@@ -733,6 +713,23 @@ function App() {
   const [savedFilterPresets, setSavedFilterPresets] = useState([]);
   const [userPinVisible, setUserPinVisible] = useState(false);
   const [recentActivities, setRecentActivities] = useState([]);
+  const [compactWorkspaceMode, setCompactWorkspaceMode] = useState(false);
+  const [announcements, setAnnouncements] = useState(() => {
+    try {
+      const raw = localStorage.getItem(ANNOUNCEMENTS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const [announcementDraft, setAnnouncementDraft] = useState({
+    title: '',
+    message: '',
+    targetScope: 'all',
+    noticeType: 'notice',
+    expiresAt: '',
+  });
   const [isUserLoginSubmitting, setIsUserLoginSubmitting] = useState(false);
   const [isAdminLoginSubmitting, setIsAdminLoginSubmitting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -766,6 +763,8 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [showOnboardingTour, setShowOnboardingTour] = useState(false);
+  const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
   const [translationObservability, setTranslationObservability] = useState({
     apiCount: 0,
     dictionaryCount: 0,
@@ -776,6 +775,7 @@ function App() {
   });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
   const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
+  const onboardingAutoOpenedRef = useRef(false);
 
   const pushToast = useCallback((message, tone = 'info') => {
     if (!message) return;
@@ -827,7 +827,7 @@ function App() {
     const callback = inputDialog.onSubmit;
     const value = String(inputDialog.value || '').trim();
     if (!value) {
-      pushToast('Please enter a valid name.', 'error');
+      pushToast('Please enter a valid value.', 'error');
       return;
     }
     closeInputDialog();
@@ -845,6 +845,16 @@ function App() {
   const getRecentActivityStorageKey = (dealerCode = '') => (
     `${RECENT_ACTIVITY_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
   );
+  const readRecentActivitiesForDealer = useCallback((dealerCode = '') => {
+    try {
+      const storageKey = getRecentActivityStorageKey(dealerCode);
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
   const logRecentActivity = useCallback((message, dealerCodeOverride = '') => {
     if (!message) return;
     const dealerCode = String(dealerCodeOverride || loggedInUser?.dealerCode || 'guest').trim() || 'guest';
@@ -1591,6 +1601,9 @@ function App() {
   const handleLogout = () => {
     hideAllViews();
     clearUserSession();
+    onboardingAutoOpenedRef.current = false;
+    setShowOnboardingTour(false);
+    setOnboardingStepIndex(0);
     setIsLoggedIn(false);
     setShowUserMenu(false);
     setLoggedInUser(null);
@@ -1748,6 +1761,28 @@ function App() {
     }
   }, [isLoggedIn, showProfileUpdate, loggedInUser]);
 
+  useEffect(() => {
+    if (!isLoggedIn || !loggedInUser || onboardingAutoOpenedRef.current) return;
+    const onboardingUserKey = String(
+      loggedInUser?.dealerCode
+      || loggedInUser?.profileData?.distributorCode
+      || loggedInUser?.id
+      || 'guest'
+    ).trim();
+    try {
+      const raw = localStorage.getItem(getOnboardingTourStorageKey(onboardingUserKey));
+      if (raw) {
+        onboardingAutoOpenedRef.current = true;
+        return;
+      }
+    } catch {
+      void 0;
+    }
+    onboardingAutoOpenedRef.current = true;
+    setOnboardingStepIndex(0);
+    setShowOnboardingTour(true);
+  }, [isLoggedIn, loggedInUser]);
+
   const handleHomeOpen = () => {
     navigateToHome();
   };
@@ -1803,6 +1838,93 @@ function App() {
     setShowAdminLogin(true);
     setShowUserMenu(false);
   };
+
+  const onboardingSteps = [
+    {
+      id: 'upload',
+      title: 'Upload Data',
+      description: 'Yahin se aap cDCMS ka latest Pending Booking file upload karke kaam start karte ho.',
+      hint: 'CSV ya XLSX upload ke baad filters, print aur quick profile sab active ho jaate hain.',
+      actionLabel: 'Open Data Upload',
+      action: () => {
+        if (!showParsedData) {
+          handleShowData();
+        }
+      },
+    },
+    {
+      id: 'invoice',
+      title: 'Invoice Page',
+      description: 'Invoice page par customer invoice bana, save, aur duplicate karke fast billing kar sakte ho.',
+      hint: 'Quick profile se bhi invoice directly open ho sakta hai.',
+      actionLabel: 'Open Invoice',
+      action: handleInvoiceOpen,
+    },
+    {
+      id: 'support',
+      title: 'Approval Reply & Support',
+      description: 'Yahan admin replies, support messages, aur pending follow-up dekh sakte ho.',
+      hint: 'Agar upload ya plan me issue aaye to sabse pehle isi section ko check karo.',
+      actionLabel: 'Open Support',
+      action: handleContactOpen,
+    },
+    {
+      id: 'dictionary',
+      title: 'Dictionary & Delivery Updates',
+      description: 'Dictionary, delivery area, aur delivery staff requests isi flow se manage hote hain.',
+      hint: 'Hindi print aur local naming consistency ke liye ye section important hai.',
+      actionLabel: 'Open Dictionary',
+      action: handleDictionaryOpen,
+    },
+  ];
+
+  const activeOnboardingStep = onboardingSteps[onboardingStepIndex] || onboardingSteps[0];
+
+  const markOnboardingTourSeen = useCallback((dealerCode = '') => {
+    try {
+      localStorage.setItem(getOnboardingTourStorageKey(dealerCode), JSON.stringify({
+        completedAt: new Date().toISOString(),
+      }));
+    } catch {
+      void 0;
+    }
+  }, []);
+
+  const openOnboardingTour = useCallback((stepIndex = 0) => {
+    setOnboardingStepIndex(Math.max(0, Math.min(stepIndex, onboardingSteps.length - 1)));
+    setShowOnboardingTour(true);
+  }, [onboardingSteps.length]);
+
+  const closeOnboardingTour = useCallback((markSeen = true) => {
+    if (markSeen) {
+      const onboardingUserKey = String(
+        loggedInUser?.dealerCode
+        || loggedInUser?.profileData?.distributorCode
+        || loggedInUser?.id
+        || 'guest'
+      ).trim();
+      markOnboardingTourSeen(onboardingUserKey);
+    }
+    setShowOnboardingTour(false);
+  }, [loggedInUser, markOnboardingTourSeen]);
+
+  const handleOnboardingNext = useCallback(() => {
+    setOnboardingStepIndex((prev) => {
+      if (prev >= onboardingSteps.length - 1) {
+        closeOnboardingTour(true);
+        return prev;
+      }
+      return prev + 1;
+    });
+  }, [closeOnboardingTour, onboardingSteps.length]);
+
+  const handleOnboardingBack = useCallback(() => {
+    setOnboardingStepIndex((prev) => Math.max(0, prev - 1));
+  }, []);
+
+  const handleOnboardingAction = useCallback(() => {
+    activeOnboardingStep?.action?.();
+  }, [activeOnboardingStep]);
 
   const handleAdminLogout = async () => {
     try {
@@ -2115,7 +2237,6 @@ function App() {
     const [showApprovalReplyPopup, setShowApprovalReplyPopup] = useState(false);
     const [activeApprovalReply, setActiveApprovalReply] = useState(null);
     const [approvalReplyDraft, setApprovalReplyDraft] = useState('');
-    const [selectedApprovalReplyTemplate, setSelectedApprovalReplyTemplate] = useState('');
     const [allFeedbackEntries, setAllFeedbackEntries] = useState([]);
     const [auditSyncState, setAuditSyncState] = useState({ source: 'local fallback', lastSyncAt: '', detail: '' });
     const [auditSyncDisabled, setAuditSyncDisabled] = useState(false);
@@ -2265,7 +2386,6 @@ function App() {
       const currentReply = getApprovalReplyMessage(item);
       setActiveApprovalReply({ ...item, replyKey, pendingReply: currentReply });
       setApprovalReplyDraft(currentReply);
-      setSelectedApprovalReplyTemplate('');
       setShowApprovalReplyPopup(true);
     };
 
@@ -2273,22 +2393,6 @@ function App() {
       setShowApprovalReplyPopup(false);
       setActiveApprovalReply(null);
       setApprovalReplyDraft('');
-      setSelectedApprovalReplyTemplate('');
-    };
-
-    const getApprovalReplyTemplates = (approval) => {
-      const approvalType = normalizeApprovalType(approval?.type);
-      return APPROVAL_REPLY_TEMPLATES[approvalType] || APPROVAL_REPLY_TEMPLATES.default;
-    };
-
-    const applyApprovalReplyTemplate = (template) => {
-      const nextTemplate = String(template || '').trim();
-      if (!nextTemplate) return;
-      setSelectedApprovalReplyTemplate(nextTemplate);
-      setApprovalReplyDraft((prev) => {
-        const current = String(prev || '').trim();
-        return current ? `${current}\n\n${nextTemplate}` : nextTemplate;
-      });
     };
 
     const getApprovalReplyRequestSummary = (approval) => {
@@ -3745,6 +3849,75 @@ function App() {
       .map((u) => ({ ...u, remainingDays: getRemainingDays(u.validTill) }))
       .filter((u) => u.remainingDays !== null && u.remainingDays >= 0 && u.remainingDays <= 7)
       .sort((a, b) => a.remainingDays - b.remainingDays);
+    const activeAnnouncementCount = announcements.filter((item) => item?.active).length;
+    const getItemAgeDays = (value) => {
+      const date = new Date(value || '');
+      if (Number.isNaN(date.getTime())) return null;
+      return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+    };
+    const getApprovalRaisedAt = (approval) => approval?.requestedAt || approval?.createdAt || approval?.updatedAt || '';
+    const registrationSlaSummary = {
+      today: pendingRegistrationRequests.filter((item) => (getItemAgeDays(item.createdAt) ?? 999) <= 1).length,
+      aged3: pendingRegistrationRequests.filter((item) => (getItemAgeDays(item.createdAt) ?? -1) >= 3).length,
+      aged7: pendingRegistrationRequests.filter((item) => (getItemAgeDays(item.createdAt) ?? -1) >= 7).length,
+    };
+    const approvalSlaSummary = {
+      today: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? 999) <= 1).length,
+      aged3: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? -1) >= 3).length,
+      aged7: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? -1) >= 7).length,
+    };
+    const feedbackSlaSummary = {
+      today: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? 999) <= 1).length,
+      aged3: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? -1) >= 3).length,
+      aged7: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? -1) >= 7).length,
+    };
+    const getUserFeedbackCount = (user = {}) => feedback.filter((item) => (
+      item?.userId === user?.id
+      || String(item?.dealerCode || '').trim() === String(user?.dealerCode || '').trim()
+    )).length;
+    const getDealerHealthSummary = (user = {}) => {
+      const activities = readRecentActivitiesForDealer(user?.dealerCode);
+      const uploadCount = activities.filter((item) => /uploaded/i.test(item?.message || '')).length;
+      const printCount = activities.filter((item) => /(print|cashmemo)/i.test(item?.message || '')).length;
+      const supportCount = getUserFeedbackCount(user);
+      const completionChecks = [
+        Boolean(user?.profileData?.distributorName),
+        Boolean(user?.bankDetailsData?.bankName),
+        Array.isArray(user?.ratesData) && user.ratesData.length > 0,
+        Boolean(user?.hindiHeaderData?.distributorName),
+      ];
+      const completionPercent = Math.round((completionChecks.filter(Boolean).length / completionChecks.length) * 100);
+      const remainingDays = getRemainingDays(user?.validTill);
+      const risk = remainingDays !== null && remainingDays <= 3
+        ? 'high'
+        : remainingDays !== null && remainingDays <= 7
+          ? 'medium'
+          : 'stable';
+      const score = Math.max(0, Math.min(100, 40 + (uploadCount * 6) + (printCount * 5) + Math.round(completionPercent * 0.3) - (supportCount * 4) - (risk === 'high' ? 20 : risk === 'medium' ? 10 : 0)));
+      return { uploadCount, printCount, supportCount, completionPercent, remainingDays, risk, score };
+    };
+    const getUserLifecycleRows = (user = {}) => {
+      const requestEntries = Object.entries(user?.approvalStatus || {});
+      return [
+        { label: 'Registered', value: formatDisplayDate(user?.createdAt) || 'Not recorded' },
+        { label: 'Current Status', value: user?.status || '-' },
+        { label: 'Package Valid Till', value: formatDisplayDate(user?.validTill) || '-' },
+        { label: 'Pending Approvals', value: requestEntries.filter(([, value]) => String(value || '').toLowerCase() === 'pending').length || 0 },
+        { label: 'Support Tickets', value: getUserFeedbackCount(user) },
+        { label: 'Feature Blocks', value: Object.entries(user?.featureBlocks || {}).filter(([, value]) => Boolean(value)).map(([key]) => key).join(', ') || 'None' },
+      ];
+    };
+    const dealerScorecards = users
+      .map((user) => ({ user, health: getDealerHealthSummary(user) }))
+      .sort((a, b) => b.health.score - a.health.score)
+      .slice(0, 6);
+    const lifecycleWatchlist = users
+      .filter((user) => (
+        String(user?.status || '').toLowerCase() !== 'active'
+        || getUserFeedbackCount(user) > 0
+        || Object.values(user?.approvalStatus || {}).some((value) => String(value || '').toLowerCase() === 'pending')
+      ))
+      .slice(0, 6);
     const searchLower = adminSearchTerm.trim().toLowerCase();
     const rangeDaysMap = { today: 0, '7d': 7, '30d': 30 };
     const isWithinAdminDateRange = (value) => {
@@ -3829,6 +4002,8 @@ function App() {
             ? filteredUsersList
             : activeAdminTab === 'dictionary'
               ? filteredDictionaryApprovals
+              : activeAdminTab === 'announcements'
+                ? announcements
             : activeAdminTab === 'recycle-bin'
               ? deletedUsersBin
               : activeAdminTab === 'audit'
@@ -3840,6 +4015,7 @@ function App() {
     const pagedApprovals = paginateAdminRows(filteredApprovals, adminItemsPerPage, adminCurrentPage);
     const pagedDictionaryApprovals = paginateAdminRows(filteredDictionaryApprovals, adminItemsPerPage, adminCurrentPage);
     const pagedFeedback = paginateAdminRows(filteredFeedback, adminItemsPerPage, adminCurrentPage);
+    const pagedAnnouncements = paginateAdminRows(announcements, adminItemsPerPage, adminCurrentPage);
     const pagedDeletedUsers = paginateAdminRows(deletedUsersBin, adminItemsPerPage, adminCurrentPage);
     const pagedAuditTrail = paginateAdminRows(auditTrail, adminItemsPerPage, adminCurrentPage);
     const notifications = [
@@ -3919,6 +4095,7 @@ function App() {
       { key: 'total-user', label: 'Total User', count: users.length },
       { key: 'create-user', label: 'Create User', count: null },
       { key: 'feedback', label: 'Feedback', count: unreadFeedbackCount },
+      { key: 'announcements', label: 'Announcements', count: activeAnnouncementCount },
       { key: 'recycle-bin', label: 'Recycle Bin', count: deletedUsersBin.length },
       { key: 'audit', label: 'Audit', count: auditTrail.length },
     ];
@@ -3973,6 +4150,7 @@ function App() {
         { value: 'medium', label: 'Medium Priority' },
         { value: 'low', label: 'Low Priority' },
       ],
+      'announcements': [{ value: 'all', label: 'All announcements' }],
       'dictionary': [{ value: 'all', label: 'No extra filter' }],
       'create-user': [{ value: 'all', label: 'No extra filter' }],
     };
@@ -4004,6 +4182,10 @@ function App() {
       'feedback': {
         title: 'Feedback Inbox',
         subtitle: `${filteredFeedback.length} feedback entries currently visible`,
+      },
+      'announcements': {
+        title: 'Global Announcement Center',
+        subtitle: `${announcements.length} announcements created, ${activeAnnouncementCount} currently active`,
       },
       'dictionary': {
         title: 'Translation Dictionary',
@@ -4449,6 +4631,9 @@ function App() {
             {activeAdminTab === 'feedback' && (
               <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('feedback.csv', filteredFeedback)}>Export CSV</button>
             )}
+            {activeAdminTab === 'announcements' && (
+              <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('announcements.csv', announcements)}>Export CSV</button>
+            )}
             {activeAdminTab !== 'create-user' && (
               <input
                 className="form-input admin-search-input"
@@ -4491,55 +4676,110 @@ function App() {
         )}
 
         {activeAdminTab === 'dashboard' && (
-          <div className="admin-dashboard-grid">
-            <div className="admin-section">
-              <h3>Registration Trend</h3>
-              <div className="admin-chart-bars">
-                {dateSummaryCards.map((item) => (
-                  <div key={item.label} className="admin-chart-bar">
-                    <div className="admin-chart-bar-fill" style={{ height: `${Math.max(18, item.value * 8)}px` }} />
-                    <strong>{item.value}</strong>
-                    <span>{item.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="admin-section">
-              <h3>Package Mix</h3>
-              <div className="admin-list-grid">
-                {PACKAGE_OPTIONS.map((pkg) => {
-                  const count = users.filter((u) => u.package === pkg).length;
-                  return (
-                    <div key={pkg} className="admin-list-card">
-                      <span>{pkg}</span>
-                      <strong>{count}</strong>
+          <>
+            <div className="admin-dashboard-grid">
+              <div className="admin-section">
+                <h3>Registration Trend</h3>
+                <div className="admin-chart-bars">
+                  {dateSummaryCards.map((item) => (
+                    <div key={item.label} className="admin-chart-bar">
+                      <div className="admin-chart-bar-fill" style={{ height: `${Math.max(18, item.value * 8)}px` }} />
+                      <strong>{item.value}</strong>
+                      <span>{item.label}</span>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="admin-section">
-              <h3>Sync Health</h3>
-              <div className="admin-health-grid">
-                <div className="admin-health-card">
-                  <span>Source</span>
-                  <strong>{adminDataHealth.source}</strong>
-                </div>
-                <div className="admin-health-card">
-                  <span>Firebase</span>
-                  <strong>{adminDataHealth.firebaseReachable ? 'Connected' : 'Fallback'}</strong>
-                </div>
-                <div className="admin-health-card">
-                  <span>Last Sync</span>
-                  <strong>{formatDisplayDate(adminDataHealth.lastSyncAt)}</strong>
-                </div>
-                <div className="admin-health-card">
-                  <span>Audit Sync</span>
-                  <strong>{`${auditSyncState.source || 'local fallback'}${auditSyncState.lastSyncAt ? ` - ${formatDisplayDate(auditSyncState.lastSyncAt)}` : ''}`}</strong>
+                  ))}
                 </div>
               </div>
+              <div className="admin-section">
+                <h3>Package Mix</h3>
+                <div className="admin-list-grid">
+                  {PACKAGE_OPTIONS.map((pkg) => {
+                    const count = users.filter((u) => u.package === pkg).length;
+                    return (
+                      <div key={pkg} className="admin-list-card">
+                        <span>{pkg}</span>
+                        <strong>{count}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="admin-section">
+                <h3>Sync Health</h3>
+                <div className="admin-health-grid">
+                  <div className="admin-health-card">
+                    <span>Source</span>
+                    <strong>{adminDataHealth.source}</strong>
+                  </div>
+                  <div className="admin-health-card">
+                    <span>Firebase</span>
+                    <strong>{adminDataHealth.firebaseReachable ? 'Connected' : 'Fallback'}</strong>
+                  </div>
+                  <div className="admin-health-card">
+                    <span>Last Sync</span>
+                    <strong>{formatDisplayDate(adminDataHealth.lastSyncAt)}</strong>
+                  </div>
+                  <div className="admin-health-card">
+                    <span>Audit Sync</span>
+                    <strong>{`${auditSyncState.source || 'local fallback'}${auditSyncState.lastSyncAt ? ` - ${formatDisplayDate(auditSyncState.lastSyncAt)}` : ''}`}</strong>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+            <div className="admin-dashboard-grid">
+              <div className="admin-section">
+                <h3>Approval SLA Dashboard</h3>
+                <div className="admin-sla-grid">
+                  {[
+                    { label: 'Registrations', data: registrationSlaSummary },
+                    { label: 'Approvals', data: approvalSlaSummary },
+                    { label: 'Feedback', data: feedbackSlaSummary },
+                  ].map((item) => (
+                    <div key={item.label} className="admin-sla-card">
+                      <strong>{item.label}</strong>
+                      <span>0-1d: {item.data.today}</span>
+                      <span>3+d: {item.data.aged3}</span>
+                      <span>7+d: {item.data.aged7}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="admin-section">
+                <h3>Dealer Scorecard</h3>
+                <div className="admin-scorecard-list">
+                  {dealerScorecards.map(({ user, health }) => (
+                    <button
+                      key={`scorecard-${user.id || user.dealerCode}`}
+                      type="button"
+                      className="admin-scorecard-item"
+                      onClick={() => setDetailView({ title: `User - ${user?.dealerCode || ''}`, data: user, noteKey: `user:${user?.id || user?.dealerCode}:general` })}
+                    >
+                      <strong>{user.dealerCode || '-'}</strong>
+                      <span>{user.dealerName || '-'}</span>
+                      <small>Score {health.score} | Uploads {health.uploadCount} | Prints {health.printCount}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="admin-section">
+                <h3>User Lifecycle View</h3>
+                <div className="admin-scorecard-list">
+                  {lifecycleWatchlist.map((user) => (
+                    <button
+                      key={`lifecycle-${user.id || user.dealerCode}`}
+                      type="button"
+                      className="admin-scorecard-item"
+                      onClick={() => setDetailView({ title: `User - ${user?.dealerCode || ''}`, data: user, noteKey: `user:${user?.id || user?.dealerCode}:general` })}
+                    >
+                      <strong>{user.dealerCode || '-'}</strong>
+                      <span>{user.dealerName || '-'}</span>
+                      <small>Status {user.status || '-'} | Pending {Object.values(user?.approvalStatus || {}).filter((value) => String(value || '').toLowerCase() === 'pending').length} | Support {getUserFeedbackCount(user)}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
         )}
 
         {activeAdminTab === 'pending-registration' && (
@@ -4853,31 +5093,6 @@ function App() {
                       <p>{getApprovalReplyMessage(activeApprovalReply) || 'No reply yet.'}</p>
                     </div>
                   </div>
-                  <div className="form-actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                    {getApprovalReplyTemplates(activeApprovalReply).map((template) => (
-                      <button
-                        key={template}
-                        type="button"
-                        className="form-button secondary"
-                        onClick={() => applyApprovalReplyTemplate(template)}
-                      >
-                        Use Template
-                      </button>
-                    ))}
-                  </div>
-                  <select
-                    className="form-input"
-                    value={selectedApprovalReplyTemplate}
-                    onChange={(e) => applyApprovalReplyTemplate(e.target.value)}
-                    style={{ marginBottom: '12px' }}
-                  >
-                    <option value="">Choose reply template</option>
-                    {getApprovalReplyTemplates(activeApprovalReply).map((template) => (
-                      <option key={`approval-template-${template}`} value={template}>
-                        {template}
-                      </option>
-                    ))}
-                  </select>
                   <textarea
                     className="form-input"
                     rows="5"
@@ -5376,7 +5591,6 @@ function App() {
                               <button onClick={() => setViewApproval({ ...a, payload: dictionaryPayload })}>View</button>
                               <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
                               <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
-                              <button type="button" className="admin-ghost-btn" onClick={() => openApprovalReplyPopup({ ...a, payload: dictionaryPayload })} disabled={!canMutateAdminData}>Approval Reply</button>
                             </div>
                           </td>
                         </tr>
@@ -5436,6 +5650,22 @@ function App() {
                     </ul>
                   </div>
                   <div className="admin-drawer-section">
+                    <h4>Dealer Scorecard</h4>
+                    <ul>
+                      {(() => {
+                        const health = getDealerHealthSummary(activeDrawerData);
+                        return [
+                          <li key="score">Score: {health.score}</li>,
+                          <li key="uploads">Uploads logged: {health.uploadCount}</li>,
+                          <li key="prints">Print actions: {health.printCount}</li>,
+                          <li key="support">Support tickets: {health.supportCount}</li>,
+                          <li key="completion">Profile completion: {health.completionPercent}%</li>,
+                          <li key="risk">Expiry risk: {health.risk}</li>,
+                        ];
+                      })()}
+                    </ul>
+                  </div>
+                  <div className="admin-drawer-section">
                     <h4>Request History</h4>
                     <ul>
                       {Object.entries(activeDrawerData?.approvalStatus || {}).length === 0 ? (
@@ -5445,6 +5675,14 @@ function App() {
                           <li key={`${activeDrawer.noteKey}-${key}`}>{key}: {String(value || '-')}</li>
                         ))
                       )}
+                    </ul>
+                  </div>
+                  <div className="admin-drawer-section">
+                    <h4>User Lifecycle</h4>
+                    <ul>
+                      {getUserLifecycleRows(activeDrawerData).map((item) => (
+                        <li key={`${activeDrawer.noteKey}-${item.label}`}>{item.label}: {item.value}</li>
+                      ))}
                     </ul>
                   </div>
                 </div>
@@ -5552,6 +5790,101 @@ function App() {
           </div>
         )}
 
+        {activeAdminTab === 'announcements' && (
+          <div className="admin-section">
+            <div className="admin-form admin-form--announcements">
+              <input
+                className="form-input"
+                placeholder="Announcement title"
+                value={announcementDraft.title}
+                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, title: e.target.value }))}
+              />
+              <select
+                className="form-input"
+                value={announcementDraft.targetScope}
+                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, targetScope: e.target.value }))}
+              >
+                <option value="all">All Users</option>
+                <option value="active">Active Users</option>
+                <option value="expiring">Expiring Soon</option>
+                <option value="expired">Expired Users</option>
+                {PACKAGE_OPTIONS.map((pkg) => (
+                  <option key={`announcement-${pkg}`} value={String(pkg).toLowerCase()}>{pkg}</option>
+                ))}
+              </select>
+              <select
+                className="form-input"
+                value={announcementDraft.noticeType}
+                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, noticeType: e.target.value }))}
+              >
+                <option value="notice">General Notice</option>
+                <option value="renewal">Renewal Alert</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="approval">Approval Notice</option>
+              </select>
+              <input
+                className="form-input"
+                type="date"
+                value={announcementDraft.expiresAt}
+                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, expiresAt: e.target.value }))}
+              />
+              <textarea
+                className="form-input admin-announcement-message"
+                rows="3"
+                placeholder="Type announcement message"
+                value={announcementDraft.message}
+                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, message: e.target.value }))}
+              />
+              <button onClick={handleCreateAnnouncement} disabled={!canMutateAdminData}>Publish</button>
+            </div>
+            <div className="admin-table-wrap" style={{ marginTop: '14px' }}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Target</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedAnnouncements.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="admin-empty-cell">No announcements created yet.</td>
+                    </tr>
+                  ) : (
+                    pagedAnnouncements.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.title || '-'}</td>
+                        <td>{item.noticeType || '-'}</td>
+                        <td>{getAnnouncementScopeLabel(item.targetScope)}</td>
+                        <td>{item.expiresAt || '-'}</td>
+                        <td>
+                          <span className={`admin-status-chip admin-status-chip--${item.active ? 'approved' : 'rejected'}`}>
+                            {item.active ? 'Active' : 'Paused'}
+                          </span>
+                        </td>
+                        <td>{item.message || '-'}</td>
+                        <td>
+                          <div className="admin-actions">
+                            <button onClick={() => toggleAnnouncementStatus(item.id)} disabled={!canMutateAdminData}>
+                              {item.active ? 'Pause' : 'Activate'}
+                            </button>
+                            <button onClick={() => deleteAnnouncement(item.id)} disabled={!canMutateAdminData}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {activeAdminTab === 'recycle-bin' && (
           <div className="admin-section">
             <div className="admin-table-wrap">
@@ -5585,17 +5918,28 @@ function App() {
                           <div className="admin-actions">
                             <button
                               type="button"
-                              onClick={() => restoreDeletedUser(
-                                user,
-                                confirmAdminAction,
-                                deletedUsersBin,
-                                users,
-                                writeUsersLocal,
-                                persistDeletedUsersBin,
-                                logAdminActivity,
-                                loadData,
-                                pushToast,
-                              )}
+                              onClick={() => {
+                                openInputDialog({
+                                  title: 'Restore Reason',
+                                  message: `Restore ${user.dealerCode || 'this user'} from recycle bin. Reason kya hai?`,
+                                  value: '',
+                                  submitLabel: 'Restore User',
+                                  onSubmit: async (restoreReason) => {
+                                    await restoreDeletedUser(
+                                      user,
+                                      confirmAdminAction,
+                                      deletedUsersBin,
+                                      users,
+                                      writeUsersLocal,
+                                      persistDeletedUsersBin,
+                                      logAdminActivity,
+                                      loadData,
+                                      pushToast,
+                                      restoreReason,
+                                    );
+                                  },
+                                });
+                              }}
                               disabled={!canMutateAdminData}
                             >Restore</button>
                             <button
@@ -5658,7 +6002,7 @@ function App() {
           </div>
         )}
 
-        {['pending-registration', 'approval', 'dictionary', 'active-user', 'total-user', 'feedback', 'recycle-bin', 'audit'].includes(activeAdminTab) && adminTotalPages > 1 && (
+        {['pending-registration', 'approval', 'dictionary', 'active-user', 'total-user', 'feedback', 'announcements', 'recycle-bin', 'audit'].includes(activeAdminTab) && adminTotalPages > 1 && (
           <div className="admin-pagination">
             <button className="admin-ghost-btn" onClick={() => setAdminCurrentPage((prev) => Math.max(1, prev - 1))} disabled={adminCurrentPage === 1}>Previous</button>
             <span>Page {adminCurrentPage} of {adminTotalPages}</span>
@@ -5890,6 +6234,52 @@ function App() {
     setSearchTerm(event.target.value);
   };
 
+  const persistAnnouncements = useCallback((nextAnnouncements) => {
+    setAnnouncements(nextAnnouncements);
+    localStorage.setItem(ANNOUNCEMENTS_STORAGE_KEY, JSON.stringify(nextAnnouncements));
+  }, []);
+
+  const handleCreateAnnouncement = useCallback(() => {
+    const title = String(announcementDraft.title || '').trim();
+    const message = String(announcementDraft.message || '').trim();
+    if (!title || !message) {
+      pushToast('Announcement title aur message required hai.', 'error');
+      return;
+    }
+    const nextAnnouncement = {
+      id: `announcement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      title,
+      message,
+      targetScope: announcementDraft.targetScope || 'all',
+      noticeType: announcementDraft.noticeType || 'notice',
+      expiresAt: announcementDraft.expiresAt || '',
+      active: true,
+      createdAt: new Date().toISOString(),
+      createdBy: String(auth?.currentUser?.email || 'admin').trim().toLowerCase() || 'admin',
+    };
+    persistAnnouncements([nextAnnouncement, ...announcements]);
+    setAnnouncementDraft({
+      title: '',
+      message: '',
+      targetScope: 'all',
+      noticeType: 'notice',
+      expiresAt: '',
+    });
+    pushToast('Announcement created successfully.', 'success');
+  }, [announcementDraft, announcements, persistAnnouncements, pushToast]);
+
+  const toggleAnnouncementStatus = useCallback((announcementId) => {
+    const nextAnnouncements = announcements.map((item) => (
+      item.id === announcementId ? { ...item, active: !item.active } : item
+    ));
+    persistAnnouncements(nextAnnouncements);
+  }, [announcements, persistAnnouncements]);
+
+  const deleteAnnouncement = useCallback((announcementId) => {
+    const nextAnnouncements = announcements.filter((item) => item.id !== announcementId);
+    persistAnnouncements(nextAnnouncements);
+  }, [announcements, persistAnnouncements]);
+
   useEffect(() => {
     try {
       const storageKey = getRecentActivityStorageKey(loggedInUser?.dealerCode);
@@ -5900,6 +6290,40 @@ function App() {
       setRecentActivities([]);
     }
   }, [loggedInUser?.dealerCode]);
+
+  useEffect(() => {
+    if (!loggedInUser) {
+      setCompactWorkspaceMode(false);
+      return;
+    }
+    try {
+      const workspaceUserKey = String(
+        loggedInUser?.dealerCode
+        || loggedInUser?.profileData?.distributorCode
+        || loggedInUser?.id
+        || 'guest'
+      ).trim();
+      const raw = localStorage.getItem(getWorkspaceModeStorageKey(workspaceUserKey));
+      setCompactWorkspaceMode(raw === 'compact');
+    } catch {
+      setCompactWorkspaceMode(false);
+    }
+  }, [loggedInUser]);
+
+  useEffect(() => {
+    if (!loggedInUser) return;
+    try {
+      const workspaceUserKey = String(
+        loggedInUser?.dealerCode
+        || loggedInUser?.profileData?.distributorCode
+        || loggedInUser?.id
+        || 'guest'
+      ).trim();
+      localStorage.setItem(getWorkspaceModeStorageKey(workspaceUserKey), compactWorkspaceMode ? 'compact' : 'default');
+    } catch {
+      void 0;
+    }
+  }, [compactWorkspaceMode, loggedInUser]);
 
   useEffect(() => {
     if (!uploadMetadata?.uploadedAt) return;
@@ -5944,6 +6368,10 @@ function App() {
   const handleResetAllFilters = () => {
     handleResetFilters();
     clearSelection();
+  };
+
+  const handleToggleCompactWorkspaceMode = () => {
+    setCompactWorkspaceMode((prev) => !prev);
   };
 
   const exportRowsToCsvFile = (filename, rows, exportHeaders = visibleHeaders) => {
@@ -7211,6 +7639,7 @@ function App() {
       logAdminActivityFn,
       loadDataFn,
       notifyFn,
+      restoreReason = '',
     ) => {
       if (!item) return;
       const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
@@ -7224,6 +7653,7 @@ function App() {
         status: item.status || 'active',
         restoreCount: Number(item?.restoreCount || 0) + 1,
         restoredBy: String(auth?.currentUser?.email || '').trim().toLowerCase() || 'admin',
+        restoreReason: String(restoreReason || '').trim(),
       };
       delete restoredUser.deletedAt;
 
@@ -7266,7 +7696,11 @@ function App() {
       }
 
       if (typeof logAdminActivityFn === 'function') {
-        logAdminActivityFn('user_restored', { dealerCode: item.dealerCode || '', restoreCount: restoredUser.restoreCount });
+        logAdminActivityFn('user_restored', {
+          dealerCode: item.dealerCode || '',
+          restoreCount: restoredUser.restoreCount,
+          restoreReason: restoredUser.restoreReason || '',
+        });
       }
       if (typeof notifyFn === 'function') {
         notifyFn(`${item.dealerCode || 'User'} restored from recycle bin.`, 'success');
@@ -7773,6 +8207,23 @@ function App() {
   );
   const shouldShowEmptyUploadState = showParsedData && parsedData.length === 0;
   const shouldShowFilteredEmptyState = showParsedData && parsedData.length > 0 && filteredData.length === 0;
+  const emptyUploadSuggestions = [
+    {
+      key: 'tour',
+      label: 'Open Quick Tour',
+      onClick: () => openOnboardingTour(0),
+    },
+    {
+      key: 'invoice',
+      label: 'See Invoice Screen',
+      onClick: handleInvoiceOpen,
+    },
+    {
+      key: 'support',
+      label: 'Open Support & Replies',
+      onClick: handleContactOpen,
+    },
+  ];
   const activeFilterChips = [
     searchTerm ? { key: 'search', label: `Search: ${searchTerm}`, clear: () => setSearchTerm('') } : null,
     activeReportFilter ? { key: 'report', label: `Report: ${activeReportFilter}`, clear: () => setActiveReportFilter('') } : null,
@@ -7866,7 +8317,7 @@ function App() {
     {
       key: 'eKycNotDone',
       label: 'eKYC Pending',
-      description: 'Complete these records first before dispatch/print follow-up.',
+      description: 'Complete these records first before dispatch or print follow-up.',
       count: bookingReport.metrics.eKycNotDone,
     },
     {
@@ -8609,6 +9060,22 @@ function App() {
     { label: 'Active Package', value: activePackageStatus },
     { label: 'Account Status', value: loggedInUser?.status || 'N/A' },
   ];
+  const visibleAnnouncements = announcements.filter((item) => {
+    if (!item?.active) return false;
+    if (item?.expiresAt) {
+      const expiryDate = new Date(`${item.expiresAt}T23:59:59`);
+      if (!Number.isNaN(expiryDate.getTime()) && expiryDate < new Date()) return false;
+    }
+    const targetScope = String(item?.targetScope || 'all').toLowerCase();
+    if (targetScope === 'all') return true;
+    if (targetScope === 'active') return String(loggedInUser?.status || '').toLowerCase() === 'active';
+    if (targetScope === 'expiring') {
+      const days = getRemainingDays(loggedInUser?.validTill);
+      return days !== null && days >= 0 && days <= 7;
+    }
+    if (targetScope === 'expired') return isPlanExpired;
+    return String(loggedInUser?.package || '').toLowerCase() === targetScope;
+  }).slice(0, 3);
   const dashboardActionCenterCards = [
     {
       key: 'continue',
@@ -8930,6 +9397,16 @@ function App() {
           </div>
         </nav>
       )}
+      {isLoggedIn && visibleAnnouncements.length > 0 && (
+        <div className="announcement-strip">
+          {visibleAnnouncements.map((item) => (
+            <div key={item.id} className={`announcement-strip__item announcement-strip__item--${item.noticeType || 'notice'}`}>
+              <strong>{item.title}</strong>
+              <span>{item.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {isLoggedIn && isPlanExpired && (
         <section className="expired-recovery-panel">
           <div className="expired-recovery-panel__content">
@@ -8966,7 +9443,6 @@ function App() {
                 getPendingDictionaryRequestCount={getPendingDictionaryRequestCount}
                 deliveryAreaUpdates={deliveryAreaUpdates}
                 deliveryStaffUpdates={deliveryStaffUpdates}
-                translationDictionary={translationDictionary}
                 submitUpdateApprovalRequest={submitUpdateApprovalRequest}
                 updateUserInStore={updateUserInStore}
                 mode={dictionaryFormMode}
@@ -8985,6 +9461,7 @@ function App() {
                 homeTodayFocus={homeTodayFocus}
                 homeSupportPoints={homeSupportPoints}
                 homeAccountDetails={homeAccountDetails}
+                announcements={visibleAnnouncements}
                 actionCenterCards={dashboardActionCenterCards}
                 recentActivities={recentActivities.map((item) => ({
                   ...item,
@@ -9277,6 +9754,9 @@ function App() {
             exportReportSummary={exportReportSummary}
             shouldShowFilteredEmptyState={shouldShowFilteredEmptyState}
             handleReUploadClick={handleReUploadClick}
+            openOnboardingTour={openOnboardingTour}
+            compactWorkspaceMode={compactWorkspaceMode}
+            onToggleCompactWorkspaceMode={handleToggleCompactWorkspaceMode}
             currentTableData={currentTableData}
             handleSelectAllChange={handleSelectAllChange}
             isAllFilteredRowsSelected={isAllFilteredRowsSelected}
@@ -9293,24 +9773,34 @@ function App() {
       {!isPlanExpired && shouldShowEmptyUploadState && (
         <div className="filters-shell">
           <div className="data-empty-state data-empty-state--upload">
-            <p className="data-empty-state__eyebrow">No Data Loaded</p>
-            <h3>Upload a Pending Booking file to start working.</h3>
+            <p className="data-empty-state__eyebrow">Start Here</p>
+            <h3>Abhi koi working data loaded nahi hai.</h3>
             <p>
-              Cashmemo print, data filtering, and invoice work begin after you upload the latest
-              `Pending Booking` CSV or XLSX file from cDCMS.
+              Aaj ka `Pending Booking` CSV ya XLSX upload karte hi filters, cashmemo print,
+              reports, aur quick profile actions start ho jayenge.
             </p>
             <p>
-              Current access: {formatPackageNameForNavbar(loggedInUser?.package)}. If upload is not available later,
-              renew plan or contact admin from Support & Replies.
+              Agar pehli baar use kar rahe ho to quick tour dekh lo. Agar format ya process me doubt ho,
+              About steps aur Support & Replies dono available hain.
             </p>
             <div className="data-empty-state__actions">
               <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
-                Upload Data
+                Upload Today's File
               </button>
               <button type="button" className="filter-action filter-action--secondary" onClick={handleAboutOpen}>
-                View Steps
+                View Upload Steps
               </button>
             </div>
+            <div className="data-empty-state__suggestions">
+              {emptyUploadSuggestions.map((item) => (
+                <button key={item.key} type="button" className="data-empty-state__shortcut" onClick={item.onClick}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p className="data-empty-state__helper">
+              Current access: {formatPackageNameForNavbar(loggedInUser?.package)}.
+            </p>
           </div>
         </div>
       )}
@@ -9369,6 +9859,52 @@ function App() {
             <div className="app-dialog__actions">
               <button type="button" className="auth-secondary-button" onClick={closeInputDialog}>Cancel</button>
               <button type="button" className="auth-primary-button" onClick={handleInputDialogSubmit}>{inputDialog.submitLabel}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOnboardingTour && (
+        <div className="app-dialog-overlay" onClick={() => closeOnboardingTour(true)}>
+          <div className="app-dialog onboarding-tour-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="onboarding-tour-title">
+            <div className="app-dialog__header onboarding-tour-dialog__header">
+              <div>
+                <p className="onboarding-tour-dialog__eyebrow">Quick Tour</p>
+                <h3 id="onboarding-tour-title">{activeOnboardingStep?.title || 'Getting Started'}</h3>
+              </div>
+              <button type="button" className="app-dialog__close" onClick={() => closeOnboardingTour(true)}>×</button>
+            </div>
+            <div className="onboarding-tour-dialog__progress">
+              {onboardingSteps.map((step, index) => (
+                <span
+                  key={step.id}
+                  className={`onboarding-tour-dialog__dot ${index === onboardingStepIndex ? 'is-active' : index < onboardingStepIndex ? 'is-complete' : ''}`}
+                />
+              ))}
+            </div>
+            <p className="app-dialog__message">{activeOnboardingStep?.description}</p>
+            <div className="onboarding-tour-dialog__hint">{activeOnboardingStep?.hint}</div>
+            <div className="onboarding-tour-dialog__step-list">
+              {onboardingSteps.map((step, index) => (
+                <button
+                  key={`tour-step-${step.id}`}
+                  type="button"
+                  className={`onboarding-tour-dialog__step ${index === onboardingStepIndex ? 'is-active' : ''}`}
+                  onClick={() => setOnboardingStepIndex(index)}
+                >
+                  <strong>{index + 1}.</strong> {step.title}
+                </button>
+              ))}
+            </div>
+            <div className="app-dialog__actions onboarding-tour-dialog__actions">
+              <button type="button" className="auth-secondary-button" onClick={() => closeOnboardingTour(true)}>Skip Tour</button>
+              <button type="button" className="auth-secondary-button" onClick={handleOnboardingAction}>
+                {activeOnboardingStep?.actionLabel || 'Open'}
+              </button>
+              <button type="button" className="auth-secondary-button" onClick={handleOnboardingBack} disabled={onboardingStepIndex === 0}>Back</button>
+              <button type="button" className="auth-primary-button" onClick={handleOnboardingNext}>
+                {onboardingStepIndex === onboardingSteps.length - 1 ? 'Finish' : 'Next'}
+              </button>
             </div>
           </div>
         </div>

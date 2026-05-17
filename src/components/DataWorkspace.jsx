@@ -200,10 +200,14 @@ const DataWorkspace = ({
   printLanguage,
   setPrintLanguage,
   handlePrintData,
+  onPreviewCustomer,
   exportFilteredRows,
   exportReportSummary,
   shouldShowFilteredEmptyState,
   handleReUploadClick,
+  openOnboardingTour,
+  compactWorkspaceMode,
+  onToggleCompactWorkspaceMode,
   currentTableData,
   handleSelectAllChange,
   isAllFilteredRowsSelected,
@@ -245,7 +249,7 @@ const DataWorkspace = ({
   ].filter(Boolean).slice(0, 4);
 
   return (
-    <div className="filters-shell">
+    <div className={`filters-shell ${compactWorkspaceMode ? 'filters-shell--compact' : ''}`}>
       {showBookingReport && (
         <div className="booking-report-panel">
           <div className="booking-report-header">
@@ -574,6 +578,10 @@ const DataWorkspace = ({
           </div>
         )}
 
+        <button type="button" className="filter-action filter-action--secondary action-button" onClick={onToggleCompactWorkspaceMode}>
+          {compactWorkspaceMode ? 'Normal View' : 'Compact Mode'}
+        </button>
+
         <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
         <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
         <button className="filter-action filter-action--secondary action-button" onClick={exportFilteredRows}>Export Filtered</button>
@@ -583,12 +591,12 @@ const DataWorkspace = ({
       <div className="table-container">
         {shouldShowFilteredEmptyState ? (
           <div className="data-empty-state">
-            <p className="data-empty-state__eyebrow">No Records Found</p>
-            <h3>No bookings match the current filters.</h3>
+            <p className="data-empty-state__eyebrow">Nothing To Show</p>
+            <h3>Abhi koi booking current view me visible nahi hai.</h3>
             <p>
               {hasActiveDataFilters
                 ? 'Kuch filters bahut strict ho gaye hain. Neeche diye gaye quick fixes try kijiye aur rows wapas laaiye.'
-                : 'No visible rows are available right now. Try re-uploading the latest Pending Booking file.'}
+                : 'Latest Pending Booking file ko re-upload karke ya quick tour dekh kar next step samajh sakte ho.'}
             </p>
             {emptyStateActions.length > 0 && (
               <div className="data-empty-state__suggestions">
@@ -607,6 +615,9 @@ const DataWorkspace = ({
               )}
               <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
                 Re-Upload Data
+              </button>
+              <button type="button" className="filter-action filter-action--secondary" onClick={() => openOnboardingTour?.(0)}>
+                Open Quick Tour
               </button>
             </div>
           </div>
@@ -631,10 +642,12 @@ const DataWorkspace = ({
                   return (
                     <tr
                       key={index}
+                      onDoubleClick={() => onPreviewCustomer?.(customer)}
                       style={{
                         border: '1px solid black',
                         color: isEkycStatusPending ? '#ff5252' : 'inherit',
                         fontWeight: isEkycStatusPending ? 'bold' : 'normal',
+                        cursor: onPreviewCustomer ? 'pointer' : 'default',
                       }}
                     >
                       <td className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px' }}>

@@ -7,6 +7,7 @@ const HomeDashboard = ({
   homeTodayFocus,
   homeSupportPoints,
   homeAccountDetails,
+  announcements,
   actionCenterCards,
   recentActivities,
   onQuickAction,
@@ -197,6 +198,18 @@ const HomeDashboard = ({
         </div>
 
         <div className="home-layout">
+          {announcements.length > 0 && (
+            <div className="home-section">
+              <h3>Latest Announcements</h3>
+              <ul>
+                {announcements.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.title}</strong> - {item.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="home-section">
             <h3>त्वरित कार्य</h3>
             <ul>
