@@ -3122,6 +3122,35 @@
   width: 100%;
 }
 
+.filters-shell--compact .upload-journey-card,
+.filters-shell--compact .booking-report-panel,
+.filters-shell--compact .filters-container,
+.filters-shell--compact .table-container {
+  border-radius: 12px;
+}
+
+.filters-shell--compact .table-controls {
+  grid-template-columns:
+    minmax(180px, 1fr)
+    repeat(3, minmax(110px, 0.65fr))
+    repeat(5, minmax(92px, auto));
+  gap: 6px;
+}
+
+.filters-shell--compact .table-control-label {
+  font-size: 9px;
+}
+
+.filters-shell--compact .data-table th,
+.filters-shell--compact .data-table td {
+  padding: 5px 6px !important;
+  font-size: 11px;
+}
+
+.filters-shell--compact .data-table input[type="checkbox"] {
+  transform: scale(0.9);
+}
+
 .dictionary-request-panel .dictionary-multi-entry button {
   justify-self: start;
   padding: 8px 14px;
@@ -4574,6 +4603,51 @@
   font-weight: 700;
 }
 
+.admin-sla-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-sla-card,
+.admin-scorecard-item {
+  border: 1px solid #d8e3f1;
+  border-radius: 14px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.admin-sla-card strong,
+.admin-scorecard-item strong {
+  display: block;
+  color: #123d77;
+  margin-bottom: 6px;
+}
+
+.admin-sla-card span,
+.admin-scorecard-item span,
+.admin-scorecard-item small {
+  display: block;
+  color: #607b99;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.admin-scorecard-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-scorecard-item {
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-scorecard-item:hover {
+  border-color: #8bb9eb;
+  background: #f4f9ff;
+}
+
 .admin-list-grid,
 .admin-health-grid {
   display: grid;
@@ -4742,6 +4816,49 @@
 
 .admin-form button {
   padding: 10px 12px;
+}
+
+.admin-form--announcements {
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.8fr) minmax(150px, 0.7fr) minmax(140px, 0.6fr) minmax(240px, 1.5fr) auto;
+  align-items: start;
+}
+
+.admin-announcement-message {
+  min-height: 42px;
+}
+
+.announcement-strip {
+  margin: 78px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.announcement-strip__item {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #d6e4f3;
+  background: #f8fbff;
+  color: #173b66;
+}
+
+.announcement-strip__item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.announcement-strip__item--renewal {
+  border-color: #f2d38a;
+  background: #fff8e8;
+}
+
+.announcement-strip__item--maintenance {
+  border-color: #f0b4b4;
+  background: #fff3f3;
+}
+
+.announcement-strip__item--approval {
+  border-color: #b8d9a8;
+  background: #f4fff1;
 }
 
 .admin-actions {

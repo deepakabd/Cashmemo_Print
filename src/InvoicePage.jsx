@@ -541,6 +541,16 @@ function InvoicePage({ loggedInUser }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceDraftStorageKey]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(savedInvoicesStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setSavedInvoices(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setSavedInvoices([]);
+    }
+  }, [savedInvoicesStorageKey]);
+
   return (
     <div className="placeholder-container">
       <div className="support-status-panel" style={{ marginBottom: '18px' }}>

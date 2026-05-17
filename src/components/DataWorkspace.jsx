@@ -206,6 +206,8 @@ const DataWorkspace = ({
   shouldShowFilteredEmptyState,
   handleReUploadClick,
   openOnboardingTour,
+  compactWorkspaceMode,
+  onToggleCompactWorkspaceMode,
   currentTableData,
   handleSelectAllChange,
   isAllFilteredRowsSelected,
@@ -247,7 +249,7 @@ const DataWorkspace = ({
   ].filter(Boolean).slice(0, 4);
 
   return (
-    <div className="filters-shell">
+    <div className={`filters-shell ${compactWorkspaceMode ? 'filters-shell--compact' : ''}`}>
       {showBookingReport && (
         <div className="booking-report-panel">
           <div className="booking-report-header">
@@ -575,6 +577,10 @@ const DataWorkspace = ({
             </select>
           </div>
         )}
+
+        <button type="button" className="filter-action filter-action--secondary action-button" onClick={onToggleCompactWorkspaceMode}>
+          {compactWorkspaceMode ? 'Normal View' : 'Compact Mode'}
+        </button>
 
         <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
         <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
