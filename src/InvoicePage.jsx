@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 //ok
 function InvoicePage({ loggedInUser }) {
+  const dealerStorageKey = String(loggedInUser?.dealerCode || loggedInUser?.profileData?.distributorCode || 'guest').trim() || 'guest';
+  const invoiceDraftStorageKey = `cashmemoInvoiceDraft_${dealerStorageKey}`;
+  const savedInvoicesStorageKey = `cashmemoSavedInvoices_${dealerStorageKey}`;
   const initialInvoiceRates = (() => {
     try {
       const userRates = Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null;
@@ -54,6 +57,15 @@ function InvoicePage({ loggedInUser }) {
   const [billToDate, setBillToDate] = useState(new Date().toISOString().slice(0, 10));
   const [billToAddress, setBillToAddress] = useState('');
   const [billToGstin, setBillToGstin] = useState('');
+  const [savedInvoices, setSavedInvoices] = useState(() => {
+    try {
+      const raw = localStorage.getItem(savedInvoicesStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const invoicePrintRef = useRef(null);
   const toUpperValue = (value) => (value || '').toUpperCase();
 
@@ -211,6 +223,66 @@ function InvoicePage({ loggedInUser }) {
     setBillToGstin('');
     setBillToDate('');
     setInvoiceRows([buildEmptyProductRow()]);
+  };
+
+  const buildInvoiceDraft = () => ({
+    billToName,
+    billToConsumerNo,
+    billToMobileNo,
+    billToCenterNo,
+    billToDate,
+    billToAddress,
+    billToGstin,
+    invoiceRows,
+  });
+
+  const applyInvoiceDraft = (draft = {}) => {
+    setBillToName(String(draft?.billToName || ''));
+    setBillToConsumerNo(String(draft?.billToConsumerNo || ''));
+    setBillToMobileNo(String(draft?.billToMobileNo || ''));
+    setBillToCenterNo(String(draft?.billToCenterNo || ''));
+    setBillToDate(String(draft?.billToDate || ''));
+    setBillToAddress(String(draft?.billToAddress || ''));
+    setBillToGstin(String(draft?.billToGstin || ''));
+    setInvoiceRows(Array.isArray(draft?.invoiceRows) && draft.invoiceRows.length > 0
+      ? draft.invoiceRows.map((row, index) => ({
+          id: row?.id || `row-${Date.now()}-${index}`,
+          item: row?.item || '',
+          quantity: row?.quantity || 1,
+          customRate: row?.customRate || '',
+          discount: row?.discount || '',
+        }))
+      : [buildEmptyProductRow()]);
+  };
+
+  const handleSaveInvoiceDraft = () => {
+    const draft = buildInvoiceDraft();
+    localStorage.setItem(invoiceDraftStorageKey, JSON.stringify(draft));
+  };
+
+  const handleSaveInvoiceRecord = () => {
+    const draft = buildInvoiceDraft();
+    const invoiceRecord = {
+      id: `invoice-${Date.now()}`,
+      title: `${draft.billToName || 'Unnamed Customer'}${draft.billToConsumerNo ? ` (${draft.billToConsumerNo})` : ''}`,
+      savedAt: new Date().toISOString(),
+      draft,
+    };
+    const nextSavedInvoices = [invoiceRecord, ...savedInvoices].slice(0, 20);
+    setSavedInvoices(nextSavedInvoices);
+    localStorage.setItem(savedInvoicesStorageKey, JSON.stringify(nextSavedInvoices));
+    localStorage.setItem(invoiceDraftStorageKey, JSON.stringify(draft));
+  };
+
+  const handleDuplicateSavedInvoice = (invoiceRecord) => {
+    applyInvoiceDraft(invoiceRecord?.draft || {});
+    localStorage.setItem(invoiceDraftStorageKey, JSON.stringify(invoiceRecord?.draft || {}));
+  };
+
+  const handleDeleteSavedInvoice = (invoiceId) => {
+    const nextSavedInvoices = savedInvoices.filter((item) => item.id !== invoiceId);
+    setSavedInvoices(nextSavedInvoices);
+    localStorage.setItem(savedInvoicesStorageKey, JSON.stringify(nextSavedInvoices));
   };
 
   const handlePrintInvoice = () => {
@@ -455,8 +527,48 @@ function InvoicePage({ loggedInUser }) {
     }
   }, [loggedInUser?.bankDetailsData]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(invoiceDraftStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        applyInvoiceDraft(parsed);
+      }
+    } catch {
+      void 0;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceDraftStorageKey]);
+
   return (
     <div className="placeholder-container">
+      <div className="support-status-panel" style={{ marginBottom: '18px' }}>
+        <div className="support-status-panel__header">
+          <h3>Saved Invoices</h3>
+          <span>{savedInvoices.length} drafts</span>
+        </div>
+        <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
+          <button type="button" onClick={handleSaveInvoiceDraft}>Save Draft</button>
+          <button type="button" onClick={handleSaveInvoiceRecord}>Save Invoice Snapshot</button>
+        </div>
+        {savedInvoices.length === 0 ? (
+          <div className="support-status-panel__empty">Abhi koi saved invoice snapshot available nahi hai.</div>
+        ) : (
+          <div className="user-profile-history-list">
+            {savedInvoices.map((item) => (
+              <div key={item.id} className="user-profile-history-item">
+                <strong>{item.title}</strong>
+                <span>Saved: {new Date(item.savedAt).toLocaleString('en-GB')}</span>
+                <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
+                  <button type="button" onClick={() => handleDuplicateSavedInvoice(item)}>Duplicate</button>
+                  <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="invoice-container" ref={invoicePrintRef}>
         <div className="invoice-tax-label">Tax Invoice</div>
         <div className="invoice-header">

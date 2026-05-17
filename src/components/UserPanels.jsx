@@ -238,6 +238,8 @@ export const UserProfilePanel = ({
   onClose,
 }) => {
   const [data, setData] = useState(null);
+  const [areaSearch, setAreaSearch] = useState('');
+  const [staffSearch, setStaffSearch] = useState('');
 
   useEffect(() => {
     if (loggedInUser?.profileData) {
@@ -250,11 +252,23 @@ export const UserProfilePanel = ({
   const currentPackage = loggedInUser?.package || '-';
   const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
   const profilePhotoDataUrl = data?.photoDataUrl || '';
+  const deliveryAreaUpdates = Array.isArray(loggedInUser?.deliveryAreaUpdates) ? loggedInUser.deliveryAreaUpdates : [];
+  const deliveryStaffUpdates = Array.isArray(loggedInUser?.deliveryStaffUpdates) ? loggedInUser.deliveryStaffUpdates : [];
+  const filteredDeliveryAreas = deliveryAreaUpdates.filter((item) => (
+    String(item?.englishWord || item?.english || '').toLowerCase().includes(areaSearch.trim().toLowerCase())
+    || String(item?.hindiTranslation || item?.hindi || '').toLowerCase().includes(areaSearch.trim().toLowerCase())
+  ));
+  const filteredDeliveryStaff = deliveryStaffUpdates.filter((item) => (
+    String(item?.englishWord || item?.english || '').toLowerCase().includes(staffSearch.trim().toLowerCase())
+    || String(item?.hindiTranslation || item?.hindi || '').toLowerCase().includes(staffSearch.trim().toLowerCase())
+  ));
   const summaryItems = [
     { label: 'Distributor Name', value: loggedInUser?.profileData?.distributorName || '-' },
     { label: 'Bank Details', value: loggedInUser?.bankDetailsData?.bankName ? 'Available' : 'Missing' },
     { label: 'Header', value: loggedInUser?.hindiHeaderData?.distributorName ? 'Available' : 'Missing' },
     { label: 'Rates', value: Array.isArray(loggedInUser?.ratesData) && loggedInUser.ratesData.length > 0 ? `${loggedInUser.ratesData.length} rows` : 'Missing' },
+    { label: 'Delivery Areas', value: `${deliveryAreaUpdates.length} approved` },
+    { label: 'Delivery Staff', value: `${deliveryStaffUpdates.length} approved` },
   ];
   const requestHistoryRows = Object.entries(loggedInUser?.pendingUpdates || {})
     .map(([type, info]) => {
@@ -331,6 +345,50 @@ export const UserProfilePanel = ({
                 <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
                 <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
                 {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="user-profile-history">
+        <h3>Delivery Area Management</h3>
+        <input
+          className="form-input"
+          type="text"
+          value={areaSearch}
+          onChange={(e) => setAreaSearch(e.target.value)}
+          placeholder="Search approved delivery area"
+        />
+        {filteredDeliveryAreas.length === 0 ? (
+          <div className="user-profile-history-empty">No approved delivery areas found.</div>
+        ) : (
+          <div className="user-profile-history-list">
+            {filteredDeliveryAreas.map((item, index) => (
+              <div key={`area-${index}`} className="user-profile-history-item">
+                <strong>{String(item?.englishWord || item?.english || '-')}</strong>
+                <span>Hindi: {String(item?.hindiTranslation || item?.hindi || '-')}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="user-profile-history">
+        <h3>Delivery Staff Management</h3>
+        <input
+          className="form-input"
+          type="text"
+          value={staffSearch}
+          onChange={(e) => setStaffSearch(e.target.value)}
+          placeholder="Search approved delivery staff"
+        />
+        {filteredDeliveryStaff.length === 0 ? (
+          <div className="user-profile-history-empty">No approved delivery staff found.</div>
+        ) : (
+          <div className="user-profile-history-list">
+            {filteredDeliveryStaff.map((item, index) => (
+              <div key={`staff-${index}`} className="user-profile-history-item">
+                <strong>{String(item?.englishWord || item?.english || '-')}</strong>
+                <span>Hindi: {String(item?.hindiTranslation || item?.hindi || '-')}</span>
               </div>
             ))}
           </div>

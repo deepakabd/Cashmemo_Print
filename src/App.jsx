@@ -329,11 +329,16 @@ const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
 const ADMIN_AUDIT_COLLECTION = 'adminAuditTrail';
 const FILTER_PRESET_STORAGE_KEY_PREFIX = 'cashmemoFilterPresets_';
 const RECENT_ACTIVITY_STORAGE_KEY_PREFIX = 'cashmemoRecentActivity_';
+const ONBOARDING_TOUR_STORAGE_KEY_PREFIX = 'cashmemoOnboardingTourSeen_';
 
 const getPlanUpgradeReplyStorageKey = ({ userId = '', dealerCode = '', dealerName = '' } = {}) => {
   const userKey = String(userId || dealerCode || dealerName || '').trim();
   return userKey ? `planUpgrade-${userKey}` : 'planUpgrade';
 };
+
+const getOnboardingTourStorageKey = (dealerCode = '') => (
+  `${ONBOARDING_TOUR_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
+);
 
 const PACKAGE_OPTIONS = [
   'Demo Package - 7 Days',
@@ -352,46 +357,6 @@ const PACKAGE_PRICING = {
 };
 
 const PAYMENT_UPI_ID = '8002074620@ybl';
-const APPROVAL_REPLY_TEMPLATES = {
-  default: [
-    'Request reviewed. Please wait while we complete the update.',
-    'Please verify the submitted details once from your side as well.',
-    'This request needs a small correction. Update the data and send again.',
-  ],
-  profile: [
-    'Profile details are under review. Distributor name, GST, and address have been checked.',
-    'Profile request is almost ready, but a few details need correction before approval.',
-  ],
-  bank: [
-    'Bank details reviewed. Please re-check account number and IFSC once.',
-    'Bank update needs correction. Submit matching bank name, account number, and IFSC.',
-  ],
-  rates: [
-    'Rate sheet reviewed. Approval will be processed after final amount verification.',
-    'Rate update needs correction. Please verify Basic Price, GST, and RSP values.',
-  ],
-  header: [
-    'Header update reviewed. Hindi layout and distributor details are being checked.',
-    'Header request needs correction. Please review spelling and alignment-related details.',
-  ],
-  planUpgrade: [
-    'Payment received. Plan upgrade is being processed.',
-    'Plan request reviewed. Please wait for final activation confirmation.',
-    'Payment proof needs verification. Share correct transaction details if required.',
-  ],
-  deliveryArea: [
-    'Delivery area update reviewed. New Hindi mappings will be merged after approval.',
-    'Delivery area request has duplicate or mismatched entries. Please verify once.',
-  ],
-  deliveryStaff: [
-    'Delivery staff update reviewed. Staff name mappings are being checked.',
-    'Delivery staff request needs a correction. Please verify name spellings and resend.',
-  ],
-  dictionary: [
-    'Dictionary request reviewed. Translation will be merged after admin verification.',
-    'Dictionary request has a possible duplicate or conflict. Please verify the suggested Hindi once.',
-  ],
-};
 const HINDI_ENTERPRISE_PACKAGE_NAMES = [
   'Enterprise Package with (हिंदी) - 365 Days',
   'Premium Package with (हिंदी) - 365 Days',
@@ -766,6 +731,8 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [showOnboardingTour, setShowOnboardingTour] = useState(false);
+  const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
   const [translationObservability, setTranslationObservability] = useState({
     apiCount: 0,
     dictionaryCount: 0,
@@ -776,6 +743,7 @@ function App() {
   });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
   const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
+  const onboardingAutoOpenedRef = useRef(false);
 
   const pushToast = useCallback((message, tone = 'info') => {
     if (!message) return;
@@ -1591,6 +1559,9 @@ function App() {
   const handleLogout = () => {
     hideAllViews();
     clearUserSession();
+    onboardingAutoOpenedRef.current = false;
+    setShowOnboardingTour(false);
+    setOnboardingStepIndex(0);
     setIsLoggedIn(false);
     setShowUserMenu(false);
     setLoggedInUser(null);
@@ -1748,6 +1719,22 @@ function App() {
     }
   }, [isLoggedIn, showProfileUpdate, loggedInUser]);
 
+  useEffect(() => {
+    if (!isLoggedIn || !loggedInUser?.dealerCode || onboardingAutoOpenedRef.current) return;
+    try {
+      const raw = localStorage.getItem(getOnboardingTourStorageKey(loggedInUser.dealerCode));
+      if (raw) {
+        onboardingAutoOpenedRef.current = true;
+        return;
+      }
+    } catch {
+      void 0;
+    }
+    onboardingAutoOpenedRef.current = true;
+    setOnboardingStepIndex(0);
+    setShowOnboardingTour(true);
+  }, [isLoggedIn, loggedInUser?.dealerCode]);
+
   const handleHomeOpen = () => {
     navigateToHome();
   };
@@ -1803,6 +1790,87 @@ function App() {
     setShowAdminLogin(true);
     setShowUserMenu(false);
   };
+
+  const onboardingSteps = [
+    {
+      id: 'upload',
+      title: 'Upload Data',
+      description: 'Yahin se aap cDCMS ka latest Pending Booking file upload karke kaam start karte ho.',
+      hint: 'CSV ya XLSX upload ke baad filters, print aur quick profile sab active ho jaate hain.',
+      actionLabel: 'Open Data Upload',
+      action: () => {
+        if (!showParsedData) {
+          handleShowData();
+        }
+      },
+    },
+    {
+      id: 'invoice',
+      title: 'Invoice Page',
+      description: 'Invoice page par customer invoice bana, save, aur duplicate karke fast billing kar sakte ho.',
+      hint: 'Quick profile se bhi invoice directly open ho sakta hai.',
+      actionLabel: 'Open Invoice',
+      action: handleInvoiceOpen,
+    },
+    {
+      id: 'support',
+      title: 'Approval Reply & Support',
+      description: 'Yahan admin replies, support messages, aur pending follow-up dekh sakte ho.',
+      hint: 'Agar upload ya plan me issue aaye to sabse pehle isi section ko check karo.',
+      actionLabel: 'Open Support',
+      action: handleContactOpen,
+    },
+    {
+      id: 'dictionary',
+      title: 'Dictionary & Delivery Updates',
+      description: 'Dictionary, delivery area, aur delivery staff requests isi flow se manage hote hain.',
+      hint: 'Hindi print aur local naming consistency ke liye ye section important hai.',
+      actionLabel: 'Open Dictionary',
+      action: handleDictionaryOpen,
+    },
+  ];
+
+  const activeOnboardingStep = onboardingSteps[onboardingStepIndex] || onboardingSteps[0];
+
+  const markOnboardingTourSeen = useCallback((dealerCode = '') => {
+    try {
+      localStorage.setItem(getOnboardingTourStorageKey(dealerCode), JSON.stringify({
+        completedAt: new Date().toISOString(),
+      }));
+    } catch {
+      void 0;
+    }
+  }, []);
+
+  const openOnboardingTour = useCallback((stepIndex = 0) => {
+    setOnboardingStepIndex(Math.max(0, Math.min(stepIndex, onboardingSteps.length - 1)));
+    setShowOnboardingTour(true);
+  }, [onboardingSteps.length]);
+
+  const closeOnboardingTour = useCallback((markSeen = true) => {
+    if (markSeen) {
+      markOnboardingTourSeen(loggedInUser?.dealerCode);
+    }
+    setShowOnboardingTour(false);
+  }, [loggedInUser?.dealerCode, markOnboardingTourSeen]);
+
+  const handleOnboardingNext = useCallback(() => {
+    setOnboardingStepIndex((prev) => {
+      if (prev >= onboardingSteps.length - 1) {
+        closeOnboardingTour(true);
+        return prev;
+      }
+      return prev + 1;
+    });
+  }, [closeOnboardingTour, onboardingSteps.length]);
+
+  const handleOnboardingBack = useCallback(() => {
+    setOnboardingStepIndex((prev) => Math.max(0, prev - 1));
+  }, []);
+
+  const handleOnboardingAction = useCallback(() => {
+    activeOnboardingStep?.action?.();
+  }, [activeOnboardingStep]);
 
   const handleAdminLogout = async () => {
     try {
@@ -2115,7 +2183,6 @@ function App() {
     const [showApprovalReplyPopup, setShowApprovalReplyPopup] = useState(false);
     const [activeApprovalReply, setActiveApprovalReply] = useState(null);
     const [approvalReplyDraft, setApprovalReplyDraft] = useState('');
-    const [selectedApprovalReplyTemplate, setSelectedApprovalReplyTemplate] = useState('');
     const [allFeedbackEntries, setAllFeedbackEntries] = useState([]);
     const [auditSyncState, setAuditSyncState] = useState({ source: 'local fallback', lastSyncAt: '', detail: '' });
     const [auditSyncDisabled, setAuditSyncDisabled] = useState(false);
@@ -2265,7 +2332,6 @@ function App() {
       const currentReply = getApprovalReplyMessage(item);
       setActiveApprovalReply({ ...item, replyKey, pendingReply: currentReply });
       setApprovalReplyDraft(currentReply);
-      setSelectedApprovalReplyTemplate('');
       setShowApprovalReplyPopup(true);
     };
 
@@ -2273,40 +2339,6 @@ function App() {
       setShowApprovalReplyPopup(false);
       setActiveApprovalReply(null);
       setApprovalReplyDraft('');
-      setSelectedApprovalReplyTemplate('');
-    };
-
-    const getApprovalReplyTemplates = (approval) => {
-      const approvalType = normalizeApprovalType(approval?.type);
-      return APPROVAL_REPLY_TEMPLATES[approvalType] || APPROVAL_REPLY_TEMPLATES.default;
-    };
-
-    const applyApprovalReplyTemplate = (template) => {
-      const nextTemplate = String(template || '').trim();
-      if (!nextTemplate) return;
-      setSelectedApprovalReplyTemplate(nextTemplate);
-      setApprovalReplyDraft((prev) => {
-        const current = String(prev || '').trim();
-        return current ? `${current}\n\n${nextTemplate}` : nextTemplate;
-      });
-    };
-
-    const getApprovalReplyRequestSummary = (approval) => {
-      if (!approval) return 'Approval request details are not available.';
-      const approvalType = normalizeApprovalType(approval.type);
-      const payload = approval.payload || {};
-      if (approvalType === 'planUpgrade') {
-        return `Plan upgrade request from ${approval.dealerCode || 'user'} - ${payload.package || payload.selectedPackage || 'unknown plan'}`;
-      }
-      if (approvalType === 'dictionary') {
-        return `Dictionary request for "${payload.englishWord || payload.eng || '-'}" -> "${payload.hindiTranslation || payload.hin || '-'}"`;
-      }
-      if (approvalType === 'deliveryArea' || approvalType === 'deliveryStaff') {
-        const rowCount = Array.isArray(payload) ? payload.length : 1;
-        return `${approvalType === 'deliveryArea' ? 'Delivery area' : 'Delivery staff'} request with ${rowCount} row${rowCount === 1 ? '' : 's'}.`;
-      }
-      const payloadKeys = payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 4) : [];
-      return `${approvalType || 'update'} request from ${approval.dealerCode || 'user'}${payloadKeys.length > 0 ? ` covering ${payloadKeys.join(', ')}` : ''}.`;
     };
 
     const submitApprovalReply = async () => {
@@ -2327,7 +2359,7 @@ function App() {
         const approvalDocId = activeApprovalReply.source === 'userDoc'
           ? activeApprovalReply.approvalId
           : activeApprovalReply.id;
-        if (approvalDocId) {
+        if (approvalDocId && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
           try {
             const approvalRef = doc(db, 'updateApprovals', approvalDocId);
             const existingPayload = activeApprovalReply.payload || {};
@@ -2349,12 +2381,11 @@ function App() {
           || String(u?.dealerCode || '').trim() === String(activeApprovalReply?.dealerCode || '').trim()
         ));
 
-        const approvalType = normalizeApprovalType(activeApprovalReply.type);
-        if (targetUser?.id && approvalType !== 'dictionary') {
+        if (targetUser?.id && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
           try {
             await updateDoc(doc(db, 'users', targetUser.id), {
-              [`pendingUpdates.${approvalType}.adminReply`]: replyMessage,
-              [`pendingUpdates.${approvalType}.adminReplyAt`]: replyTimestamp,
+              'pendingUpdates.planUpgrade.adminReply': replyMessage,
+              'pendingUpdates.planUpgrade.adminReplyAt': replyTimestamp,
               updatedAt: serverTimestamp(),
             });
           } catch (error) {
@@ -4819,9 +4850,11 @@ function App() {
                               <button type="button" onClick={() => setViewApproval({ ...a, payload: dictionaryPayload || a.payload })}>View</button>
                               <button type="button" onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
                               <button type="button" onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
+                              {approvalType === 'planUpgrade' && (
                               <button type="button" className="admin-ghost-btn" onClick={(e) => { e.preventDefault(); openApprovalReplyPopup(a); }} disabled={!canMutateAdminData}>
-                                Approval Reply
-                              </button>
+                                  Approval Reply
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -4846,38 +4879,15 @@ function App() {
                   <div className="admin-chat-conversation">
                     <div className="admin-chat-message user-message">
                       <strong>User Request:</strong>
-                      <p>{getApprovalReplyRequestSummary(activeApprovalReply)}</p>
+                      <p>
+                        Plan upgrade request from {activeApprovalReply?.dealerCode || 'user'} - {activeApprovalReply?.payload?.package || activeApprovalReply?.payload?.selectedPackage || 'unknown plan'}
+                      </p>
                     </div>
                     <div className="admin-chat-message admin-message">
                       <strong>Approval Reply:</strong>
                       <p>{getApprovalReplyMessage(activeApprovalReply) || 'No reply yet.'}</p>
                     </div>
                   </div>
-                  <div className="form-actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                    {getApprovalReplyTemplates(activeApprovalReply).map((template) => (
-                      <button
-                        key={template}
-                        type="button"
-                        className="form-button secondary"
-                        onClick={() => applyApprovalReplyTemplate(template)}
-                      >
-                        Use Template
-                      </button>
-                    ))}
-                  </div>
-                  <select
-                    className="form-input"
-                    value={selectedApprovalReplyTemplate}
-                    onChange={(e) => applyApprovalReplyTemplate(e.target.value)}
-                    style={{ marginBottom: '12px' }}
-                  >
-                    <option value="">Choose reply template</option>
-                    {getApprovalReplyTemplates(activeApprovalReply).map((template) => (
-                      <option key={`approval-template-${template}`} value={template}>
-                        {template}
-                      </option>
-                    ))}
-                  </select>
                   <textarea
                     className="form-input"
                     rows="5"
@@ -5376,7 +5386,6 @@ function App() {
                               <button onClick={() => setViewApproval({ ...a, payload: dictionaryPayload })}>View</button>
                               <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
                               <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
-                              <button type="button" className="admin-ghost-btn" onClick={() => openApprovalReplyPopup({ ...a, payload: dictionaryPayload })} disabled={!canMutateAdminData}>Approval Reply</button>
                             </div>
                           </td>
                         </tr>
@@ -7773,6 +7782,23 @@ function App() {
   );
   const shouldShowEmptyUploadState = showParsedData && parsedData.length === 0;
   const shouldShowFilteredEmptyState = showParsedData && parsedData.length > 0 && filteredData.length === 0;
+  const emptyUploadSuggestions = [
+    {
+      key: 'tour',
+      label: 'Open Quick Tour',
+      onClick: () => openOnboardingTour(0),
+    },
+    {
+      key: 'invoice',
+      label: 'See Invoice Screen',
+      onClick: handleInvoiceOpen,
+    },
+    {
+      key: 'support',
+      label: 'Open Support & Replies',
+      onClick: handleContactOpen,
+    },
+  ];
   const activeFilterChips = [
     searchTerm ? { key: 'search', label: `Search: ${searchTerm}`, clear: () => setSearchTerm('') } : null,
     activeReportFilter ? { key: 'report', label: `Report: ${activeReportFilter}`, clear: () => setActiveReportFilter('') } : null,
@@ -7862,53 +7888,6 @@ function App() {
     { key: 'pendingAbove21Days', label: '> 21 Days', value: bookingReport.metrics.pendingAbove21Days },
     ...bookingReport.topPendingAreas,
   ];
-  const exceptionQueueCards = [
-    {
-      key: 'eKycNotDone',
-      label: 'eKYC Pending',
-      description: 'Complete these records first before dispatch/print follow-up.',
-      count: bookingReport.metrics.eKycNotDone,
-    },
-    {
-      key: 'aadhaarNotSeeded',
-      label: 'Aadhaar Not Seeded',
-      description: 'Identity linkage pending records needing dealer attention.',
-      count: bookingReport.metrics.aadhaarNotSeeded,
-    },
-    {
-      key: 'unregisteredNumber',
-      label: 'Mobile Missing',
-      description: 'Consumer contact is missing or not properly registered.',
-      count: bookingReport.metrics.unregisteredNumber,
-    },
-    {
-      key: 'pending02To05Days',
-      label: 'Aging 2-5 Days',
-      description: 'These bookings are starting to slip and need quick action.',
-      count: bookingReport.metrics.pending02To05Days,
-    },
-    {
-      key: 'pendingAbove7Days',
-      label: 'Aging > 7 Days',
-      description: 'Highest priority stale bookings waiting too long.',
-      count: bookingReport.metrics.pendingAbove7Days,
-    },
-    {
-      key: 'onlinePaid',
-      label: 'Online Paid',
-      description: 'Review paid bookings that are ready for next processing step.',
-      count: bookingReport.metrics.onlinePaid,
-    },
-  ]
-    .filter((item) => item.count > 0)
-    .map((item) => ({
-      ...item,
-      isActive: activeReportFilter === item.key,
-      onClick: () => {
-        setShowBookingReport(true);
-        setActiveReportFilter((prev) => (prev === item.key ? '' : item.key));
-      },
-    }));
   const reportFilterOptions = reportCards.filter((card) => card.key !== 'totalPendingBooking');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableEkycOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['eKycFilter']).map(row => row['EKYC Status'])), [parsedData, searchTerm, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
@@ -8966,7 +8945,6 @@ function App() {
                 getPendingDictionaryRequestCount={getPendingDictionaryRequestCount}
                 deliveryAreaUpdates={deliveryAreaUpdates}
                 deliveryStaffUpdates={deliveryStaffUpdates}
-                translationDictionary={translationDictionary}
                 submitUpdateApprovalRequest={submitUpdateApprovalRequest}
                 updateUserInStore={updateUserInStore}
                 mode={dictionaryFormMode}
@@ -9182,7 +9160,6 @@ function App() {
             setActiveReportFilter={setActiveReportFilter}
             setShowBookingReport={setShowBookingReport}
             reportCards={reportCards}
-            exceptionQueueCards={exceptionQueueCards}
             uploadInProgress={uploadInProgress}
             selectedCustomerIds={selectedCustomerIds}
             hasActiveDataFilters={hasActiveDataFilters}
@@ -9277,6 +9254,7 @@ function App() {
             exportReportSummary={exportReportSummary}
             shouldShowFilteredEmptyState={shouldShowFilteredEmptyState}
             handleReUploadClick={handleReUploadClick}
+            openOnboardingTour={openOnboardingTour}
             currentTableData={currentTableData}
             handleSelectAllChange={handleSelectAllChange}
             isAllFilteredRowsSelected={isAllFilteredRowsSelected}
@@ -9293,24 +9271,34 @@ function App() {
       {!isPlanExpired && shouldShowEmptyUploadState && (
         <div className="filters-shell">
           <div className="data-empty-state data-empty-state--upload">
-            <p className="data-empty-state__eyebrow">No Data Loaded</p>
-            <h3>Upload a Pending Booking file to start working.</h3>
+            <p className="data-empty-state__eyebrow">Start Here</p>
+            <h3>Abhi koi working data loaded nahi hai.</h3>
             <p>
-              Cashmemo print, data filtering, and invoice work begin after you upload the latest
-              `Pending Booking` CSV or XLSX file from cDCMS.
+              Aaj ka `Pending Booking` CSV ya XLSX upload karte hi filters, cashmemo print,
+              reports, aur quick profile actions start ho jayenge.
             </p>
             <p>
-              Current access: {formatPackageNameForNavbar(loggedInUser?.package)}. If upload is not available later,
-              renew plan or contact admin from Support & Replies.
+              Agar pehli baar use kar rahe ho to quick tour dekh lo. Agar format ya process me doubt ho,
+              About steps aur Support & Replies dono available hain.
             </p>
             <div className="data-empty-state__actions">
               <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
-                Upload Data
+                Upload Today's File
               </button>
               <button type="button" className="filter-action filter-action--secondary" onClick={handleAboutOpen}>
-                View Steps
+                View Upload Steps
               </button>
             </div>
+            <div className="data-empty-state__suggestions">
+              {emptyUploadSuggestions.map((item) => (
+                <button key={item.key} type="button" className="data-empty-state__shortcut" onClick={item.onClick}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p className="data-empty-state__helper">
+              Current access: {formatPackageNameForNavbar(loggedInUser?.package)}.
+            </p>
           </div>
         </div>
       )}
@@ -9369,6 +9357,52 @@ function App() {
             <div className="app-dialog__actions">
               <button type="button" className="auth-secondary-button" onClick={closeInputDialog}>Cancel</button>
               <button type="button" className="auth-primary-button" onClick={handleInputDialogSubmit}>{inputDialog.submitLabel}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOnboardingTour && (
+        <div className="app-dialog-overlay" onClick={() => closeOnboardingTour(true)}>
+          <div className="app-dialog onboarding-tour-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="onboarding-tour-title">
+            <div className="app-dialog__header onboarding-tour-dialog__header">
+              <div>
+                <p className="onboarding-tour-dialog__eyebrow">Quick Tour</p>
+                <h3 id="onboarding-tour-title">{activeOnboardingStep?.title || 'Getting Started'}</h3>
+              </div>
+              <button type="button" className="app-dialog__close" onClick={() => closeOnboardingTour(true)}>×</button>
+            </div>
+            <div className="onboarding-tour-dialog__progress">
+              {onboardingSteps.map((step, index) => (
+                <span
+                  key={step.id}
+                  className={`onboarding-tour-dialog__dot ${index === onboardingStepIndex ? 'is-active' : index < onboardingStepIndex ? 'is-complete' : ''}`}
+                />
+              ))}
+            </div>
+            <p className="app-dialog__message">{activeOnboardingStep?.description}</p>
+            <div className="onboarding-tour-dialog__hint">{activeOnboardingStep?.hint}</div>
+            <div className="onboarding-tour-dialog__step-list">
+              {onboardingSteps.map((step, index) => (
+                <button
+                  key={`tour-step-${step.id}`}
+                  type="button"
+                  className={`onboarding-tour-dialog__step ${index === onboardingStepIndex ? 'is-active' : ''}`}
+                  onClick={() => setOnboardingStepIndex(index)}
+                >
+                  <strong>{index + 1}.</strong> {step.title}
+                </button>
+              ))}
+            </div>
+            <div className="app-dialog__actions onboarding-tour-dialog__actions">
+              <button type="button" className="auth-secondary-button" onClick={() => closeOnboardingTour(true)}>Skip Tour</button>
+              <button type="button" className="auth-secondary-button" onClick={handleOnboardingAction}>
+                {activeOnboardingStep?.actionLabel || 'Open'}
+              </button>
+              <button type="button" className="auth-secondary-button" onClick={handleOnboardingBack} disabled={onboardingStepIndex === 0}>Back</button>
+              <button type="button" className="auth-primary-button" onClick={handleOnboardingNext}>
+                {onboardingStepIndex === onboardingSteps.length - 1 ? 'Finish' : 'Next'}
+              </button>
             </div>
           </div>
         </div>
