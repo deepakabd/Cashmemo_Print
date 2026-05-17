@@ -352,6 +352,46 @@ const PACKAGE_PRICING = {
 };
 
 const PAYMENT_UPI_ID = '8002074620@ybl';
+const APPROVAL_REPLY_TEMPLATES = {
+  default: [
+    'Request reviewed. Please wait while we complete the update.',
+    'Please verify the submitted details once from your side as well.',
+    'This request needs a small correction. Update the data and send again.',
+  ],
+  profile: [
+    'Profile details are under review. Distributor name, GST, and address have been checked.',
+    'Profile request is almost ready, but a few details need correction before approval.',
+  ],
+  bank: [
+    'Bank details reviewed. Please re-check account number and IFSC once.',
+    'Bank update needs correction. Submit matching bank name, account number, and IFSC.',
+  ],
+  rates: [
+    'Rate sheet reviewed. Approval will be processed after final amount verification.',
+    'Rate update needs correction. Please verify Basic Price, GST, and RSP values.',
+  ],
+  header: [
+    'Header update reviewed. Hindi layout and distributor details are being checked.',
+    'Header request needs correction. Please review spelling and alignment-related details.',
+  ],
+  planUpgrade: [
+    'Payment received. Plan upgrade is being processed.',
+    'Plan request reviewed. Please wait for final activation confirmation.',
+    'Payment proof needs verification. Share correct transaction details if required.',
+  ],
+  deliveryArea: [
+    'Delivery area update reviewed. New Hindi mappings will be merged after approval.',
+    'Delivery area request has duplicate or mismatched entries. Please verify once.',
+  ],
+  deliveryStaff: [
+    'Delivery staff update reviewed. Staff name mappings are being checked.',
+    'Delivery staff request needs a correction. Please verify name spellings and resend.',
+  ],
+  dictionary: [
+    'Dictionary request reviewed. Translation will be merged after admin verification.',
+    'Dictionary request has a possible duplicate or conflict. Please verify the suggested Hindi once.',
+  ],
+};
 const HINDI_ENTERPRISE_PACKAGE_NAMES = [
   'Enterprise Package with (हिंदी) - 365 Days',
   'Premium Package with (हिंदी) - 365 Days',
@@ -2075,6 +2115,7 @@ function App() {
     const [showApprovalReplyPopup, setShowApprovalReplyPopup] = useState(false);
     const [activeApprovalReply, setActiveApprovalReply] = useState(null);
     const [approvalReplyDraft, setApprovalReplyDraft] = useState('');
+    const [selectedApprovalReplyTemplate, setSelectedApprovalReplyTemplate] = useState('');
     const [allFeedbackEntries, setAllFeedbackEntries] = useState([]);
     const [auditSyncState, setAuditSyncState] = useState({ source: 'local fallback', lastSyncAt: '', detail: '' });
     const [auditSyncDisabled, setAuditSyncDisabled] = useState(false);
@@ -2224,6 +2265,7 @@ function App() {
       const currentReply = getApprovalReplyMessage(item);
       setActiveApprovalReply({ ...item, replyKey, pendingReply: currentReply });
       setApprovalReplyDraft(currentReply);
+      setSelectedApprovalReplyTemplate('');
       setShowApprovalReplyPopup(true);
     };
 
@@ -2231,6 +2273,40 @@ function App() {
       setShowApprovalReplyPopup(false);
       setActiveApprovalReply(null);
       setApprovalReplyDraft('');
+      setSelectedApprovalReplyTemplate('');
+    };
+
+    const getApprovalReplyTemplates = (approval) => {
+      const approvalType = normalizeApprovalType(approval?.type);
+      return APPROVAL_REPLY_TEMPLATES[approvalType] || APPROVAL_REPLY_TEMPLATES.default;
+    };
+
+    const applyApprovalReplyTemplate = (template) => {
+      const nextTemplate = String(template || '').trim();
+      if (!nextTemplate) return;
+      setSelectedApprovalReplyTemplate(nextTemplate);
+      setApprovalReplyDraft((prev) => {
+        const current = String(prev || '').trim();
+        return current ? `${current}\n\n${nextTemplate}` : nextTemplate;
+      });
+    };
+
+    const getApprovalReplyRequestSummary = (approval) => {
+      if (!approval) return 'Approval request details are not available.';
+      const approvalType = normalizeApprovalType(approval.type);
+      const payload = approval.payload || {};
+      if (approvalType === 'planUpgrade') {
+        return `Plan upgrade request from ${approval.dealerCode || 'user'} - ${payload.package || payload.selectedPackage || 'unknown plan'}`;
+      }
+      if (approvalType === 'dictionary') {
+        return `Dictionary request for "${payload.englishWord || payload.eng || '-'}" -> "${payload.hindiTranslation || payload.hin || '-'}"`;
+      }
+      if (approvalType === 'deliveryArea' || approvalType === 'deliveryStaff') {
+        const rowCount = Array.isArray(payload) ? payload.length : 1;
+        return `${approvalType === 'deliveryArea' ? 'Delivery area' : 'Delivery staff'} request with ${rowCount} row${rowCount === 1 ? '' : 's'}.`;
+      }
+      const payloadKeys = payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 4) : [];
+      return `${approvalType || 'update'} request from ${approval.dealerCode || 'user'}${payloadKeys.length > 0 ? ` covering ${payloadKeys.join(', ')}` : ''}.`;
     };
 
     const submitApprovalReply = async () => {
@@ -2251,7 +2327,7 @@ function App() {
         const approvalDocId = activeApprovalReply.source === 'userDoc'
           ? activeApprovalReply.approvalId
           : activeApprovalReply.id;
-        if (approvalDocId && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
+        if (approvalDocId) {
           try {
             const approvalRef = doc(db, 'updateApprovals', approvalDocId);
             const existingPayload = activeApprovalReply.payload || {};
@@ -2273,11 +2349,12 @@ function App() {
           || String(u?.dealerCode || '').trim() === String(activeApprovalReply?.dealerCode || '').trim()
         ));
 
-        if (targetUser?.id && normalizeApprovalType(activeApprovalReply.type) === 'planUpgrade') {
+        const approvalType = normalizeApprovalType(activeApprovalReply.type);
+        if (targetUser?.id && approvalType !== 'dictionary') {
           try {
             await updateDoc(doc(db, 'users', targetUser.id), {
-              'pendingUpdates.planUpgrade.adminReply': replyMessage,
-              'pendingUpdates.planUpgrade.adminReplyAt': replyTimestamp,
+              [`pendingUpdates.${approvalType}.adminReply`]: replyMessage,
+              [`pendingUpdates.${approvalType}.adminReplyAt`]: replyTimestamp,
               updatedAt: serverTimestamp(),
             });
           } catch (error) {
@@ -4742,11 +4819,9 @@ function App() {
                               <button type="button" onClick={() => setViewApproval({ ...a, payload: dictionaryPayload || a.payload })}>View</button>
                               <button type="button" onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
                               <button type="button" onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
-                              {approvalType === 'planUpgrade' && (
                               <button type="button" className="admin-ghost-btn" onClick={(e) => { e.preventDefault(); openApprovalReplyPopup(a); }} disabled={!canMutateAdminData}>
-                                  Approval Reply
-                                </button>
-                              )}
+                                Approval Reply
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -4771,15 +4846,38 @@ function App() {
                   <div className="admin-chat-conversation">
                     <div className="admin-chat-message user-message">
                       <strong>User Request:</strong>
-                      <p>
-                        Plan upgrade request from {activeApprovalReply?.dealerCode || 'user'} - {activeApprovalReply?.payload?.package || activeApprovalReply?.payload?.selectedPackage || 'unknown plan'}
-                      </p>
+                      <p>{getApprovalReplyRequestSummary(activeApprovalReply)}</p>
                     </div>
                     <div className="admin-chat-message admin-message">
                       <strong>Approval Reply:</strong>
                       <p>{getApprovalReplyMessage(activeApprovalReply) || 'No reply yet.'}</p>
                     </div>
                   </div>
+                  <div className="form-actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                    {getApprovalReplyTemplates(activeApprovalReply).map((template) => (
+                      <button
+                        key={template}
+                        type="button"
+                        className="form-button secondary"
+                        onClick={() => applyApprovalReplyTemplate(template)}
+                      >
+                        Use Template
+                      </button>
+                    ))}
+                  </div>
+                  <select
+                    className="form-input"
+                    value={selectedApprovalReplyTemplate}
+                    onChange={(e) => applyApprovalReplyTemplate(e.target.value)}
+                    style={{ marginBottom: '12px' }}
+                  >
+                    <option value="">Choose reply template</option>
+                    {getApprovalReplyTemplates(activeApprovalReply).map((template) => (
+                      <option key={`approval-template-${template}`} value={template}>
+                        {template}
+                      </option>
+                    ))}
+                  </select>
                   <textarea
                     className="form-input"
                     rows="5"
@@ -5278,6 +5376,7 @@ function App() {
                               <button onClick={() => setViewApproval({ ...a, payload: dictionaryPayload })}>View</button>
                               <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
                               <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
+                              <button type="button" className="admin-ghost-btn" onClick={() => openApprovalReplyPopup({ ...a, payload: dictionaryPayload })} disabled={!canMutateAdminData}>Approval Reply</button>
                             </div>
                           </td>
                         </tr>
@@ -7763,6 +7862,53 @@ function App() {
     { key: 'pendingAbove21Days', label: '> 21 Days', value: bookingReport.metrics.pendingAbove21Days },
     ...bookingReport.topPendingAreas,
   ];
+  const exceptionQueueCards = [
+    {
+      key: 'eKycNotDone',
+      label: 'eKYC Pending',
+      description: 'Complete these records first before dispatch/print follow-up.',
+      count: bookingReport.metrics.eKycNotDone,
+    },
+    {
+      key: 'aadhaarNotSeeded',
+      label: 'Aadhaar Not Seeded',
+      description: 'Identity linkage pending records needing dealer attention.',
+      count: bookingReport.metrics.aadhaarNotSeeded,
+    },
+    {
+      key: 'unregisteredNumber',
+      label: 'Mobile Missing',
+      description: 'Consumer contact is missing or not properly registered.',
+      count: bookingReport.metrics.unregisteredNumber,
+    },
+    {
+      key: 'pending02To05Days',
+      label: 'Aging 2-5 Days',
+      description: 'These bookings are starting to slip and need quick action.',
+      count: bookingReport.metrics.pending02To05Days,
+    },
+    {
+      key: 'pendingAbove7Days',
+      label: 'Aging > 7 Days',
+      description: 'Highest priority stale bookings waiting too long.',
+      count: bookingReport.metrics.pendingAbove7Days,
+    },
+    {
+      key: 'onlinePaid',
+      label: 'Online Paid',
+      description: 'Review paid bookings that are ready for next processing step.',
+      count: bookingReport.metrics.onlinePaid,
+    },
+  ]
+    .filter((item) => item.count > 0)
+    .map((item) => ({
+      ...item,
+      isActive: activeReportFilter === item.key,
+      onClick: () => {
+        setShowBookingReport(true);
+        setActiveReportFilter((prev) => (prev === item.key ? '' : item.key));
+      },
+    }));
   const reportFilterOptions = reportCards.filter((card) => card.key !== 'totalPendingBooking');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableEkycOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['eKycFilter']).map(row => row['EKYC Status'])), [parsedData, searchTerm, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
@@ -8820,6 +8966,7 @@ function App() {
                 getPendingDictionaryRequestCount={getPendingDictionaryRequestCount}
                 deliveryAreaUpdates={deliveryAreaUpdates}
                 deliveryStaffUpdates={deliveryStaffUpdates}
+                translationDictionary={translationDictionary}
                 submitUpdateApprovalRequest={submitUpdateApprovalRequest}
                 updateUserInStore={updateUserInStore}
                 mode={dictionaryFormMode}
@@ -9035,6 +9182,7 @@ function App() {
             setActiveReportFilter={setActiveReportFilter}
             setShowBookingReport={setShowBookingReport}
             reportCards={reportCards}
+            exceptionQueueCards={exceptionQueueCards}
             uploadInProgress={uploadInProgress}
             selectedCustomerIds={selectedCustomerIds}
             hasActiveDataFilters={hasActiveDataFilters}

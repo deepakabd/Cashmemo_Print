@@ -112,6 +112,7 @@ const DataWorkspace = ({
   setActiveReportFilter,
   setShowBookingReport,
   reportCards,
+  exceptionQueueCards,
   uploadInProgress,
   selectedCustomerIds,
   hasActiveDataFilters,
@@ -313,6 +314,34 @@ const DataWorkspace = ({
             </div>
           </div>
         </div>
+        {exceptionQueueCards?.length > 0 && (
+          <div className="booking-report-panel">
+            <div className="booking-report-header">
+              <div>
+                <h3>Action Required Queue</h3>
+              </div>
+              <div className="booking-report-actions">
+                <span className="booking-report-badge">
+                  Open Items: {exceptionQueueCards.reduce((sum, item) => sum + Number(item.count || 0), 0)}
+                </span>
+              </div>
+            </div>
+            <div className="booking-report-grid">
+              {exceptionQueueCards.map((card) => (
+                <button
+                  key={card.key}
+                  type="button"
+                  className={`booking-report-card booking-report-card--button ${card.isActive ? 'is-active' : ''}`}
+                  onClick={card.onClick}
+                >
+                  <span className="booking-report-label">{card.label}</span>
+                  <span className="booking-report-meta">{card.description}</span>
+                  <strong>{card.count}</strong>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {activeFilterChips.length > 0 && (
           <div className="filter-chip-row">
             {activeFilterChips.map((chip) => (
