@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDoc, arrayUnion, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 import { db } from '../firebase';
+import { getDictionaryTranslation, getExistingDictionaryEntry } from '../utils/dictionaryWorkflow';
 
 export const ProfileUpdatePanel = ({
   loggedInUser,
@@ -807,6 +808,7 @@ export const DictionaryRequestPanel = ({
   getPendingDictionaryRequestCount,
   deliveryAreaUpdates,
   deliveryStaffUpdates,
+  translationDictionary,
   submitUpdateApprovalRequest,
   updateUserInStore,
   mode = 'default',
@@ -831,6 +833,48 @@ export const DictionaryRequestPanel = ({
   const [showApprovedList, setShowApprovedList] = useState(false);
   const approvedItems = isDeliveryAreaMode ? deliveryAreaUpdates : isDeliveryStaffMode ? deliveryStaffUpdates : [];
   const approvedListTitle = isDeliveryAreaMode ? 'Approved Delivery Areas' : 'Approved Delivery Staff';
+  const normalizedDictionary = translationDictionary && typeof translationDictionary === 'object'
+    ? translationDictionary
+    : {};
+
+  const entryInsights = useMemo(() => entries.map((entry) => {
+    const englishWord = String(entry.englishWord || '').trim();
+    const hindiTranslation = String(entry.hindiTranslation || '').trim();
+    const existingEntry = englishWord ? getExistingDictionaryEntry(normalizedDictionary, englishWord) : null;
+    const suggestedHindi = englishWord ? String(getDictionaryTranslation(normalizedDictionary, englishWord) || '').trim() : '';
+    const hasSuggestion = Boolean(suggestedHindi);
+    const isExactDuplicate = Boolean(existingEntry)
+      && suggestedHindi !== ''
+      && suggestedHindi.toLowerCase() === hindiTranslation.toLowerCase()
+      && hindiTranslation !== '';
+    const hasConflict = Boolean(existingEntry)
+      && hindiTranslation !== ''
+      && suggestedHindi !== ''
+      && suggestedHindi.toLowerCase() !== hindiTranslation.toLowerCase();
+    const isNewWord = Boolean(englishWord) && !existingEntry;
+    return {
+      englishWord,
+      hindiTranslation,
+      existingEntry,
+      suggestedHindi,
+      hasSuggestion,
+      isExactDuplicate,
+      hasConflict,
+      isNewWord,
+    };
+  }), [entries, normalizedDictionary]);
+
+  const validationPreview = useMemo(() => {
+    const filledEntries = entryInsights.filter((item) => item.englishWord || item.hindiTranslation);
+    return {
+      total: filledEntries.length,
+      exactDuplicates: filledEntries.filter((item) => item.isExactDuplicate).length,
+      conflicts: filledEntries.filter((item) => item.hasConflict).length,
+      newWords: filledEntries.filter((item) => item.isNewWord).length,
+      suggested: filledEntries.filter((item) => item.hasSuggestion && !item.hindiTranslation).length,
+      ready: filledEntries.filter((item) => item.englishWord && item.hindiTranslation && !item.isExactDuplicate).length,
+    };
+  }, [entryInsights]);
 
   const editApprovedItem = (item) => {
     setEntries([createEntry({
@@ -855,9 +899,20 @@ export const DictionaryRequestPanel = ({
     if (field === 'englishWord') {
       const nextEnglishWord = value;
       setEntries((prev) => prev.map((entry, entryIndex) => (
-        entryIndex === index
-          ? { ...entry, englishWord: nextEnglishWord }
-          : entry
+        entryIndex !== index
+          ? entry
+          : (() => {
+              const trimmedEnglishWord = String(nextEnglishWord || '').trim();
+              const suggestedHindi = trimmedEnglishWord ? getDictionaryTranslation(normalizedDictionary, trimmedEnglishWord) : '';
+              const shouldAutofillSuggestion = suggestedHindi
+                && (!String(entry.hindiTranslation || '').trim() || !entry.isHindiManual);
+              return {
+                ...entry,
+                englishWord: nextEnglishWord,
+                hindiTranslation: shouldAutofillSuggestion ? suggestedHindi : entry.hindiTranslation,
+                isHindiManual: shouldAutofillSuggestion ? false : entry.isHindiManual,
+              };
+            })()
       )));
       return;
     }
@@ -892,6 +947,20 @@ export const DictionaryRequestPanel = ({
 
   const removeEntry = (index) => {
     setEntries((prev) => prev.filter((_, entryIndex) => entryIndex !== index));
+  };
+
+  const applySuggestedTranslation = (index) => {
+    const insight = entryInsights[index];
+    if (!insight?.suggestedHindi) return;
+    setEntries((prev) => prev.map((entry, entryIndex) => (
+      entryIndex === index
+        ? {
+            ...entry,
+            hindiTranslation: insight.suggestedHindi,
+            isHindiManual: false,
+          }
+        : entry
+    )));
   };
 
   const submitDictionaryRequest = async () => {
@@ -940,8 +1009,25 @@ export const DictionaryRequestPanel = ({
     }
     setDictionaryError('');
 
-    const nextPendingCount = pendingCount + normalizedEntries.length;
-    const pendingRequests = normalizedEntries.map((entry, index) => {
+    const duplicateRows = normalizedEntries.filter((entry) => {
+      const existingEntry = getExistingDictionaryEntry(normalizedDictionary, entry.englishWord);
+      return Boolean(existingEntry)
+        && String(existingEntry.hindiTranslation || '').trim().toLowerCase() === entry.hindiTranslation.toLowerCase();
+    });
+    const actionableEntries = normalizedEntries.filter((entry) => !duplicateRows.includes(entry));
+
+    if (actionableEntries.length === 0) {
+      setDictionaryError('Ye sabhi words dictionary mein same translation ke saath already available hain.');
+      pushToast('Same translation wale duplicate rows skip ho gaye. Naya ya changed word add kijiye.', 'info');
+      return;
+    }
+
+    if (duplicateRows.length > 0) {
+      pushToast(`${duplicateRows.length} duplicate rows skip ki gayi kyunki same translation already saved hai.`, 'info');
+    }
+
+    const nextPendingCount = pendingCount + actionableEntries.length;
+    const pendingRequests = actionableEntries.map((entry, index) => {
       const requestedAt = new Date(Date.now() + index).toISOString();
       const clientRequestId = `dict-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
       return {
@@ -1004,7 +1090,7 @@ export const DictionaryRequestPanel = ({
         loggedInUser.dealerCode,
       );
       setEntries(createEmptyEntries(MAX_DICTIONARY_REQUEST_ROWS));
-      pushToast(`${normalizedEntries.length} dictionary request submitted. Your request is pending with admin for approval.`, 'success');
+      pushToast(`${actionableEntries.length} dictionary request submitted. Your request is pending with admin for approval.`, 'success');
     } catch {
       setDictionaryError('Dictionary request submit failed. Check Firebase permissions.');
       pushToast('Dictionary request submit failed. Check Firebase permissions.', 'error');
@@ -1059,26 +1145,83 @@ export const DictionaryRequestPanel = ({
       )}
       <div className="profile-form">
         <>
+          {!isDeliveryAreaMode && !isDeliveryStaffMode ? (
+            <div className="dictionary-approved-list" style={{ marginBottom: '16px' }}>
+              <div className="dictionary-pending-count"><strong>Validation Preview</strong></div>
+              <div className="home-account-grid user-profile-summary-grid">
+                <div className="home-account-item">
+                  <span>Filled Rows</span>
+                  <strong>{validationPreview.total}</strong>
+                </div>
+                <div className="home-account-item">
+                  <span>Ready to Send</span>
+                  <strong>{validationPreview.ready}</strong>
+                </div>
+                <div className="home-account-item">
+                  <span>New Words</span>
+                  <strong>{validationPreview.newWords}</strong>
+                </div>
+                <div className="home-account-item">
+                  <span>Conflicts</span>
+                  <strong>{validationPreview.conflicts}</strong>
+                </div>
+              </div>
+              <div className="dictionary-pending-count">
+                Exact duplicates: {validationPreview.exactDuplicates} | Suggestion available: {validationPreview.suggested}
+              </div>
+            </div>
+          ) : null}
           <div className="dictionary-multi-header">
             <span>Sr.</span>
             <span>{isDeliveryAreaMode ? 'English Area' : isDeliveryStaffMode ? 'English Staff' : 'English Word'}</span>
             <span>Hindi Translation</span>
             <span>Action</span>
           </div>
-          {entries.map((entry, index) => (
+          {entries.map((entry, index) => {
+            const insight = entryInsights[index];
+            return (
             <div key={index} className="dictionary-multi-entry">
               <span>{index + 1}</span>
-              <input className="form-input" value={entry.englishWord} onChange={(e) => updateEntry(index, 'englishWord', e.target.value)} placeholder={englishPlaceholder} />
-              <input className="form-input" value={entry.hindiTranslation} onChange={(e) => updateEntry(index, 'hindiTranslation', e.target.value)} placeholder={hindiPlaceholder} />
-              <button type="button" className="dictionary-row-remove" onClick={() => removeEntry(index)} disabled={entries.length <= 1}>
-                Remove
-              </button>
+              <div>
+                <input className="form-input" value={entry.englishWord} onChange={(e) => updateEntry(index, 'englishWord', e.target.value)} placeholder={englishPlaceholder} />
+                {!isDeliveryAreaMode && !isDeliveryStaffMode && insight?.hasSuggestion && (
+                  <div className="dictionary-pending-count">
+                    Suggested: {insight.suggestedHindi}
+                    {String(entry.hindiTranslation || '').trim() !== insight.suggestedHindi && (
+                      <button type="button" className="dictionary-approved-action" onClick={() => applySuggestedTranslation(index)} style={{ marginLeft: '8px' }}>
+                        Use Suggestion
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <input className="form-input" value={entry.hindiTranslation} onChange={(e) => updateEntry(index, 'hindiTranslation', e.target.value)} placeholder={hindiPlaceholder} />
+                {!isDeliveryAreaMode && !isDeliveryStaffMode && insight?.englishWord && (
+                  <div className="dictionary-pending-count">
+                    {insight.isExactDuplicate
+                      ? 'Already exists with same translation.'
+                      : insight.hasConflict
+                        ? `Conflict: existing translation is "${insight.existingEntry?.hindiTranslation || '-'}".`
+                        : insight.isNewWord
+                          ? 'New word. This will create a fresh dictionary request.'
+                          : insight.hasSuggestion
+                            ? 'Suggestion matched from existing dictionary.'
+                            : 'No suggestion found. Manual translation required.'}
+                  </div>
+                )}
+              </div>
+              <div>
+                <button type="button" className="dictionary-row-remove" onClick={() => removeEntry(index)} disabled={entries.length <= 1}>
+                  Remove
+                </button>
+              </div>
             </div>
-          ))}
+          )})}
           <button type="button" className="dictionary-request-add-row" onClick={addEntry} disabled={entries.length >= MAX_DICTIONARY_REQUEST_ROWS}>
             {entries.length >= MAX_DICTIONARY_REQUEST_ROWS ? `Maximum ${MAX_DICTIONARY_REQUEST_ROWS} Rows Added` : 'Add Another Row'}
           </button>
-          <div className="dictionary-pending-count">Hindi translation manually enter kijiye.</div>
+          <div className="dictionary-pending-count">English word type karte hi existing dictionary se suggestion aur duplicate/conflict check dikhega.</div>
           {!isDeliveryAreaMode && !isDeliveryStaffMode ? (
             <div className="dictionary-pending-count">Ek baar mein 1 se {MAX_DICTIONARY_REQUEST_ROWS} dictionary requests bhej sakte hain.</div>
           ) : null}
