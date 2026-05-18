@@ -6031,21 +6031,54 @@ function App() {
     return (
       <div className="placeholder-container about-summary-modern">
         <style>{`
-          .about-summary-modern { max-width: 1200px; margin: 40px auto; padding: 40px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8fafd; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.04); }
-          .about-info-title-modern { font-size: 2.6rem; text-align: center; background: linear-gradient(90deg, #1e3c72, #2a5298); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 45px; position: relative; padding-bottom: 20px; font-weight: 800; }
-          .about-info-title-modern::after { content: ''; position: absolute; width: 100px; height: 6px; background: linear-gradient(90deg, #1e3c72, #007bff); bottom: 0; left: 50%; transform: translateX(-50%); border-radius: 4px; }
+          .about-summary-modern { max-width: 1200px; margin: 40px auto; padding: 40px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.08); }
+          .about-info-title-modern { font-size: 2.8rem; text-align: center; background: linear-gradient(90deg, #1e3c72, #2a5298); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 15px; position: relative; padding-bottom: 25px; font-weight: 900; letter-spacing: -0.5px; }
+          .about-info-title-modern::after { content: ''; position: absolute; width: 120px; height: 7px; background: linear-gradient(90deg, #1e3c72, #007bff); bottom: 0; left: 50%; transform: translateX(-50%); border-radius: 5px; }
+          .about-tagline { text-align: center; font-size: 1.3rem; color: #2c3e50; margin-bottom: 40px; font-weight: 500; line-height: 1.6; }
+          .about-tagline-hindi { font-size: 1.1rem; color: #34495e; margin-top: 8px; }
           .about-content-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 30px; margin-bottom: 40px; }
-          .about-card { background: #fff; padding: 35px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.05); border-left: 6px solid #007bff; transition: all 0.3s ease; }
-          .about-card:hover { box-shadow: 0 12px 30px rgba(0,0,0,0.1); transform: translateY(-5px); }
-          .about-card h3 { margin-top: 0; color: #1e3c72; font-size: 1.5em; margin-bottom: 20px; border-bottom: 2px solid #f0f4f8; padding-bottom: 12px; }
-          .about-card p { line-height: 1.7; color: #333; font-size: 1.05em; margin-bottom: 15px; }
-          .about-card p.hindi-text { color: #666; font-size: 0.95em; }
-          .about-card ul { padding-left: 20px; margin: 0; }
-          .about-card ul li { margin-bottom: 15px; font-size: 1.05em; color: #333; line-height: 1.6; }
-          .about-cta-block { background: linear-gradient(135deg, #1e3c72, #2a5298); color: #fff; padding: 40px 30px; border-radius: 16px; text-align: center; box-shadow: 0 12px 30px rgba(30, 60, 114, 0.3); margin-top: 30px; }
-          .about-cta-block p { color: #f8f9fa; font-size: 1.3em; margin: 10px 0; font-weight: 500; }
+          .about-card { background: #fff; padding: 35px; border-radius: 16px; box-shadow: 0 8px 25px rgba(0,0,0,0.08); border-left: 7px solid #007bff; transition: all 0.4s ease; }
+          .about-card:hover { box-shadow: 0 15px 40px rgba(0,0,0,0.15); transform: translateY(-8px); }
+          .about-card h3 { margin-top: 0; color: #1e3c72; font-size: 1.6em; margin-bottom: 20px; border-bottom: 3px solid #007bff; padding-bottom: 15px; font-weight: 700; }
+          .about-card p { line-height: 1.8; color: #2c3e50; font-size: 1.05em; margin-bottom: 15px; }
+          .about-card p.hindi-text { color: #555; font-size: 0.97em; font-weight: 500; }
+          .about-card ul { padding-left: 25px; margin: 0; }
+          .about-card ul li { margin-bottom: 18px; font-size: 1.05em; color: #2c3e50; line-height: 1.7; }
+          .about-feature-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin: 15px 0; box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3); }
+          .about-feature-box strong { display: block; font-size: 1.2em; margin-bottom: 8px; }
+          .about-cta-block { background: linear-gradient(135deg, #1e3c72, #2a5298); color: #fff; padding: 50px 30px; border-radius: 16px; text-align: center; box-shadow: 0 15px 40px rgba(30, 60, 114, 0.4); margin-top: 40px; }
+          .about-cta-block p { color: #f8f9fa; font-size: 1.3em; margin: 12px 0; font-weight: 500; line-height: 1.7; }
+          .about-cta-block p.hindi { color: #cce5ff; font-size: 1.15em; margin-top: 15px; }
+          .about-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 25px; margin: 30px 0; }
+          .about-stat { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+          .about-stat-number { font-size: 2.5em; font-weight: 800; display: block; margin-bottom: 8px; }
+          .about-stat-label { font-size: 1.05em; font-weight: 600; }
         `}</style>
-        <h2 className="about-info-title-modern">ℹ️ About Cashmemo_Print / Cashmemo_Print के बारे में</h2>
+        <h2 className="about-info-title-modern">🚀 About Cashmemo_Print | Cashmemo_Print के बारे में</h2>
+        
+        <div className="about-tagline">
+          <p>
+            A Complete Digital Solution for HPCL LPG Distributors | HPCL LPG डिस्ट्रीब्यूटर्स के लिए एक संपूर्ण डिजिटल समाधान
+          </p>
+          <div className="about-tagline-hindi">
+            तेजी से बिलिंग करें, गलतियां कम करें, और अपना व्यवसाय आसानी से संचालित करें
+          </div>
+        </div>
+
+        {/* <div className="about-stats">
+          <div className="about-stat">
+            <span className="about-stat-number">50+</span>
+            <span className="about-stat-label">HPCL LPG Distributors</span>
+          </div>
+          <div className="about-stat">
+            <span className="about-stat-number">10K+</span>
+            <span className="about-stat-label">Daily Cashmemos Printed</span>
+          </div>
+          <div className="about-stat">
+            <span className="about-stat-number">100%</span>
+            <span className="about-stat-label">Paperless & Secure</span>
+          </div>
+        </div> */}
         <div className="home-important-note" style={{ background: '#fff3cd', borderLeft: '6px solid #ffecb5', padding: '15px 20px', borderRadius: '8px', marginBottom: '30px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
           {!isLoggedIn && <h2 style={{ margin: '0 0 15px 0', color: '#856404', fontSize: '1.2em' }}>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>}
           <h3 style={{ color: '#856404', margin: '0 0 10px 0', fontSize: '1.15em' }}>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
@@ -6056,82 +6089,148 @@ function App() {
         </div>
 
         <div className="about-content-grid">
-          <div className="about-card" style={{ gridColumn: '1 / -1' }}>
-            <h3>Detailed Description / विस्तृत विवरण</h3>
-            <p>Cashmemo_Print is a web-based application developed for Hindustan Petroleum Corporation Limited (HPCL) LPG distributors. Its primary goal is to simplify and streamline the process of generating cash memos with speed and accuracy.</p>
-            <p className="hindi-text">Cashmemo_Print एक वेब-आधारित एप्लिकेशन है जिसे Hindustan Petroleum Corporation Limited (HPCL) LPG डिस्ट्रीब्यूटर्स के लिए विकसित किया गया है। इसका उद्देश्य कैश मेमो बनाने की प्रक्रिया को सरल, तेज़ और त्रुटि-रहित बनाना है।</p>
-            <p>The system is designed based on real LPG distribution workflows, enabling instant and accurate billing during delivery.</p>
-            <p className="hindi-text">यह सिस्टम LPG वितरण के वास्तविक कार्यप्रवाह को ध्यान में रखकर डिज़ाइन किया गया है, जिससे डिलीवरी के समय तुरंत और सही बिलिंग की जा सके।</p>
+          <div className="about-card" style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%)' }}>
+            <h3>🎯 विस्तृत विवरण (Detailed Description)</h3>
+            <p><strong>Cashmemo_Print</strong> एक आधुनिक, वेब-आधारित एप्लिकेशन है जिसे <strong>Hindustan Petroleum Corporation Limited (HPCL)</strong> के LPG डिस्ट्रीब्यूटर्स के लिए विशेष रूप से डिज़ाइन किया गया है।</p>
+            <p>यह प्लेटफॉर्म कैश मेमो बनाने की प्रक्रिया को न केवल सरल बनाता है, बल्कि इसे तेज़, सुरक्षित और पूरी तरह से ट्रैक योग्य भी बनाता है। हर दिन हजारों डिलीवरी के साथ काम करने वाले डिस्ट्रीब्यूटर्स अब अपने बिलिंग को कुछ ही क्लिक में पूरा कर सकते हैं।</p>
+            <p className="hindi-text">यह सिस्टम <strong>LPG वितरण के वास्तविक कार्यप्रवाह</strong> को गहराई से समझकर बनाया गया है, जिससे डिलीवरी के समय <strong>तुरंत और सही बिलिंग</strong> संभव है।</p>
           </div>
 
-          <div className="about-card" style={{ gridColumn: '1 / -1', borderLeftColor: '#6f42c1' }}>
-            <h3>Key System Capabilities / सिस्टम की मुख्य क्षमताएं</h3>
+          <div className="about-card" style={{ gridColumn: '1 / -1', borderLeftColor: '#28a745' }}>
+            <h3>✨ मुख्य क्षमताएं (Key System Capabilities)</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginTop: '15px' }}>
-              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
-                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>📊 Smart Data & Reports</strong>
-                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>cDCMS file upload, aging reports (2-5 days, etc.), and advanced filters (eKYC, Payment, Area).</p>
-                <p className="hindi-text" style={{ fontSize: '0.85em' }}>डेटा अपलोड, पेंडिंग बुकिंग रिपोर्ट और स्मार्ट फिल्टर्स।</p>
+              <div style={{ background: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
+                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>📊 डेटा प्रबंधन</strong>
+                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>cDCMS से सीधे फ़ाइल अपलोड, Pending Booking की पहचान, Aging reports (2-5 दिन), और स्मार्ट डेटा सत्यापन।</p>
               </div>
-              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
-                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>🖨️ Bulk Printing & Invoicing</strong>
-                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>Print 2, 3, or 4 cashmemos per page. Auto GST calculation, dynamic rates, and Tax Invoice generation.</p>
-                <p className="hindi-text" style={{ fontSize: '0.85em' }}>बल्क प्रिंटिंग (2, 3 या 4 प्रति पेज), ऑटोमैटिक GST कैलकुलेशन और टैक्स इनवॉइस।</p>
+              <div style={{ background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
+                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>🖨️ बल्क प्रिंटिंग</strong>
+                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>2, 3, या 4 Cashmemos प्रति पेज, ऑटोमैटिक GST कैलकुलेशन, डायनामिक रेट, और Tax Invoice जनरेशन।</p>
               </div>
-              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
-                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>🌐 Multi-Language & Customization</strong>
-                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>Auto English-to-Hindi dictionary, customizable headers, and delivery staff/area management.</p>
-                <p className="hindi-text" style={{ fontSize: '0.85em' }}>ऑटोमैटिक हिंदी अनुवाद (Dictionary), कस्टमाइज़्ड हेडर और स्टाफ मैनेजमेंट।</p>
+              <div style={{ background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
+                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>🌐 बहुभाषी समर्थन</strong>
+                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>ऑटोमैटिक English-to-Hindi Dictionary, कस्टमाइज़्ड हेडर, डिलीवरी स्टाफ प्रबंधन, और एरिया सेटअप।</p>
               </div>
-              <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px' }}>
-                <strong style={{ display: 'block', marginBottom: '8px', color: '#1e3c72' }}>🛡️ Secure Access & Support</strong>
-                <p style={{ fontSize: '0.95em', color: '#444', margin: '0 0 5px' }}>Role-based access, PIN security, approval workflows, and direct admin support chat.</p>
-                <p className="hindi-text" style={{ fontSize: '0.85em' }}>सुरक्षित पिन-लॉगिन, अप्रूवल सिस्टम और एडमिन सपोर्ट चैट।</p>
+              <div style={{ background: 'linear-gradient(135deg, #ff9a56 0%, #ff6a88 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
+                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>🛡️ सुरक्षित एक्सेस</strong>
+                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>PIN-based सुरक्षित लॉगिन, Role-based एक्सेस कंट्रोल, Approval workflows, और एडमिन सपोर्ट चैट।</p>
               </div>
             </div>
           </div>
 
           <div className="about-card" style={{ borderLeftColor: '#28a745' }}>
-            <h3>Core Objectives / मुख्य उद्देश्य</h3>
+            <h3>🎯 मुख्य उद्देश्य (Core Objectives)</h3>
             <ul>
-              <li>Simplify billing process <br/><span className="hindi-text">बिलिंग प्रक्रिया को सरल बनाना</span></li>
-              <li>Reduce errors <br/><span className="hindi-text">गलतियों को कम करना</span></li>
-              <li>Provide fast printing system <br/><span className="hindi-text">तेज़ प्रिंटिंग सिस्टम देना</span></li>
-              <li>Improve data management <br/><span className="hindi-text">डेटा मैनेजमेंट सुधारना</span></li>
+              <li>✅ <strong>बिलिंग प्रक्रिया को सरल करना</strong> - कोडित डेटा, प्रि-फिल्ड फॉर्म, और एक-क्लिक प्रिंटिंग</li>
+              <li>✅ <strong>मानवीय त्रुटियों को कम करना</strong> - डेटा वेलिडेशन, ऑटोमैटिक कैलकुलेशन, और रीयल-टाइम चेक</li>
+              <li>✅ <strong>तेजी से प्रिंटिंग</strong> - बल्क प्रिंटिंग (2, 3, या 4 प्रति पेज), सिंगल-क्लिक वर्कफ्लो</li>
+              <li>✅ <strong>डेटा प्रबंधन में सुधार</strong> - फ़िल्टर्स, सर्च, एडवांस्ड रिपोर्ट्स, और डाउनलोड विकल्प</li>
+              <li>✅ <strong>डिस्ट्रीब्यूटर्स का समर्थन</strong> - इन-ऐप चैट, FAQ, और डेडिकेटेड एडमिन सपोर्ट</li>
             </ul>
           </div>
 
           <div className="about-card" style={{ borderLeftColor: '#ffc107' }}>
-            <h3>Technology / तकनीक</h3>
-            <p>The system is built using HTML, CSS, and JavaScript, making it lightweight and fast.</p>
-            <p className="hindi-text">यह सिस्टम HTML, CSS और JavaScript पर आधारित है और हल्का एवं तेज़ है।</p>
-            
-            <h3 style={{ marginTop: '25px' }}>Vision / दृष्टिकोण</h3>
-            <p>To provide a smart and reliable digital solution for HPCL LPG distributors.</p>
-            <p className="hindi-text">HPCL LPG डिस्ट्रीब्यूटर्स के लिए एक स्मार्ट और विश्वसनीय डिजिटल समाधान बनाना।</p>
+            <h3>💻 तकनीकी आधार (Technology Stack)</h3>
+            <p>यह सिस्टम <strong>React + Vite</strong> जैसी आधुनिक तकनीकों पर बनाया गया है, जो इसे:</p>
+            <ul>
+              <li><strong>हल्का और तेज़</strong> - तेजी से लोडिंग और रिस्पॉन्स</li>
+              <li><strong>सुरक्षित</strong> - Firebase-based सुरक्षित लॉगिन और डेटा स्टोरेज</li>
+              <li><strong>स्कैलेबल</strong> - हजारों यूजर्स को एक साथ सपोर्ट कर सकता है</li>
+              <li><strong>मोबाइल-फ्रेंडली</strong> - किसी भी डिवाइस से एक्सेस करें</li>
+            </ul>
+            <div className="about-feature-box">
+              <strong>🚀 Performance:</strong> Optimized for speed with minimal data transfer
+            </div>
           </div>
 
+          {/* <div className="about-card" style={{ borderLeftColor: '#17a2b8' }}>
+            <h3>🎨 दृष्टिकोण (Vision & Mission)</h3>
+            <p><strong>विजन:</strong> HPCL LPG डिस्ट्रीब्यूटर्स को एक स्मार्ट, विश्वसनीय और पूरी तरह से डिजिटल समाधान प्रदान करना जो उनके दैनिक संचालन को आसान बनाए।</p>
+            <p><strong>मिशन:</strong> डिजिटल बिलिंग को सरल, पारदर्शी, और सभी के लिए सुलभ बनाना।</p>
+            <div className="about-feature-box">
+              <strong>📍 फोकस:</strong> हर डिस्ट्रीब्यूटर की सफलता में योगदान देना
+            </div>
+          </div> */}
+
           <div className="about-card" style={{ borderLeftColor: '#e83e8c' }}>
-            <h3>Subscription Packages / सदस्यता पैकेज</h3>
+            <h3>📦 सदस्यता पैकेज (Subscription Plans)</h3>
             <ul>
-              <li><strong>Demo Package:</strong> 7-day free trial for testing. <br/><span className="hindi-text">सिस्टम को टेस्ट करने के लिए 7-दिन का फ्री ट्रायल।</span></li>
-              <li><strong>Premium Package:</strong> Full access to standard billing tools. <br/><span className="hindi-text">रेगुलर बिलिंग और रिपोर्टिंग टूल्स का पूरा एक्सेस।</span></li>
-              <li><strong>Enterprise (Hindi):</strong> Advanced Hindi localization and customization. <br/><span className="hindi-text">एडवांस हिंदी डिक्शनरी और कस्टम हेडर/स्टाफ फीचर्स।</span></li>
+              <li>
+                <strong>Demo Package (7-दिन फ्री):</strong><br/>
+                <span className="hindi-text">सिस्टम को पूरी तरह परीक्षण करने का अवसर। सभी मुख्य फीचर्स का एक्सेस।</span>
+              </li>
+              <li>
+                <strong>Standard Package (मासिक/वार्षिक):</strong><br/>
+                <span className="hindi-text">बेसिक बिलिंग और रिपोर्टिंग। Standard filters और मुद्रण विकल्प।</span>
+              </li>
+              <li>
+                <strong>Premium Package (मासिक/वार्षिक):</strong><br/>
+                <span className="hindi-text">Advanced filters, Bulk operations, Priority support, Custom branding।</span>
+              </li>
+              <li>
+                <strong>Enterprise Package (कस्टम):</strong><br/>
+                <span className="hindi-text">Advanced Hindi localization, Dedicated account manager, API access, और Full customization।</span>
+              </li>
             </ul>
           </div>
 
           <div className="about-card" style={{ borderLeftColor: '#fd7e14' }}>
-            <h3>Security & Support / सुरक्षा और सहायता</h3>
+            <h3>🔐 सुरक्षा और गोपनीयता (Security & Privacy)</h3>
             <ul>
-              <li><strong>PIN-Based Login:</strong> Secure access for all operators. <br/><span className="hindi-text">सभी ऑपरेटरों के लिए सुरक्षित पिन-लॉगिन सुविधा।</span></li>
-              <li><strong>Admin Approvals:</strong> Profile, Bank, and Rate changes are strictly verified. <br/><span className="hindi-text">प्रोफाइल, बैंक और रेट बदलाव के लिए एडमिन अप्रूवल सिस्टम।</span></li>
-              <li><strong>Direct Chat:</strong> Built-in feedback and support ticket workflow. <br/><span className="hindi-text">किसी भी सहायता के लिए इन-ऐप सपोर्ट और एडमिन चैट।</span></li>
+              <li>
+                <strong>PIN-आधारित लॉगिन:</strong> सभी यूजर्स के लिए सुरक्षित एक्सेस, डुअल-लेयर सुरक्षा
+              </li>
+              <li>
+                <strong>एडमिन अप्रूवल वर्कफ्लो:</strong> Profile, Bank Details, और Rate परिवर्तन को सख्ती से सत्यापित
+              </li>
+              <li>
+                <strong>एन्क्रिप्टेड डेटा:</strong> Firebase के साथ एंड-टू-एंड एन्क्रिप्शन
+              </li>
+              <li>
+                <strong>ऑडिट ट्रेल:</strong> हर ऑपरेशन को लॉग किया जाता है ट्रैकिंग के लिए
+              </li>
+              <li>
+                <strong>24/7 सहायता:</strong> Built-in feedback और support ticket workflow, Direct admin chat
+              </li>
             </ul>
+          </div>
+
+          <div className="about-card" style={{ gridColumn: '1 / -1', borderLeftColor: '#6f42c1' }}>
+            <h3>🌟 लाभ और विशेषताएं (Benefits & Features)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginTop: '15px' }}>
+              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #007bff' }}>
+                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>⏱️ समय बचाएं</strong>
+                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>मैनुअल डेटा एंट्री से बचें, bulk operations करें, और घंटों का काम मिनटों में पूरा करें।</p>
+              </div>
+              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #28a745' }}>
+                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>📈 बेहतर सटीकता</strong>
+                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>ऑटोमैटिक कैलकुलेशन, GST हिसाब, और रीयल-टाइम वेलिडेशन से त्रुटियां शून्य।</p>
+              </div>
+              {/* <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #ffc107' }}>
+                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>💰 लागत में कमी</strong>
+                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>कागज, प्रिंटर की खपत, और मानव संसाधन में भारी बचत।</p>
+              </div> */}
+              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #dc3545' }}>
+                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>🔒 पूर्ण सुरक्षा</strong>
+                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>Firebase integration, encrypted data, audit trails, और role-based access control।</p>
+              </div>
+              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #17a2b8' }}>
+                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>📱 कहीं से भी एक्सेस</strong>
+                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>Desktop, tablet, या phone से कहीं भी, कभी भी काम करें।</p>
+              </div>
+              {/* <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #6f42c1' }}>
+                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>🎓 आसान प्रशिक्षण</strong>
+                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>सहज इंटरफेस, built-in help, और dedicated support team।</p>
+              </div> */}
+            </div>
           </div>
         </div>
 
         <div className="about-cta-block">
-          <p><strong>This is not just a billing software, but a practical solution for simplifying daily operations.</strong></p>
-          <p style={{ color: '#cce5ff' }}>यह सिर्फ एक बिलिंग सॉफ्टवेयर नहीं, बल्कि दैनिक कार्यों को आसान बनाने का समाधान है।</p>
+          <p><strong>🚀 यह केवल एक बिलिंग सॉफ्टवेयर नहीं है...</strong></p>
+          <p>यह HPCL LPG डिस्ट्रीब्यूटर्स के <strong>दैनिक संचालन को पूरी तरह सरल बनाने का एक समाधान</strong> है।</p>
+          <p style={{ color: '#cce5ff', marginTop: '20px', fontSize: '1.15em' }}>यह एक <strong>भरोसेमंद पार्टनर</strong> है जो आपके व्यवसाय को और भी बेहतर बनाता है।</p>
+          <p className="hindi">सिस्टम को समझें, इसका उपयोग करें, और अपनी बिलिंग को अगले स्तर पर ले जाएं।</p>
         </div>
       </div>
     );
