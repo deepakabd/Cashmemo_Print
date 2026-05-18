@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
+import CashMemoEnglish from './CashMemoEnglish';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -31,6 +32,13 @@ import { useAdminData } from './hooks/useAdminData';
 import { useApprovalQueue } from './hooks/useApprovalQueue';
 import { useCashmemoSelection } from './hooks/useCashmemoSelection';
 import { useParsedDataFilters } from './hooks/useParsedDataFilters';
+import {
+  AdminFlashMessage,
+  CashmemoPrintPreview,
+  ConfirmDialog,
+  InputDialog,
+  OnboardingTourDialog,
+} from './components/app/AppDialogs';
 
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
 const LazyHomeDashboard = lazy(() => import('./components/HomeDashboard'));
@@ -776,7 +784,7 @@ function App() {
   const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
   const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
   const onboardingAutoOpenedRef = useRef(false);
-
+//test the
   const pushToast = useCallback((message, tone = 'info') => {
     if (!message) return;
     const toastId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -9807,125 +9815,43 @@ function App() {
 
 
 
-      {customersToPrint.length > 0 && (
-        <div style={{ marginTop: '40px' }}>
+      <CashmemoPrintPreview
+        customersToPrint={customersToPrint}
+        cashMemoRef={cashMemoRef}
+        pageType={pageType}
+        getCashMemoPerPage={getCashMemoPerPage}
+        renderCashMemo={(customer) => <CashMemoEnglish customerData={customer} />}
+      />
 
-          <div ref={cashMemoRef}>
-            {customersToPrint.map((item, index) => (
-              <div
-                key={index}
-                style={{
-                  pageBreakAfter: (index + 1) % getCashMemoPerPage(pageType) === 0 ? 'always' : 'auto',
-                }}
-              >
-                  <CashMemoEnglish customerData={item.customer} />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        dialog={confirmDialog}
+        onClose={closeConfirmDialog}
+        onConfirm={handleConfirmDialogSubmit}
+      />
 
-      {confirmDialog.open && (
-        <div className="app-dialog-overlay" onClick={closeConfirmDialog}>
-          <div className="app-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
-            <div className="app-dialog__header">
-              <h3 id="confirm-dialog-title">{confirmDialog.title}</h3>
-              <button type="button" className="app-dialog__close" onClick={closeConfirmDialog}>×</button>
-            </div>
-            <p className="app-dialog__message">{confirmDialog.message}</p>
-            <div className="app-dialog__actions">
-              <button type="button" className="auth-secondary-button" onClick={closeConfirmDialog}>Cancel</button>
-              <button type="button" className="auth-primary-button" onClick={handleConfirmDialogSubmit}>{confirmDialog.confirmLabel}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <InputDialog
+        dialog={inputDialog}
+        setDialog={setInputDialog}
+        onClose={closeInputDialog}
+        onSubmit={handleInputDialogSubmit}
+      />
 
-      {inputDialog.open && (
-        <div className="app-dialog-overlay" onClick={closeInputDialog}>
-          <div className="app-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="input-dialog-title">
-            <div className="app-dialog__header">
-              <h3 id="input-dialog-title">{inputDialog.title}</h3>
-              <button type="button" className="app-dialog__close" onClick={closeInputDialog}>×</button>
-            </div>
-            <p className="app-dialog__message">{inputDialog.message}</p>
-            <input
-              className="form-input app-dialog__input"
-              value={inputDialog.value}
-              onChange={(e) => setInputDialog((prev) => ({ ...prev, value: e.target.value }))}
-              placeholder="Type here"
-              autoFocus
-            />
-            <div className="app-dialog__actions">
-              <button type="button" className="auth-secondary-button" onClick={closeInputDialog}>Cancel</button>
-              <button type="button" className="auth-primary-button" onClick={handleInputDialogSubmit}>{inputDialog.submitLabel}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <OnboardingTourDialog
+        isOpen={showOnboardingTour}
+        onClose={closeOnboardingTour}
+        activeOnboardingStep={activeOnboardingStep}
+        onboardingSteps={onboardingSteps}
+        onboardingStepIndex={onboardingStepIndex}
+        setOnboardingStepIndex={setOnboardingStepIndex}
+        handleOnboardingAction={handleOnboardingAction}
+        handleOnboardingBack={handleOnboardingBack}
+        handleOnboardingNext={handleOnboardingNext}
+      />
 
-      {showOnboardingTour && (
-        <div className="app-dialog-overlay" onClick={() => closeOnboardingTour(true)}>
-          <div className="app-dialog onboarding-tour-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="onboarding-tour-title">
-            <div className="app-dialog__header onboarding-tour-dialog__header">
-              <div>
-                <p className="onboarding-tour-dialog__eyebrow">Quick Tour</p>
-                <h3 id="onboarding-tour-title">{activeOnboardingStep?.title || 'Getting Started'}</h3>
-              </div>
-              <button type="button" className="app-dialog__close" onClick={() => closeOnboardingTour(true)}>×</button>
-            </div>
-            <div className="onboarding-tour-dialog__progress">
-              {onboardingSteps.map((step, index) => (
-                <span
-                  key={step.id}
-                  className={`onboarding-tour-dialog__dot ${index === onboardingStepIndex ? 'is-active' : index < onboardingStepIndex ? 'is-complete' : ''}`}
-                />
-              ))}
-            </div>
-            <p className="app-dialog__message">{activeOnboardingStep?.description}</p>
-            <div className="onboarding-tour-dialog__hint">{activeOnboardingStep?.hint}</div>
-            <div className="onboarding-tour-dialog__step-list">
-              {onboardingSteps.map((step, index) => (
-                <button
-                  key={`tour-step-${step.id}`}
-                  type="button"
-                  className={`onboarding-tour-dialog__step ${index === onboardingStepIndex ? 'is-active' : ''}`}
-                  onClick={() => setOnboardingStepIndex(index)}
-                >
-                  <strong>{index + 1}.</strong> {step.title}
-                </button>
-              ))}
-            </div>
-            <div className="app-dialog__actions onboarding-tour-dialog__actions">
-              <button type="button" className="auth-secondary-button" onClick={() => closeOnboardingTour(true)}>Skip Tour</button>
-              <button type="button" className="auth-secondary-button" onClick={handleOnboardingAction}>
-                {activeOnboardingStep?.actionLabel || 'Open'}
-              </button>
-              <button type="button" className="auth-secondary-button" onClick={handleOnboardingBack} disabled={onboardingStepIndex === 0}>Back</button>
-              <button type="button" className="auth-primary-button" onClick={handleOnboardingNext}>
-                {onboardingStepIndex === onboardingSteps.length - 1 ? 'Finish' : 'Next'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {adminFlashMessage && (
-        <div className="admin-flash-message-overlay" onClick={() => setAdminFlashMessage(null)}>
-          <div className="admin-flash-message" onClick={(e) => e.stopPropagation()}>
-            <div className="admin-flash-message-header">
-              <h3>Admin Reply</h3>
-              <button type="button" className="admin-flash-message-close" onClick={() => setAdminFlashMessage(null)}>×</button>
-            </div>
-            <div className="admin-flash-message-body">
-              <p>{adminFlashMessage.message}</p>
-            </div>
-            <div className="admin-flash-message-actions">
-              <button onClick={() => setAdminFlashMessage(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AdminFlashMessage
+        message={adminFlashMessage}
+        onClose={() => setAdminFlashMessage(null)}
+      />
     </>
   );
 }
