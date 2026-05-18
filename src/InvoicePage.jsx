@@ -1,5 +1,106 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-//ok
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+
+const BULK_IMPORT_TEMPLATE_HEADERS = [
+  'Consumer Name',
+  'Consumer No.',
+  'Mobile No.',
+  'Address',
+  'Order Date',
+  'Product',
+  'Quantity',
+  'Rate',
+  'GSTIN',
+  'Center No',
+];
+
+const BULK_IMPORT_TEMPLATE_SAMPLE = [
+  {
+    'Consumer Name': 'RAVI KUMAR',
+    'Consumer No.': 'HP001245',
+    'Mobile No.': '9876543210',
+    Address: 'WARD 5, MAIN ROAD',
+    'Order Date': new Date().toISOString().slice(0, 10),
+    Product: 'LPG Cylinder',
+    Quantity: 1,
+    Rate: 1100,
+    GSTIN: '',
+    'Center No': 'CTR-01',
+  },
+];
+
+const formatInvoiceDisplayDate = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('en-GB');
+};
+
+const formatInvoiceDisplayDateTime = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('en-GB');
+};
+
+const getDraftInvoiceDate = (draft = {}, fallback = '') => {
+  const rawDate = String(draft?.billToDate || fallback || '').trim();
+  if (!rawDate) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) return rawDate;
+  const date = new Date(rawDate);
+  if (Number.isNaN(date.getTime())) return rawDate;
+  return date.toISOString().slice(0, 10);
+};
+
+const computeSavedInvoiceAmount = (draft = {}) => {
+  const savedPayableTotal = Number(draft?.summary?.payableTotal);
+  if (Number.isFinite(savedPayableTotal) && savedPayableTotal > 0) {
+    return savedPayableTotal;
+  }
+  if (!Array.isArray(draft.invoiceRows)) return 0;
+  return draft.invoiceRows.reduce((sum, row) => {
+    const qty = Number(row.quantity) || 0;
+    const rate = Number(row.customRate || row.rate || 0) || 0;
+    const discount = Number(row.discount || 0) || 0;
+    return sum + Math.max(0, qty * rate - discount);
+  }, 0);
+};
+
+const buildSavedInvoiceHeader = ({ draft = {}, status = 'Unpaid', savedAt = '' } = {}) => ({
+  name: String(draft?.billToName || '').trim(),
+  mobile: String(draft?.billToMobileNo || '').trim(),
+  address: String(draft?.billToAddress || '').trim(),
+  date: getDraftInvoiceDate(draft, savedAt ? new Date(savedAt).toISOString().slice(0, 10) : ''),
+  amount: Number(computeSavedInvoiceAmount(draft).toFixed(2)),
+  amountType: status === 'Paid' ? 'Paid' : 'Due',
+});
+
+const normalizeSavedInvoiceRecord = (item = {}, fallbackIndex = 0) => {
+  const draft = item?.draft || {};
+  const status = item?.status || 'Unpaid';
+  const savedAt = item?.savedAt || new Date().toISOString();
+  const baseHeader = buildSavedInvoiceHeader({ draft, status, savedAt });
+  const existingHeader = item?.header || {};
+
+  return {
+    ...item,
+    id: item?.id || `invoice-${Date.now()}-${fallbackIndex}`,
+    title: item?.title || `${draft.billToName || 'Unnamed Customer'}${draft.billToConsumerNo ? ` (${draft.billToConsumerNo})` : ''}`,
+    savedAt,
+    status,
+    draft,
+    header: {
+      name: String(baseHeader.name || existingHeader.name || '').trim(),
+      mobile: String(baseHeader.mobile || existingHeader.mobile || '').trim(),
+      address: String(baseHeader.address || existingHeader.address || '').trim(),
+      date: String(baseHeader.date || existingHeader.date || '').trim(),
+      amount: Number(Number(baseHeader.amount || existingHeader.amount || 0).toFixed(2)),
+      amountType: status === 'Paid' ? 'Paid' : 'Due',
+    },
+  };
+};
+
 function InvoicePage({ loggedInUser }) {
   const dealerStorageKey = String(loggedInUser?.dealerCode || loggedInUser?.profileData?.distributorCode || 'guest').trim() || 'guest';
   const invoiceDraftStorageKey = `cashmemoInvoiceDraft_${dealerStorageKey}`;
@@ -61,11 +162,33 @@ function InvoicePage({ loggedInUser }) {
     try {
       const raw = localStorage.getItem(savedInvoicesStorageKey);
       const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.map((item, index) => normalizeSavedInvoiceRecord(item, index)) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [bulkCustomers, setBulkCustomers] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`cashmemoBulkCustomers_${dealerStorageKey}`);
+      const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
   });
+  const [bulkImportErrors, setBulkImportErrors] = useState([]);
+  const [quickSearchTerm, setQuickSearchTerm] = useState('');
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  const [savedInvoiceFilters, setSavedInvoiceFilters] = useState({
+    name: '',
+    mobile: '',
+    address: '',
+    date: '',
+    amount: '',
+    amountStatus: '',
+  });
+  const [expandedCustomerKey, setExpandedCustomerKey] = useState('');
+  const bulkFileInputRef = useRef(null);
   const invoicePrintRef = useRef(null);
   const toUpperValue = (value) => (value || '').toUpperCase();
 
@@ -233,7 +356,20 @@ function InvoicePage({ loggedInUser }) {
     billToDate,
     billToAddress,
     billToGstin,
-    invoiceRows,
+    invoiceRows: invoiceRows.map((row) => {
+      const lineItem = lineItems.find((item) => item.id === row.id);
+      return {
+        ...row,
+        rate: lineItem?.unitRate ?? (Number(row.customRate || 0) || 0),
+      };
+    }),
+    summary: {
+      taxableAmount: Number(taxableAmount.toFixed(2)),
+      gstAmount: Number(gstAmount.toFixed(2)),
+      lineTotal: Number(lineTotal.toFixed(2)),
+      roundOff: Number(roundOff.toFixed(2)),
+      payableTotal: Number(payableTotal.toFixed(2)),
+    },
   });
 
   const applyInvoiceDraft = (draft = {}) => {
@@ -251,8 +387,114 @@ function InvoicePage({ loggedInUser }) {
           quantity: row?.quantity || 1,
           customRate: row?.customRate || '',
           discount: row?.discount || '',
+          rate: row?.rate || 0,
         }))
       : [buildEmptyProductRow()]);
+  };
+
+  const normalizeBulkRow = (row) => {
+    if (!row || typeof row !== 'object') return {};
+    const normalized = {};
+    Object.keys(row).forEach((key) => {
+      normalized[String(key).trim()] = row[key];
+    });
+    return normalized;
+  };
+
+  const persistBulkCustomers = (customers) => {
+    try {
+      localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(customers));
+    } catch {
+      void 0;
+    }
+    setBulkCustomers(customers);
+  };
+
+  const getNormalizedInvoiceRecords = () => (
+    savedInvoices.map((item, index) => {
+      const draft = item.draft || {};
+      const total = item.header?.amount ?? computeSavedInvoiceAmount(draft);
+      return {
+        id: item.id,
+        sequence: index + 1,
+        title: item.title || `Invoice ${index + 1}`,
+        status: item.status || 'Unpaid',
+        savedAt: item.savedAt,
+        customerName: item.header?.name || draft.billToName || '',
+        customerId: draft.billToConsumerNo || '',
+        mobileNo: item.header?.mobile || draft.billToMobileNo || '',
+        address: item.header?.address || draft.billToAddress || '',
+        invoiceDate: item.header?.date || getDraftInvoiceDate(draft, item.savedAt),
+        amountType: item.header?.amountType || (item.status === 'Paid' ? 'Paid' : 'Due'),
+        total,
+      };
+    })
+  );
+
+  const validateBulkImportHeaders = (rows) => {
+    const firstRow = Array.isArray(rows) && rows.length > 0 ? normalizeBulkRow(rows[0]) : {};
+    const availableHeaders = Object.keys(firstRow);
+    const normalizedAvailable = new Set(availableHeaders.map((header) => header.toLowerCase()));
+    const requiredHeaders = ['consumer name', 'mobile no.', 'address'];
+    const missingHeaders = requiredHeaders.filter((header) => !normalizedAvailable.has(header));
+    return {
+      availableHeaders,
+      missingHeaders,
+      isValid: missingHeaders.length === 0,
+    };
+  };
+
+  const computeDraftTotal = (draft = {}) => computeSavedInvoiceAmount(draft);
+
+  const resolveInvoiceAmount = (invoiceRecord = {}) => {
+    const headerAmount = Number(invoiceRecord?.header?.amount);
+    if (Number.isFinite(headerAmount) && headerAmount > 0) {
+      return headerAmount;
+    }
+
+    const draftAmount = computeDraftTotal(invoiceRecord?.draft || {});
+    if (Number.isFinite(draftAmount) && draftAmount > 0) {
+      return draftAmount;
+    }
+
+    const draftRows = Array.isArray(invoiceRecord?.draft?.invoiceRows) ? invoiceRecord.draft.invoiceRows : [];
+    return draftRows.reduce((sum, row) => {
+      const qty = Number(row?.quantity) || 0;
+      const fallbackRate = Number(row?.customRate || row?.rate || itemRateMap.get(row?.item || '')?.RSP || 0) || 0;
+      const discount = Number(row?.discount || 0) || 0;
+      return sum + Math.max(0, qty * fallbackRate - discount);
+    }, 0);
+  };
+
+  const buildInvoiceDraftFromCustomer = (customer = {}) => {
+    const consumerName = String(customer.consumerName || customer['Consumer Name'] || customer['consumer name'] || customer['Name'] || '').trim();
+    const consumerNo = String(customer.consumerNo || customer['Consumer No.'] || customer['consumer no'] || customer.id || customer.ID || '').trim();
+    const mobileNo = String(customer.mobileNo || customer['Mobile No.'] || customer['mobile no'] || customer.Phone || customer.phone || '').trim();
+    const address = String(customer.address || customer.Address || customer['delivery address'] || customer['Delivery Address'] || '').trim();
+    const gstin = String(customer.GSTIN || customer.gstin || customer['GSTIN'] || '').trim();
+    const orderDate = String(customer.orderDate || customer['Order Date'] || customer.orderDate || '').trim();
+    const product = String(customer.product || customer.Product || customer.item || customer.Item || 'LPG Cylinder').trim();
+    const quantity = Number(customer.quantity || customer.qty || customer.Qty || 1) || 1;
+    const customRate = String(customer.rate || customer.Rate || customer.price || customer.Price || customer['Total Amount'] || customer.Amount || '').trim();
+
+    return {
+      billToName: consumerName,
+      billToConsumerNo: consumerNo,
+      billToMobileNo: mobileNo,
+      billToCenterNo: String(customer.centerNo || customer['Center No'] || ''),
+      billToDate: orderDate ? String(new Date(orderDate).toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10),
+      billToAddress: address,
+      billToGstin: gstin,
+      invoiceRows: [
+        {
+          id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          item: product,
+          quantity,
+          customRate,
+          discount: '',
+        },
+      ],
+    };
   };
 
   const handleSaveInvoiceDraft = () => {
@@ -260,15 +502,432 @@ function InvoicePage({ loggedInUser }) {
     localStorage.setItem(invoiceDraftStorageKey, JSON.stringify(draft));
   };
 
+  const findCustomerSuggestion = (name) => {
+    const lowerName = String(name || '').trim().toLowerCase();
+    return bulkCustomers.find((customer) => String(customer.consumerName || customer['Consumer Name'] || '').trim().toLowerCase() === lowerName)
+      || savedInvoices.map((item) => item.draft).find((draft) => String(draft.billToName || '').trim().toLowerCase() === lowerName);
+  };
+
+  const handleApplyNameSuggestion = (name) => {
+    const suggestion = findCustomerSuggestion(name);
+    if (suggestion) {
+      setBillToName(String(suggestion.consumerName || suggestion['Consumer Name'] || suggestion.billToName || name));
+      setBillToConsumerNo(String(suggestion.consumerNo || suggestion['Consumer No.'] || suggestion.billToConsumerNo || ''));
+      setBillToMobileNo(String(suggestion.mobileNo || suggestion['Mobile No.'] || suggestion.billToMobileNo || ''));
+      setBillToAddress(String(suggestion.address || suggestion.Address || suggestion.billToAddress || ''));
+      setBillToGstin(String(suggestion.GSTIN || suggestion.gstin || suggestion.billToGstin || ''));
+      setBillToCenterNo(String(suggestion.centerNo || suggestion['Center No'] || suggestion.billToCenterNo || ''));
+    } else {
+      setBillToName(name);
+    }
+    setShowNameSuggestions(false);
+  };
+
+  const parseBulkFileRows = (rows) => {
+    const parsedRows = Array.isArray(rows) ? rows : [];
+    if (parsedRows.length === 0) {
+      setBulkImportErrors(['Import file contains no valid rows.']);
+      persistBulkCustomers([]);
+      return [];
+    }
+
+    const headerValidation = validateBulkImportHeaders(parsedRows);
+    if (!headerValidation.isValid) {
+      const headerList = headerValidation.availableHeaders.length > 0
+        ? headerValidation.availableHeaders.join(', ')
+        : 'No headers found';
+      setBulkImportErrors([
+        `Template validation failed. Missing required columns: ${headerValidation.missingHeaders.join(', ')}.`,
+        `Available columns: ${headerList}.`,
+        'Download the sample template and then re-import your customer list.',
+      ]);
+      persistBulkCustomers([]);
+      return [];
+    }
+
+    const customers = [];
+    const errors = [];
+    parsedRows.forEach((rawRow, index) => {
+      const row = normalizeBulkRow(rawRow);
+      const consumerName = String(row['Consumer Name'] || row['consumer name'] || row['Name'] || row['name'] || '').trim();
+      const consumerNo = String(row['Consumer No.'] || row['consumer no'] || row['ID'] || row['id'] || '').trim();
+      const mobileNo = String(row['Mobile No.'] || row['mobile no'] || row['Phone'] || row['phone'] || '').trim();
+      const address = String(row['Address'] || row['address'] || row['Delivery Address'] || row['delivery address'] || '').trim();
+      const orderDate = String(row['Order Date'] || row['order date'] || row['Date'] || row['date'] || '').trim();
+      const product = String(row['Product'] || row['product'] || row['Item'] || row['item'] || '').trim();
+      const quantity = row['Quantity'] || row['quantity'] || row['Qty'] || row['qty'] || 1;
+      const rate = String(row['Rate'] || row['rate'] || row['Unit Rate'] || row['unit rate'] || row['Price'] || row['price'] || row['Total Amount'] || row['Amount'] || '').trim();
+      const gstin = String(row['GSTIN'] || row['gstin'] || row['Gstn'] || '').trim();
+      const centerNo = String(row['Center No'] || row['center no'] || '').trim();
+      const quantityValue = Number(quantity) || 1;
+
+      if (!consumerName || !mobileNo || !address) {
+        errors.push(`Row ${index + 2}: missing required consumer name, mobile or address.`);
+        return;
+      }
+      if (!/^\d{10,15}$/.test(mobileNo.replace(/\D/g, ''))) {
+        errors.push(`Row ${index + 2}: mobile number should have 10 to 15 digits.`);
+        return;
+      }
+      if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
+        errors.push(`Row ${index + 2}: quantity must be greater than 0.`);
+        return;
+      }
+
+      customers.push({
+        id: `bulk-${Date.now()}-${index}`,
+        consumerName,
+        consumerNo,
+        mobileNo,
+        address,
+        orderDate,
+        product: product || 'LPG Cylinder',
+        quantity: quantityValue,
+        rate,
+        gstin,
+        centerNo,
+        status: 'Imported',
+      });
+    });
+
+    if (customers.length === 0 && errors.length > 0) {
+      persistBulkCustomers([]);
+      setBulkImportErrors(errors);
+      return [];
+    }
+
+    persistBulkCustomers(customers);
+    setBulkImportErrors(errors);
+    return customers;
+  };
+
+  const handleBulkFileSelect = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const fileName = String(file.name || '').toLowerCase();
+    if (fileName.endsWith('.csv')) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          parseBulkFileRows(results.data);
+        },
+        error: () => {
+          setBulkImportErrors(['Unable to parse CSV file.']);
+        },
+      });
+    } else {
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        try {
+          const data = new Uint8Array(loadEvent.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+          parseBulkFileRows(json);
+        } catch {
+          setBulkImportErrors(['Unable to parse Excel file.']);
+        }
+      };
+      reader.onerror = () => setBulkImportErrors(['Unable to read import file.']);
+      reader.readAsArrayBuffer(file);
+    }
+    event.target.value = '';
+  };
+
+  const handleDownloadCustomerTemplate = () => {
+    const worksheet = XLSX.utils.json_to_sheet(BULK_IMPORT_TEMPLATE_SAMPLE, {
+      header: BULK_IMPORT_TEMPLATE_HEADERS,
+    });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Customers');
+    XLSX.writeFile(workbook, 'bulk-customer-import-template.xlsx');
+  };
+
+  const handleCreateBulkInvoices = () => {
+    if (bulkCustomers.length === 0) {
+      alert('Please import a customer list before generating bulk invoices.');
+      return;
+    }
+    const newInvoices = bulkCustomers.map((customer, index) => ({
+      id: `invoice-${Date.now()}-${index}`,
+      title: `${customer.consumerName}${customer.consumerNo ? ` (${customer.consumerNo})` : ''}`,
+      savedAt: new Date().toISOString(),
+      status: 'Unpaid',
+      draft: buildInvoiceDraftFromCustomer(customer),
+    })).map((item, index) => normalizeSavedInvoiceRecord(item, index));
+    const nextSavedInvoices = [...newInvoices, ...savedInvoices].slice(0, 200);
+    setSavedInvoices(nextSavedInvoices);
+    localStorage.setItem(savedInvoicesStorageKey, JSON.stringify(nextSavedInvoices));
+  };
+
+  const handleToggleInvoiceStatus = (invoiceId) => {
+    const nextSavedInvoices = savedInvoices.map((item) => {
+      if (item.id !== invoiceId) return item;
+      return normalizeSavedInvoiceRecord({
+        ...item,
+        status: item.status === 'Paid' ? 'Unpaid' : 'Paid',
+      });
+    });
+    setSavedInvoices(nextSavedInvoices);
+    localStorage.setItem(savedInvoicesStorageKey, JSON.stringify(nextSavedInvoices));
+  };
+
+  const downloadCsvFile = (content, fileName) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportInvoiceSummaryCsv = () => {
+    const rows = getNormalizedInvoiceRecords().map((item) => ({
+      InvoiceID: item.id,
+      Title: item.title,
+      Status: item.status,
+      SavedAt: item.savedAt,
+      ConsumerName: item.customerName,
+      ConsumerNo: item.customerId,
+      MobileNo: item.mobileNo,
+      Address: item.address,
+      InvoiceDate: item.invoiceDate,
+      AmountType: item.amountType,
+      TotalAmount: item.total.toFixed(2),
+    }));
+    const csv = Papa.unparse(rows);
+    downloadCsvFile(csv, `invoice-summary-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  const handleExportInvoiceSummaryExcel = () => {
+    const reportRows = getNormalizedInvoiceRecords().map((item) => ({
+      'Invoice ID': item.id,
+      'Invoice Title': item.title,
+      'Payment Status': item.status,
+      'Saved At': item.savedAt ? new Date(item.savedAt).toLocaleString('en-GB') : '',
+      'Customer Name': item.customerName,
+      'Customer ID': item.customerId,
+      Phone: item.mobileNo,
+      Address: item.address,
+      'Invoice Date': item.invoiceDate ? formatInvoiceDisplayDate(item.invoiceDate) : '',
+      'Amount Type': item.amountType,
+      'Total Amount': Number(item.total.toFixed(2)),
+    }));
+
+    const summaryRows = [
+      { Metric: 'Total Invoices', Value: savedInvoices.length },
+      { Metric: 'Paid Invoices', Value: paidInvoices },
+      { Metric: 'Unpaid Invoices', Value: unpaidInvoices },
+      { Metric: 'Outstanding Amount', Value: Number(outstandingAmount.toFixed(2)) },
+      { Metric: 'Collection Rate %', Value: Number(collectionRate.toFixed(1)) },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(reportRows), 'Invoice Report');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+    XLSX.writeFile(workbook, `invoice-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const handlePrintSummaryReport = () => {
+    const reportWindow = window.open('', '_blank');
+    if (!reportWindow) {
+      alert('Unable to open report window. Please allow pop-ups.');
+      return;
+    }
+    const paidCount = savedInvoices.filter((item) => item.status === 'Paid').length;
+    const unpaidCount = savedInvoices.filter((item) => item.status !== 'Paid').length;
+    const outstanding = savedInvoices.reduce((sum, item) => {
+      if (item.status !== 'Paid') return sum + computeDraftTotal(item.draft);
+      return sum;
+    }, 0);
+    const content = `
+      <html>
+        <head>
+          <title>Invoice Summary Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { font-size: 22px; margin-bottom: 8px; }
+            table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+            th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+            th { background: #f4f4f4; }
+          </style>
+        </head>
+        <body>
+          <h1>Invoice Summary Report</h1>
+          <div>Total invoices: ${savedInvoices.length}</div>
+          <div>Paid invoices: ${paidCount}</div>
+          <div>Unpaid invoices: ${unpaidCount}</div>
+          <div>Outstanding amount: ₹${outstanding.toFixed(2)}</div>
+          <table>
+            <thead>
+              <tr><th>Invoice</th><th>Status</th><th>Customer</th><th>Total</th></tr>
+            </thead>
+            <tbody>
+              ${savedInvoices.map((item) => `
+                <tr>
+                  <td>${item.title}</td>
+                  <td>${item.status}</td>
+                  <td>${item.header?.name || item.draft?.billToName || ''}</td>
+                  <td>₹${computeDraftTotal(item.draft).toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    reportWindow.document.write(content);
+    reportWindow.document.close();
+    setTimeout(() => reportWindow.print(), 300);
+  };
+
+  const filteredSavedInvoices = useMemo(() => {
+    const query = String(quickSearchTerm || '').trim().toLowerCase();
+    const filters = {
+      name: String(savedInvoiceFilters.name || '').trim().toLowerCase(),
+      mobile: String(savedInvoiceFilters.mobile || '').trim().toLowerCase(),
+      address: String(savedInvoiceFilters.address || '').trim().toLowerCase(),
+      date: String(savedInvoiceFilters.date || '').trim().toLowerCase(),
+      amount: String(savedInvoiceFilters.amount || '').trim().toLowerCase(),
+      amountStatus: String(savedInvoiceFilters.amountStatus || '').trim().toLowerCase(),
+    };
+
+    return savedInvoices.filter((item) => {
+      const draft = item.draft || {};
+      const amount = String(resolveInvoiceAmount(item).toFixed(2)).toLowerCase();
+      const amountStatus = String(item.header?.amountType || (item.status === 'Paid' ? 'Paid' : 'Due')).toLowerCase();
+      const matchesQuickSearch = !query || [
+        item.id,
+        item.title,
+        item.header?.name,
+        draft.billToName,
+        draft.billToConsumerNo,
+        item.header?.mobile,
+        draft.billToMobileNo,
+        item.header?.address,
+        draft.billToAddress,
+        item.header?.date,
+      ]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+      if (!matchesQuickSearch) return false;
+
+      return (
+        String(item.header?.name || draft.billToName || '').toLowerCase().includes(filters.name)
+        && String(item.header?.mobile || draft.billToMobileNo || '').toLowerCase().includes(filters.mobile)
+        && String(item.header?.address || draft.billToAddress || '').toLowerCase().includes(filters.address)
+        && String(item.header?.date || getDraftInvoiceDate(draft, item.savedAt) || '').toLowerCase().includes(filters.date)
+        && amount.includes(filters.amount)
+        && amountStatus.includes(filters.amountStatus)
+      );
+    });
+  }, [quickSearchTerm, resolveInvoiceAmount, savedInvoiceFilters, savedInvoices]);
+
+  const filteredBulkCustomers = useMemo(() => {
+    const query = String(quickSearchTerm || '').trim().toLowerCase();
+    if (!query) return bulkCustomers;
+    return bulkCustomers.filter((customer) => {
+      return [customer.consumerName, customer.consumerNo, customer.mobileNo, customer.address]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+    });
+  }, [quickSearchTerm, bulkCustomers]);
+
+  const groupedSavedInvoices = useMemo(() => {
+    const groups = filteredSavedInvoices.reduce((acc, item) => {
+      const customerName = String(item.header?.name || item.draft?.billToName || 'Unnamed Customer').trim();
+      const consumerNo = String(item.draft?.billToConsumerNo || '').trim();
+      const mobile = String(item.header?.mobile || item.draft?.billToMobileNo || '').trim();
+      const address = String(item.header?.address || item.draft?.billToAddress || '').trim();
+      const customerKey = String(consumerNo || mobile || customerName || item.id).trim().toLowerCase();
+      const amount = resolveInvoiceAmount(item);
+      const amountStatus = item.header?.amountType || (item.status === 'Paid' ? 'Paid' : 'Due');
+      const invoiceDate = item.header?.date || getDraftInvoiceDate(item.draft, item.savedAt);
+
+      if (!acc[customerKey]) {
+        acc[customerKey] = {
+          key: customerKey,
+          customerName,
+          mobile,
+          address,
+          latestDate: invoiceDate,
+          totalAmount: 0,
+          dueAmount: 0,
+          paidAmount: 0,
+          entries: [],
+        };
+      }
+
+      acc[customerKey].entries.push({
+        ...item,
+        resolvedAmount: amount,
+        resolvedAmountStatus: amountStatus,
+        resolvedDate: invoiceDate,
+      });
+      acc[customerKey].totalAmount += amount;
+      if (amountStatus === 'Paid') {
+        acc[customerKey].paidAmount += amount;
+      } else {
+        acc[customerKey].dueAmount += amount;
+      }
+      if (String(invoiceDate || '') > String(acc[customerKey].latestDate || '')) {
+        acc[customerKey].latestDate = invoiceDate;
+      }
+
+      return acc;
+    }, {});
+
+    return Object.values(groups)
+      .map((group) => ({
+        ...group,
+        entries: group.entries.sort((a, b) => String(b.resolvedDate || b.savedAt || '').localeCompare(String(a.resolvedDate || a.savedAt || ''))),
+      }))
+      .sort((a, b) => String(a.customerName || '').localeCompare(String(b.customerName || '')));
+  }, [filteredSavedInvoices, resolveInvoiceAmount]);
+
+  const customerNameSuggestions = useMemo(() => {
+    const names = new Set();
+    bulkCustomers.forEach((customer) => {
+      const name = String(customer.consumerName || customer['Consumer Name'] || '').trim();
+      if (name) names.add(name);
+    });
+    savedInvoices.forEach((item) => {
+      const name = String(item.draft?.billToName || '').trim();
+      if (name) names.add(name);
+    });
+    return Array.from(names);
+  }, [bulkCustomers, savedInvoices]);
+
+  const autoCompleteSuggestions = useMemo(() => {
+    const query = String(billToName || '').trim().toLowerCase();
+    if (!query || query.length < 2) return [];
+    return customerNameSuggestions
+      .filter((name) => name.toLowerCase().includes(query))
+      .slice(0, 6);
+  }, [billToName, customerNameSuggestions]);
+
+  const paidInvoices = savedInvoices.filter((item) => item.status === 'Paid').length;
+  const unpaidInvoices = savedInvoices.filter((item) => item.status !== 'Paid').length;
+  const outstandingAmount = savedInvoices.reduce((sum, item) => (
+    item.status !== 'Paid' ? sum + computeDraftTotal(item.draft) : sum
+  ), 0);
+  const paidAmount = savedInvoices.reduce((sum, item) => (
+    item.status === 'Paid' ? sum + computeDraftTotal(item.draft) : sum
+  ), 0);
+  const totalInvoiceAmount = paidAmount + outstandingAmount;
+  const collectionRate = totalInvoiceAmount > 0 ? (paidAmount / totalInvoiceAmount) * 100 : 0;
+  const averageInvoiceValue = savedInvoices.length > 0 ? totalInvoiceAmount / savedInvoices.length : 0;
+
   const handleSaveInvoiceRecord = () => {
     const draft = buildInvoiceDraft();
-    const invoiceRecord = {
+    const invoiceRecord = normalizeSavedInvoiceRecord({
       id: `invoice-${Date.now()}`,
       title: `${draft.billToName || 'Unnamed Customer'}${draft.billToConsumerNo ? ` (${draft.billToConsumerNo})` : ''}`,
       savedAt: new Date().toISOString(),
+      status: 'Unpaid',
       draft,
-    };
-    const nextSavedInvoices = [invoiceRecord, ...savedInvoices].slice(0, 20);
+    });
+    const nextSavedInvoices = [invoiceRecord, ...savedInvoices].slice(0, 200);
     setSavedInvoices(nextSavedInvoices);
     localStorage.setItem(savedInvoicesStorageKey, JSON.stringify(nextSavedInvoices));
     localStorage.setItem(invoiceDraftStorageKey, JSON.stringify(draft));
@@ -520,6 +1179,35 @@ function InvoicePage({ loggedInUser }) {
   };
 
   useEffect(() => {
+    const handleShortcuts = (event) => {
+      if (!event.ctrlKey) return;
+      const key = event.key?.toLowerCase();
+      if (key === 's') {
+        event.preventDefault();
+        handleSaveInvoiceDraft();
+      }
+      if (key === 'p') {
+        event.preventDefault();
+        handlePrintInvoice();
+      }
+      if (event.shiftKey && key === 'a') {
+        event.preventDefault();
+        handleAddProduct();
+      }
+      if (key === 'r') {
+        event.preventDefault();
+        handleResetInvoice();
+      }
+      if (key === 'enter') {
+        event.preventDefault();
+        handleSaveInvoiceRecord();
+      }
+    };
+    window.addEventListener('keydown', handleShortcuts);
+    return () => window.removeEventListener('keydown', handleShortcuts);
+  }, [handleSaveInvoiceDraft, handlePrintInvoice, handleAddProduct, handleResetInvoice, handleSaveInvoiceRecord]);
+
+  useEffect(() => {
     if (loggedInUser?.bankDetailsData) {
       setBankDetails((prev) => ({ ...prev, ...loggedInUser.bankDetailsData }));
     } else {
@@ -545,39 +1233,313 @@ function InvoicePage({ loggedInUser }) {
     try {
       const raw = localStorage.getItem(savedInvoicesStorageKey);
       const parsed = raw ? JSON.parse(raw) : [];
-      setSavedInvoices(Array.isArray(parsed) ? parsed : []);
+      setSavedInvoices(Array.isArray(parsed) ? parsed.map((item, index) => normalizeSavedInvoiceRecord(item, index)) : []);
     } catch {
       setSavedInvoices([]);
     }
   }, [savedInvoicesStorageKey]);
 
+  useEffect(() => {
+    if (!groupedSavedInvoices.some((group) => group.key === expandedCustomerKey)) {
+      setExpandedCustomerKey('');
+    }
+  }, [expandedCustomerKey, groupedSavedInvoices]);
+
   return (
     <div className="placeholder-container">
       <div className="support-status-panel" style={{ marginBottom: '18px' }}>
         <div className="support-status-panel__header">
-          <h3>Saved Invoices</h3>
-          <span>{savedInvoices.length} drafts</span>
+          <h3>Invoice Intelligence</h3>
+          <span>{savedInvoices.length} saved invoices</span>
         </div>
-        <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
-          <button type="button" onClick={handleSaveInvoiceDraft}>Save Draft</button>
-          <button type="button" onClick={handleSaveInvoiceRecord}>Save Invoice Snapshot</button>
+        <div className="form-actions" style={{ flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-start' }}>
+          <input
+            type="text"
+            value={quickSearchTerm}
+            onChange={(e) => setQuickSearchTerm(e.target.value)}
+            placeholder="Search customer name, phone, ID, or invoice..."
+            style={{ minWidth: '220px', padding: '8px 10px', borderRadius: '5px', border: '1px solid #ccc' }}
+          />
+          <button type="button" onClick={() => bulkFileInputRef.current?.click()}>Import Customers</button>
+          <button type="button" onClick={handleCreateBulkInvoices} disabled={!bulkCustomers.length}>Create Bulk Invoices</button>
+          <button type="button" onClick={handleDownloadCustomerTemplate}>Download Template</button>
+          <button type="button" onClick={handleExportInvoiceSummaryExcel} disabled={!savedInvoices.length}>Export Excel</button>
+          <button type="button" onClick={handleExportInvoiceSummaryCsv} disabled={!savedInvoices.length}>Export CSV</button>
+          <button type="button" onClick={handlePrintSummaryReport} disabled={!savedInvoices.length}>Export PDF Report</button>
+          <button type="button" onClick={handleSaveInvoiceDraft}>Save Draft (Ctrl+S)</button>
         </div>
-        {savedInvoices.length === 0 ? (
-          <div className="support-status-panel__empty">Abhi koi saved invoice snapshot available nahi hai.</div>
-        ) : (
-          <div className="user-profile-history-list">
-            {savedInvoices.map((item) => (
-              <div key={item.id} className="user-profile-history-item">
-                <strong>{item.title}</strong>
-                <span>Saved: {new Date(item.savedAt).toLocaleString('en-GB')}</span>
-                <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
-                  <button type="button" onClick={() => handleDuplicateSavedInvoice(item)}>Duplicate</button>
-                  <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
-                </div>
-              </div>
-            ))}
+        <input ref={bulkFileInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleBulkFileSelect} style={{ display: 'none' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', margin: '14px 0' }}>
+          <div style={{ background: '#f7f9fc', padding: '12px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.85rem', color: '#555' }}>Total Invoices</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{savedInvoices.length}</div>
+          </div>
+          <div style={{ background: '#f7f9fc', padding: '12px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.85rem', color: '#555' }}>Imported Customers</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{bulkCustomers.length}</div>
+          </div>
+          <div style={{ background: '#f7f9fc', padding: '12px', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.85rem', color: '#555' }}>Outstanding Amount</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>₹{savedInvoices.reduce((sum, item) => item.status !== 'Paid' ? sum + computeDraftTotal(item.draft) : sum, 0).toFixed(2)}</div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+          <div style={{ padding: '14px', borderRadius: '10px', border: '1px solid #d8e4f5', background: '#eef6ff', textAlign: 'left' }}>
+            <div style={{ fontSize: '0.78rem', color: '#4f6b8a', textTransform: 'uppercase', fontWeight: 700 }}>Payment Status Dashboard</div>
+            <div style={{ marginTop: '8px', fontSize: '1.6rem', fontWeight: 800, color: '#1d4f91' }}>{paidInvoices} paid / {unpaidInvoices} unpaid</div>
+            <div style={{ marginTop: '6px', color: '#516a85', fontSize: '0.92rem' }}>
+              Outstanding receivables stay visible while you track invoice closures.
+            </div>
+          </div>
+          <div style={{ padding: '14px', borderRadius: '10px', border: '1px solid #eadfb2', background: '#fff8dd', textAlign: 'left' }}>
+            <div style={{ fontSize: '0.78rem', color: '#8a6a12', textTransform: 'uppercase', fontWeight: 700 }}>Bulk Import Validation</div>
+            <div style={{ marginTop: '8px', fontWeight: 700, color: '#5f4b10' }}>
+              Required columns: Consumer Name, Mobile No., Address
+            </div>
+            <div style={{ marginTop: '6px', color: '#6f5f2a', fontSize: '0.92rem' }}>
+              Download the template first to import customer lists cleanly.
+            </div>
+          </div>
+          <div style={{ padding: '14px', borderRadius: '10px', border: '1px solid #d8ead9', background: '#edf9ee', textAlign: 'left' }}>
+            <div style={{ fontSize: '0.78rem', color: '#25663a', textTransform: 'uppercase', fontWeight: 700 }}>Keyboard Shortcuts</div>
+            <div style={{ marginTop: '8px', color: '#214d2f', fontSize: '0.92rem', lineHeight: 1.6 }}>
+              Ctrl+S save draft, Ctrl+P print invoice, Ctrl+Shift+A add row, Ctrl+R reset, Ctrl+Enter save invoice record.
+            </div>
+          </div>
+        </div>
+        {bulkImportErrors.length > 0 && (
+          <div style={{ marginBottom: '10px', color: '#b71c1c', background: '#ffe6e6', padding: '10px', borderRadius: '6px' }}>
+            <strong>Import issues:</strong>
+            <ul style={{ margin: '8px 0 0 16px' }}>
+              {bulkImportErrors.map((error, index) => <li key={`bulk-error-${index}`}>{error}</li>)}
+            </ul>
           </div>
         )}
+        {bulkCustomers.length > 0 && (
+          <div style={{ marginBottom: '14px', padding: '12px', borderRadius: '8px', background: '#fff9e3', border: '1px solid #f0e5b5' }}>
+            <strong>{bulkCustomers.length} customers imported</strong>
+            <div style={{ marginTop: '6px', fontSize: '0.92rem', color: '#555' }}>
+              You can now create bulk invoices from imported customer data or search saved invoices above.
+            </div>
+          </div>
+        )}
+        {filteredBulkCustomers.length > 0 && (
+          <div style={{ marginBottom: '14px', padding: '12px', borderRadius: '8px', background: '#f8fbff', border: '1px solid #dde8f7' }}>
+            <div className="support-status-panel__header" style={{ justifyContent: 'space-between', display: 'flex', alignItems: 'center' }}>
+              <h4 style={{ margin: 0 }}>Quick Customer Search</h4>
+              <span style={{ fontSize: '0.9rem', color: '#666' }}>{filteredBulkCustomers.length} match</span>
+            </div>
+            <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+              {filteredBulkCustomers.slice(0, 6).map((customer) => (
+                <button
+                  key={customer.id}
+                  type="button"
+                  onClick={() => handleApplyNameSuggestion(customer.consumerName)}
+                  style={{ textAlign: 'left', border: '1px solid #d7e3f4', background: '#fff', borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}
+                >
+                  <strong>{customer.consumerName}</strong>
+                  <div style={{ marginTop: '4px', color: '#586b84', fontSize: '0.9rem' }}>
+                    {customer.mobileNo} {customer.consumerNo ? `| ID: ${customer.consumerNo}` : ''} {customer.centerNo ? `| Center: ${customer.centerNo}` : ''}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ marginBottom: '14px' }}>
+          <div className="support-status-panel__header" style={{ justifyContent: 'space-between', display: 'flex', alignItems: 'center' }}>
+            <h4 style={{ margin: 0 }}>Saved Invoice Records</h4>
+            <span style={{ fontSize: '0.9rem', color: '#666' }}>{groupedSavedInvoices.length} consumers shown</span>
+          </div>
+          {groupedSavedInvoices.length === 0 ? (
+            <div className="support-status-panel__empty">No matching invoices found.</div>
+          ) : (
+            <div className="table-container" style={{ maxHeight: 'none', marginTop: '10px' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Mobile</th>
+                    <th>Address</th>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Amount Status</th>
+                    <th>Actions</th>
+                  </tr>
+                  <tr>
+                    <th><input className="invoice-input" value={savedInvoiceFilters.name} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, name: e.target.value }))} placeholder="Search name" /></th>
+                    <th><input className="invoice-input" value={savedInvoiceFilters.mobile} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, mobile: e.target.value }))} placeholder="Search mobile" /></th>
+                    <th><input className="invoice-input" value={savedInvoiceFilters.address} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, address: e.target.value }))} placeholder="Search address" /></th>
+                    <th><input className="invoice-input" value={savedInvoiceFilters.date} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, date: e.target.value }))} placeholder="Search date" /></th>
+                    <th><input className="invoice-input" value={savedInvoiceFilters.amount} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, amount: e.target.value }))} placeholder="Search amount" /></th>
+                    <th><input className="invoice-input" value={savedInvoiceFilters.amountStatus} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, amountStatus: e.target.value }))} placeholder="Search status" /></th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedSavedInvoices.map((group) => {
+                    const isExpanded = expandedCustomerKey === group.key;
+                    return (
+                      <Fragment key={group.key}>
+                        <tr key={group.key}>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedCustomerKey(isExpanded ? '' : group.key)}
+                              style={{ border: 'none', background: 'transparent', padding: 0, color: '#0d6efd', fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}
+                            >
+                              {group.customerName || '-'}
+                            </button>
+                          </td>
+                          <td>{group.mobile || '-'}</td>
+                          <td>{group.address || '-'}</td>
+                          <td>{formatInvoiceDisplayDate(group.latestDate)}</td>
+                          <td>₹{group.totalAmount.toFixed(2)}</td>
+                          <td style={{ color: group.dueAmount > 0 ? '#c62828' : '#2e7d32', fontWeight: 700 }}>
+                            {group.dueAmount > 0 ? `Due ₹${group.dueAmount.toFixed(2)}` : `Paid ₹${group.paidAmount.toFixed(2)}`}
+                          </td>
+                          <td>{group.entries.length} record</td>
+                        </tr>
+                        {isExpanded ? (
+                          <tr key={`${group.key}-ledger`}>
+                            <td colSpan="7" style={{ background: '#f8fbff', padding: '14px' }}>
+                              <div style={{ fontWeight: 700, color: '#244c7b', marginBottom: '10px' }}>Consumer Ledger</div>
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>Date</th>
+                                    <th>Invoice</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Saved At</th>
+                                    <th>Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.entries.map((item) => (
+                                    <tr key={item.id}>
+                                      <td>{formatInvoiceDisplayDate(item.resolvedDate)}</td>
+                                      <td>{item.title}</td>
+                                      <td>₹{item.resolvedAmount.toFixed(2)}</td>
+                                      <td style={{ color: item.resolvedAmountStatus === 'Paid' ? '#2e7d32' : '#c62828', fontWeight: 700 }}>
+                                        {item.resolvedAmountStatus}
+                                      </td>
+                                      <td>{formatInvoiceDisplayDateTime(item.savedAt)}</td>
+                                      <td>
+                                        <div className="form-actions" style={{ justifyContent: 'flex-start', marginTop: 0 }}>
+                                          <button type="button" onClick={() => handleDuplicateSavedInvoice(item)}>Open</button>
+                                          <button type="button" onClick={() => handleToggleInvoiceStatus(item.id)}>{item.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>
+                                          <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                  {false && filteredSavedInvoices.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.header?.name || item.draft?.billToName || '-'}</td>
+                      <td>{item.header?.mobile || item.draft?.billToMobileNo || '-'}</td>
+                      <td>{item.header?.address || item.draft?.billToAddress || '-'}</td>
+                      <td>{formatInvoiceDisplayDate(item.header?.date || item.savedAt)}</td>
+                      <td>₹{(item.header?.amount ?? computeDraftTotal(item.draft)).toFixed(2)}</td>
+                      <td style={{ color: item.status === 'Paid' ? '#2e7d32' : '#c62828', fontWeight: 700 }}>
+                        {item.header?.amountType || (item.status === 'Paid' ? 'Paid' : 'Due')}
+                      </td>
+                      <td>
+                        <div className="form-actions" style={{ justifyContent: 'flex-start', marginTop: 0 }}>
+                          <button type="button" onClick={() => handleDuplicateSavedInvoice(item)}>Open</button>
+                          <button type="button" onClick={() => handleToggleInvoiceStatus(item.id)}>{item.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>
+                          <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{ display: 'none' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px', marginTop: '10px', marginBottom: '10px', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', background: '#eef5ff', border: '1px solid #d7e3f4', fontSize: '0.82rem', fontWeight: 700, color: '#35506f' }}>
+            <span>Name</span>
+            <span>Mobile</span>
+            <span>Address</span>
+            <span>Date</span>
+            <span>Amount</span>
+            <span>Amount Status</span>
+          </div>
+          {groupedSavedInvoices.length === 0 ? (
+            <div className="support-status-panel__empty">No matching invoices found.</div>
+          ) : (
+            <div className="user-profile-history-list">
+              {groupedSavedInvoices.map((group) => {
+                const isExpanded = group.key === expandedCustomerKey;
+                return (
+                  <div key={group.key} className="user-profile-history-item" style={{ padding: '12px', border: '1px solid #e0e0e0', borderRadius: '8px', marginBottom: '10px', textAlign: 'left' }}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedCustomerKey(isExpanded ? '' : group.key)}
+                      style={{ width: '100%', border: '1px solid #d7e3f4', background: isExpanded ? '#f7fbff' : '#fff', borderRadius: '8px', padding: '12px', cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px', alignItems: 'start' }}>
+                        <div>
+                          <strong>{group.customerName}</strong>
+                          {group.customerId ? <div style={{ marginTop: '4px', fontSize: '0.82rem', color: '#5c6f86' }}>ID: {group.customerId}</div> : null}
+                        </div>
+                        <span>{group.mobile || '-'}</span>
+                        <span>{group.address || '-'}</span>
+                        <span>{formatInvoiceDisplayDate(group.latestInvoiceDate)}</span>
+                        <span>₹{group.totalAmount.toFixed(2)}</span>
+                        <span style={{ fontWeight: 700, color: group.dueAmount > 0 ? '#c62828' : '#2e7d32' }}>
+                          {group.dueAmount > 0 ? `Due ₹${group.dueAmount.toFixed(2)}` : `Paid ₹${group.paidAmount.toFixed(2)}`}
+                        </span>
+                      </div>
+                      <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', color: '#586b84', fontSize: '0.85rem' }}>
+                        <span>{group.entries.length} entr{group.entries.length === 1 ? 'y' : 'ies'}</span>
+                        <span>Last saved: {formatInvoiceDisplayDateTime(group.latestSavedAt)}</span>
+                      </div>
+                    </button>
+                    {isExpanded ? (
+                      <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
+                        {group.entries.map((item) => (
+                          <div key={item.id} style={{ padding: '12px', border: '1px solid #dfe7f3', borderRadius: '8px', background: '#fbfdff' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                              <strong>{item.title}</strong>
+                              <span style={{ color: item.status === 'Paid' ? '#2e7d32' : '#c62828', fontWeight: 700 }}>
+                                {item.header?.amountType || (item.status === 'Paid' ? 'Paid' : 'Due')}
+                              </span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px', marginTop: '8px', color: '#586b84', fontSize: '0.9rem' }}>
+                              <span>Date: {formatInvoiceDisplayDate(item.header?.date || item.savedAt)}</span>
+                              <span>Mobile: {item.header?.mobile || '-'}</span>
+                              <span>Amount: ₹{(item.header?.amount ?? computeDraftTotal(item.draft)).toFixed(2)}</span>
+                              <span>Saved: {formatInvoiceDisplayDateTime(item.savedAt)}</span>
+                            </div>
+                            <div style={{ marginTop: '8px', color: '#586b84', fontSize: '0.9rem' }}>
+                              Address: {item.header?.address || '-'}
+                            </div>
+                            <div className="form-actions" style={{ justifyContent: 'flex-start', marginTop: '10px' }}>
+                              <button type="button" onClick={() => handleDuplicateSavedInvoice(item)}>Open Details</button>
+                              <button type="button" onClick={() => handleToggleInvoiceStatus(item.id)}>{item.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>
+                              <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          </div>
+        </div>
       </div>
       <div className="invoice-container" ref={invoicePrintRef}>
         <div className="invoice-tax-label">Tax Invoice</div>
@@ -598,9 +1560,33 @@ function InvoicePage({ loggedInUser }) {
           <div className="section-box billto-section">
             <span className="section-label">Bill To</span>
             <div className="billto-form">
-              <div className="billto-field billto-name">
+              <div className="billto-field billto-name" style={{ position: 'relative' }}>
                 <label>Consumer Name</label>
-                <input className="invoice-input" placeholder="Consumer Name" value={billToName} onChange={(e) => setBillToName(toUpperValue(e.target.value))} />
+                <input
+                  className="invoice-input"
+                  placeholder="Consumer Name"
+                  value={billToName}
+                  onChange={(e) => {
+                    setBillToName(toUpperValue(e.target.value));
+                    setShowNameSuggestions(true);
+                  }}
+                  onFocus={() => setShowNameSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowNameSuggestions(false), 150)}
+                />
+                {showNameSuggestions && autoCompleteSuggestions.length > 0 && (
+                  <div style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #ccc', borderRadius: '0 0 6px 6px', maxHeight: '180px', overflowY: 'auto' }}>
+                    {autoCompleteSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); handleApplyNameSuggestion(suggestion); }}
+                        style={{ width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: '#fff', cursor: 'pointer' }}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="billto-field billto-consumerno">
                 <label>Consumer No (if available)</label>
@@ -725,6 +1711,7 @@ function InvoicePage({ loggedInUser }) {
         </table>
         <div className="invoice-actions">
           <button type="button" className="btn-add-product" onClick={handleAddProduct}>Add Product</button>
+          <button type="button" className="btn-print-invoice" onClick={handleSaveInvoiceRecord}>Save Invoice Record</button>
           <button type="button" className="btn-print-invoice" onClick={handlePrintInvoice}>Print Invoice</button>
           <button type="button" className="btn-clear-invoice" onClick={handleClearInvoice}>Clear</button>
           <button type="button" className="btn-reset-invoice" onClick={handleResetInvoice}>Reset</button>
