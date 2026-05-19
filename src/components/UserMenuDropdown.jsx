@@ -87,11 +87,12 @@ const UserMenuDropdown = ({
       <div className="dropdown-menu__summary-toggle-row">
         <button
           type="button"
-          className="dropdown-menu__section-toggle-icon dropdown-menu__section-toggle-icon--summary"
+          className="dropdown-menu__section-toggle dropdown-menu__section-toggle--summary"
           onClick={() => toggleSection('Account Setup')}
           aria-expanded={!isSectionCollapsed('Account Setup')}
         >
-          {isSectionCollapsed('Account Setup') ? 'Show Account Setup' : 'Hide Account Setup'}
+          <span className="dropdown-menu__section-title">{isSectionCollapsed('Account Setup') ? 'Show Account Setup' : 'Hide Account Setup'}</span>
+          <span className="dropdown-menu__section-toggle-icon">{isSectionCollapsed('Account Setup') ? 'Show' : 'Hide'}</span>
         </button>
       </div>
       {!isSectionCollapsed('Account Setup') && (
