@@ -3889,6 +3889,45 @@ function App() {
       aged3: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? -1) >= 3).length,
       aged7: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? -1) >= 7).length,
     };
+    const searchLower = adminSearchTerm.trim().toLowerCase();
+    const rangeDaysMap = { today: 0, '7d': 7, '30d': 30 };
+    const matchesAdminSearch = (values) => {
+      if (!searchLower) return true;
+      return values.some((value) => String(value || '').toLowerCase().includes(searchLower));
+    };
+    const isWithinAdminDateRange = (value) => {
+      if (adminDateRange === 'all') return true;
+      const date = new Date(value || '');
+      if (Number.isNaN(date.getTime())) return false;
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      if (adminDateRange === 'today') {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        return date >= start && date <= today;
+      }
+      const days = rangeDaysMap[adminDateRange];
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - days);
+      return date >= start && date <= today;
+    };
+    const filteredFeedback = feedback.filter((f) => {
+      const priority = String(f.priority || 'medium').toLowerCase();
+      const feedbackState = f.resolved ? 'resolved' : (f.read ? 'read' : 'unread');
+      const workflowState = getFeedbackWorkflowState(f, feedbackReplies, feedbackMetaOverrides);
+      const assignee = String(f.assignee || feedbackMetaOverrides[f.id]?.assignee || '').toLowerCase();
+      const matchesSubFilter = adminSubFilter === 'all'
+        || adminSubFilter === priority
+        || adminSubFilter === feedbackState
+        || adminSubFilter === workflowState
+        || (adminSubFilter === 'assigned' && Boolean(assignee))
+        || (adminSubFilter === 'unassigned' && !assignee)
+        || (adminSubFilter === 'open' && !f.resolved);
+      return isWithinAdminDateRange(f.createdAt || f.date) &&
+        matchesSubFilter &&
+        matchesAdminSearch([f.dealerCode, f.dealerName, f.email, f.text, f.createdAt, f.date, f.read ? 'read' : 'unread', priority, f.resolved ? 'resolved' : 'open', workflowState, assignee, f.tags, f.followUpDate]);
+    });
     const feedbackSlaSummary = {
       today: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? 999) <= 1).length,
       aged3: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? -1) >= 3).length,
@@ -3941,29 +3980,6 @@ function App() {
         || Object.values(user?.approvalStatus || {}).some((value) => String(value || '').toLowerCase() === 'pending')
       ))
       .slice(0, 6);
-    const searchLower = adminSearchTerm.trim().toLowerCase();
-    const rangeDaysMap = { today: 0, '7d': 7, '30d': 30 };
-    const isWithinAdminDateRange = (value) => {
-      if (adminDateRange === 'all') return true;
-      const date = new Date(value || '');
-      if (Number.isNaN(date.getTime())) return false;
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      if (adminDateRange === 'today') {
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-        return date >= start && date <= today;
-      }
-      const days = rangeDaysMap[adminDateRange];
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      start.setDate(start.getDate() - days);
-      return date >= start && date <= today;
-    };
-    const matchesAdminSearch = (values) => {
-      if (!searchLower) return true;
-      return values.some((value) => String(value || '').toLowerCase().includes(searchLower));
-    };
     const filteredPendingRegistrationRequests = pendingRegistrationRequests.filter((r) =>
       isWithinAdminDateRange(r.createdAt || r.approvedAt) &&
       (adminSubFilter === 'all' || String(r.package || '') === adminSubFilter) &&
@@ -3999,22 +4015,6 @@ function App() {
         a.payload?.hindiTranslation,
       ])
     );
-    const filteredFeedback = feedback.filter((f) => {
-      const priority = String(f.priority || 'medium').toLowerCase();
-      const feedbackState = f.resolved ? 'resolved' : (f.read ? 'read' : 'unread');
-      const workflowState = getFeedbackWorkflowState(f, feedbackReplies, feedbackMetaOverrides);
-      const assignee = String(f.assignee || feedbackMetaOverrides[f.id]?.assignee || '').toLowerCase();
-      const matchesSubFilter = adminSubFilter === 'all'
-        || adminSubFilter === priority
-        || adminSubFilter === feedbackState
-        || adminSubFilter === workflowState
-        || (adminSubFilter === 'assigned' && Boolean(assignee))
-        || (adminSubFilter === 'unassigned' && !assignee)
-        || (adminSubFilter === 'open' && !f.resolved);
-      return isWithinAdminDateRange(f.createdAt || f.date) &&
-        matchesSubFilter &&
-        matchesAdminSearch([f.dealerCode, f.dealerName, f.email, f.text, f.createdAt, f.date, f.read ? 'read' : 'unread', priority, f.resolved ? 'resolved' : 'open', workflowState, assignee, f.tags, f.followUpDate]);
-    });
     const currentTabRows = activeAdminTab === 'pending-registration'
       ? filteredPendingRegistrationRequests
       : activeAdminTab === 'approval'
@@ -8801,6 +8801,7 @@ function App() {
             : remainingDays <= 7
               ? `${remainingDays} days left. Renewal recommended.`
               : `${remainingDays} days left on current plan.`;
+  const hasWorkingData = Array.isArray(parsedData) && parsedData.length > 0;
   const hasHindiPackageAccess = isHindiEnterprisePackage(loggedInUser?.package);
   const userMenuPackageTips = hasHindiPackageAccess
     ? [
@@ -8855,7 +8856,6 @@ function App() {
             confirmMessage: 'Do you want to open the renewal form now?',
           },
         ];
-  const hasWorkingData = Array.isArray(parsedData) && parsedData.length > 0;
   const menuAccessRules = {
     profileOverview: () => true,
     requestHistory: () => true,
