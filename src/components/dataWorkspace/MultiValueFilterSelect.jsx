@@ -9,6 +9,7 @@ const MultiValueFilterSelect = ({
   onChange,
   searchable = false,
   searchPlaceholder = 'Type to search',
+  showSelectAll = true,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,14 +41,32 @@ const MultiValueFilterSelect = ({
     });
   };
 
-  const toggleValue = (option) => {
+  const toggleValue = (option, checked) => {
     const normalizedOption = String(option || '').trim();
     if (!normalizedOption) return;
-    const nextValues = selectedValues.includes(normalizedOption)
-      ? selectedValues.filter((item) => item !== normalizedOption)
-      : [...selectedValues, normalizedOption];
+    const nextValues = checked
+      ? [...new Set([...selectedValues, normalizedOption])]
+      : selectedValues.filter((item) => item !== normalizedOption);
     onChange(nextValues.length > 0 ? nextValues : 'All');
   };
+
+  const visibleOptionValues = visibleOptions
+    .map((option) => String(option || '').trim())
+    .filter(Boolean);
+  const isAllVisibleSelected = visibleOptionValues.length > 0
+    && visibleOptionValues.every((option) => selectedValues.includes(option));
+
+  const toggleSelectAllVisible = (checked) => {
+    const nextValues = checked
+      ? [...new Set([...selectedValues, ...visibleOptionValues])]
+      : selectedValues.filter((item) => !visibleOptionValues.includes(item));
+    onChange(nextValues.length > 0 ? nextValues : 'All');
+  };
+
+  const sanitizeId = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'item';
 
   const buttonLabel = selectedValues.length === 0
     ? placeholder
@@ -72,6 +91,16 @@ const MultiValueFilterSelect = ({
               placeholder={searchPlaceholder}
             />
           )}
+          {showSelectAll && (
+            <label className={`multi-filter__option multi-filter__option--select-all ${isAllVisibleSelected ? 'is-selected' : ''}`}>
+              <input
+                type="checkbox"
+                checked={isAllVisibleSelected}
+                onChange={(event) => toggleSelectAllVisible(event.target.checked)}
+              />
+              <span>Select all</span>
+            </label>
+          )}
           <button
             type="button"
             className={`multi-filter__option multi-filter__option--clear ${selectedValues.length === 0 ? 'is-selected' : ''}`}
@@ -83,15 +112,17 @@ const MultiValueFilterSelect = ({
           >
             Clear selection
           </button>
-          {visibleOptions.map((option) => {
+          {visibleOptions.map((option, index) => {
             const normalizedOption = String(option || '').trim();
+            const optionId = `${sanitizeId(placeholder)}-${sanitizeId(normalizedOption)}-${index}`;
             const isSelected = selectedValues.includes(normalizedOption);
             return (
-              <label key={normalizedOption} className={`multi-filter__option ${isSelected ? 'is-selected' : ''}`}>
+              <label key={optionId} className={`multi-filter__option ${isSelected ? 'is-selected' : ''}`}>
                 <input
+                  id={optionId}
                   type="checkbox"
                   checked={isSelected}
-                  onChange={() => toggleValue(normalizedOption)}
+                  onChange={(event) => toggleValue(normalizedOption, event.target.checked)}
                 />
                 <span>{normalizedOption}</span>
               </label>

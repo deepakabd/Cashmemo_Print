@@ -197,29 +197,42 @@ const isEkycNotDoneStatus = (status) => {
   return normalized === 'pending' || normalized === 'ekyc not done' || normalized === 'not done';
 };
 
+const normalizeFilterText = (value) => String(value || '')
+  .trim()
+  .replace(/\s+/g, ' ');
+
+const normalizeFilterKey = (value) => normalizeFilterText(value).toLowerCase();
+
 const normalizeMultiValueFilter = (value) => {
   if (Array.isArray(value)) {
-    const nextValues = [...new Set(value
-      .map((item) => String(item || '').trim())
-      .filter((item) => item && item !== 'All'))];
+    const seen = new Set();
+    const nextValues = [];
+    value.map((item) => normalizeFilterText(item)).filter(Boolean).forEach((item) => {
+      const key = normalizeFilterKey(item);
+      if (!seen.has(key) && key !== 'all') {
+        seen.add(key);
+        nextValues.push(item);
+      }
+    });
     return nextValues.length > 0 ? nextValues : 'All';
   }
-  const normalized = String(value || '').trim();
-  return normalized && normalized !== 'All' ? [normalized] : 'All';
+  const normalized = normalizeFilterText(value);
+  return normalized && normalizeFilterKey(normalized) !== 'all' ? [normalized] : 'All';
 };
 
 const getMultiValueFilterValues = (value) => (
   Array.isArray(value)
-    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    ? value.map((item) => normalizeFilterText(item)).filter(Boolean)
     : []
 );
 
 const hasMultiValueFilterSelection = (value) => getMultiValueFilterValues(value).length > 0;
 
 const matchesMultiValueFilter = (filterValue, rowValue) => {
-  const selectedValues = getMultiValueFilterValues(filterValue);
+  const selectedValues = getMultiValueFilterValues(filterValue).map(normalizeFilterKey);
   if (selectedValues.length === 0) return true;
-  return selectedValues.includes(String(rowValue || '').trim());
+  const normalizedRowValue = normalizeFilterKey(String(rowValue || ''));
+  return selectedValues.includes(normalizedRowValue);
 };
 
 const formatMultiValueFilterLabel = (prefix, value) => {
@@ -254,7 +267,9 @@ const isRegisteredMobileRow = (row = {}) => (
   hasMeaningfulCellValue(row['Mobile No.']) && hasMeaningfulCellValue(row['Is Reg Mobile'])
 );
 
-const sortedUniqueValues = (values) => [...new Set(values.filter(Boolean))]
+const sortedUniqueValues = (values) => [...new Set(values
+  .map((item) => normalizeFilterText(item))
+  .filter(Boolean))]
   .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
 
 const getCashMemoPerPage = (pageType) => {

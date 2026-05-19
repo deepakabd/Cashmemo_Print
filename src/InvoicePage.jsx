@@ -783,6 +783,69 @@ function InvoicePage({ loggedInUser }) {
     setTimeout(() => reportWindow.print(), 300);
   };
 
+  const handlePrintLedger = (group) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Unable to open print window. Please allow pop-ups.');
+      return;
+    }
+    const content = `
+      <html>
+        <head>
+          <title>Consumer Ledger - ${group.customerName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+            h1 { font-size: 22px; margin-bottom: 20px; color: #1d4f91; }
+            .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; background: #f8fbff; padding: 15px; border: 1px solid #d7e3f4; border-radius: 8px; font-size: 14px; }
+            table { border-collapse: collapse; width: 100%; margin-top: 16px; font-size: 14px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+            th { background: #f4f7fb; color: #35506f; }
+            .status-paid { color: #2e7d32; font-weight: bold; }
+            .status-due { color: #c62828; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h1>Consumer Ledger - ${group.customerName}</h1>
+          <div class="info-grid">
+            <div><strong>Name:</strong><br/>${group.customerName || '-'}</div>
+            <div><strong>Mobile:</strong><br/>${group.mobile || '-'}</div>
+            <div><strong>Address:</strong><br/>${group.address || '-'}</div>
+            <div><strong>Latest Date:</strong><br/>${formatInvoiceDisplayDate(group.latestDate)}</div>
+            <div><strong>Grand Total Amount:</strong><br/>₹${group.totalAmount.toFixed(2)}</div>
+            <div><strong>Grand Total Status:</strong><br/><span class="${group.dueAmount > 0 ? 'status-due' : 'status-paid'}">${group.dueAmount > 0 ? `Due ₹${group.dueAmount.toFixed(2)}` : `Paid ₹${group.paidAmount.toFixed(2)}`}</span></div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Invoice</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Saved At</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${group.entries.map((item) => `
+                <tr>
+                  <td>${formatInvoiceDisplayDate(item.resolvedDate)}</td>
+                  <td>${item.title}</td>
+                  <td>₹${item.resolvedAmount.toFixed(2)}</td>
+                  <td class="${item.resolvedAmountStatus === 'Paid' ? 'status-paid' : 'status-due'}">${item.resolvedAmountStatus}</td>
+                  <td>${formatInvoiceDisplayDateTime(item.savedAt)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
   const filteredSavedInvoices = useMemo(() => {
     const query = String(quickSearchTerm || '').trim().toLowerCase();
     const filters = {
@@ -1351,6 +1414,16 @@ function InvoicePage({ loggedInUser }) {
             <h4 style={{ margin: 0 }}>Saved Invoice Records</h4>
             <span style={{ fontSize: '0.9rem', color: '#666' }}>{groupedSavedInvoices.length} consumers shown</span>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', margin: '10px 0' }}>
+            <input className="invoice-input" value={savedInvoiceFilters.name} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, name: e.target.value }))} placeholder="Search name" />
+            <input className="invoice-input" value={savedInvoiceFilters.mobile} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, mobile: e.target.value }))} placeholder="Search mobile" />
+            <input className="invoice-input" value={savedInvoiceFilters.address} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, address: e.target.value }))} placeholder="Search address" />
+            <input className="invoice-input" value={savedInvoiceFilters.date} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, date: e.target.value }))} placeholder="Search date" />
+            <input className="invoice-input" value={savedInvoiceFilters.paidAmount} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, paidAmount: e.target.value }))} placeholder="Search paid" />
+            <input className="invoice-input" value={savedInvoiceFilters.dueAmount} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, dueAmount: e.target.value }))} placeholder="Search due" />
+            <input className="invoice-input" value={savedInvoiceFilters.amount} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, amount: e.target.value }))} placeholder="Search total" />
+            <input className="invoice-input" value={savedInvoiceFilters.amountStatus} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, amountStatus: e.target.value }))} placeholder="Search status" />
+          </div>
           {groupedSavedInvoices.length === 0 ? (
             <div className="support-status-panel__empty">No matching invoices found.</div>
           ) : (
@@ -1362,18 +1435,11 @@ function InvoicePage({ loggedInUser }) {
                     <th>Mobile</th>
                     <th>Address</th>
                     <th>Date</th>
-                    <th>Amount</th>
+                    <th>Paid Amount</th>
+                    <th>Due Amount</th>
+                    <th>Total Amount</th>
                     <th>Amount Status</th>
                     <th>Actions</th>
-                  </tr>
-                  <tr>
-                    <th><input className="invoice-input" value={savedInvoiceFilters.name} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, name: e.target.value }))} placeholder="Search name" /></th>
-                    <th><input className="invoice-input" value={savedInvoiceFilters.mobile} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, mobile: e.target.value }))} placeholder="Search mobile" /></th>
-                    <th><input className="invoice-input" value={savedInvoiceFilters.address} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, address: e.target.value }))} placeholder="Search address" /></th>
-                    <th><input className="invoice-input" value={savedInvoiceFilters.date} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, date: e.target.value }))} placeholder="Search date" /></th>
-                    <th><input className="invoice-input" value={savedInvoiceFilters.amount} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, amount: e.target.value }))} placeholder="Search amount" /></th>
-                    <th><input className="invoice-input" value={savedInvoiceFilters.amountStatus} onChange={(e) => setSavedInvoiceFilters((prev) => ({ ...prev, amountStatus: e.target.value }))} placeholder="Search status" /></th>
-                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -1394,51 +1460,14 @@ function InvoicePage({ loggedInUser }) {
                           <td>{group.mobile || '-'}</td>
                           <td>{group.address || '-'}</td>
                           <td>{formatInvoiceDisplayDate(group.latestDate)}</td>
-                          <td>₹{group.totalAmount.toFixed(2)}</td>
+                          <td style={{ color: '#2e7d32' }}>₹{group.paidAmount.toFixed(2)}</td>
+                          <td style={{ color: '#c62828' }}>₹{group.dueAmount.toFixed(2)}</td>
+                          <td style={{ fontWeight: 700 }}>₹{group.totalAmount.toFixed(2)}</td>
                           <td style={{ color: group.dueAmount > 0 ? '#c62828' : '#2e7d32', fontWeight: 700 }}>
                             {group.dueAmount > 0 ? `Due ₹${group.dueAmount.toFixed(2)}` : `Paid ₹${group.paidAmount.toFixed(2)}`}
                           </td>
                           <td>{group.entries.length} record</td>
                         </tr>
-                        {isExpanded ? (
-                          <tr key={`${group.key}-ledger`}>
-                            <td colSpan="7" style={{ background: '#f8fbff', padding: '14px' }}>
-                              <div style={{ fontWeight: 700, color: '#244c7b', marginBottom: '10px' }}>Consumer Ledger</div>
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>Date</th>
-                                    <th>Invoice</th>
-                                    <th>Amount</th>
-                                    <th>Status</th>
-                                    <th>Saved At</th>
-                                    <th>Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {group.entries.map((item) => (
-                                    <tr key={item.id}>
-                                      <td>{formatInvoiceDisplayDate(item.resolvedDate)}</td>
-                                      <td>{item.title}</td>
-                                      <td>₹{item.resolvedAmount.toFixed(2)}</td>
-                                      <td style={{ color: item.resolvedAmountStatus === 'Paid' ? '#2e7d32' : '#c62828', fontWeight: 700 }}>
-                                        {item.resolvedAmountStatus}
-                                      </td>
-                                      <td>{formatInvoiceDisplayDateTime(item.savedAt)}</td>
-                                      <td>
-                                        <div className="form-actions" style={{ justifyContent: 'flex-start', marginTop: 0 }}>
-                                          <button type="button" onClick={() => handleDuplicateSavedInvoice(item)}>Open</button>
-                                          <button type="button" onClick={() => handleToggleInvoiceStatus(item.id)}>{item.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>
-                                          <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </td>
-                          </tr>
-                        ) : null}
                       </Fragment>
                     );
                   })}
@@ -1465,13 +1494,81 @@ function InvoicePage({ loggedInUser }) {
               </table>
             </div>
           )}
+
+          {(() => {
+            const expandedGroup = groupedSavedInvoices.find(g => g.key === expandedCustomerKey);
+            if (!expandedGroup) return null;
+            return (
+              <div className="admin-chat-popup-overlay" style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} role="dialog" aria-modal="true">
+                <div className="admin-chat-popup" style={{ width: '90%', maxWidth: '1000px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+                  <div className="admin-chat-popup-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>Consumer Ledger - {expandedGroup.customerName}</h3>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button type="button" className="btn-print-invoice" style={{ padding: '6px 12px', fontSize: '0.85rem', margin: 0 }} onClick={() => handlePrintLedger(expandedGroup)}>Export to PDF</button>
+                      <button type="button" className="admin-chat-popup-close" onClick={() => setExpandedCustomerKey('')}>Close</button>
+                    </div>
+                  </div>
+                  <div className="admin-chat-popup-body" style={{ padding: '20px', overflowY: 'auto' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '15px', marginBottom: '20px', background: '#f8fbff', padding: '15px', borderRadius: '8px', border: '1px solid #d7e3f4', fontSize: '0.95rem' }}>
+                      <div><strong style={{ color: '#555' }}>Name</strong> <br/><span style={{ fontWeight: 600 }}>{expandedGroup.customerName || '-'}</span></div>
+                      <div><strong style={{ color: '#555' }}>Mobile</strong> <br/><span style={{ fontWeight: 600 }}>{expandedGroup.mobile || '-'}</span></div>
+                      <div><strong style={{ color: '#555' }}>Address</strong> <br/><span style={{ fontWeight: 600 }}>{expandedGroup.address || '-'}</span></div>
+                      <div><strong style={{ color: '#555' }}>Date</strong> <br/><span style={{ fontWeight: 600 }}>{formatInvoiceDisplayDate(expandedGroup.latestDate)}</span></div>
+                      <div><strong style={{ color: '#555' }}>Grand Total Amount</strong> <br/><span style={{ fontWeight: 700, color: '#1d4f91' }}>₹{expandedGroup.totalAmount.toFixed(2)}</span></div>
+                      <div>
+                        <strong style={{ color: '#555' }}>Grand Total Status</strong> <br/>
+                        <span style={{ color: expandedGroup.dueAmount > 0 ? '#c62828' : '#2e7d32', fontWeight: 700 }}>
+                          {expandedGroup.dueAmount > 0 ? `Due ₹${expandedGroup.dueAmount.toFixed(2)}` : `Paid ₹${expandedGroup.paidAmount.toFixed(2)}`}
+                        </span>
+                      </div>
+                    </div>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Invoice</th>
+                          <th>Amount</th>
+                          <th>Status</th>
+                          <th>Saved At</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {expandedGroup.entries.map((item) => (
+                          <tr key={item.id}>
+                            <td>{formatInvoiceDisplayDate(item.resolvedDate)}</td>
+                            <td>{item.title}</td>
+                            <td>₹{item.resolvedAmount.toFixed(2)}</td>
+                            <td style={{ color: item.resolvedAmountStatus === 'Paid' ? '#2e7d32' : '#c62828', fontWeight: 700 }}>
+                              {item.resolvedAmountStatus}
+                            </td>
+                            <td>{formatInvoiceDisplayDateTime(item.savedAt)}</td>
+                            <td>
+                              <div className="form-actions" style={{ justifyContent: 'flex-start', marginTop: 0 }}>
+                                <button type="button" onClick={() => { handleDuplicateSavedInvoice(item); setExpandedCustomerKey(''); }}>Open</button>
+                                <button type="button" onClick={() => handleToggleInvoiceStatus(item.id)}>{item.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>
+                                <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{ display: 'none' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px', marginTop: '10px', marginBottom: '10px', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', background: '#eef5ff', border: '1px solid #d7e3f4', fontSize: '0.82rem', fontWeight: 700, color: '#35506f' }}>
             <span>Name</span>
             <span>Mobile</span>
             <span>Address</span>
             <span>Date</span>
-            <span>Amount</span>
+            <span>Paid Amount</span>
+            <span>Due Amount</span>
+            <span>Total Amount</span>
             <span>Amount Status</span>
           </div>
           {groupedSavedInvoices.length === 0 ? (
@@ -1505,34 +1602,6 @@ function InvoicePage({ loggedInUser }) {
                         <span>Last saved: {formatInvoiceDisplayDateTime(group.latestSavedAt)}</span>
                       </div>
                     </button>
-                    {isExpanded ? (
-                      <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
-                        {group.entries.map((item) => (
-                          <div key={item.id} style={{ padding: '12px', border: '1px solid #dfe7f3', borderRadius: '8px', background: '#fbfdff' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                              <strong>{item.title}</strong>
-                              <span style={{ color: item.status === 'Paid' ? '#2e7d32' : '#c62828', fontWeight: 700 }}>
-                                {item.header?.amountType || (item.status === 'Paid' ? 'Paid' : 'Due')}
-                              </span>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px', marginTop: '8px', color: '#586b84', fontSize: '0.9rem' }}>
-                              <span>Date: {formatInvoiceDisplayDate(item.header?.date || item.savedAt)}</span>
-                              <span>Mobile: {item.header?.mobile || '-'}</span>
-                              <span>Amount: ₹{(item.header?.amount ?? computeDraftTotal(item.draft)).toFixed(2)}</span>
-                              <span>Saved: {formatInvoiceDisplayDateTime(item.savedAt)}</span>
-                            </div>
-                            <div style={{ marginTop: '8px', color: '#586b84', fontSize: '0.9rem' }}>
-                              Address: {item.header?.address || '-'}
-                            </div>
-                            <div className="form-actions" style={{ justifyContent: 'flex-start', marginTop: '10px' }}>
-                              <button type="button" onClick={() => handleDuplicateSavedInvoice(item)}>Open Details</button>
-                              <button type="button" onClick={() => handleToggleInvoiceStatus(item.id)}>{item.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>
-                              <button type="button" onClick={() => handleDeleteSavedInvoice(item.id)}>Delete</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
                 );
               })}
