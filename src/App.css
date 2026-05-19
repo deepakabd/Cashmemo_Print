@@ -2787,7 +2787,7 @@
 }
 
 .book-view .placeholder-container {
-  position: absolute;
+  position: relative;
   max-width: 1600px;
   width: 100%;
   text-align: left;
