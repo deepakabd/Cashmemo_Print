@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import CashMemoEnglish from './CashMemoEnglish';
-import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet } from './CashmemoLayoutPage';
+import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet, getLayoutPrintStyles } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
@@ -6262,6 +6262,7 @@ function App() {
   const [labelDraftSettings, setLabelDraftSettings] = useState(() => createDefaultCashMemoLabelSettings());
   const [cashmemoLayoutPageType, setCashmemoLayoutPageType] = useState('3 Cashmemo/Page');
   const [cashmemoLayoutLanguage, setCashmemoLayoutLanguage] = useState('English');
+  const [cashmemoLayoutPageSize, setCashmemoLayoutPageSize] = useState('A4');
   const [customersToPrint] = useState([]); // New state to hold multiple customers for printing
   const cashMemoRef = useRef(); // Ref for the cash memo component
 
@@ -6726,12 +6727,13 @@ function App() {
         />
       )}</div>`
     )).join('');
+    const layoutPrintStyles = getLayoutPrintStyles(cashmemoLayoutPageSize);
     const fullHtml = `
       <html>
         <head>
           <title>Cashmemo Header Layout</title>
           <style>
-            ${CASHMEMO_LAYOUT_PRINT_STYLES}
+            ${layoutPrintStyles}
           </style>
         </head>
         <body>
@@ -6770,7 +6772,7 @@ function App() {
       } else {
         printWindow.addEventListener('load', triggerPrint, { once: true });
       }
-    logRecentActivity(`Printed cashmemo header layout (${cashmemoLayoutPageType} - ${cashmemoLayoutLanguage})`);
+    logRecentActivity(`Printed cashmemo header layout (${cashmemoLayoutPageSize} - ${cashmemoLayoutPageType} - ${cashmemoLayoutLanguage})`);
   };
   const handlePrintCashmemo = async () => {
       if (selectedCustomerIds.length === 0) {
@@ -9601,6 +9603,8 @@ function App() {
           )}
           {showCashmemoLayout && (
             <CashmemoLayoutPage
+              pageSize={cashmemoLayoutPageSize}
+              setPageSize={setCashmemoLayoutPageSize}
               pageType={cashmemoLayoutPageType}
               setPageType={setCashmemoLayoutPageType}
               language={cashmemoLayoutLanguage}
