@@ -2699,7 +2699,7 @@
 }
 
 .placeholder-container button:hover {
-  background-color: #0056b3;
+  background-color: #7fafe2;
 }
 
 .login-helper-text {
@@ -2787,7 +2787,7 @@
 }
 
 .book-view .placeholder-container {
-  position: absolute;
+  position: relative;
   max-width: 1600px;
   width: 100%;
   text-align: left;
