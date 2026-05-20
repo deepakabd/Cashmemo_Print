@@ -7,9 +7,19 @@ export const getCashMemoPerPage = (pageType) => {
   return 3;
 };
 
-export const CASHMEMO_LAYOUT_PRINT_STYLES = `
+export const getPageDimensions = (pageSize) => {
+  const dimensions = {
+    'A4': { width: 210, height: 297, name: 'A4 portrait' },
+    'Letter': { width: 215.9, height: 279.4, name: 'letter portrait' },
+  };
+  return dimensions[pageSize] || dimensions['A4'];
+};
+
+export const getLayoutPrintStyles = (pageSize = 'A4') => {
+  const pageDim = getPageDimensions(pageSize);
+  return `
   @page {
-    size: A4 portrait;
+    size: ${pageDim.name};
     margin: 4mm 6mm 5mm;
   }
   html, body {
@@ -255,6 +265,10 @@ export const CASHMEMO_LAYOUT_PRINT_STYLES = `
     font-size: 1.65mm;
   }
 `;
+};
+
+// For backward compatibility
+export const CASHMEMO_LAYOUT_PRINT_STYLES = getLayoutPrintStyles('A4');
 
 const PREVIEW_COPY = {
   English: {
@@ -388,6 +402,8 @@ export const CashmemoHeaderPreviewSheet = ({ pageType, dealerDetails, language =
 };
 
 const CashmemoLayoutPage = ({
+  pageSize,
+  setPageSize,
   pageType,
   setPageType,
   language,
@@ -398,15 +414,20 @@ const CashmemoLayoutPage = ({
   onClose,
 }) => {
   const memosPerPage = getCashMemoPerPage(pageType);
+  const pageDim = getPageDimensions(pageSize);
 
   return (
     <div className="placeholder-container cashmemo-layout-page">
       <div className="label-update-header">
         <div>
           <h2>Cashmemo Layout</h2>
-          <p>A4 page preview me selected page type ke hisaab se sirf visible layout section dikhai dega.</p>
+          <p>Page preview me selected page type aur page size ke hisaab se sirf visible layout section dikhai dega.</p>
         </div>
         <div className="label-update-actions">
+          <select className="form-input" value={pageSize} onChange={(e) => setPageSize(e.target.value)}>
+            <option value="A4">A4 Page</option>
+            <option value="Letter">Letter Page</option>
+          </select>
           <select className="form-input" value={pageType} onChange={(e) => setPageType(e.target.value)}>
             {pageTypes.map((type) => (
               <option key={type} value={type}>{type}</option>
@@ -423,11 +444,16 @@ const CashmemoLayoutPage = ({
 
       <div className="cashmemo-layout-preview-card">
         <div className="cashmemo-layout-preview-caption">
-          Preview: {pageType} | {language}
+          Preview: {pageSize} | {pageType} | {language}
         </div>
-        <div className="cashmemo-layout-preview-page">
+        <div 
+          className="cashmemo-layout-preview-page"
+          style={{
+            minHeight: `calc(${pageDim.height}mm - 9mm)`,
+          }}
+        >
           {Array.from({ length: memosPerPage }).map((_, index) => (
-            <div key={`${pageType}-${language}-${index}`} className={`cashmemo-layout-preview-slot cashmemo-layout-preview-slot--${memosPerPage}`}>
+            <div key={`${pageSize}-${pageType}-${language}-${index}`} className={`cashmemo-layout-preview-slot cashmemo-layout-preview-slot--${memosPerPage}`}>
               <CashmemoHeaderPreviewSheet pageType={pageType} dealerDetails={dealerDetails} language={language} />
             </div>
           ))}
