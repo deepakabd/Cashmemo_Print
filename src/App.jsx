@@ -7,7 +7,7 @@ import UserMenuDropdown from './components/UserMenuDropdown';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
-
+//TEST
 import './App.css';
 import {
   buildPrintDataHtml,
