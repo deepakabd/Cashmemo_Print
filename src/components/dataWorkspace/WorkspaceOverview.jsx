@@ -53,7 +53,7 @@ const WorkspaceOverview = ({
             <button
               key={card.key}
               type="button"
-              className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''}`}
+              className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
               onClick={() => setActiveReportFilter((prev) => (prev === card.key || card.key === 'totalPendingBooking' ? '' : card.key))}
             >
               <span className="booking-report-label">{card.label}</span>
@@ -114,7 +114,7 @@ const WorkspaceOverview = ({
               <button
                 key={card.key}
                 type="button"
-                className={`booking-report-card booking-report-card--button ${card.isActive ? 'is-active' : ''}`}
+                className={`booking-report-card booking-report-card--button ${card.isActive ? 'is-active' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
                 onClick={card.onClick}
               >
                 <span className="booking-report-label">{card.label}</span>

@@ -258,6 +258,21 @@ const isConsumerStatusMatch = (value, target) => {
   return String(value || '').toLowerCase().trim() === String(target || '').toLowerCase().trim();
 };
 
+const isOrderSourceCategoryMatch = (value, category) => {
+  const normalizedValue = String(value || '').toLowerCase().trim();
+  const normalizedCategory = String(category || '').toLowerCase().trim();
+
+  if (normalizedCategory === 'distributor manual') {
+    return normalizedValue === 'distributor';
+  }
+
+  if (normalizedCategory === 'vitran manual') {
+    return normalizedValue === 'vitran';
+  }
+
+  return normalizedValue === normalizedCategory;
+};
+
 const hasMeaningfulCellValue = (value) => {
   const normalized = String(value ?? '').trim();
   return normalized !== '' && normalized !== '-';
@@ -7882,9 +7897,9 @@ function App() {
       case 'unregisteredNumber':
         return !isRegisteredMobileRow(row);
       case 'distributorManual':
-        return isConsumerStatusMatch(row['Order Source'], 'Distributor Manual');
+        return isOrderSourceCategoryMatch(row['Order Source'], 'Distributor Manual');
       case 'vitranManual':
-        return isConsumerStatusMatch(row['Order Source'], 'Vitran Manual');
+        return isOrderSourceCategoryMatch(row['Order Source'], 'Vitran Manual');
       case 'natureDomestic':
         return isConsumerStatusMatch(row['Consumer Nature'], '1 - Domestic');
       case 'natureUjjwala':
@@ -8168,11 +8183,11 @@ function App() {
         metrics.unregisteredNumber += 1;
       }
 
-      if (isConsumerStatusMatch(row['Order Source'], 'Distributor Manual')) {
+      if (isOrderSourceCategoryMatch(row['Order Source'], 'Distributor Manual')) {
         metrics.distributorManual += 1;
       }
 
-      if (isConsumerStatusMatch(row['Order Source'], 'Vitran Manual')) {
+      if (isOrderSourceCategoryMatch(row['Order Source'], 'Vitran Manual')) {
         metrics.vitranManual += 1;
       }
 
@@ -8401,6 +8416,23 @@ function App() {
 
   const selectedFilteredRows = filteredData.filter((row) => selectedCustomerIds.includes(String(row['Consumer No.'])));
 
+  const dangerReportCardKeys = new Set([
+    'pending05To10Days',
+    'pendingAbove7Days',
+    'pendingAbove10Days',
+    'pendingAbove15Days',
+    'pendingAbove21Days',
+    'eKycNotDone',
+    'aadhaarNotSeeded',
+    'unregisteredNumber',
+  ]);
+
+  const infoReportCardKeys = new Set([
+    'onlinePaid',
+    'pending02To05Days',
+    'pendingAbove3Days',
+  ]);
+
   const reportCards = [
     { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
     { key: 'onlinePaid', label: 'Online Paid', value: bookingReport.metrics.onlinePaid },
@@ -8436,7 +8468,14 @@ function App() {
     { key: 'pendingAbove15Days', label: '> 15 Days', value: bookingReport.metrics.pendingAbove15Days },
     { key: 'pendingAbove21Days', label: '> 21 Days', value: bookingReport.metrics.pendingAbove21Days },
     ...bookingReport.topPendingAreas,
-  ];
+  ].map((card) => ({
+    ...card,
+    tone: dangerReportCardKeys.has(card.key)
+      ? 'danger'
+      : infoReportCardKeys.has(card.key)
+        ? 'info'
+        : 'default',
+  }));
   const exceptionQueueCards = [
     {
       key: 'eKycNotDone',
@@ -8478,6 +8517,11 @@ function App() {
     .filter((item) => item.count > 0)
     .map((item) => ({
       ...item,
+      tone: dangerReportCardKeys.has(item.key)
+        ? 'danger'
+        : infoReportCardKeys.has(item.key)
+          ? 'info'
+          : 'default',
       isActive: activeReportFilter === item.key,
       onClick: () => {
         setShowBookingReport(true);

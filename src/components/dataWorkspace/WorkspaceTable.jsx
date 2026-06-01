@@ -30,6 +30,8 @@ const WorkspaceTable = ({
   handleSelectAllChange,
   isAllFilteredRowsSelected,
   onPreviewCustomer,
+  activeConsumerNo,
+  onSelectConsumer,
   filteredData,
   formatDateToDDMMYYYY,
   excelSerialDateToJSDate,
@@ -89,12 +91,15 @@ const WorkspaceTable = ({
           <tbody>
             {currentTableData.map((customer, index) => {
               const isEkycStatusPending = customer['EKYC Status'] === 'Pending' || customer['EKYC Status'] === 'EKYC NOT DONE';
+              const consumerNo = String(customer['Consumer No.'] || '');
+              const isActiveConsumer = activeConsumerNo === consumerNo;
               return (
                 <tr
                   key={index}
                   onDoubleClick={() => onPreviewCustomer?.(customer)}
                   style={{
                     border: '1px solid black',
+                    backgroundColor: isActiveConsumer ? '#eef6ff' : '#fff',
                     color: isEkycStatusPending ? '#ff5252' : 'inherit',
                     fontWeight: isEkycStatusPending ? 'bold' : 'normal',
                     cursor: onPreviewCustomer ? 'pointer' : 'default',
@@ -103,21 +108,35 @@ const WorkspaceTable = ({
                   <td className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px' }}>
                     <input
                       type="checkbox"
-                      checked={selectedCustomerIds.includes(String(customer['Consumer No.']))}
+                      checked={selectedCustomerIds.includes(consumerNo)}
                       onChange={() => handleCheckboxChange(customer['Consumer No.'])}
                     />
                   </td>
-                  {visibleHeaders.map((header, colIndex) => (
-                    <td key={colIndex} style={{ border: '1px solid black', padding: '8px' }}>
-                      {getCellDisplayValue({
-                        customer,
-                        header,
-                        formatDateToDDMMYYYY,
-                        excelSerialDateToJSDate,
-                        parseDateString,
-                      })}
-                    </td>
-                  ))}
+                  {visibleHeaders.map((header, colIndex) => {
+                    const displayValue = getCellDisplayValue({
+                      customer,
+                      header,
+                      formatDateToDDMMYYYY,
+                      excelSerialDateToJSDate,
+                      parseDateString,
+                    });
+
+                    return (
+                      <td key={colIndex} style={{ border: '1px solid black', padding: '8px' }}>
+                        {header === 'Consumer No.' ? (
+                          <button
+                            type="button"
+                            className={`consumer-link-button ${isActiveConsumer ? 'is-active' : ''}`}
+                            onClick={() => onSelectConsumer?.(consumerNo)}
+                          >
+                            {displayValue}
+                          </button>
+                        ) : (
+                          displayValue
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
