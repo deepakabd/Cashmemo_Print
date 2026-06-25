@@ -7914,6 +7914,8 @@ function App() {
         return isConsumerStatusMatch(row['Consumer Type'], 'SBC');
       case 'dbcBooking':
         return isConsumerStatusMatch(row['Consumer Type'], 'DBC');
+      case 'pending01To02Days':
+        return ageInDays !== null && ageInDays >= 1 && ageInDays <= 2;
       case 'pending02To05Days':
         return ageInDays !== null && ageInDays >= 2 && ageInDays <= 5;
       case 'pending05To10Days':
@@ -7946,6 +7948,8 @@ function App() {
         return ageInDays !== null && ageInDays > 10;
       case 'pendingAbove7Days':
         return ageInDays !== null && ageInDays > 7;
+      case 'pendingAbove5Days':
+        return ageInDays !== null && ageInDays > 5;
       case 'pendingAbove3Days':
         return ageInDays !== null && ageInDays > 3;
       case 'todayBooking':
@@ -8135,6 +8139,7 @@ function App() {
       natureNonDomesticExempted: 0,
       sbcBooking: 0,
       dbcBooking: 0,
+      pending01To02Days: 0,
       pending02To05Days: 0,
       pending05To10Days: 0,
       pendingDay1: 0,
@@ -8151,6 +8156,7 @@ function App() {
       pendingAbove15Days: 0,
       pendingAbove10Days: 0,
       pendingAbove7Days: 0,
+      pendingAbove5Days: 0,
       pendingAbove3Days: 0,
       todayBooking: 0,
       pendingSv: 0,
@@ -8220,6 +8226,7 @@ function App() {
       }
 
       if (ageInDays !== null) {
+        if (ageInDays >= 1 && ageInDays <= 2) metrics.pending01To02Days += 1;
         if (ageInDays >= 2 && ageInDays <= 5) metrics.pending02To05Days += 1;
         if (ageInDays >= 5 && ageInDays <= 10) metrics.pending05To10Days += 1;
         if (ageInDays === 1) metrics.pendingDay1 += 1;
@@ -8236,6 +8243,7 @@ function App() {
         if (ageInDays > 15) metrics.pendingAbove15Days += 1;
         if (ageInDays > 10) metrics.pendingAbove10Days += 1;
         if (ageInDays > 7) metrics.pendingAbove7Days += 1;
+        if (ageInDays > 5) metrics.pendingAbove5Days += 1;
         if (ageInDays > 3) metrics.pendingAbove3Days += 1;
       }
 
@@ -8255,7 +8263,7 @@ function App() {
         if (b[1] !== a[1]) return b[1] - a[1];
         return a[0].localeCompare(b[0], undefined, { sensitivity: 'base', numeric: true });
       })
-      .slice(0, 7)
+      .slice(0, 5)
       .map(([areaName, value], index) => ({
         key: `highestPb${index + 1}`,
         label: `Highest PB ${index + 1}${index === 0 ? 'st' : index === 1 ? 'nd' : index === 2 ? 'rd' : 'th'}`,
@@ -8418,6 +8426,7 @@ function App() {
 
   const dangerReportCardKeys = new Set([
     'pending05To10Days',
+    'pendingAbove5Days',
     'pendingAbove7Days',
     'pendingAbove10Days',
     'pendingAbove15Days',
@@ -8460,9 +8469,11 @@ function App() {
     { key: 'pendingDay8', label: '8 Days', value: bookingReport.metrics.pendingDay8 },
     { key: 'pendingDay9', label: '9 Days', value: bookingReport.metrics.pendingDay9 },
     { key: 'pendingDay10', label: '10 Days', value: bookingReport.metrics.pendingDay10 },
+    { key: 'pending01To02Days', label: '01 - 02 Days', value: bookingReport.metrics.pending01To02Days },
     { key: 'pending02To05Days', label: '02 - 05 Days', value: bookingReport.metrics.pending02To05Days },
     { key: 'pending05To10Days', label: '05 - 10 Days', value: bookingReport.metrics.pending05To10Days },
     { key: 'pendingAbove3Days', label: '> 3 Days', value: bookingReport.metrics.pendingAbove3Days },
+    { key: 'pendingAbove5Days', label: '> 5 Days', value: bookingReport.metrics.pendingAbove5Days },
     { key: 'pendingAbove7Days', label: '> 7 Days', value: bookingReport.metrics.pendingAbove7Days },
     { key: 'pendingAbove10Days', label: '> 10 Days', value: bookingReport.metrics.pendingAbove10Days },
     { key: 'pendingAbove15Days', label: '> 15 Days', value: bookingReport.metrics.pendingAbove15Days },
@@ -8500,6 +8511,18 @@ function App() {
       label: 'Aging 2-5 Days',
       description: 'These bookings are starting to slip and need quick action.',
       count: bookingReport.metrics.pending02To05Days,
+    },
+    {
+      key: 'pendingAbove5Days',
+      label: 'Aging > 5 Days',
+      description: 'Stale bookings crossing five days need priority follow-up.',
+      count: bookingReport.metrics.pendingAbove5Days,
+    },
+    {
+      key: 'pending05To10Days',
+      label: 'Aging 05-10 Days',
+      description: 'Bookings in the five to ten day window need focused action.',
+      count: bookingReport.metrics.pending05To10Days,
     },
     {
       key: 'pendingAbove7Days',
