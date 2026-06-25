@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import html2canvas from 'html2canvas';
 import WorkspaceFilters from './dataWorkspace/WorkspaceFilters';
 import WorkspaceOverview from './dataWorkspace/WorkspaceOverview';
 import WorkspaceTable from './dataWorkspace/WorkspaceTable';
@@ -176,67 +177,59 @@ const DataWorkspace = (props) => {
     return value === undefined || value === null || String(value).trim() === '' ? '---' : String(value);
   };
 
-  const copyInlineStyles = (source, target) => {
-    const computedStyle = window.getComputedStyle(source);
-    let cssText = '';
-    for (let index = 0; index < computedStyle.length; index += 1) {
-      const property = computedStyle[index];
-      cssText += `${property}:${computedStyle.getPropertyValue(property)};`;
-    }
-    target.style.cssText = cssText;
-
-    Array.from(source.children).forEach((child, index) => {
-      if (target.children[index]) {
-        copyInlineStyles(child, target.children[index]);
-      }
-    });
-  };
-
   const createConsumerDetailBlob = async () => {
     const node = consumerDetailRef.current;
     if (!node) {
       throw new Error('Consumer detail view is not available.');
     }
 
-    const width = Math.ceil(node.scrollWidth);
-    const height = Math.ceil(node.scrollHeight);
-    const clone = node.cloneNode(true);
-    copyInlineStyles(node, clone);
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
 
-    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-    clone.style.width = `${width}px`;
+    const clone = node.cloneNode(true);
     clone.style.height = 'auto';
     clone.style.maxHeight = 'none';
     clone.style.overflow = 'visible';
     clone.style.transform = 'none';
+    clone.style.margin = '0';
+    clone.style.opacity = '1';
+    clone.style.animation = 'none';
+    clone.style.transition = 'none';
+    clone.style.filter = 'none';
     clone.querySelector('.consumer-detail-toolbar')?.remove();
 
-    const serialized = new XMLSerializer().serializeToString(clone);
-    const svgMarkup = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-        <foreignObject width="100%" height="100%">${serialized}</foreignObject>
-      </svg>
-    `;
-    const image = new Image();
-    const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    clone.querySelectorAll('*').forEach((element) => {
+      element.style.animation = 'none';
+      element.style.transition = 'none';
+      element.style.opacity = '1';
+      if (element.classList.contains('consumer-detail-overlay')) {
+        element.style.background = 'transparent';
+        element.style.backdropFilter = 'none';
+      }
+    });
+
+    const captureRoot = document.createElement('div');
+    captureRoot.style.position = 'fixed';
+    captureRoot.style.left = '-100000px';
+    captureRoot.style.top = '0';
+    captureRoot.style.padding = '0';
+    captureRoot.style.margin = '0';
+    captureRoot.style.background = '#ffffff';
+    captureRoot.style.zIndex = '-1';
+    captureRoot.appendChild(clone);
+    document.body.appendChild(captureRoot);
+
+    const pixelRatio = Math.max(2, Math.min((window.devicePixelRatio || 1) * 2, 4));
 
     try {
-      await new Promise((resolve, reject) => {
-        image.onload = resolve;
-        image.onerror = reject;
-        image.src = url;
+      const canvas = await html2canvas(clone, {
+        backgroundColor: '#ffffff',
+        scale: pixelRatio,
+        useCORS: true,
+        logging: false,
+        imageTimeout: 0,
       });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(width * pixelRatio);
-      canvas.height = Math.ceil(height * pixelRatio);
-      const context = canvas.getContext('2d');
-      context.scale(pixelRatio, pixelRatio);
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, width, height);
-      context.drawImage(image, 0, 0, width, height);
 
       return await new Promise((resolve, reject) => {
         canvas.toBlob((blob) => {
@@ -248,7 +241,7 @@ const DataWorkspace = (props) => {
         }, 'image/png');
       });
     } finally {
-      URL.revokeObjectURL(url);
+      captureRoot.remove();
     }
   };
 
@@ -264,22 +257,74 @@ const DataWorkspace = (props) => {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const copyTextToClipboard = async (text) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-100000px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  };
+
+  const handleCopyConsumerDetailText = async () => {
+    if (!activeConsumer) {
+      pushToast?.('Consumer detail available nahi hai.', 'error');
+      return;
+    }
+
+    const detailText = [
+      `Consumer No - ${formatConsumerDetailValue(activeConsumer, 'Consumer No.')}`,
+      `Name - ${formatConsumerDetailValue(activeConsumer, 'Consumer Name')}`,
+      `Contact No - ${formatConsumerDetailValue(activeConsumer, 'Mobile No.')}`,
+      `Area - ${formatConsumerDetailValue(activeConsumer, 'Delivery Area')}`,
+      `Address - ${formatConsumerDetailValue(activeConsumer, 'Address')}`,
+      `Order Date - ${formatConsumerDetailValue(activeConsumer, 'Order Date')}`,
+      `Consumer Type - ${formatConsumerDetailValue(activeConsumer, 'Consumer Type')}`,
+      `EKYC Status - ${formatConsumerDetailValue(activeConsumer, 'EKYC Status')}`,
+      `Online Refill Payment status - ${formatConsumerDetailValue(activeConsumer, 'Online Refill Payment status')}`,
+      `Order No - ${formatConsumerDetailValue(activeConsumer, 'Order No.')}`,
+      `Cashmemo No - ${formatConsumerDetailValue(activeConsumer, 'Cash Memo No.')}`,
+      `Cashmemo Date - ${formatConsumerDetailValue(activeConsumer, 'Cash Memo Date')}`,
+      `Cashmemo Status - ${formatConsumerDetailValue(activeConsumer, 'Cash Memo Status')}`,
+    ].join('\n');
+
+    try {
+      await copyTextToClipboard(detailText);
+    } catch {
+      pushToast?.('Consumer details text copy nahi ho paya. Please try again.', 'error');
+    }
+  };
+
   const handleCopyConsumerDetailImage = async () => {
     try {
       const blob = await createConsumerDetailBlob();
 
       if (navigator.clipboard && window.ClipboardItem) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ [blob.type]: blob }),
-        ]);
-        pushToast?.('Consumer detail image copied. You can paste/share it anywhere.', 'success');
-        return;
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({ [blob.type]: blob }),
+          ]);
+          return;
+        } catch {
+          downloadConsumerDetailBlob(blob);
+          pushToast?.('Clipboard copy block ho gaya. Screenshot download kar diya gaya hai.', 'info');
+          return;
+        }
       }
 
       downloadConsumerDetailBlob(blob);
-      pushToast?.('Clipboard image copy is not supported here. Screenshot downloaded.', 'info');
+      pushToast?.('Clipboard support nahi mila. Screenshot download kar diya gaya hai.', 'info');
     } catch (error) {
-      pushToast?.('Unable to copy consumer detail image. Please try again.', 'error');
+      pushToast?.('Screenshot copy nahi ho paya. Please try again.', 'error');
     }
   };
 
@@ -314,6 +359,7 @@ const DataWorkspace = (props) => {
     const orderedKeys = [...knownHeaders, ...rowKeys.filter((key) => !knownHeaders.includes(key))];
     const remainingFields = orderedKeys
       .filter((key) => key !== 'LPG ID')
+      .filter((key) => key !== 'IsRefillPort')
       .filter((key) => !basicFieldOrder.includes(key))
       .filter((key) => {
         const value = activeConsumer[key];
@@ -593,6 +639,15 @@ const DataWorkspace = (props) => {
                   aria-label="Copy detail screenshot"
                 >
                   Shot
+                </button>
+                <button
+                  type="button"
+                  className="consumer-detail-card__icon-button consumer-detail-card__snapshot"
+                  onClick={handleCopyConsumerDetailText}
+                  title="Copy detail text"
+                  aria-label="Copy detail text"
+                >
+                  Copy
                 </button>
                 <button
                   type="button"
