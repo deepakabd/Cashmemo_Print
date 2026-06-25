@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import WorkspaceFilters from './dataWorkspace/WorkspaceFilters';
 import WorkspaceOverview from './dataWorkspace/WorkspaceOverview';
 import WorkspaceTable from './dataWorkspace/WorkspaceTable';
@@ -123,6 +123,7 @@ const DataWorkspace = (props) => {
   } = props;
 
   const [activeConsumerNo, setActiveConsumerNo] = useState('');
+  const consumerDetailRef = useRef(null);
 
   useEffect(() => {
     if (!activeConsumerNo || filteredData.length === 0) {
@@ -173,6 +174,113 @@ const DataWorkspace = (props) => {
 
     const value = customer[header];
     return value === undefined || value === null || String(value).trim() === '' ? '---' : String(value);
+  };
+
+  const copyInlineStyles = (source, target) => {
+    const computedStyle = window.getComputedStyle(source);
+    let cssText = '';
+    for (let index = 0; index < computedStyle.length; index += 1) {
+      const property = computedStyle[index];
+      cssText += `${property}:${computedStyle.getPropertyValue(property)};`;
+    }
+    target.style.cssText = cssText;
+
+    Array.from(source.children).forEach((child, index) => {
+      if (target.children[index]) {
+        copyInlineStyles(child, target.children[index]);
+      }
+    });
+  };
+
+  const createConsumerDetailBlob = async () => {
+    const node = consumerDetailRef.current;
+    if (!node) {
+      throw new Error('Consumer detail view is not available.');
+    }
+
+    const width = Math.ceil(node.scrollWidth);
+    const height = Math.ceil(node.scrollHeight);
+    const clone = node.cloneNode(true);
+    copyInlineStyles(node, clone);
+
+    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    clone.style.width = `${width}px`;
+    clone.style.height = 'auto';
+    clone.style.maxHeight = 'none';
+    clone.style.overflow = 'visible';
+    clone.style.transform = 'none';
+    clone.querySelector('.consumer-detail-toolbar')?.remove();
+
+    const serialized = new XMLSerializer().serializeToString(clone);
+    const svgMarkup = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        <foreignObject width="100%" height="100%">${serialized}</foreignObject>
+      </svg>
+    `;
+    const image = new Image();
+    const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+
+    try {
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = url;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(width * pixelRatio);
+      canvas.height = Math.ceil(height * pixelRatio);
+      const context = canvas.getContext('2d');
+      context.scale(pixelRatio, pixelRatio);
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Screenshot image could not be created.'));
+          }
+        }, 'image/png');
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const downloadConsumerDetailBlob = (blob) => {
+    const consumerNo = formatConsumerDetailValue(activeConsumer, 'Consumer No.').replace(/[^a-z0-9-]+/gi, '-');
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = `consumer-detail-${consumerNo || 'snapshot'}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleCopyConsumerDetailImage = async () => {
+    try {
+      const blob = await createConsumerDetailBlob();
+
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob }),
+        ]);
+        pushToast?.('Consumer detail image copied. You can paste/share it anywhere.', 'success');
+        return;
+      }
+
+      downloadConsumerDetailBlob(blob);
+      pushToast?.('Clipboard image copy is not supported here. Screenshot downloaded.', 'info');
+    } catch (error) {
+      pushToast?.('Unable to copy consumer detail image. Please try again.', 'error');
+    }
   };
 
   const consumerDetailSections = useMemo(() => {
@@ -460,6 +568,7 @@ const DataWorkspace = (props) => {
       {activeConsumer && (
         <div className="consumer-detail-overlay" onClick={() => setActiveConsumerNo('')}>
           <div
+            ref={consumerDetailRef}
             className="consumer-detail-modal consumer-detail-modal--book"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
@@ -467,19 +576,32 @@ const DataWorkspace = (props) => {
             aria-labelledby="consumer-detail-title"
           >
             <div className="consumer-detail-card__header">
-              <div>
-                <p className="consumer-detail-card__eyebrow">Consumer Detail</p>
-                <h4 id="consumer-detail-title">
-                  {formatConsumerDetailValue(activeConsumer, 'Consumer No.')} - {formatConsumerDetailValue(activeConsumer, 'Consumer Name')}
-                </h4>
+              <div className="consumer-detail-card__summary">
+                <h2 id="consumer-detail-title">
+                  <span className="consumer-detail-card__title-icon" aria-hidden="true">♟</span>
+                  <span>
+                    उपभोक्ता विवरण - {formatConsumerDetailValue(activeConsumer, 'Consumer No.')} - {formatConsumerDetailValue(activeConsumer, 'Consumer Name')}
+                  </span>
+                </h2>
               </div>
               <div className="consumer-detail-toolbar">
                 <button
                   type="button"
-                  className="consumer-detail-card__close"
-                  onClick={() => setActiveConsumerNo('')}
+                  className="consumer-detail-card__icon-button consumer-detail-card__snapshot"
+                  onClick={handleCopyConsumerDetailImage}
+                  title="Copy detail screenshot"
+                  aria-label="Copy detail screenshot"
                 >
-                  x
+                  Shot
+                </button>
+                <button
+                  type="button"
+                  className="consumer-detail-card__icon-button consumer-detail-card__close"
+                  onClick={() => setActiveConsumerNo('')}
+                  title="Close"
+                  aria-label="Close"
+                >
+                  X
                 </button>
               </div>
             </div>
