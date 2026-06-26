@@ -11,10 +11,14 @@ const DataWorkspace = (props) => {
     showBookingReport,
     filteredData,
     activeReportFilter,
+    reportViewMode,
+    setReportViewMode,
     setActiveReportFilter,
     setShowBookingReport,
+    reportSummaryCards,
     reportCards,
     exceptionQueueCards,
+    reportRecordCount,
     uploadInProgress,
     selectedCustomerIds,
     hasActiveDataFilters,
@@ -497,10 +501,14 @@ const DataWorkspace = (props) => {
         showBookingReport={showBookingReport}
         filteredData={filteredData}
         activeReportFilter={activeReportFilter}
+        reportViewMode={reportViewMode}
+        setReportViewMode={setReportViewMode}
         setActiveReportFilter={setActiveReportFilter}
         setShowBookingReport={setShowBookingReport}
+        reportSummaryCards={reportSummaryCards}
         reportCards={reportCards}
         exceptionQueueCards={exceptionQueueCards}
+        reportRecordCount={reportRecordCount}
         uploadInProgress={uploadInProgress}
         selectedCustomerIds={selectedCustomerIds}
         hasActiveDataFilters={hasActiveDataFilters}
@@ -612,6 +620,7 @@ const DataWorkspace = (props) => {
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
         totalPages={totalPages}
+        pushToast={pushToast}
       />
 
       {activeConsumer && (

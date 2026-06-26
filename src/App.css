@@ -77,6 +77,28 @@
   color: #0a3f78;
 }
 
+.consumer-copy-button {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid #b7c9e2;
+  border-radius: 999px;
+  background: #f5f9ff;
+  color: #0f4f96;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.consumer-copy-button:hover {
+  background: #e6f0ff;
+  border-color: #8fb0db;
+}
+
+.consumer-copy-button:focus-visible {
+  outline: 2px solid #7bb5f1;
+  outline-offset: 2px;
+}
+
 .data-table {
   width: 100%;
   border-collapse: separate;
@@ -2449,10 +2471,69 @@
   white-space: nowrap;
 }
 
+.booking-report-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #cfe0f3;
+  border-radius: 999px;
+  background: #f6fbff;
+}
+
+.booking-report-toggle {
+  min-height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #426687;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.booking-report-toggle.is-active {
+  background: linear-gradient(180deg, #1d73c9 0%, #0e62b8 100%);
+  color: #fff;
+  box-shadow: 0 8px 16px rgba(28, 113, 216, 0.22);
+}
+
 .booking-report-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 6px;
+}
+
+.booking-report-section + .booking-report-section {
+  margin-top: 12px;
+}
+
+.booking-report-section__head {
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.booking-report-section__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.booking-report-section__icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.92) 0 18%, transparent 19%),
+    linear-gradient(135deg, #0e9f6e 0%, #1d73c9 100%);
+  box-shadow: 0 8px 18px rgba(17, 99, 173, 0.18);
+}
+
+.booking-report-section__head h4 {
+  margin: 0;
+  color: #12345b;
+  font-size: 12px;
 }
 
 .booking-report-card {
@@ -2461,6 +2542,13 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.95);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.booking-report-card__emoji {
+  display: block;
+  font-size: 18px;
+  line-height: 1;
+  margin: 0 auto 6px;
 }
 
 .booking-report-card--button {
@@ -2504,6 +2592,11 @@
 .booking-report-card--info .booking-report-label,
 .booking-report-card--info strong {
   color: #1565c0;
+}
+
+.booking-report-card--warning .booking-report-label,
+.booking-report-card--warning strong {
+  color: #c77a00;
 }
 
 .booking-report-meta {
