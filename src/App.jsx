@@ -282,6 +282,21 @@ const isRegisteredMobileRow = (row = {}) => (
   hasMeaningfulCellValue(row['Mobile No.']) && hasMeaningfulCellValue(row['Is Reg Mobile'])
 );
 
+const hasValidPendingConsumerNo = (row = {}) => /^\d{6}$/.test(String(row['Consumer No.'] || ''));
+
+const isCashMemoNotGeneratedRow = (row = {}) => {
+  const normalizedStatus = String(row?.['Cash Memo Status'] || '').toLowerCase().trim();
+  if (!normalizedStatus || normalizedStatus === '-') return true;
+  return ['not generated', 'pending', 'not printed', 'not done', 'no'].some((value) => normalizedStatus.includes(value));
+};
+
+const getReportPercentage = (value, total) => {
+  const safeValue = Number(value || 0);
+  const safeTotal = Number(total || 0);
+  if (safeTotal <= 0) return 0;
+  return Math.round((safeValue / safeTotal) * 100);
+};
+
 const sortedUniqueValues = (values) => [...new Set(values
   .map((item) => normalizeFilterText(item))
   .filter(Boolean))]
@@ -752,6 +767,7 @@ function App() {
   const [userPinVisible, setUserPinVisible] = useState(false);
   const [recentActivities, setRecentActivities] = useState([]);
   const [compactWorkspaceMode, setCompactWorkspaceMode] = useState(false);
+  const [reportViewMode, setReportViewMode] = useState('filtered');
   const [announcements, setAnnouncements] = useState(() => {
     try {
       const raw = localStorage.getItem(ANNOUNCEMENTS_STORAGE_KEY);
@@ -6574,16 +6590,17 @@ function App() {
   };
 
   const exportReportSummary = () => {
-    const summaryRows = reportCards.map((card) => ({
+    const summaryRows = [...reportSummaryCards, ...reportCards].map((card) => ({
       Metric: card.label,
       Count: card.value,
       Filter: activeReportFilter ? reportFilterOptions.find((item) => item.key === activeReportFilter)?.label || activeReportFilter : 'All',
+      ReportView: reportViewMode === 'full' ? 'Full Report' : 'Filtered Report',
       ExportedOn: new Date().toLocaleString('en-GB'),
     }));
     exportRowsToCsvFile(
       buildExportFilename('report-summary'),
       summaryRows,
-      ['Metric', 'Count', 'Filter', 'ExportedOn'],
+      ['Metric', 'Count', 'Filter', 'ReportView', 'ExportedOn'],
     );
   };
 
@@ -7917,9 +7934,19 @@ function App() {
       case 'pending01To02Days':
         return ageInDays !== null && ageInDays >= 1 && ageInDays <= 2;
       case 'pending02To05Days':
-        return ageInDays !== null && ageInDays >= 2 && ageInDays <= 5;
+        return ageInDays !== null && ageInDays >= 3 && ageInDays <= 5;
       case 'pending05To10Days':
-        return ageInDays !== null && ageInDays >= 5 && ageInDays <= 10;
+        return ageInDays !== null && ageInDays >= 6 && ageInDays <= 10;
+      case 'freshPendingToday':
+        return ageInDays === 0;
+      case 'freshPending1To2Days':
+        return ageInDays !== null && ageInDays >= 1 && ageInDays <= 2;
+      case 'oldPending3To5Days':
+        return ageInDays !== null && ageInDays >= 3 && ageInDays <= 5;
+      case 'oldPending6To10Days':
+        return ageInDays !== null && ageInDays >= 6 && ageInDays <= 10;
+      case 'oldPendingAbove10Days':
+        return ageInDays !== null && ageInDays > 10;
       case 'pendingDay1':
         return ageInDays === 1;
       case 'pendingDay2':
@@ -7954,6 +7981,8 @@ function App() {
         return ageInDays !== null && ageInDays > 3;
       case 'todayBooking':
         return orderDate && orderDate.getTime() === today.getTime();
+      case 'cashMemoNotGenerated':
+        return isCashMemoNotGeneratedRow(row);
       case 'pendingSv':
         return isPendingSvRow(row);
       default:
@@ -7964,10 +7993,7 @@ function App() {
   const applyStructuredFilters = (rows, excludedFilters = []) => {
     const excluded = new Set(excludedFilters);
 
-    let tempFilteredData = rows.filter(row => {
-      const consumerNo = String(row['Consumer No.']);
-      return /^\d{6}$/.test(consumerNo);
-    });
+    let tempFilteredData = rows.filter((row) => hasValidPendingConsumerNo(row));
 
     if (searchTerm) {
       const lowercasedSearchTerm = searchTerm.toLowerCase();
@@ -8089,6 +8115,12 @@ function App() {
     });
   };
 
+  const allPendingRows = useMemo(() => sortRows(parsedData.filter((row) => hasValidPendingConsumerNo(row))), [
+    parsedData,
+    sortBy,
+    sortOrder,
+  ]);
+
   const baseFilteredData = useMemo(() => {
     return sortRows(applyStructuredFilters(parsedData, ['activeReportFilter']));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -8117,15 +8149,16 @@ function App() {
     deliveryManFilter,
     isRegMobileFilter,
     activeReportFilter,
+    reportViewMode,
   ]);
 
-  const bookingReport = useMemo(() => {
+  const buildBookingReport = (rows) => {
     const now = new Date();
     const today = new Date(now);
     today.setHours(0, 0, 0, 0);
 
     const metrics = {
-      totalPendingBooking: baseFilteredData.length,
+      totalPendingBooking: rows.length,
       onlinePaid: 0,
       eKycNotDone: 0,
       aadhaarNotSeeded: 0,
@@ -8139,6 +8172,12 @@ function App() {
       natureNonDomesticExempted: 0,
       sbcBooking: 0,
       dbcBooking: 0,
+      cashMemoNotGenerated: 0,
+      freshPendingToday: 0,
+      freshPending1To2Days: 0,
+      oldPending3To5Days: 0,
+      oldPending6To10Days: 0,
+      oldPendingAbove10Days: 0,
       pending01To02Days: 0,
       pending02To05Days: 0,
       pending05To10Days: 0,
@@ -8164,7 +8203,7 @@ function App() {
 
     const areaPendingCounts = new Map();
 
-    baseFilteredData.forEach((row) => {
+    rows.forEach((row) => {
       const ageInDays = getElapsedDays(row['Order Date'], now);
       const orderDate = getStartOfDay(row['Order Date']);
       const deliveryArea = String(row['Delivery Area'] || '').trim();
@@ -8225,10 +8264,19 @@ function App() {
         metrics.dbcBooking += 1;
       }
 
+      if (isCashMemoNotGeneratedRow(row)) {
+        metrics.cashMemoNotGenerated += 1;
+      }
+
       if (ageInDays !== null) {
+        if (ageInDays === 0) metrics.freshPendingToday += 1;
+        if (ageInDays >= 1 && ageInDays <= 2) metrics.freshPending1To2Days += 1;
+        if (ageInDays >= 3 && ageInDays <= 5) metrics.oldPending3To5Days += 1;
+        if (ageInDays >= 6 && ageInDays <= 10) metrics.oldPending6To10Days += 1;
+        if (ageInDays > 10) metrics.oldPendingAbove10Days += 1;
         if (ageInDays >= 1 && ageInDays <= 2) metrics.pending01To02Days += 1;
-        if (ageInDays >= 2 && ageInDays <= 5) metrics.pending02To05Days += 1;
-        if (ageInDays >= 5 && ageInDays <= 10) metrics.pending05To10Days += 1;
+        if (ageInDays >= 3 && ageInDays <= 5) metrics.pending02To05Days += 1;
+        if (ageInDays >= 6 && ageInDays <= 10) metrics.pending05To10Days += 1;
         if (ageInDays === 1) metrics.pendingDay1 += 1;
         if (ageInDays === 2) metrics.pendingDay2 += 1;
         if (ageInDays === 3) metrics.pendingDay3 += 1;
@@ -8263,7 +8311,7 @@ function App() {
         if (b[1] !== a[1]) return b[1] - a[1];
         return a[0].localeCompare(b[0], undefined, { sensitivity: 'base', numeric: true });
       })
-      .slice(0, 5)
+      .slice(0, 3)
       .map(([areaName, value], index) => ({
         key: `highestPb${index + 1}`,
         label: `Highest PB ${index + 1}${index === 0 ? 'st' : index === 1 ? 'nd' : index === 2 ? 'rd' : 'th'}`,
@@ -8272,7 +8320,11 @@ function App() {
       }));
 
     return { metrics, topPendingAreas };
-  }, [baseFilteredData]);
+  };
+
+  const reportSourceData = reportViewMode === 'full' ? allPendingRows : baseFilteredData;
+
+  const bookingReport = useMemo(() => buildBookingReport(reportSourceData), [reportSourceData]);
 
   const topPendingAreaFilterMap = useMemo(
     () => Object.fromEntries((bookingReport.topPendingAreas || []).map((item) => [item.key, item.areaName])),
@@ -8280,14 +8332,15 @@ function App() {
   );
 
   const filteredData = useMemo(() => {
+    const reportFilterSourceData = reportViewMode === 'full' ? allPendingRows : baseFilteredData;
     if (!activeReportFilter) {
-      return baseFilteredData;
+      return reportFilterSourceData;
     }
     if (topPendingAreaFilterMap[activeReportFilter]) {
-      return baseFilteredData.filter((row) => String(row['Delivery Area'] || '').trim() === topPendingAreaFilterMap[activeReportFilter]);
+      return reportFilterSourceData.filter((row) => String(row['Delivery Area'] || '').trim() === topPendingAreaFilterMap[activeReportFilter]);
     }
-    return baseFilteredData.filter((row) => matchesReportFilter(row, activeReportFilter));
-  }, [activeReportFilter, baseFilteredData, topPendingAreaFilterMap]);
+    return reportFilterSourceData.filter((row) => matchesReportFilter(row, activeReportFilter));
+  }, [activeReportFilter, allPendingRows, baseFilteredData, reportViewMode, topPendingAreaFilterMap]);
 
   useEffect(() => {
     setTimeout(() => {
@@ -8371,9 +8424,202 @@ function App() {
       onClick: handleContactOpen,
     },
   ];
+  const {
+    selectedCustomerIds,
+    isAllFilteredRowsSelected,
+    selectedCustomersForPrint,
+    handleCheckboxChange,
+    handleSelectAllChange,
+    clearSelection,
+  } = useCashmemoSelection(filteredData);
+
+  const selectedFilteredRows = filteredData.filter((row) => selectedCustomerIds.includes(String(row['Consumer No.'])));
+
+  const dangerReportCardKeys = new Set([
+    'cashMemoNotGenerated',
+    'pending02To05Days',
+    'pending05To10Days',
+    'pendingAbove5Days',
+    'pendingAbove7Days',
+    'pendingAbove10Days',
+    'pendingAbove15Days',
+    'pendingAbove21Days',
+    'oldPending3To5Days',
+    'oldPending6To10Days',
+    'oldPendingAbove10Days',
+    'eKycNotDone',
+    'aadhaarNotSeeded',
+    'unregisteredNumber',
+  ]);
+
+  const infoReportCardKeys = new Set([
+    'onlinePaid',
+    'freshPending1To2Days',
+    'pendingAbove3Days',
+  ]);
+
+  const successReportCardKeys = new Set([
+    'freshPendingToday',
+  ]);
+
+  const warningReportCardKeys = new Set([
+    'oldPending3To5Days',
+    'pending02To05Days',
+  ]);
+
+  const getReportTone = (key) => (
+    successReportCardKeys.has(key)
+      ? 'success'
+      : dangerReportCardKeys.has(key)
+      ? 'danger'
+      : warningReportCardKeys.has(key)
+        ? 'warning'
+        : infoReportCardKeys.has(key)
+          ? 'info'
+          : 'default'
+  );
+
+  const createReportCard = (key, label, value, options = {}) => ({
+    key,
+    label,
+    value,
+    tone: getReportTone(key),
+    displayValue: options.showPercentage
+      ? `${value} (${getReportPercentage(value, bookingReport.metrics.totalPendingBooking)}%)`
+      : String(value),
+    ...options,
+  });
+
+  const reportSummaryCards = [
+    createReportCard('freshPendingToday', 'Today', bookingReport.metrics.freshPendingToday, { showPercentage: true, icon: '🆕' }),
+    createReportCard('freshPending1To2Days', '1-2 Days', bookingReport.metrics.freshPending1To2Days, { showPercentage: true, icon: '⏳' }),
+    createReportCard('oldPending3To5Days', '3-5 Days', bookingReport.metrics.oldPending3To5Days, { showPercentage: true, icon: '⌛' }),
+    createReportCard('oldPending6To10Days', '6-10 Days', bookingReport.metrics.oldPending6To10Days, { showPercentage: true, icon: '⚠️' }),
+    createReportCard('oldPendingAbove10Days', '10+ Days', bookingReport.metrics.oldPendingAbove10Days, { showPercentage: true, icon: '🚨' }),
+  ];
+
+  const reportCards = [
+    createReportCard('totalPendingBooking', 'Total Pending', bookingReport.metrics.totalPendingBooking),
+    createReportCard('cashMemoNotGenerated', 'Cash Memo Not Generated', bookingReport.metrics.cashMemoNotGenerated),
+    createReportCard('onlinePaid', 'Online Paid', bookingReport.metrics.onlinePaid),
+    createReportCard('eKycNotDone', 'EKYC Pending', bookingReport.metrics.eKycNotDone),
+    createReportCard('aadhaarNotSeeded', 'Aadhaar Not Seeded', bookingReport.metrics.aadhaarNotSeeded),
+    createReportCard('unregisteredNumber', 'Unregistered Number', bookingReport.metrics.unregisteredNumber),
+    createReportCard('distributorManual', 'Distributor Manual', bookingReport.metrics.distributorManual),
+    createReportCard('vitranManual', 'Vitran Manual', bookingReport.metrics.vitranManual),
+    createReportCard('natureDomestic', '1 - Domestic', bookingReport.metrics.natureDomestic),
+    createReportCard('natureUjjwala', '16-Scheme Ujjwala', bookingReport.metrics.natureUjjwala),
+    createReportCard('natureBpl', '11 - Scheme-BPL', bookingReport.metrics.natureBpl),
+    createReportCard('natureNonDomesticNonEssential', '4 - Non Domestic Non Essential', bookingReport.metrics.natureNonDomesticNonEssential),
+    createReportCard('natureNonDomesticExempted', '2 - Non Domestic Exempted', bookingReport.metrics.natureNonDomesticExempted),
+    createReportCard('sbcBooking', 'SBC Booking', bookingReport.metrics.sbcBooking),
+    createReportCard('dbcBooking', 'DBC Booking', bookingReport.metrics.dbcBooking),
+    createReportCard('pendingSv', 'Pending SV', bookingReport.metrics.pendingSv),
+    createReportCard('todayBooking', "Today's Booking", bookingReport.metrics.todayBooking),
+    createReportCard('pendingDay1', '1 Day', bookingReport.metrics.pendingDay1),
+    createReportCard('pendingDay2', '2 Days', bookingReport.metrics.pendingDay2),
+    createReportCard('pendingDay3', '3 Days', bookingReport.metrics.pendingDay3),
+    createReportCard('pendingDay4', '4 Days', bookingReport.metrics.pendingDay4),
+    createReportCard('pendingDay5', '5 Days', bookingReport.metrics.pendingDay5),
+    createReportCard('pendingDay6', '6 Days', bookingReport.metrics.pendingDay6),
+    createReportCard('pendingDay7', '7 Days', bookingReport.metrics.pendingDay7),
+    createReportCard('pendingDay8', '8 Days', bookingReport.metrics.pendingDay8),
+    createReportCard('pendingDay9', '9 Days', bookingReport.metrics.pendingDay9),
+    createReportCard('pendingDay10', '10 Days', bookingReport.metrics.pendingDay10),
+    createReportCard('pending01To02Days', '1-2 Days', bookingReport.metrics.pending01To02Days),
+    createReportCard('pending02To05Days', '3-5 Days', bookingReport.metrics.pending02To05Days),
+    createReportCard('pending05To10Days', '6-10 Days', bookingReport.metrics.pending05To10Days),
+    createReportCard('pendingAbove3Days', '> 3 Days', bookingReport.metrics.pendingAbove3Days),
+    createReportCard('pendingAbove5Days', '> 5 Days', bookingReport.metrics.pendingAbove5Days),
+    createReportCard('pendingAbove7Days', '> 7 Days', bookingReport.metrics.pendingAbove7Days),
+    createReportCard('pendingAbove10Days', '> 10 Days', bookingReport.metrics.pendingAbove10Days),
+    createReportCard('pendingAbove15Days', '> 15 Days', bookingReport.metrics.pendingAbove15Days),
+    createReportCard('pendingAbove21Days', '> 21 Days', bookingReport.metrics.pendingAbove21Days),
+    ...bookingReport.topPendingAreas,
+  ].map((card) => ({
+    ...card,
+    tone: card.tone || getReportTone(card.key),
+    displayValue: card.displayValue || String(card.value),
+  }));
+  const exceptionQueueCards = [
+    {
+      key: 'cashMemoNotGenerated',
+      label: 'Cash Memo Pending',
+      description: 'Rows jahan cash memo abhi generate ya mark nahi hua hai.',
+      count: bookingReport.metrics.cashMemoNotGenerated,
+    },
+    {
+      key: 'eKycNotDone',
+      label: 'eKYC Pending',
+      description: 'Complete these records first before dispatch or print follow-up.',
+      count: bookingReport.metrics.eKycNotDone,
+    },
+    {
+      key: 'aadhaarNotSeeded',
+      label: 'Aadhaar Not Seeded',
+      description: 'Identity linkage pending records needing dealer attention.',
+      count: bookingReport.metrics.aadhaarNotSeeded,
+    },
+    {
+      key: 'unregisteredNumber',
+      label: 'Mobile Missing',
+      description: 'Consumer contact is missing or not properly registered.',
+      count: bookingReport.metrics.unregisteredNumber,
+    },
+    {
+      key: 'pending02To05Days',
+      label: 'Aging 3-5 Days',
+      description: 'These bookings are aging out of the fresh window and need quick action.',
+      count: bookingReport.metrics.pending02To05Days,
+    },
+    {
+      key: 'pendingAbove5Days',
+      label: 'Aging > 5 Days',
+      description: 'Stale bookings crossing five days need priority follow-up.',
+      count: bookingReport.metrics.pendingAbove5Days,
+    },
+    {
+      key: 'pending05To10Days',
+      label: 'Aging 6-10 Days',
+      description: 'Bookings in the six to ten day window need focused action.',
+      count: bookingReport.metrics.pending05To10Days,
+    },
+    {
+      key: 'pendingAbove7Days',
+      label: 'Aging > 7 Days',
+      description: 'Highest priority stale bookings waiting too long.',
+      count: bookingReport.metrics.pendingAbove7Days,
+    },
+    {
+      key: 'onlinePaid',
+      label: 'Online Paid',
+      description: 'Review paid bookings that are ready for next processing step.',
+      count: bookingReport.metrics.onlinePaid,
+    },
+  ]
+    .filter((item) => item.count > 0)
+    .map((item) => ({
+      ...item,
+      tone: dangerReportCardKeys.has(item.key)
+        ? 'danger'
+        : infoReportCardKeys.has(item.key)
+          ? 'info'
+          : 'default',
+      isActive: activeReportFilter === item.key,
+      onClick: () => {
+        setShowBookingReport(true);
+        setActiveReportFilter((prev) => (prev === item.key ? '' : item.key));
+      },
+    }));
+  const reportFilterOptions = [...reportSummaryCards, ...reportCards].filter((card) => card.key !== 'totalPendingBooking');
+  const reportLabelLookup = useMemo(
+    () => Object.fromEntries(reportFilterOptions.map((card) => [card.key, card.label])),
+    [reportFilterOptions],
+  );
   const activeFilterChips = [
     searchTerm ? { key: 'search', label: `Search: ${searchTerm}`, clear: () => setSearchTerm('') } : null,
-    activeReportFilter ? { key: 'report', label: `Report: ${activeReportFilter}`, clear: () => setActiveReportFilter('') } : null,
+    activeReportFilter ? { key: 'report', label: `Report: ${reportLabelLookup[activeReportFilter] || activeReportFilter}`, clear: () => setActiveReportFilter('') } : null,
+    reportViewMode === 'full' ? { key: 'reportView', label: 'Report View: Full Report', clear: () => setReportViewMode('filtered') } : null,
     hasMultiValueFilterSelection(eKycFilter) ? { key: 'ekyc', label: formatMultiValueFilterLabel('EKYC', eKycFilter), clear: () => setEKycFilter('All') } : null,
     hasMultiValueFilterSelection(areaFilter) ? { key: 'area', label: formatMultiValueFilterLabel('Area', areaFilter), clear: () => setAreaFilter('All') } : null,
     hasMultiValueFilterSelection(natureFilter) ? { key: 'nature', label: formatMultiValueFilterLabel('Nature', natureFilter), clear: () => setNatureFilter('All') } : null,
@@ -8412,146 +8658,6 @@ function App() {
       },
     } : null,
   ].filter(Boolean);
-
-  const {
-    selectedCustomerIds,
-    isAllFilteredRowsSelected,
-    selectedCustomersForPrint,
-    handleCheckboxChange,
-    handleSelectAllChange,
-    clearSelection,
-  } = useCashmemoSelection(filteredData);
-
-  const selectedFilteredRows = filteredData.filter((row) => selectedCustomerIds.includes(String(row['Consumer No.'])));
-
-  const dangerReportCardKeys = new Set([
-    'pending05To10Days',
-    'pendingAbove5Days',
-    'pendingAbove7Days',
-    'pendingAbove10Days',
-    'pendingAbove15Days',
-    'pendingAbove21Days',
-    'eKycNotDone',
-    'aadhaarNotSeeded',
-    'unregisteredNumber',
-  ]);
-
-  const infoReportCardKeys = new Set([
-    'onlinePaid',
-    'pending02To05Days',
-    'pendingAbove3Days',
-  ]);
-
-  const reportCards = [
-    { key: 'totalPendingBooking', label: 'Total Pending', value: bookingReport.metrics.totalPendingBooking },
-    { key: 'onlinePaid', label: 'Online Paid', value: bookingReport.metrics.onlinePaid },
-    { key: 'eKycNotDone', label: 'EKYC Pending', value: bookingReport.metrics.eKycNotDone },
-    { key: 'aadhaarNotSeeded', label: 'Aadhaar Not Seeded', value: bookingReport.metrics.aadhaarNotSeeded },
-    { key: 'unregisteredNumber', label: 'Unregisted Number', value: bookingReport.metrics.unregisteredNumber },
-    { key: 'distributorManual', label: 'Distributor Manual', value: bookingReport.metrics.distributorManual },
-    { key: 'vitranManual', label: 'Vitran Manual', value: bookingReport.metrics.vitranManual },
-    { key: 'natureDomestic', label: '1 - Domestic', value: bookingReport.metrics.natureDomestic },
-    { key: 'natureUjjwala', label: '16-Scheme Ujjwala', value: bookingReport.metrics.natureUjjwala },
-    { key: 'natureBpl', label: '11 - Scheme-BPL', value: bookingReport.metrics.natureBpl },
-    { key: 'natureNonDomesticNonEssential', label: '4 - Non Domestic Non Essential', value: bookingReport.metrics.natureNonDomesticNonEssential },
-    { key: 'natureNonDomesticExempted', label: '2 - Non Domestic Exempted', value: bookingReport.metrics.natureNonDomesticExempted },
-    { key: 'sbcBooking', label: 'SBC Booking', value: bookingReport.metrics.sbcBooking },
-    { key: 'dbcBooking', label: 'DBC Booking', value: bookingReport.metrics.dbcBooking },
-    { key: 'pendingSv', label: 'Pending SV', value: bookingReport.metrics.pendingSv },
-    { key: 'todayBooking', label: "Today's Booking", value: bookingReport.metrics.todayBooking },
-    { key: 'pendingDay1', label: '1 Day', value: bookingReport.metrics.pendingDay1 },
-    { key: 'pendingDay2', label: '2 Days', value: bookingReport.metrics.pendingDay2 },
-    { key: 'pendingDay3', label: '3 Days', value: bookingReport.metrics.pendingDay3 },
-    { key: 'pendingDay4', label: '4 Days', value: bookingReport.metrics.pendingDay4 },
-    { key: 'pendingDay5', label: '5 Days', value: bookingReport.metrics.pendingDay5 },
-    { key: 'pendingDay6', label: '6 Days', value: bookingReport.metrics.pendingDay6 },
-    { key: 'pendingDay7', label: '7 Days', value: bookingReport.metrics.pendingDay7 },
-    { key: 'pendingDay8', label: '8 Days', value: bookingReport.metrics.pendingDay8 },
-    { key: 'pendingDay9', label: '9 Days', value: bookingReport.metrics.pendingDay9 },
-    { key: 'pendingDay10', label: '10 Days', value: bookingReport.metrics.pendingDay10 },
-    { key: 'pending01To02Days', label: '01 - 02 Days', value: bookingReport.metrics.pending01To02Days },
-    { key: 'pending02To05Days', label: '02 - 05 Days', value: bookingReport.metrics.pending02To05Days },
-    { key: 'pending05To10Days', label: '05 - 10 Days', value: bookingReport.metrics.pending05To10Days },
-    { key: 'pendingAbove3Days', label: '> 3 Days', value: bookingReport.metrics.pendingAbove3Days },
-    { key: 'pendingAbove5Days', label: '> 5 Days', value: bookingReport.metrics.pendingAbove5Days },
-    { key: 'pendingAbove7Days', label: '> 7 Days', value: bookingReport.metrics.pendingAbove7Days },
-    { key: 'pendingAbove10Days', label: '> 10 Days', value: bookingReport.metrics.pendingAbove10Days },
-    { key: 'pendingAbove15Days', label: '> 15 Days', value: bookingReport.metrics.pendingAbove15Days },
-    { key: 'pendingAbove21Days', label: '> 21 Days', value: bookingReport.metrics.pendingAbove21Days },
-    ...bookingReport.topPendingAreas,
-  ].map((card) => ({
-    ...card,
-    tone: dangerReportCardKeys.has(card.key)
-      ? 'danger'
-      : infoReportCardKeys.has(card.key)
-        ? 'info'
-        : 'default',
-  }));
-  const exceptionQueueCards = [
-    {
-      key: 'eKycNotDone',
-      label: 'eKYC Pending',
-      description: 'Complete these records first before dispatch or print follow-up.',
-      count: bookingReport.metrics.eKycNotDone,
-    },
-    {
-      key: 'aadhaarNotSeeded',
-      label: 'Aadhaar Not Seeded',
-      description: 'Identity linkage pending records needing dealer attention.',
-      count: bookingReport.metrics.aadhaarNotSeeded,
-    },
-    {
-      key: 'unregisteredNumber',
-      label: 'Mobile Missing',
-      description: 'Consumer contact is missing or not properly registered.',
-      count: bookingReport.metrics.unregisteredNumber,
-    },
-    {
-      key: 'pending02To05Days',
-      label: 'Aging 2-5 Days',
-      description: 'These bookings are starting to slip and need quick action.',
-      count: bookingReport.metrics.pending02To05Days,
-    },
-    {
-      key: 'pendingAbove5Days',
-      label: 'Aging > 5 Days',
-      description: 'Stale bookings crossing five days need priority follow-up.',
-      count: bookingReport.metrics.pendingAbove5Days,
-    },
-    {
-      key: 'pending05To10Days',
-      label: 'Aging 05-10 Days',
-      description: 'Bookings in the five to ten day window need focused action.',
-      count: bookingReport.metrics.pending05To10Days,
-    },
-    {
-      key: 'pendingAbove7Days',
-      label: 'Aging > 7 Days',
-      description: 'Highest priority stale bookings waiting too long.',
-      count: bookingReport.metrics.pendingAbove7Days,
-    },
-    {
-      key: 'onlinePaid',
-      label: 'Online Paid',
-      description: 'Review paid bookings that are ready for next processing step.',
-      count: bookingReport.metrics.onlinePaid,
-    },
-  ]
-    .filter((item) => item.count > 0)
-    .map((item) => ({
-      ...item,
-      tone: dangerReportCardKeys.has(item.key)
-        ? 'danger'
-        : infoReportCardKeys.has(item.key)
-          ? 'info'
-          : 'default',
-      isActive: activeReportFilter === item.key,
-      onClick: () => {
-        setShowBookingReport(true);
-        setActiveReportFilter((prev) => (prev === item.key ? '' : item.key));
-      },
-    }));
-  const reportFilterOptions = reportCards.filter((card) => card.key !== 'totalPendingBooking');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableEkycOptions = useMemo(() => sortedUniqueValues(applyStructuredFilters(parsedData, ['eKycFilter']).map(row => row['EKYC Status'])), [parsedData, searchTerm, areaFilter, natureFilter, mobileStatusFilter, consumerStatusFilter, connectionTypeFilter, onlineRefillPaymentStatusFilter, orderStatusFilter, orderSourceFilter, orderTypeFilter, cashMemoStatusFilter, deliveryManFilter, isRegMobileFilter, orderDateStart, orderDateEnd, cashMemoDateStart, cashMemoDateEnd, activeReportFilter]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -9849,10 +9955,14 @@ function App() {
             showBookingReport={showBookingReport}
             filteredData={filteredData}
             activeReportFilter={activeReportFilter}
+            reportViewMode={reportViewMode}
+            setReportViewMode={setReportViewMode}
             setActiveReportFilter={setActiveReportFilter}
             setShowBookingReport={setShowBookingReport}
+            reportSummaryCards={reportSummaryCards}
             reportCards={reportCards}
             exceptionQueueCards={exceptionQueueCards}
+            reportRecordCount={reportSourceData.length}
             uploadInProgress={uploadInProgress}
             selectedCustomerIds={selectedCustomerIds}
             hasActiveDataFilters={hasActiveDataFilters}

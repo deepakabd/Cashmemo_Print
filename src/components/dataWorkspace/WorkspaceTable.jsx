@@ -16,6 +16,28 @@ const getCellDisplayValue = ({
       : (customer[header] === undefined || customer[header] === null ? '' : customer[header])),
 );
 
+const copyTextToClipboard = async (value) => {
+  const text = String(value || '').trim();
+  if (!text) {
+    throw new Error('Nothing to copy.');
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.opacity = '0';
+  document.body.appendChild(textArea);
+  textArea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textArea);
+};
+
 const WorkspaceTable = ({
   shouldShowFilteredEmptyState,
   hasActiveDataFilters,
@@ -39,6 +61,7 @@ const WorkspaceTable = ({
   currentPage,
   setCurrentPage,
   totalPages,
+  pushToast,
 }) => (
   <div className="table-container">
     {shouldShowFilteredEmptyState ? (
@@ -124,13 +147,32 @@ const WorkspaceTable = ({
                     return (
                       <td key={colIndex} style={{ border: '1px solid black', padding: '8px' }}>
                         {header === 'Consumer No.' ? (
-                          <button
-                            type="button"
-                            className={`consumer-link-button ${isActiveConsumer ? 'is-active' : ''}`}
-                            onClick={() => onSelectConsumer?.(consumerNo)}
-                          >
-                            {displayValue}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className={`consumer-link-button ${isActiveConsumer ? 'is-active' : ''}`}
+                              onClick={() => onSelectConsumer?.(consumerNo)}
+                            >
+                              {displayValue}
+                            </button>
+                            <button
+                              type="button"
+                              className="consumer-copy-button"
+                              onClick={async (event) => {
+                                event.stopPropagation();
+                                try {
+                                  await copyTextToClipboard(consumerNo);
+                                  pushToast?.(`Consumer No. ${consumerNo} copied`, 'success');
+                                } catch (error) {
+                                  pushToast?.('Consumer number copy nahi ho saka.', 'error');
+                                }
+                              }}
+                              aria-label={`Copy consumer number ${consumerNo}`}
+                              title={`Copy ${consumerNo}`}
+                            >
+                              Copy
+                            </button>
+                          </>
                         ) : (
                           displayValue
                         )}

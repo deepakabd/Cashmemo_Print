@@ -2,13 +2,17 @@ const WorkspaceOverview = ({
   showBookingReport,
   filteredData,
   activeReportFilter,
+  reportViewMode,
+  setReportViewMode,
+  hasActiveDataFilters,
   setActiveReportFilter,
   setShowBookingReport,
+  reportSummaryCards,
   reportCards,
   exceptionQueueCards,
+  reportRecordCount,
   uploadInProgress,
   selectedCustomerIds,
-  hasActiveDataFilters,
   parsedData,
   uploadMetadata,
   activeFilterChips,
@@ -34,9 +38,29 @@ const WorkspaceOverview = ({
         <div className="booking-report-header">
           <div>
             <h3>Pending Booking Report</h3>
+            <p>{reportViewMode === 'full' ? 'All uploaded pending bookings ka report' : 'Current filters ke hisaab se report'}</p>
           </div>
           <div className="booking-report-actions">
-            <span className="booking-report-badge">Records: {filteredData.length}</span>
+            <div className="booking-report-toggle-group">
+              <button
+                type="button"
+                className={`booking-report-toggle ${reportViewMode === 'filtered' ? 'is-active' : ''}`}
+                onClick={() => setReportViewMode('filtered')}
+              >
+                Filtered Report
+              </button>
+              <button
+                type="button"
+                className={`booking-report-toggle ${reportViewMode === 'full' ? 'is-active' : ''}`}
+                onClick={() => setReportViewMode('full')}
+              >
+                Full Report
+              </button>
+            </div>
+            <span className="booking-report-badge">Records: {reportRecordCount}</span>
+            {!hasActiveDataFilters && (
+              <span className="booking-report-badge">No filters active, both views will match</span>
+            )}
             {activeReportFilter && (
               <button className="booking-report-clear" onClick={() => setActiveReportFilter('')}>
                 Clear Report Filter
@@ -48,19 +72,47 @@ const WorkspaceOverview = ({
           </div>
         </div>
 
+        <div className="booking-report-section">
+          <div className="booking-report-section__head">
+            <div className="booking-report-section__title">
+              <span className="booking-report-section__icon" aria-hidden="true" />
+              <h4>Fresh vs Old Pending</h4>
+            </div>
+          </div>
+          <div className="booking-report-grid">
+            {reportSummaryCards.map((card) => (
+              <button
+                key={card.key}
+                type="button"
+                className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''} ${card.tone === 'success' ? 'booking-report-card--success' : ''} ${card.tone === 'warning' ? 'booking-report-card--warning' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
+                onClick={() => setActiveReportFilter((prev) => (prev === card.key ? '' : card.key))}
+              >
+                <span className="booking-report-card__emoji" aria-hidden="true">{card.icon}</span>
+                <span className="booking-report-label">{card.label}</span>
+                <strong>{card.displayValue || card.value}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="booking-report-section">
+          <div className="booking-report-section__head">
+            <h4>Detailed Metrics</h4>
+          </div>
         <div className="booking-report-grid">
           {reportCards.map((card) => (
             <button
               key={card.key}
               type="button"
-              className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
+              className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''} ${card.tone === 'success' ? 'booking-report-card--success' : ''} ${card.tone === 'warning' ? 'booking-report-card--warning' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
               onClick={() => setActiveReportFilter((prev) => (prev === card.key || card.key === 'totalPendingBooking' ? '' : card.key))}
             >
               <span className="booking-report-label">{card.label}</span>
               {card.areaName ? <span className="booking-report-meta">{card.areaName}</span> : null}
-              <strong>{card.value}</strong>
+              <strong>{card.displayValue || card.value}</strong>
             </button>
           ))}
+        </div>
         </div>
       </div>
     )}
@@ -114,7 +166,7 @@ const WorkspaceOverview = ({
               <button
                 key={card.key}
                 type="button"
-                className={`booking-report-card booking-report-card--button ${card.isActive ? 'is-active' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
+                className={`booking-report-card booking-report-card--button ${card.isActive ? 'is-active' : ''} ${card.tone === 'success' ? 'booking-report-card--success' : ''} ${card.tone === 'warning' ? 'booking-report-card--warning' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
                 onClick={card.onClick}
               >
                 <span className="booking-report-label">{card.label}</span>
