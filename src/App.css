@@ -2249,6 +2249,10 @@
   gap: 6px;
 }
 
+.consumer-book-section__grid--other {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .consumer-book-field {
   min-height: 34px;
   padding: 4px 6px 5px;
@@ -2337,6 +2341,10 @@
   .consumer-book-section__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .consumer-book-section__grid--other {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -2381,6 +2389,10 @@
   }
 
   .consumer-book-section__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .consumer-book-section__grid--other {
     grid-template-columns: 1fr;
   }
 
