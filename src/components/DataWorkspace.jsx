@@ -362,6 +362,9 @@ const DataWorkspace = (props) => {
       .filter((key) => key !== 'IsRefillPort')
       .filter((key) => !basicFieldOrder.includes(key))
       .filter((key) => {
+        if (key === 'Online Refill Payment status') {
+          return true;
+        }
         const value = activeConsumer[key];
         return !(value === undefined || value === null || String(value).trim() === '');
       })
@@ -638,7 +641,7 @@ const DataWorkspace = (props) => {
                   title="Copy detail screenshot"
                   aria-label="Copy detail screenshot"
                 >
-                  Shot
+                  <span aria-hidden="true">📷</span>
                 </button>
                 <button
                   type="button"
@@ -647,7 +650,7 @@ const DataWorkspace = (props) => {
                   title="Copy detail text"
                   aria-label="Copy detail text"
                 >
-                  Copy
+                  <span aria-hidden="true">📋</span>
                 </button>
                 <button
                   type="button"
@@ -668,7 +671,9 @@ const DataWorkspace = (props) => {
                       <span>{section.icon}</span>
                       <h5>{section.title}</h5>
                     </div>
-                    <div className="consumer-book-section__grid">
+                    <div className={`consumer-book-section__grid ${
+                      section.key === 'other' ? 'consumer-book-section__grid--other' : ''
+                    }`}>
                       {section.fields.map((field) => (
                         <div key={`${section.key}-${field.label}`} className="consumer-book-field">
                           <span className="consumer-book-field__label">{field.label}</span>
