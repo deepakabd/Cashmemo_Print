@@ -417,9 +417,9 @@ const PACKAGE_OPTIONS = [
 
 const PACKAGE_PRICING = {
   'Demo Package - 7 Days': 'Free',
-  'Premium Package - 30 Days': 'Rs. 3000',
-  'Enterprise Package - 365 Days': 'Rs. 7500',
-  'Enterprise Package with (हिंदी) - 365 Days': 'Rs. 10000',
+  'Premium Package - 30 Days': 'Rs. 1999',
+  'Enterprise Package - 365 Days': 'Rs. 4999',
+  'Enterprise Package with (हिंदी) - 365 Days': 'Rs. 6999',
   'Premium Package with (हिंदी) - 365 Days': 'Rs. 10000',
   'Premium Package (हिंदी) - 365 Days': 'Rs. 10000',
 };

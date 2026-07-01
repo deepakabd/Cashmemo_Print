@@ -305,9 +305,9 @@ export const PACKAGE_OPTIONS = [
 
 export const PACKAGE_PRICING = {
   'Demo Package - 7 Days': 'Free',
-  'Premium Package - 30 Days': 'Rs. 3000',
-  'Enterprise Package - 365 Days': 'Rs. 7500',
-  'Enterprise Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days': 'Rs. 10000',
+  'Premium Package - 30 Days': 'Rs. 1999',
+  'Enterprise Package - 365 Days': 'Rs. 4999',
+  'Enterprise Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days': 'Rs. 6999',
   'Premium Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days': 'Rs. 10000',
   'Premium Package (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days': 'Rs. 10000',
 };
