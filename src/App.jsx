@@ -382,9 +382,19 @@ const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
 const ADMIN_AUDIT_COLLECTION = 'adminAuditTrail';
 const FILTER_PRESET_STORAGE_KEY_PREFIX = 'cashmemoFilterPresets_';
 const RECENT_ACTIVITY_STORAGE_KEY_PREFIX = 'cashmemoRecentActivity_';
+const USER_LAST_UPLOADED_DATA_LIMIT = 10;
 const ONBOARDING_TOUR_STORAGE_KEY_PREFIX = 'cashmemoOnboardingTourSeen_';
 const WORKSPACE_MODE_STORAGE_KEY_PREFIX = 'cashmemoWorkspaceMode_';
 const ANNOUNCEMENTS_STORAGE_KEY = 'cashmemoAnnouncements';
+const USER_DEVICE_STORAGE_KEY = 'cashmemoDeviceId';
+
+const createDefaultAnnouncementDraft = () => ({
+  title: '',
+  message: '',
+  targetScope: 'all',
+  noticeType: 'notice',
+  expiresAt: '',
+});
 
 const getPlanUpgradeReplyStorageKey = ({ userId = '', dealerCode = '', dealerName = '' } = {}) => {
   const userKey = String(userId || dealerCode || dealerName || '').trim();
@@ -399,6 +409,94 @@ const getWorkspaceModeStorageKey = (dealerCode = '') => (
   `${WORKSPACE_MODE_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
 );
 
+const createBrowserDeviceId = () => {
+  const randomPart = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `device-${randomPart}`;
+};
+
+const getCurrentDeviceId = () => {
+  try {
+    const savedId = localStorage.getItem(USER_DEVICE_STORAGE_KEY);
+    if (savedId) return savedId;
+    const nextId = createBrowserDeviceId();
+    localStorage.setItem(USER_DEVICE_STORAGE_KEY, nextId);
+    return nextId;
+  } catch {
+    return createBrowserDeviceId();
+  }
+};
+
+const getCurrentDeviceInfo = () => {
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const screenInfo = typeof window !== 'undefined' && window.screen
+    ? `${window.screen.width || 0}x${window.screen.height || 0}`
+    : 'unknown-screen';
+  const userAgent = String(nav.userAgent || 'Unknown browser');
+  const platform = String(nav.platform || 'Unknown platform');
+  const browserName = userAgent.includes('Edg/')
+    ? 'Microsoft Edge'
+    : userAgent.includes('Chrome/')
+      ? 'Chrome'
+      : userAgent.includes('Firefox/')
+        ? 'Firefox'
+        : userAgent.includes('Safari/')
+          ? 'Safari'
+          : 'Browser';
+
+  return {
+    deviceId: getCurrentDeviceId(),
+    deviceName: `${browserName} on ${platform}`,
+    browser: browserName,
+    platform,
+    screen: screenInfo,
+    userAgent,
+  };
+};
+
+const normalizeLoginDevices = (devices = []) => (
+  Array.isArray(devices)
+    ? devices
+      .filter((device) => device && typeof device === 'object')
+      .map((device) => ({
+        deviceId: String(device.deviceId || device.id || '').trim(),
+        deviceName: String(device.deviceName || device.name || 'Unknown device').trim(),
+        browser: String(device.browser || '').trim(),
+        platform: String(device.platform || '').trim(),
+        screen: String(device.screen || '').trim(),
+        userAgent: String(device.userAgent || '').trim(),
+        firstLoginAt: device.firstLoginAt || device.lastLoginAt || '',
+        lastLoginAt: device.lastLoginAt || device.firstLoginAt || '',
+        blocked: Boolean(device.blocked),
+        blockedAt: device.blockedAt || '',
+        unblockedAt: device.unblockedAt || '',
+      }))
+      .filter((device) => device.deviceId)
+    : []
+);
+
+const upsertLoginDevice = (devices = [], deviceInfo = {}, loggedInAt = new Date().toISOString()) => {
+  const normalizedDevices = normalizeLoginDevices(devices);
+  const deviceId = String(deviceInfo.deviceId || '').trim();
+  if (!deviceId) return normalizedDevices;
+  const existingDevice = normalizedDevices.find((device) => device.deviceId === deviceId);
+  const nextDevice = {
+    ...(existingDevice || {}),
+    ...deviceInfo,
+    deviceId,
+    firstLoginAt: existingDevice?.firstLoginAt || loggedInAt,
+    lastLoginAt: loggedInAt,
+    blocked: Boolean(existingDevice?.blocked),
+  };
+  return [
+    nextDevice,
+    ...normalizedDevices.filter((device) => device.deviceId !== deviceId),
+  ].slice(0, 12);
+};
+
+const getDeviceStatusLabel = (device = {}) => (device.blocked ? 'Blocked' : 'Allowed');
+
 const getAnnouncementScopeLabel = (scope = 'all') => {
   const normalized = String(scope || 'all').toLowerCase();
   if (normalized === 'all') return 'All Users';
@@ -409,35 +507,26 @@ const getAnnouncementScopeLabel = (scope = 'all') => {
 };
 
 const PACKAGE_OPTIONS = [
-  'Demo Package - 7 Days',
   'Premium Package - 30 Days',
   'Enterprise Package - 365 Days',
   'Enterprise Package with (हिंदी) - 365 Days',
 ];
 
 const PACKAGE_PRICING = {
-  'Demo Package - 7 Days': 'Free',
   'Premium Package - 30 Days': 'Rs. 1999',
   'Enterprise Package - 365 Days': 'Rs. 4999',
   'Enterprise Package with (हिंदी) - 365 Days': 'Rs. 6999',
-  'Premium Package with (हिंदी) - 365 Days': 'Rs. 10000',
-  'Premium Package (हिंदी) - 365 Days': 'Rs. 10000',
 };
 
 const PAYMENT_UPI_ID = '8002074620@ybl';
 const HINDI_ENTERPRISE_PACKAGE_NAMES = [
   'Enterprise Package with (हिंदी) - 365 Days',
-  'Premium Package with (हिंदी) - 365 Days',
-  'Premium Package (हिंदी) - 365 Days',
 ];
 
 const getPackageValidityDays = (packageName = '') => {
   const normalized = String(packageName || '').toLowerCase();
-  if (normalized.includes('demo')) return 7;
   if (
-    normalized.includes('enterprise package with (हिंदी)') ||
-    normalized.includes('premium package with (हिंदी)') ||
-    normalized.includes('premium package (हिंदी)')
+    normalized.includes('enterprise package with (हिंदी)')
   ) return 365;
   if (normalized.includes('premium')) return 30;
   if (normalized.includes('enterprise')) return 365;
@@ -493,9 +582,7 @@ const getRemainingDays = (validTill) => {
 
 const formatPackageNameForNavbar = (packageName = '') => {
   const name = String(packageName || '')
-    .trim()
-    .replace('Premium Package with (हिंदी)', 'Enterprise Package with (हिंदी)')
-    .replace('Premium Package (हिंदी)', 'Enterprise Package with (हिंदी)');
+    .trim();
   if (!name) return 'N/A';
   return name.replace(/\s*-\s*\d+\s*Days?\s*$/i, '').trim();
 };
@@ -653,12 +740,14 @@ const formatDrawerFieldLabel = (label = '') => (
 const formatDrawerFieldValue = (value) => {
   if (value === null || value === undefined || value === '') return '-';
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return `${value.length} items`;
+  if (typeof value === 'object') return 'Available';
   return String(value);
 };
 
 const getDrawerDetailSections = (data = {}) => {
   const entries = Object.entries(data || {});
-  const hiddenKeys = new Set(['approvalStatus', 'profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates']);
+  const hiddenKeys = new Set(['approvalStatus', 'profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates', 'lastUploadedData']);
   const simpleFields = [];
   const groupedFields = [];
   const listFields = [];
@@ -683,7 +772,7 @@ const getDrawerDetailSections = (data = {}) => {
   };
 };
 
-const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS.filter((pkg) => !pkg.toLowerCase().includes('demo'));
+const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 
 const normalizePendingTypeLabel = (type) => {
   const raw = String(type || '').toLowerCase().trim();
@@ -777,13 +866,9 @@ function App() {
       return [];
     }
   });
-  const [announcementDraft, setAnnouncementDraft] = useState({
-    title: '',
-    message: '',
-    targetScope: 'all',
-    noticeType: 'notice',
-    expiresAt: '',
-  });
+  const [announcementDraft, setAnnouncementDraft] = useState(createDefaultAnnouncementDraft);
+  const announcementDraftRef = useRef(announcementDraft);
+  const [announcementDraftFormKey, setAnnouncementDraftFormKey] = useState(0);
   const [isUserLoginSubmitting, setIsUserLoginSubmitting] = useState(false);
   const [isAdminLoginSubmitting, setIsAdminLoginSubmitting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -918,7 +1003,7 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     setRecentActivities((prev) => {
-      const next = [nextEntry, ...prev].slice(0, 8);
+      const next = [nextEntry, ...prev].slice(0, 50);
       try {
         localStorage.setItem(getRecentActivityStorageKey(dealerCode), JSON.stringify(next));
       } catch {
@@ -1532,6 +1617,7 @@ function App() {
             cashMemoLabelSettings: mergeCashMemoLabelSettings(docData.cashMemoLabelSettings || {}),
             deliveryAreaUpdates: Array.isArray(docData.deliveryAreaUpdates) ? docData.deliveryAreaUpdates : [],
             deliveryStaffUpdates: Array.isArray(docData.deliveryStaffUpdates) ? docData.deliveryStaffUpdates : [],
+            loginDevices: normalizeLoginDevices(docData.loginDevices),
           };
           if (status !== 'active') {
             firestoreUser.status = status;
@@ -1557,6 +1643,24 @@ function App() {
       setIsUserLoginSubmitting(false);
       return;
     }
+
+    const currentDeviceInfo = getCurrentDeviceInfo();
+    const currentDevice = normalizeLoginDevices(firestoreUser.loginDevices)
+      .find((device) => device.deviceId === currentDeviceInfo.deviceId);
+    if (currentDevice?.blocked) {
+      pushToast('Is device par login blocked hai. Admin se unblock karwaiye.', 'error');
+      setIsUserLoginSubmitting(false);
+      return;
+    }
+    const loginDevices = upsertLoginDevice(firestoreUser.loginDevices, currentDeviceInfo);
+    firestoreUser.loginDevices = loginDevices;
+    try {
+      await updateDoc(doc(db, 'users', firestoreUser.id), {
+        loginDevices,
+        lastLoginAt: loginDevices[0]?.lastLoginAt || new Date().toISOString(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) { void e; }
 
     if (firestoreUser.status === 'pending') {
       pushToast('Your registration is pending with admin approval.', 'info');
@@ -2255,7 +2359,23 @@ function App() {
     });
     const [editingUserId, setEditingUserId] = useState('');
     const [dictionaryApprovalEdits, setDictionaryApprovalEdits] = useState({});
-    const [dictionaryRequestView, setDictionaryRequestView] = useState('new');
+    const [dictionaryRequestViewState, setDictionaryRequestViewState] = useState(() => {
+      try {
+        const savedView = JSON.parse(localStorage.getItem('dictionaryRequestView') || '"new"');
+        return ['new', 'duplicate', 'api-request'].includes(savedView) ? savedView : 'new';
+      } catch {
+        return 'new';
+      }
+    });
+    const setDictionaryRequestView = (nextView) => {
+      setDictionaryRequestViewState((prevView) => {
+        const resolvedView = typeof nextView === 'function' ? nextView(prevView) : nextView;
+        const safeView = ['new', 'duplicate', 'api-request'].includes(resolvedView) ? resolvedView : 'new';
+        localStorage.setItem('dictionaryRequestView', JSON.stringify(safeView));
+        return safeView;
+      });
+    };
+    const dictionaryRequestView = dictionaryRequestViewState;
     const [apiWordsCurrentPage, setApiWordsCurrentPage] = useState(1);
     const [selectedApiWordApprovalIds, setSelectedApiWordApprovalIds] = useState([]);
     const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
@@ -2986,11 +3106,12 @@ function App() {
     }, []);
 
     useEffect(() => {
+      if (adminRoleLoading) return;
       if (!canAccessTab(activeAdminTab)) {
         setActiveAdminTab('dashboard');
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [adminRoleMode, activeAdminTab]);
+    }, [adminRoleLoading, adminRoleMode, activeAdminTab]);
 
     useEffect(() => {
       let cancelled = false;
@@ -4000,6 +4121,15 @@ function App() {
         { label: 'Feature Blocks', value: Object.entries(user?.featureBlocks || {}).filter(([, value]) => Boolean(value)).map(([key]) => key).join(', ') || 'None' },
       ];
     };
+    const getUserLastUploadedDataRows = (user = {}) => readRecentActivitiesForDealer(user?.dealerCode)
+      .filter((item) => /uploaded/i.test(item?.message || ''))
+      .sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime())
+      .slice(0, USER_LAST_UPLOADED_DATA_LIMIT)
+      .map((item) => ({
+        id: item?.id || `${item?.createdAt || ''}-${item?.message || ''}`,
+        message: item?.message || 'Uploaded data',
+        createdAt: item?.createdAt || '',
+      }));
     const dealerScorecards = users
       .map((user) => ({ user, health: getDealerHealthSummary(user) }))
       .sort((a, b) => b.health.score - a.health.score)
@@ -4023,7 +4153,22 @@ function App() {
         || String(u.role || '').toLowerCase() === adminSubFilter;
       return isWithinAdminDateRange(u.createdAt || u.approvedAt || u.updatedAt)
         && matchesSubFilter
-        && matchesAdminSearch([u.dealerCode, u.dealerName, u.mobile, u.email, u.package, u.status, u.role]);
+        && matchesAdminSearch([
+          u.dealerCode,
+          u.dealerName,
+          u.mobile,
+          u.email,
+          u.package,
+          u.status,
+          u.role,
+          ...normalizeLoginDevices(u.loginDevices).flatMap((device) => [
+            device.deviceName,
+            device.platform,
+            device.browser,
+            device.deviceId,
+            getDeviceStatusLabel(device),
+          ]),
+        ]);
     });
     const filteredApprovals = nonDictionaryPendingApprovals.filter((a) =>
       isWithinAdminDateRange(a.requestedAt || a.approvedAt || a.rejectedAt) &&
@@ -4443,6 +4588,48 @@ function App() {
           },
         },
       );
+    };
+
+    const toggleUserDeviceBlock = async (user, deviceId) => {
+      if (!user || !deviceId) return;
+      const devices = normalizeLoginDevices(user.loginDevices);
+      const targetDevice = devices.find((device) => device.deviceId === deviceId);
+      if (!targetDevice) {
+        pushToast('Device record nahi mila.', 'error');
+        return;
+      }
+      const shouldBlock = !targetDevice.blocked;
+      const updatedAt = new Date().toISOString();
+      const loginDevices = devices.map((device) => (
+        device.deviceId === deviceId
+          ? {
+            ...device,
+            blocked: shouldBlock,
+            blockedAt: shouldBlock ? updatedAt : device.blockedAt || '',
+            unblockedAt: shouldBlock ? '' : updatedAt,
+          }
+          : device
+      ));
+      const nextUsers = users.map((item) => (
+        resolveEditToken(item) === resolveEditToken(user)
+          ? { ...item, loginDevices, updatedAt }
+          : item
+      ));
+
+      setUsers(nextUsers);
+      writeUsersData(nextUsers);
+
+      try {
+        await updateUserInFirebase(user.id, { loginDevices }, user.dealerCode);
+        logAdminActivity(shouldBlock ? 'device_blocked' : 'device_unblocked', {
+          dealerCode: user.dealerCode || '',
+          deviceId,
+        });
+        pushToast(`Device ${shouldBlock ? 'blocked' : 'unblocked'} successfully.`, 'success');
+      } catch {
+        await loadData();
+        pushToast('Device status update failed. Please try again.', 'error');
+      }
     };
 
     const saveDictionaryRowsToFirebase = async (rows, source = 'admin') => {
@@ -4945,47 +5132,79 @@ function App() {
                   <th>Bank Updated</th>
                   <th>Rate Updated</th>
                   <th>Header Updated</th>
+                  <th>Login Devices</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedUsersList.length === 0 ? (
                   <tr>
-                    <td colSpan="12" className="admin-empty-cell">No users match the current search.</td>
+                    <td colSpan="14" className="admin-empty-cell">No users match the current search.</td>
                   </tr>
                 ) : (
-                  pagedUsersList.map((u, idx) => (
-                    <tr key={u.id || `${u.dealerCode || 'user'}-${idx}`}>
-                      <td><input type="checkbox" checked={selectedUserTokens.includes(resolveEditToken(u))} onChange={() => toggleUserSelection(resolveEditToken(u))} /></td>
-                      <td>{u.dealerCode || '-'}</td>
-                      <td>{u.dealerName || '-'}</td>
-                      <td>{u.mobile || '-'}</td>
-                      <td>{u.email || '-'}</td>
-                      <td><span className="admin-status-chip admin-status-chip--info">{u.package || '-'}</span></td>
-                      <td>
-                        <span className={`admin-status-chip admin-status-chip--${String(u.status || '').toLowerCase() || 'info'}`}>
-                          {u.status || '-'}
-                        </span>{' '}
-                        {formatDisplayDate(u.validTill)}
-                        {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
-                      </td>
-                      <td>{maskSecret(u.pin, 0)}</td>
-                      <td>{u.profileData ? <button onClick={() => openDetailView(u, 'profile')}>View</button> : '-'}</td>
-                      <td>{u.bankDetailsData ? <button onClick={() => openDetailView(u, 'bank')}>View</button> : '-'}</td>
-                      <td>{Array.isArray(u.ratesData) && u.ratesData.length > 0 ? <button onClick={() => openDetailView(u, 'rates')}>View</button> : '-'}</td>
-                      <td>{u.hindiHeaderData ? <button onClick={() => openDetailView(u, 'header')}>View</button> : '-'}</td>
-                      <td>
-                        <div className="admin-actions">
-                          <button onClick={() => setDetailView({ title: `User - ${u?.dealerCode || ''}`, data: u, noteKey: `user:${u?.id || u?.dealerCode}:general` })}>View</button>
-                          <button onClick={() => startEditUser(u)} disabled={!canMutateAdminData}>Edit</button>
-                          <button onClick={() => toggleUserStatus(u)} disabled={!canMutateAdminData}>
-                            {u.status === 'active' ? 'Disable' : 'Enable'}
-                          </button>
-                          <button onClick={() => deleteUser(u)} disabled={!canMutateAdminData}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  pagedUsersList.map((u, idx) => {
+                    const loginDevices = normalizeLoginDevices(u.loginDevices);
+                    return (
+                      <tr key={u.id || `${u.dealerCode || 'user'}-${idx}`}>
+                        <td><input type="checkbox" checked={selectedUserTokens.includes(resolveEditToken(u))} onChange={() => toggleUserSelection(resolveEditToken(u))} /></td>
+                        <td>{u.dealerCode || '-'}</td>
+                        <td>{u.dealerName || '-'}</td>
+                        <td>{u.mobile || '-'}</td>
+                        <td>{u.email || '-'}</td>
+                        <td><span className="admin-status-chip admin-status-chip--info">{u.package || '-'}</span></td>
+                        <td>
+                          <span className={`admin-status-chip admin-status-chip--${String(u.status || '').toLowerCase() || 'info'}`}>
+                            {u.status || '-'}
+                          </span>{' '}
+                          {formatDisplayDate(u.validTill)}
+                          {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
+                        </td>
+                        <td>{maskSecret(u.pin, 0)}</td>
+                        <td>{u.profileData ? <button onClick={() => openDetailView(u, 'profile')}>View</button> : '-'}</td>
+                        <td>{u.bankDetailsData ? <button onClick={() => openDetailView(u, 'bank')}>View</button> : '-'}</td>
+                        <td>{Array.isArray(u.ratesData) && u.ratesData.length > 0 ? <button onClick={() => openDetailView(u, 'rates')}>View</button> : '-'}</td>
+                        <td>{u.hindiHeaderData ? <button onClick={() => openDetailView(u, 'header')}>View</button> : '-'}</td>
+                        <td>
+                          {loginDevices.length === 0 ? (
+                            <span className="admin-empty-device">No login yet</span>
+                          ) : (
+                            <div className="admin-device-list">
+                              {loginDevices.map((device) => (
+                                <div key={device.deviceId} className="admin-device-row">
+                                  <div className="admin-device-meta">
+                                    <strong>{device.deviceName || 'Unknown device'}</strong>
+                                    <span>{device.platform || '-'} | Last: {formatDisplayDateTime(device.lastLoginAt)}</span>
+                                    <small title={device.deviceId}>{device.deviceId}</small>
+                                  </div>
+                                  <div className="admin-device-actions">
+                                    <span className={`admin-status-chip admin-status-chip--${device.blocked ? 'disabled' : 'active'}`}>{getDeviceStatusLabel(device)}</span>
+                                    <button
+                                      type="button"
+                                      className="admin-ghost-btn"
+                                      onClick={() => toggleUserDeviceBlock(u, device.deviceId)}
+                                      disabled={!canMutateAdminData}
+                                    >
+                                      {device.blocked ? 'Unblock' : 'Block'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div className="admin-actions">
+                            <button onClick={() => setDetailView({ title: `User - ${u?.dealerCode || ''}`, data: u, noteKey: `user:${u?.id || u?.dealerCode}:general` })}>View</button>
+                            <button onClick={() => startEditUser(u)} disabled={!canMutateAdminData}>Edit</button>
+                            <button onClick={() => toggleUserStatus(u)} disabled={!canMutateAdminData}>
+                              {u.status === 'active' ? 'Disable' : 'Enable'}
+                            </button>
+                            <button onClick={() => deleteUser(u)} disabled={!canMutateAdminData}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -5643,8 +5862,8 @@ function App() {
                           <td>
                             <div className="admin-actions">
                               <button onClick={() => setViewApproval({ ...a, payload: dictionaryPayload })}>View</button>
-                              <button onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
-                              <button onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
+                              <button type="button" onClick={() => approveUpdateRequest(a)} disabled={!canMutateAdminData}>Approve</button>
+                              <button type="button" onClick={() => rejectUpdateRequest(a)} disabled={!canMutateAdminData}>Reject</button>
                             </div>
                           </td>
                         </tr>
@@ -5737,6 +5956,23 @@ function App() {
                       {getUserLifecycleRows(activeDrawerData).map((item) => (
                         <li key={`${activeDrawer.noteKey}-${item.label}`}>{item.label}: {item.value}</li>
                       ))}
+                    </ul>
+                  </div>
+                  <div className="admin-drawer-section">
+                    <h4>Last Uploaded Data</h4>
+                    <ul>
+                      {(() => {
+                        const lastUploadedRows = getUserLastUploadedDataRows(activeDrawerData);
+                        return lastUploadedRows.length === 0 ? (
+                          <li>No upload data recorded.</li>
+                        ) : (
+                          lastUploadedRows.map((item) => (
+                            <li key={`${activeDrawer.noteKey}-upload-${item.id}`}>
+                              {formatDisplayDateTime(item.createdAt)}: {item.message}
+                            </li>
+                          ))
+                        );
+                      })()}
                     </ul>
                   </div>
                 </div>
@@ -5846,17 +6082,17 @@ function App() {
 
         {activeAdminTab === 'announcements' && (
           <div className="admin-section">
-            <div className="admin-form admin-form--announcements">
+            <div key={announcementDraftFormKey} className="admin-form admin-form--announcements">
               <input
                 className="form-input"
                 placeholder="Announcement title"
-                value={announcementDraft.title}
-                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, title: e.target.value }))}
+                defaultValue={announcementDraft.title}
+                onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, title: e.target.value }; }}
               />
               <select
                 className="form-input"
-                value={announcementDraft.targetScope}
-                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, targetScope: e.target.value }))}
+                defaultValue={announcementDraft.targetScope}
+                onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, targetScope: e.target.value }; }}
               >
                 <option value="all">All Users</option>
                 <option value="active">Active Users</option>
@@ -5868,8 +6104,8 @@ function App() {
               </select>
               <select
                 className="form-input"
-                value={announcementDraft.noticeType}
-                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, noticeType: e.target.value }))}
+                defaultValue={announcementDraft.noticeType}
+                onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, noticeType: e.target.value }; }}
               >
                 <option value="notice">General Notice</option>
                 <option value="renewal">Renewal Alert</option>
@@ -5879,15 +6115,15 @@ function App() {
               <input
                 className="form-input"
                 type="date"
-                value={announcementDraft.expiresAt}
-                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, expiresAt: e.target.value }))}
+                defaultValue={announcementDraft.expiresAt}
+                onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, expiresAt: e.target.value }; }}
               />
               <textarea
                 className="form-input admin-announcement-message"
                 rows="3"
                 placeholder="Type announcement message"
-                value={announcementDraft.message}
-                onChange={(e) => setAnnouncementDraft((prev) => ({ ...prev, message: e.target.value }))}
+                defaultValue={announcementDraft.message}
+                onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, message: e.target.value }; }}
               />
               <button onClick={handleCreateAnnouncement} disabled={!canMutateAdminData}>Publish</button>
             </div>
@@ -6202,20 +6438,16 @@ function App() {
             <h3>📦 सदस्यता पैकेज (Subscription Plans)</h3>
             <ul>
               <li>
-                <strong>Demo Package (7-दिन फ्री):</strong><br/>
-                <span className="hindi-text">सिस्टम को पूरी तरह परीक्षण करने का अवसर। सभी मुख्य फीचर्स का एक्सेस।</span>
+                <strong>{formatPackageOptionLabel('Premium Package - 30 Days')}:</strong><br/>
+                <span className="hindi-text">Core billing, reports, filters, printing, and support access.</span>
               </li>
               <li>
-                <strong>Standard Package (मासिक/वार्षिक):</strong><br/>
-                <span className="hindi-text">बेसिक बिलिंग और रिपोर्टिंग। Standard filters और मुद्रण विकल्प।</span>
+                <strong>{formatPackageOptionLabel('Enterprise Package - 365 Days')}:</strong><br/>
+                <span className="hindi-text">Annual access with advanced workflow tools and admin support.</span>
               </li>
               <li>
-                <strong>Premium Package (मासिक/वार्षिक):</strong><br/>
-                <span className="hindi-text">Advanced filters, Bulk operations, Priority support, Custom branding।</span>
-              </li>
-              <li>
-                <strong>Enterprise Package (कस्टम):</strong><br/>
-                <span className="hindi-text">Advanced Hindi localization, Dedicated account manager, API access, और Full customization।</span>
+                <strong>{formatPackageOptionLabel('Enterprise Package with (हिंदी) - 365 Days')}:</strong><br/>
+                <span className="hindi-text">Annual access with Hindi dictionary, header, delivery area, and staff tools.</span>
               </li>
             </ul>
           </div>
@@ -6394,8 +6626,9 @@ function App() {
   }, []);
 
   const handleCreateAnnouncement = useCallback(() => {
-    const title = String(announcementDraft.title || '').trim();
-    const message = String(announcementDraft.message || '').trim();
+    const currentDraft = announcementDraftRef.current || createDefaultAnnouncementDraft();
+    const title = String(currentDraft.title || '').trim();
+    const message = String(currentDraft.message || '').trim();
     if (!title || !message) {
       pushToast('Announcement title aur message required hai.', 'error');
       return;
@@ -6404,23 +6637,20 @@ function App() {
       id: `announcement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title,
       message,
-      targetScope: announcementDraft.targetScope || 'all',
-      noticeType: announcementDraft.noticeType || 'notice',
-      expiresAt: announcementDraft.expiresAt || '',
+      targetScope: currentDraft.targetScope || 'all',
+      noticeType: currentDraft.noticeType || 'notice',
+      expiresAt: currentDraft.expiresAt || '',
       active: true,
       createdAt: new Date().toISOString(),
       createdBy: String(auth?.currentUser?.email || 'admin').trim().toLowerCase() || 'admin',
     };
     persistAnnouncements([nextAnnouncement, ...announcements]);
-    setAnnouncementDraft({
-      title: '',
-      message: '',
-      targetScope: 'all',
-      noticeType: 'notice',
-      expiresAt: '',
-    });
+    const nextDraft = createDefaultAnnouncementDraft();
+    announcementDraftRef.current = nextDraft;
+    setAnnouncementDraft(nextDraft);
+    setAnnouncementDraftFormKey((prev) => prev + 1);
     pushToast('Announcement created successfully.', 'success');
-  }, [announcementDraft, announcements, persistAnnouncements, pushToast]);
+  }, [announcements, persistAnnouncements, pushToast]);
 
   const toggleAnnouncementStatus = useCallback((announcementId) => {
     const nextAnnouncements = announcements.map((item) => (
@@ -9016,14 +9246,14 @@ function App() {
         ]
       : [
           {
-            text: 'Complete your profile and bank details to speed up onboarding on the Demo package.',
+            text: 'Complete your profile and bank details to keep your package setup ready.',
             actionLabel: incompleteProfileAreas.some((item) => item.key === 'profile') ? 'Complete Profile' : 'Update Bank',
             onClick: incompleteProfileAreas.some((item) => item.key === 'profile') ? handleProfileUpdate : handleBankDetails,
             viewKey: incompleteProfileAreas.some((item) => item.key === 'profile') ? 'profileUpdate' : 'bankUpdate',
             disabled: isPlanExpired,
           },
           {
-            text: 'Renew your plan to unlock full work tools and advanced updates.',
+            text: 'Review package renewal when your current validity is close to expiry.',
             actionLabel: 'Open Renewal',
             onClick: handleUpgradePlanOpen,
             viewKey: 'upgradePlan',
