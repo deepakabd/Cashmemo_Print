@@ -14,7 +14,10 @@ export const useAdminData = () => {
   const [users, setUsers] = useState([]);
   const [feedback, setFeedback] = useState([]);
   const [updateApprovals, setUpdateApprovals] = useState([]);
-  const [activeAdminTab, setActiveAdminTab] = useState('dashboard');
+  const [activeAdminTabState, setActiveAdminTabState] = useState(() => {
+    const savedTab = readStorageValue('activeAdminTab', 'dashboard');
+    return typeof savedTab === 'string' && savedTab ? savedTab : 'dashboard';
+  });
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const [adminDateRange, setAdminDateRange] = useState('all');
   const [adminSubFilter, setAdminSubFilter] = useState('all');
@@ -60,6 +63,15 @@ export const useAdminData = () => {
 
   const confirmAdminAction = (message) => window.confirm(message);
 
+  const setActiveAdminTab = (nextTab) => {
+    setActiveAdminTabState((prevTab) => {
+      const resolvedTab = typeof nextTab === 'function' ? nextTab(prevTab) : nextTab;
+      const safeTab = typeof resolvedTab === 'string' && resolvedTab ? resolvedTab : 'dashboard';
+      localStorage.setItem('activeAdminTab', JSON.stringify(safeTab));
+      return safeTab;
+    });
+  };
+
   const paginateAdminRows = (rows, adminItemsPerPage, adminCurrentPageValue) => {
     const startIndex = (adminCurrentPageValue - 1) * adminItemsPerPage;
     return rows.slice(startIndex, startIndex + adminItemsPerPage);
@@ -74,7 +86,7 @@ export const useAdminData = () => {
     setFeedback,
     updateApprovals,
     setUpdateApprovals,
-    activeAdminTab,
+    activeAdminTab: activeAdminTabState,
     setActiveAdminTab,
     adminSearchTerm,
     setAdminSearchTerm,

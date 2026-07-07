@@ -5501,6 +5501,55 @@
   border-radius: 8px;
 }
 
+.admin-device-list {
+  display: grid;
+  gap: 8px;
+  min-width: 280px;
+}
+
+.admin-device-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid #dfe8f4;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.admin-device-meta {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-device-meta strong {
+  color: #1d3557;
+  font-size: 12px;
+}
+
+.admin-device-meta span,
+.admin-device-meta small,
+.admin-empty-device {
+  color: #5c7591;
+  font-size: 11px;
+}
+
+.admin-device-meta small {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-device-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .admin-inline-select {
   min-width: 88px;
   min-height: 30px;

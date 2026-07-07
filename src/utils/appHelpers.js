@@ -297,36 +297,27 @@ export const getAnnouncementScopeLabel = (scope = 'all') => {
 };
 
 export const PACKAGE_OPTIONS = [
-  'Demo Package - 7 Days',
   'Premium Package - 30 Days',
   'Enterprise Package - 365 Days',
   'Enterprise Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days',
 ];
 
 export const PACKAGE_PRICING = {
-  'Demo Package - 7 Days': 'Free',
   'Premium Package - 30 Days': 'Rs. 1999',
   'Enterprise Package - 365 Days': 'Rs. 4999',
   'Enterprise Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days': 'Rs. 6999',
-  'Premium Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days': 'Rs. 10000',
-  'Premium Package (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days': 'Rs. 10000',
 };
 
 export const PAYMENT_UPI_ID = '8002074620@ybl';
 
 const HINDI_ENTERPRISE_PACKAGE_NAMES = [
   'Enterprise Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days',
-  'Premium Package with (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days',
-  'Premium Package (à¤¹à¤¿à¤‚à¤¦à¥€) - 365 Days',
 ];
 
 export const getPackageValidityDays = (packageName = '') => {
   const normalized = String(packageName || '').toLowerCase();
-  if (normalized.includes('demo')) return 7;
   if (
-    normalized.includes('enterprise package with (à¤¹à¤¿à¤‚à¤¦à¥€)') ||
-    normalized.includes('premium package with (à¤¹à¤¿à¤‚à¤¦à¥€)') ||
-    normalized.includes('premium package (à¤¹à¤¿à¤‚à¤¦à¥€)')
+    normalized.includes('enterprise package with (à¤¹à¤¿à¤‚à¤¦à¥€)')
   ) return 365;
   if (normalized.includes('premium')) return 30;
   if (normalized.includes('enterprise')) return 365;
@@ -382,9 +373,7 @@ export const getRemainingDays = (validTill) => {
 
 export const formatPackageNameForNavbar = (packageName = '') => {
   const name = String(packageName || '')
-    .trim()
-    .replace('Premium Package with (à¤¹à¤¿à¤‚à¤¦à¥€)', 'Enterprise Package with (à¤¹à¤¿à¤‚à¤¦à¥€)')
-    .replace('Premium Package (à¤¹à¤¿à¤‚à¤¦à¥€)', 'Enterprise Package with (à¤¹à¤¿à¤‚à¤¦à¥€)');
+    .trim();
   if (!name) return 'N/A';
   return name.replace(/\s*-\s*\d+\s*Days?\s*$/i, '').trim();
 };
@@ -542,12 +531,14 @@ export const formatDrawerFieldLabel = (label = '') => (
 export const formatDrawerFieldValue = (value) => {
   if (value === null || value === undefined || value === '') return '-';
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return `${value.length} items`;
+  if (typeof value === 'object') return 'Available';
   return String(value);
 };
 
 export const getDrawerDetailSections = (data = {}) => {
   const entries = Object.entries(data || {});
-  const hiddenKeys = new Set(['approvalStatus', 'profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates']);
+  const hiddenKeys = new Set(['approvalStatus', 'profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates', 'lastUploadedData']);
   const simpleFields = [];
   const groupedFields = [];
   const listFields = [];
@@ -572,7 +563,7 @@ export const getDrawerDetailSections = (data = {}) => {
   };
 };
 
-export const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS.filter((pkg) => !pkg.toLowerCase().includes('demo'));
+export const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 
 export const normalizePendingTypeLabel = (type) => {
   const raw = String(type || '').toLowerCase().trim();
