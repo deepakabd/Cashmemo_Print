@@ -9,7 +9,7 @@ const readStorageValue = (key, fallback) => {
   }
 };
 
-export const useAdminData = () => {
+export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } = {}) => {
   const [requests, setRequests] = useState([]);
   const [users, setUsers] = useState([]);
   const [feedback, setFeedback] = useState([]);
@@ -61,7 +61,7 @@ export const useAdminData = () => {
     return parsed && typeof parsed === 'object' ? parsed : {};
   });
 
-  const confirmAdminAction = (message) => window.confirm(message);
+  const confirmAdminAction = externalConfirmAdminAction || ((message) => window.confirm(message));
 
   const setActiveAdminTab = (nextTab) => {
     setActiveAdminTabState((prevTab) => {

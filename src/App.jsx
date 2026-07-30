@@ -28,6 +28,22 @@ import {
   getFeedbackSlaTone,
   getFeedbackWorkflowState,
 } from './utils/feedbackWorkflow';
+import {
+  formatDrawerFieldLabel,
+  formatDrawerFieldValue,
+  getCurrentDeviceInfo,
+  getDeviceStatusLabel,
+  getDrawerDetailSections,
+  getDrawerSummaryRows,
+  getFeedbackSlaDaysValue,
+  maskSecret,
+  normalizeLoginDevices,
+  sanitizeUserForCache,
+  sanitizeUsersForCache,
+  toTagList,
+  upsertStatusHistoryEntry,
+  upsertLoginDevice,
+} from './utils/adminUiHelpers';
 import { useAdminData } from './hooks/useAdminData';
 import { useApprovalQueue } from './hooks/useApprovalQueue';
 import { useCashmemoSelection } from './hooks/useCashmemoSelection';
@@ -386,7 +402,6 @@ const USER_LAST_UPLOADED_DATA_LIMIT = 10;
 const ONBOARDING_TOUR_STORAGE_KEY_PREFIX = 'cashmemoOnboardingTourSeen_';
 const WORKSPACE_MODE_STORAGE_KEY_PREFIX = 'cashmemoWorkspaceMode_';
 const ANNOUNCEMENTS_STORAGE_KEY = 'cashmemoAnnouncements';
-const USER_DEVICE_STORAGE_KEY = 'cashmemoDeviceId';
 
 const createDefaultAnnouncementDraft = () => ({
   title: '',
@@ -478,94 +493,6 @@ const matchesSmartSearch = (row, query) => {
 
   return SMART_SEARCH_FIELDS.some((field) => isFuzzySearchMatch(normalizedQuery, row?.[field]));
 };
-
-const createBrowserDeviceId = () => {
-  const randomPart = (typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `device-${randomPart}`;
-};
-
-const getCurrentDeviceId = () => {
-  try {
-    const savedId = localStorage.getItem(USER_DEVICE_STORAGE_KEY);
-    if (savedId) return savedId;
-    const nextId = createBrowserDeviceId();
-    localStorage.setItem(USER_DEVICE_STORAGE_KEY, nextId);
-    return nextId;
-  } catch {
-    return createBrowserDeviceId();
-  }
-};
-
-const getCurrentDeviceInfo = () => {
-  const nav = typeof navigator !== 'undefined' ? navigator : {};
-  const screenInfo = typeof window !== 'undefined' && window.screen
-    ? `${window.screen.width || 0}x${window.screen.height || 0}`
-    : 'unknown-screen';
-  const userAgent = String(nav.userAgent || 'Unknown browser');
-  const platform = String(nav.platform || 'Unknown platform');
-  const browserName = userAgent.includes('Edg/')
-    ? 'Microsoft Edge'
-    : userAgent.includes('Chrome/')
-      ? 'Chrome'
-      : userAgent.includes('Firefox/')
-        ? 'Firefox'
-        : userAgent.includes('Safari/')
-          ? 'Safari'
-          : 'Browser';
-
-  return {
-    deviceId: getCurrentDeviceId(),
-    deviceName: `${browserName} on ${platform}`,
-    browser: browserName,
-    platform,
-    screen: screenInfo,
-    userAgent,
-  };
-};
-
-const normalizeLoginDevices = (devices = []) => (
-  Array.isArray(devices)
-    ? devices
-      .filter((device) => device && typeof device === 'object')
-      .map((device) => ({
-        deviceId: String(device.deviceId || device.id || '').trim(),
-        deviceName: String(device.deviceName || device.name || 'Unknown device').trim(),
-        browser: String(device.browser || '').trim(),
-        platform: String(device.platform || '').trim(),
-        screen: String(device.screen || '').trim(),
-        userAgent: String(device.userAgent || '').trim(),
-        firstLoginAt: device.firstLoginAt || device.lastLoginAt || '',
-        lastLoginAt: device.lastLoginAt || device.firstLoginAt || '',
-        blocked: Boolean(device.blocked),
-        blockedAt: device.blockedAt || '',
-        unblockedAt: device.unblockedAt || '',
-      }))
-      .filter((device) => device.deviceId)
-    : []
-);
-
-const upsertLoginDevice = (devices = [], deviceInfo = {}, loggedInAt = new Date().toISOString()) => {
-  const normalizedDevices = normalizeLoginDevices(devices);
-  const deviceId = String(deviceInfo.deviceId || '').trim();
-  if (!deviceId) return normalizedDevices;
-  const existingDevice = normalizedDevices.find((device) => device.deviceId === deviceId);
-  const nextDevice = {
-    ...(existingDevice || {}),
-    ...deviceInfo,
-    deviceId,
-    firstLoginAt: existingDevice?.firstLoginAt || loggedInAt,
-    lastLoginAt: loggedInAt,
-    blocked: Boolean(existingDevice?.blocked),
-  };
-  return [
-    nextDevice,
-    ...normalizedDevices.filter((device) => device.deviceId !== deviceId),
-  ].slice(0, 12);
-};
-
-const getDeviceStatusLabel = (device = {}) => (device.blocked ? 'Blocked' : 'Allowed');
 
 const getAnnouncementScopeLabel = (scope = 'all') => {
   const normalized = String(scope || 'all').toLowerCase();
@@ -710,138 +637,6 @@ const getDictionaryDocId = (englishWord = '') => (
   encodeURIComponent(String(englishWord || '').trim().toLowerCase()).replace(/\./g, '%2E') || `word-${Date.now()}`
 );
 
-const sanitizeUserForCache = (user = {}) => {
-  if (!user || typeof user !== 'object') return user;
-  const nextUser = { ...user };
-  delete nextUser.pin;
-  return nextUser;
-};
-
-const sanitizeUsersForCache = (users = []) => (
-  Array.isArray(users) ? users.map((user) => sanitizeUserForCache(user)) : []
-);
-
-const maskSecret = (value = '', visibleCount = 0) => {
-  const text = String(value || '').trim();
-  if (!text) return 'Not stored';
-  const safeVisibleCount = Math.max(0, Number(visibleCount) || 0);
-  const maskedLength = Math.max(0, text.length - safeVisibleCount);
-  return `${'*'.repeat(maskedLength)}${text.slice(-safeVisibleCount)}`;
-};
-
-const toTagList = (value = '') => (
-  String(value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-);
-
-const upsertStatusHistoryEntry = (history = [], entry = {}) => {
-  const nextHistory = Array.isArray(history) ? [...history] : [];
-  const entryKey = String(entry.key || '').trim();
-  if (!entryKey) return nextHistory;
-  const existingIndex = nextHistory.findIndex((item) => item?.key === entryKey);
-  if (existingIndex >= 0) {
-    nextHistory[existingIndex] = { ...nextHistory[existingIndex], ...entry };
-  } else {
-    nextHistory.push(entry);
-  }
-  return nextHistory;
-};
-
-const getFeedbackSlaDaysValue = (item) => {
-  const createdAt = item?.createdAt || item?.date || '';
-  const createdDate = new Date(createdAt);
-  if (Number.isNaN(createdDate.getTime())) return 0;
-  return Math.max(0, Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24)));
-};
-
-const getDrawerSummaryRows = (drawer = {}, users = []) => {
-  const data = drawer?.data || {};
-  if (drawer?.type === 'detail' && /^User - /.test(drawer?.title || '')) {
-    const pendingUpdates = Object.entries(data?.pendingUpdates || {})
-      .filter(([, value]) => String(value?.status || '').toLowerCase() === 'pending')
-      .length;
-    const feedbackEntries = Array.isArray(data?.feedbackEntries) ? data.feedbackEntries.length : 0;
-    return [
-      { label: 'Dealer Code', value: data?.dealerCode || '-' },
-      { label: 'Role', value: data?.role || '-' },
-      { label: 'Status', value: data?.status || '-' },
-      { label: 'Package', value: data?.package || '-' },
-      { label: 'Valid Till', value: formatDisplayDate(data?.validTill) },
-      { label: 'Pending Requests', value: pendingUpdates || 0 },
-      { label: 'Dictionary Queue', value: Number(data?.dictionaryPendingCount || 0) },
-      { label: 'Support Messages', value: feedbackEntries },
-    ];
-  }
-  if (drawer?.type === 'approval') {
-    return [
-      { label: 'Dealer Code', value: drawer?.dealerCode || data?.dealerCode || '-' },
-      { label: 'Request Type', value: drawer?.typeLabel || drawer?.approvalType || drawer?.rawType || '-' },
-      { label: 'Requested At', value: formatDisplayDateTime(drawer?.requestedAt || data?.requestedAt) },
-      { label: 'Existing Users', value: users.filter((user) => String(user?.dealerCode || '').trim() === String(drawer?.dealerCode || '').trim()).length },
-    ];
-  }
-  if (drawer?.type === 'request') {
-    return [
-      { label: 'Dealer Code', value: data?.dealerCode || '-' },
-      { label: 'Dealer Name', value: data?.dealerName || '-' },
-      { label: 'Package', value: data?.package || '-' },
-      { label: 'Requested At', value: formatDisplayDateTime(data?.createdAt || data?.approvedAt) },
-    ];
-  }
-  return Object.entries(data || {})
-    .slice(0, 8)
-    .map(([label, value]) => ({
-      label,
-      value: typeof value === 'object' ? JSON.stringify(value) : String(value || '-'),
-    }));
-};
-
-const formatDrawerFieldLabel = (label = '') => (
-  String(label || '')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-);
-
-const formatDrawerFieldValue = (value) => {
-  if (value === null || value === undefined || value === '') return '-';
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (Array.isArray(value)) return `${value.length} items`;
-  if (typeof value === 'object') return 'Available';
-  return String(value);
-};
-
-const getDrawerDetailSections = (data = {}) => {
-  const entries = Object.entries(data || {});
-  const hiddenKeys = new Set(['approvalStatus', 'profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates', 'lastUploadedData']);
-  const simpleFields = [];
-  const groupedFields = [];
-  const listFields = [];
-
-  entries.forEach(([key, value]) => {
-    if (hiddenKeys.has(key)) return;
-    if (Array.isArray(value)) {
-      listFields.push({ key, value });
-      return;
-    }
-    if (value && typeof value === 'object') {
-      groupedFields.push({ key, value });
-      return;
-    }
-    simpleFields.push({ key, value });
-  });
-
-  return {
-    simpleFields,
-    groupedFields,
-    listFields,
-  };
-};
-
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 
 const normalizePendingTypeLabel = (type) => {
@@ -982,7 +777,7 @@ function App() {
     lastUpdatedAt: '',
     apiWords: [],
   });
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
   const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
   const onboardingAutoOpenedRef = useRef(false);
 //test the
@@ -1002,20 +797,48 @@ function App() {
       message: config.message || '',
       confirmLabel: config.confirmLabel || 'Confirm',
       onConfirm: typeof config.onConfirm === 'function' ? config.onConfirm : null,
+      onCancel: typeof config.onCancel === 'function' ? config.onCancel : null,
+      previewItems: Array.isArray(config.previewItems) ? config.previewItems : [],
+      previewTitle: config.previewTitle || '',
+      previewMoreText: config.previewMoreText || '',
+      dangerNote: config.dangerNote || '',
     });
   }, []);
 
   const closeConfirmDialog = useCallback(() => {
-    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, confirmLabel: 'Confirm' });
+    const callback = confirmDialog.onCancel;
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
+    if (typeof callback === 'function') {
+      callback();
+    }
+  }, [confirmDialog.onCancel]);
+
+  const resetConfirmDialog = useCallback(() => {
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
   }, []);
 
   const handleConfirmDialogSubmit = useCallback(() => {
     const callback = confirmDialog.onConfirm;
-    closeConfirmDialog();
+    resetConfirmDialog();
     if (typeof callback === 'function') {
       callback();
     }
-  }, [closeConfirmDialog, confirmDialog.onConfirm]);
+  }, [confirmDialog.onConfirm, resetConfirmDialog]);
+
+  const confirmAdminActionWithDialog = useCallback((config) => new Promise((resolve) => {
+    const normalizedConfig = typeof config === 'string' ? { message: config } : (config || {});
+    openConfirmDialog({
+      title: normalizedConfig.title || 'Admin Confirmation',
+      message: normalizedConfig.message || 'Continue with this admin action?',
+      confirmLabel: normalizedConfig.confirmLabel || 'Confirm',
+      previewItems: normalizedConfig.previewItems,
+      previewTitle: normalizedConfig.previewTitle,
+      previewMoreText: normalizedConfig.previewMoreText,
+      dangerNote: normalizedConfig.dangerNote,
+      onConfirm: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  }), [openConfirmDialog]);
 
   const openInputDialog = useCallback((config = {}) => {
     setInputDialog({
@@ -2351,6 +2174,10 @@ function App() {
     const adminImportRef = useRef(null);
     const dictionaryImportRef = useRef(null);
     const [adminItemsPerPage] = useState(30);
+    const [adminRowDensity, setAdminRowDensity] = useState(() => {
+      const savedDensity = localStorage.getItem('adminRowDensity');
+      return savedDensity === 'compact' ? 'compact' : 'comfortable';
+    });
     const [adminRoleMode, setAdminRoleMode] = useState('viewer');
     const [adminRoleLoading, setAdminRoleLoading] = useState(true);
     const {
@@ -2402,7 +2229,7 @@ function App() {
       setRegistrationStatusOverrides,
       confirmAdminAction,
       paginateAdminRows,
-    } = useAdminData();
+    } = useAdminData({ confirmAdminAction: confirmAdminActionWithDialog });
     const {
       selectedRequestIds,
       selectedApprovalIds,
@@ -2485,6 +2312,13 @@ function App() {
     const [auditSyncState, setAuditSyncState] = useState({ source: 'local fallback', lastSyncAt: '', detail: '' });
     const [auditSyncDisabled, setAuditSyncDisabled] = useState(false);
     const [bulkActionState, setBulkActionState] = useState({ active: false, label: '', processed: 0, total: 0, failures: [] });
+    const toggleAdminRowDensity = () => {
+      setAdminRowDensity((prev) => {
+        const next = prev === 'compact' ? 'comfortable' : 'compact';
+        localStorage.setItem('adminRowDensity', next);
+        return next;
+      });
+    };
     const activeAdminEmail = String(auth?.currentUser?.email || '').trim().toLowerCase();
 
     const resetBulkActionState = () => {
@@ -3223,7 +3057,7 @@ function App() {
     const approveRequest = async (id, options = {}) => {
       const req = requests.find((r) => r.id === id);
       if (!req) return { ok: false, reason: 'Registration request not found.' };
-      if (!options.skipConfirm && !confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
+      if (!options.skipConfirm && !(await confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         setRegistrationOverride(id, 'approved');
         const validity = computeValidityDates(req.package || '');
@@ -3304,7 +3138,7 @@ function App() {
     const rejectRequest = async (id, options = {}) => {
       const req = requests.find((r) => r.id === id);
       if (!req) return { ok: false, reason: 'Registration request not found.' };
-      if (!options.skipConfirm && !confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
+      if (!options.skipConfirm && !(await confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         setRegistrationOverride(id, 'rejected');
         const requestId = String(id || '');
@@ -3334,7 +3168,7 @@ function App() {
         return;
       }
       const normalizedDealerCode = normalizeDealerCode(newUser.dealerCode);
-      if (!confirmAdminAction(`Create manual user ${normalizedDealerCode}?`)) return;
+      if (!(await confirmAdminAction(`Create manual user ${normalizedDealerCode}?`))) return;
       try {
         const matchingUsers = findUsersByDealerCode(users, normalizedDealerCode);
         if (matchingUsers.length > 0) {
@@ -3372,7 +3206,7 @@ function App() {
         : users.find((u) => u.id === userOrId);
       if (!target) return { ok: false, reason: 'User not found.' };
       const nextStatus = target.status === 'active' ? 'disabled' : 'active';
-      if (!options.skipConfirm && !confirmAdminAction(`${nextStatus === 'disabled' ? 'Disable' : 'Enable'} ${target.dealerCode || 'this user'}?`)) return { ok: false, reason: 'Action cancelled.' };
+      if (!options.skipConfirm && !(await confirmAdminAction(`${nextStatus === 'disabled' ? 'Disable' : 'Enable'} ${target.dealerCode || 'this user'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         if (target.id) {
           await updateDoc(doc(db, 'users', target.id), {
@@ -3469,7 +3303,7 @@ function App() {
         pushToast('User not found.', 'error');
         return;
       }
-      if (!confirmAdminAction(`Save changes for ${targetUser.dealerCode || 'this user'}?`)) return;
+      if (!(await confirmAdminAction(`Save changes for ${targetUser.dealerCode || 'this user'}?`))) return;
       try {
         const fallbackValidity = computeValidityDates(editUser.package);
         const validFromIso = toIsoDate(editUser.validFrom) || fallbackValidity.validFrom;
@@ -3707,7 +3541,7 @@ function App() {
         pushToast(`Unsupported approval type: ${approval.type || 'unknown'}`, 'error');
         return { ok: false, reason: `Unsupported approval type: ${approval.type || 'unknown'}` };
       }
-      if (!options.skipConfirm && !confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
+      if (!options.skipConfirm && !(await confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (approvalType !== 'dictionary' && !targetUser?.id) {
@@ -3863,7 +3697,7 @@ function App() {
     const rejectUpdateRequest = async (approval, options = {}) => {
       if (!approval?.id) return { ok: false, reason: 'Approval request missing.' };
       const approvalType = normalizeApprovalType(approval.type);
-      if (!options.skipConfirm && !confirmAdminAction(`Reject ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`)) return { ok: false, reason: 'Action cancelled.' };
+      if (!options.skipConfirm && !(await confirmAdminAction(`Reject ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
         if (targetUser?.id) {
@@ -3950,7 +3784,12 @@ function App() {
 
     const deleteFeedbackItem = async (item) => {
       const targetUser = users.find((u) => u.id === item?.userId || String(u?.dealerCode || '').trim() === String(item?.dealerCode || '').trim());
-      if (!confirmAdminAction(`Delete feedback from ${item?.dealerCode || 'this user'}?`)) return;
+      if (!(await confirmAdminAction({
+        title: 'Delete Feedback',
+        message: `Delete feedback from ${item?.dealerCode || 'this user'}?`,
+        confirmLabel: 'Delete',
+        dangerNote: 'Deleted feedback cannot be recovered from this inbox.',
+      }))) return;
       try {
         if (item?.source !== 'userDoc' && item?.id && !String(item.id).startsWith('userfb-')) {
           try {
@@ -4148,7 +3987,26 @@ function App() {
         || (adminSubFilter === 'open' && !f.resolved);
       return isWithinAdminDateRange(f.createdAt || f.date) &&
         matchesSubFilter &&
-        matchesAdminSearch([f.dealerCode, f.dealerName, f.email, f.text, f.createdAt, f.date, f.read ? 'read' : 'unread', priority, f.resolved ? 'resolved' : 'open', workflowState, assignee, f.tags, f.followUpDate]);
+        matchesAdminSearch([
+          f.dealerCode,
+          f.dealerName,
+          f.mobile,
+          f.email,
+          f.text,
+          f.feedback,
+          feedbackReplies[f.id],
+          feedbackReplies[f.clientFeedbackId],
+          f.attachmentName,
+          f.createdAt,
+          f.date,
+          f.read ? 'read' : 'unread',
+          priority,
+          f.resolved ? 'resolved' : 'open',
+          workflowState,
+          assignee,
+          f.tags,
+          f.followUpDate,
+        ]);
     });
     const feedbackSlaSummary = {
       today: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? 999) <= 1).length,
@@ -4200,6 +4058,60 @@ function App() {
         message: item?.message || 'Uploaded data',
         createdAt: item?.createdAt || '',
       }));
+    const buildAdminRequestTimeline = (entry = {}) => {
+      const status = String(entry?.status || '').toLowerCase();
+      return [
+        { key: 'submitted', label: 'Submitted', at: entry?.requestedAt || entry?.createdAt || '', complete: Boolean(entry?.requestedAt || entry?.createdAt) },
+        { key: 'pending', label: 'Pending', at: entry?.requestedAt || entry?.createdAt || '', complete: ['pending', 'approved', 'rejected'].includes(status) },
+        {
+          key: status === 'rejected' ? 'rejected' : 'approved',
+          label: status === 'rejected' ? 'Rejected' : 'Approved',
+          at: status === 'rejected' ? entry?.rejectedAt || '' : entry?.approvedAt || '',
+          complete: status === 'approved' || status === 'rejected',
+          tone: status === 'rejected' ? 'danger' : 'success',
+        },
+        { key: 'reply', label: 'Reply Sent', at: entry?.adminReplyAt || '', complete: Boolean(entry?.adminReply), tone: 'info' },
+      ];
+    };
+    const getUserRequestTimelineRows = (user = {}) => (
+      Object.entries(user?.pendingUpdates || {}).map(([type, entry]) => ({
+        type,
+        status: entry?.status || user?.approvalStatus?.[type] || 'draft',
+        adminReply: entry?.adminReply || '',
+        timeline: buildAdminRequestTimeline(entry),
+      }))
+    );
+    const getUserSupportRows = (user = {}) => feedback
+      .filter((item) => item?.userId === user?.id || String(item?.dealerCode || '').trim() === String(user?.dealerCode || '').trim())
+      .slice(0, 6);
+    const getUserAdminActivityRows = (user = {}) => {
+      const dealerCode = String(user?.dealerCode || '').trim().toLowerCase();
+      const email = String(user?.email || '').trim().toLowerCase();
+      const userId = String(user?.id || '').trim().toLowerCase();
+      return auditTrail
+        .filter((item) => {
+          const haystack = [
+            item?.dealerCode,
+            item?.email,
+            item?.userId,
+            item?.message,
+            serializeSearchData(item?.payload),
+          ].join(' ').toLowerCase();
+          return Boolean(
+            (dealerCode && haystack.includes(dealerCode))
+            || (email && haystack.includes(email))
+            || (userId && haystack.includes(userId))
+          );
+        })
+        .slice(0, 6);
+    };
+    const serializeSearchData = (value) => {
+      try {
+        return JSON.stringify(value || '');
+      } catch {
+        return String(value || '');
+      }
+    };
     const dealerScorecards = users
       .map((user) => ({ user, health: getDealerHealthSummary(user) }))
       .sort((a, b) => b.health.score - a.health.score)
@@ -4214,7 +4126,7 @@ function App() {
     const filteredPendingRegistrationRequests = pendingRegistrationRequests.filter((r) =>
       isWithinAdminDateRange(r.createdAt || r.approvedAt) &&
       (adminSubFilter === 'all' || String(r.package || '') === adminSubFilter) &&
-      matchesAdminSearch([r.dealerCode, r.dealerName, r.mobile, r.email, r.package])
+      matchesAdminSearch([r.dealerCode, r.dealerName, r.mobile, r.email, r.package, r.utr, r.status, r.date, serializeSearchData(r)])
     );
     const filteredUsersList = (activeAdminTab === 'active-user' ? activeUsersList : users).filter((u) => {
       const matchesSubFilter = adminSubFilter === 'all'
@@ -4231,6 +4143,11 @@ function App() {
           u.package,
           u.status,
           u.role,
+          serializeSearchData(u.pendingUpdates),
+          serializeSearchData(u.approvalStatus),
+          serializeSearchData(u.profileData),
+          serializeSearchData(u.bankDetailsData),
+          serializeSearchData(u.feedbackEntries),
           ...normalizeLoginDevices(u.loginDevices).flatMap((device) => [
             device.deviceName,
             device.platform,
@@ -4243,7 +4160,7 @@ function App() {
     const filteredApprovals = nonDictionaryPendingApprovals.filter((a) =>
       isWithinAdminDateRange(a.requestedAt || a.approvedAt || a.rejectedAt) &&
       (adminSubFilter === 'all' || normalizeApprovalType(a.type) === adminSubFilter) &&
-      matchesAdminSearch([a.dealerCode, a.dealerName, a.type, a.requestedAt])
+      matchesAdminSearch([a.dealerCode, a.dealerName, a.type, a.status, a.requestedAt, getApprovalReplyMessage(a), serializeSearchData(a.payload)])
     );
     const activeDictionaryApprovals = dictionaryRequestView === 'duplicate'
       ? duplicateDictionaryApprovals
@@ -4329,15 +4246,6 @@ function App() {
     const downloadDictionaryTemplate = () => {
       exportRowsAsCsv('dictionary-template.csv', DICTIONARY_TEMPLATE_ROWS);
     };
-    const adminStats = [
-      { label: 'Pending Registration', value: pendingCount, tone: 'blue' },
-      { label: 'Pending Approval', value: nonDictionaryPendingApprovals.length, tone: 'amber' },
-      { label: 'Dictionary Requests', value: dictionaryPendingApprovals.length, tone: 'blue' },
-      { label: 'Active Users', value: activeUsers, tone: 'green' },
-      { label: 'Total Users', value: users.length, tone: 'navy' },
-      { label: 'Disabled Users', value: disabledUsers, tone: 'slate' },
-      { label: 'Unread Feedback', value: unreadFeedbackCount, tone: 'rose' },
-    ];
     const countItemsInDays = (items, getDateValue, days) => {
       const now = new Date();
       now.setHours(23, 59, 59, 999);
@@ -4350,6 +4258,21 @@ function App() {
         return !Number.isNaN(date.getTime()) && date >= start && date <= now;
       }).length;
     };
+    const rejectedRequestCount = [
+      ...requests.filter((item) => String(item?.status || '').toLowerCase() === 'rejected'),
+      ...updateApprovals.filter((item) => String(item?.status || '').toLowerCase() === 'rejected'),
+    ].length;
+    const todayActivityCount = countItemsInDays(auditTrail, (item) => item.createdAt, 0);
+    const adminStats = [
+      { label: 'Pending Registration', value: pendingCount, tone: 'blue' },
+      { label: 'Pending Approval', value: nonDictionaryPendingApprovals.length, tone: 'amber' },
+      { label: 'Unread Feedback', value: unreadFeedbackCount, tone: 'rose' },
+      { label: 'Expiring Users', value: expiringUsers.length, tone: 'amber' },
+      { label: 'Rejected Requests', value: rejectedRequestCount, tone: 'rose' },
+      { label: "Today's Activity", value: todayActivityCount, tone: 'green' },
+      { label: 'Active Users', value: activeUsers, tone: 'green' },
+      { label: 'Total Users', value: users.length, tone: 'navy' },
+    ];
     const dateSummaryCards = [
       { label: 'Today', value: countItemsInDays(requests, (item) => item.createdAt || item.approvedAt, 0) },
       { label: '7 Days', value: countItemsInDays(requests, (item) => item.createdAt || item.approvedAt, 7) },
@@ -4483,10 +4406,34 @@ function App() {
         : activeDrawer?.data || {};
     const activeDrawerDetailSections = getDrawerDetailSections(activeDrawerData);
     const activeSubFilterOptions = adminSubFilterOptions[activeAdminTab] || [{ value: 'all', label: 'All' }];
+    const getBulkPreviewItems = (items = []) => items.slice(0, 5).map((item, index) => {
+      if (typeof item === 'string') {
+        const request = requests.find((row) => row.id === item) || updateApprovals.find((row) => row.id === item);
+        return request
+          ? `${request.dealerCode || request.email || item} - ${request.dealerName || request.type || request.package || 'Request'}`
+          : item;
+      }
+      return [
+        item?.dealerCode,
+        item?.dealerName,
+        item?.type,
+        item?.englishWord || item?.english || item?.word,
+        item?.email,
+      ].filter(Boolean).join(' - ') || `Row ${index + 1}`;
+    });
+    const confirmBulkAdminAction = async ({ action, count, items, tone = 'normal' }) => confirmAdminAction({
+      title: 'Confirm Bulk Action',
+      message: `You are ${action} ${count} record${count === 1 ? '' : 's'}. Continue?`,
+      confirmLabel: 'Continue',
+      previewTitle: 'Preview',
+      previewItems: getBulkPreviewItems(items),
+      previewMoreText: count > 5 ? `+${count - 5} more selected records` : '',
+      dangerNote: tone === 'danger' ? 'This action can affect multiple users/requests at once.' : '',
+    });
 
     const bulkApproveRegistrations = async () => {
       if (selectedRequestIds.length === 0) return;
-      if (!confirmAdminAction(`Approve ${selectedRequestIds.length} selected registration requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'approving', count: selectedRequestIds.length, items: selectedRequestIds }))) return;
       await runBulkAdminAction(
         'Approve registrations',
         selectedRequestIds,
@@ -4506,7 +4453,7 @@ function App() {
     };
     const bulkRejectRegistrations = async () => {
       if (selectedRequestIds.length === 0) return;
-      if (!confirmAdminAction(`Reject ${selectedRequestIds.length} selected registration requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'rejecting', count: selectedRequestIds.length, items: selectedRequestIds, tone: 'danger' }))) return;
       await runBulkAdminAction(
         'Reject registrations',
         selectedRequestIds,
@@ -4527,7 +4474,7 @@ function App() {
     const bulkApproveUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
-      if (!confirmAdminAction(`Approve ${targets.length} selected update requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'approving', count: targets.length, items: targets }))) return;
       await runBulkAdminAction(
         'Approve updates',
         targets,
@@ -4546,7 +4493,7 @@ function App() {
     const bulkRejectUpdates = async () => {
       const targets = filteredApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
-      if (!confirmAdminAction(`Reject ${targets.length} selected update requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'rejecting', count: targets.length, items: targets, tone: 'danger' }))) return;
       await runBulkAdminAction(
         'Reject updates',
         targets,
@@ -4565,7 +4512,7 @@ function App() {
     const bulkApproveDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
-      if (!confirmAdminAction(`Approve ${targets.length} selected dictionary requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'approving', count: targets.length, items: targets }))) return;
       await runBulkAdminAction(
         'Approve dictionary requests',
         targets,
@@ -4584,7 +4531,7 @@ function App() {
     const bulkRejectDictionaryRequests = async () => {
       const targets = filteredDictionaryApprovals.filter((item) => selectedApprovalIds.includes(item.id));
       if (targets.length === 0) return;
-      if (!confirmAdminAction(`Reject ${targets.length} selected dictionary requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'rejecting', count: targets.length, items: targets, tone: 'danger' }))) return;
       await runBulkAdminAction(
         'Reject dictionary requests',
         targets,
@@ -4602,7 +4549,7 @@ function App() {
     };
     const bulkApproveApiWords = async () => {
       if (selectedApiWordApprovals.length === 0) return;
-      if (!confirmAdminAction(`Approve ${selectedApiWordApprovals.length} selected API word requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'approving', count: selectedApiWordApprovals.length, items: selectedApiWordApprovals }))) return;
       await runBulkAdminAction(
         'Approve API word requests',
         selectedApiWordApprovals,
@@ -4622,7 +4569,7 @@ function App() {
     };
     const bulkRejectApiWords = async () => {
       if (selectedApiWordApprovals.length === 0) return;
-      if (!confirmAdminAction(`Reject ${selectedApiWordApprovals.length} selected API word requests?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'rejecting', count: selectedApiWordApprovals.length, items: selectedApiWordApprovals, tone: 'danger' }))) return;
       await runBulkAdminAction(
         'Reject API word requests',
         selectedApiWordApprovals,
@@ -4643,7 +4590,7 @@ function App() {
     const bulkToggleUsers = async () => {
       const targets = filteredUsersList.filter((u) => selectedUserTokens.includes(resolveEditToken(u)));
       if (targets.length === 0) return;
-      if (!confirmAdminAction(`Toggle status for ${targets.length} selected users?`)) return;
+      if (!(await confirmBulkAdminAction({ action: 'toggling status for', count: targets.length, items: targets, tone: 'danger' }))) return;
       await runBulkAdminAction(
         'Toggle user status',
         targets,
@@ -4669,6 +4616,15 @@ function App() {
         return;
       }
       const shouldBlock = !targetDevice.blocked;
+      const deviceLabel = targetDevice.deviceName || targetDevice.platform || deviceId;
+      if (!(await confirmAdminAction({
+        title: shouldBlock ? 'Block Device' : 'Unblock Device',
+        message: `${shouldBlock ? 'Block' : 'Unblock'} device "${deviceLabel}" for ${user.dealerCode || user.email || 'this user'}?`,
+        confirmLabel: shouldBlock ? 'Block Device' : 'Unblock Device',
+        dangerNote: shouldBlock ? 'Blocked device will lose access until an admin unblocks it.' : '',
+      }))) {
+        return;
+      }
       const updatedAt = new Date().toISOString();
       const loginDevices = devices.map((device) => (
         device.deviceId === deviceId
@@ -4785,7 +4741,7 @@ function App() {
     }, [apiWordTotalPages]);
 
     return (
-      <div className="placeholder-container admin-panel">
+      <div className={`placeholder-container admin-panel admin-panel--${adminRowDensity}`}>
         <div className="admin-header">
           <div className="admin-header-copy">
             <div className="admin-kicker">Control Center</div>
@@ -4926,6 +4882,15 @@ function App() {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
+            <button
+              type="button"
+              className="admin-density-toggle"
+              onClick={toggleAdminRowDensity}
+              aria-pressed={adminRowDensity === 'compact'}
+              title="Toggle table row density"
+            >
+              {adminRowDensity === 'compact' ? 'Compact' : 'Comfortable'}
+            </button>
             <button className="admin-ghost-btn" onClick={saveCurrentAdminView}>Save View</button>
             {activeAdminTab === 'pending-registration' && (
               <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('pending-registrations.csv', filteredPendingRegistrationRequests)}>Export CSV</button>
@@ -5487,6 +5452,16 @@ function App() {
                           <td>{f.email || '-'}</td>
                           <td>
                             <div>{f.text || '-'}</div>
+                            {f.attachmentDataUrl && (
+                              <a
+                                className="support-attachment-link"
+                                href={f.attachmentDataUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Screenshot: {f.attachmentName || 'attachment'}
+                              </a>
+                            )}
                             {feedbackTags.length > 0 && (
                               <div className="admin-feedback-tags">
                                 {feedbackTags.map((tag) => (
@@ -5499,10 +5474,22 @@ function App() {
                                 <div className="admin-feedback-chat-message user-message">
                                   <strong>User:</strong>
                                   <span>{f.text || '-'}</span>
+                                  <small>{f.read ? 'Read by admin' : 'Sent'}</small>
+                                  {f.attachmentDataUrl && (
+                                    <a
+                                      className="support-attachment-link"
+                                      href={f.attachmentDataUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      Screenshot: {f.attachmentName || 'attachment'}
+                                    </a>
+                                  )}
                                 </div>
                                 <div className="admin-feedback-chat-message admin-message">
                                   <strong>Admin:</strong>
                                   <span>{replyText}</span>
+                                  <small>Replied</small>
                                 </div>
                               </div>
                             )}
@@ -5589,10 +5576,22 @@ function App() {
                                 <strong>User:</strong>
                                 <span>{historyItem.text || historyItem.feedback || 'No message content.'}</span>
                                 <small>{formatDisplayDate(historyItem.createdAt || historyItem.date)}</small>
+                                <small>{historyItem.read ? 'Read by admin' : 'Sent'}</small>
+                                {historyItem.attachmentDataUrl && (
+                                  <a
+                                    className="support-attachment-link"
+                                    href={historyItem.attachmentDataUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Screenshot: {historyItem.attachmentName || 'attachment'}
+                                  </a>
+                                )}
                               </div>
                               <div className="admin-feedback-chat-message admin-message">
                                 <strong>Admin:</strong>
                                 <span>{replyText || 'No reply yet.'}</span>
+                                {replyText && <small>Replied</small>}
                               </div>
                               <div style={{ marginTop: '8px' }}>
                                 <button
@@ -5968,13 +5967,18 @@ function App() {
               </div>
               <div className="admin-drawer-summary-grid">
                 {getDrawerSummaryRows({
-                  ...activeDrawer,
-                  data: activeDrawerData,
-                  typeLabel: activeDrawer?.type === 'approval' ? normalizeApprovalType(viewApproval?.type) : '',
-                  rawType: viewApproval?.type || '',
-                  requestedAt: viewApproval?.requestedAt || viewRequest?.createdAt || '',
-                  dealerCode: viewApproval?.dealerCode || viewRequest?.dealerCode || activeDrawerData?.dealerCode || '',
-                }, users).map((item) => (
+                  drawer: {
+                    ...activeDrawer,
+                    data: activeDrawerData,
+                    typeLabel: activeDrawer?.type === 'approval' ? normalizeApprovalType(viewApproval?.type) : '',
+                    rawType: viewApproval?.type || '',
+                    requestedAt: viewApproval?.requestedAt || viewRequest?.createdAt || '',
+                    dealerCode: viewApproval?.dealerCode || viewRequest?.dealerCode || activeDrawerData?.dealerCode || '',
+                  },
+                  users,
+                  formatDisplayDate,
+                  formatDisplayDateTime,
+                }).map((item) => (
                   <div key={`${activeDrawer.noteKey}-${item.label}`} className="admin-drawer-summary-card">
                     <span>{item.label}</span>
                     <strong>{item.value}</strong>
@@ -6010,15 +6014,37 @@ function App() {
                   </div>
                   <div className="admin-drawer-section">
                     <h4>Request History</h4>
-                    <ul>
-                      {Object.entries(activeDrawerData?.approvalStatus || {}).length === 0 ? (
-                        <li>No approval history recorded.</li>
+                    {(() => {
+                      const rows = getUserRequestTimelineRows(activeDrawerData);
+                      return rows.length === 0 ? (
+                        <div className="admin-drawer-empty">No approval history recorded.</div>
                       ) : (
-                        Object.entries(activeDrawerData?.approvalStatus || {}).map(([key, value]) => (
-                          <li key={`${activeDrawer.noteKey}-${key}`}>{key}: {String(value || '-')}</li>
-                        ))
-                      )}
-                    </ul>
+                        <div className="admin-request-timeline">
+                          {rows.map((row) => (
+                            <div key={`${activeDrawer.noteKey}-request-${row.type}`} className="admin-request-row">
+                              <div className="admin-request-row-head">
+                                <strong>{formatDrawerFieldLabel(row.type)}</strong>
+                                <span className={`admin-status-chip admin-status-chip--${String(row.status || '').toLowerCase() === 'rejected' ? 'danger' : String(row.status || '').toLowerCase() === 'approved' ? 'success' : 'warning'}`}>
+                                  {row.status || 'draft'}
+                                </span>
+                              </div>
+                              <div className="admin-request-steps">
+                                {row.timeline.map((step) => (
+                                  <div
+                                    key={`${row.type}-${step.key}`}
+                                    className={`admin-request-step ${step.complete ? 'is-complete' : ''} ${step.tone ? `admin-request-step--${step.tone}` : ''}`}
+                                  >
+                                    <strong>{step.label}</strong>
+                                    <span>{formatDisplayDateTime(step.at) || (step.complete ? 'Done' : 'Waiting')}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              {row.adminReply && <p className="admin-request-reply">Reply: {row.adminReply}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="admin-drawer-section">
                     <h4>User Lifecycle</h4>
@@ -6043,6 +6069,60 @@ function App() {
                           ))
                         );
                       })()}
+                    </ul>
+                  </div>
+                  <div className="admin-drawer-section">
+                    <h4>Support / Feedback</h4>
+                    {(() => {
+                      const supportRows = getUserSupportRows(activeDrawerData);
+                      return supportRows.length === 0 ? (
+                        <div className="admin-drawer-empty">No support tickets recorded.</div>
+                      ) : (
+                        <div className="admin-support-list">
+                          {supportRows.map((item) => {
+                            const replyText = feedbackReplies[item.id] || feedbackReplies[item.clientFeedbackId];
+                            return (
+                              <div key={`${activeDrawer.noteKey}-support-${item.id || item.clientFeedbackId}`} className="admin-support-row">
+                                <strong>{item.text || item.feedback || 'No message content.'}</strong>
+                                <span>{formatDisplayDateTime(item.createdAt || item.date)} | {replyText ? 'Replied' : item.read ? 'Read' : 'Sent'}</span>
+                                {item.attachmentDataUrl && (
+                                  <a className="support-attachment-link" href={item.attachmentDataUrl} target="_blank" rel="noopener noreferrer">
+                                    Screenshot: {item.attachmentName || 'attachment'}
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div className="admin-drawer-section">
+                    <h4>Login Devices</h4>
+                    <ul>
+                      {normalizeLoginDevices(activeDrawerData?.loginDevices).length === 0 ? (
+                        <li>No device login recorded.</li>
+                      ) : (
+                        normalizeLoginDevices(activeDrawerData?.loginDevices).map((device) => (
+                          <li key={`${activeDrawer.noteKey}-device-${device.deviceId}`}>
+                            {device.deviceName || device.platform || 'Device'}: {device.blocked ? 'Blocked' : 'Allowed'} | {formatDisplayDateTime(device.lastLoginAt || device.updatedAt)}
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                  <div className="admin-drawer-section">
+                    <h4>Recent Activity</h4>
+                    <ul>
+                      {getUserAdminActivityRows(activeDrawerData).length === 0 ? (
+                        <li>No recent activity recorded.</li>
+                      ) : (
+                        getUserAdminActivityRows(activeDrawerData).map((item) => (
+                          <li key={`${activeDrawer.noteKey}-activity-${item.id}`}>
+                            {formatDisplayDateTime(item.createdAt)}: {item.message}
+                          </li>
+                        ))
+                      )}
                     </ul>
                   </div>
                 </div>
@@ -6269,8 +6349,14 @@ function App() {
                     pagedDeletedUsers.map((user, index) => (
                       <tr key={`${user.id || user.dealerCode}-${index}`}>
                         <td>{user.dealerCode || '-'}</td>
-                        <td>{user.dealerName || '-'}</td>
-                        <td>{formatDisplayDate(user.deletedAt)}</td>
+                        <td>
+                          <div className="admin-recycle-user">
+                            <strong>{user.dealerName || '-'}</strong>
+                            <span>{user.mobile || user.email || '-'}</span>
+                            <span>{user.package || '-'} | {user.status || '-'}</span>
+                          </div>
+                        </td>
+                        <td>{formatDisplayDateTime(user.deletedAt)}</td>
                         <td>{user.deletedBy || '-'}</td>
                         <td>{user.deleteReason || '-'}</td>
                         <td>{Number(user.restoreCount || 0)}</td>
@@ -6829,28 +6915,46 @@ function App() {
     setCompactWorkspaceMode((prev) => !prev);
   };
 
+  const confirmLargeBulkAction = useCallback((label, count, onConfirm) => {
+    const safeCount = Number(count || 0);
+    if (safeCount <= 50) {
+      onConfirm();
+      return;
+    }
+
+    openConfirmDialog({
+      title: 'Confirm Bulk Action',
+      message: `You are ${label} ${safeCount} records. Continue?`,
+      confirmLabel: 'Continue',
+      onConfirm,
+    });
+  }, [openConfirmDialog]);
+
   const exportRowsToCsvFile = (filename, rows, exportHeaders = visibleHeaders) => {
     if (!Array.isArray(rows) || rows.length === 0) {
       pushToast('No data available to export.', 'info');
       return;
     }
-    const headersToUse = Array.isArray(exportHeaders) && exportHeaders.length > 0 ? exportHeaders : Object.keys(rows[0] || {});
-    const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const csvLines = [
-      headersToUse.map(escapeCell).join(','),
-      ...rows.map((row) => headersToUse.map((header) => escapeCell(row?.[header])).join(',')),
-    ];
-    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    pushToast(`Exported ${rows.length} rows to ${filename}`, 'success');
-    logRecentActivity(`Exported ${rows.length} rows as ${filename}`);
+
+    confirmLargeBulkAction('exporting', rows.length, () => {
+      const headersToUse = Array.isArray(exportHeaders) && exportHeaders.length > 0 ? exportHeaders : Object.keys(rows[0] || {});
+      const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const csvLines = [
+        headersToUse.map(escapeCell).join(','),
+        ...rows.map((row) => headersToUse.map((header) => escapeCell(row?.[header])).join(',')),
+      ];
+      const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      pushToast(`Exported ${rows.length} rows to ${filename}`, 'success');
+      logRecentActivity(`Exported ${rows.length} rows as ${filename}`);
+    });
   };
 
   const getActiveFilterFilenamePart = () => {
@@ -7092,9 +7196,16 @@ function App() {
       }
     logRecentActivity(`Printed cashmemo header layout (${cashmemoLayoutPageSize} - ${cashmemoLayoutPageType} - ${cashmemoLayoutLanguage})`);
   };
-  const handlePrintCashmemo = async () => {
+  const handlePrintCashmemo = async ({ skipBulkConfirm = false } = {}) => {
       if (selectedCustomerIds.length === 0) {
         pushToast('Please select at least one cashmemo to print.', 'info');
+        return;
+      }
+
+      if (!skipBulkConfirm && selectedCustomerIds.length > 50) {
+        confirmLargeBulkAction('printing', selectedCustomerIds.length, () => {
+          void handlePrintCashmemo({ skipBulkConfirm: true });
+        });
         return;
       }
 
@@ -8085,7 +8196,19 @@ function App() {
     ) => {
       if (!item) return;
       const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
-      if (!confirmAction(`Restore ${item.dealerCode || 'this user'} from recycle bin?`)) return;
+      const confirmed = await confirmAction({
+        title: 'Restore Deleted User',
+        message: `Restore ${item.dealerCode || 'this user'} from recycle bin?`,
+        confirmLabel: 'Restore User',
+        previewTitle: 'Restore Preview',
+        previewItems: [
+          `Dealer: ${item.dealerCode || '-'} ${item.dealerName ? `- ${item.dealerName}` : ''}`,
+          `Deleted by: ${item.deletedBy || '-'}`,
+          `Deleted at: ${formatDisplayDateTime(item.deletedAt) || '-'}`,
+          `Reason: ${item.deleteReason || '-'}`,
+        ],
+      });
+      if (!confirmed) return;
 
       const nextBin = (Array.isArray(currentDeletedUsersBin) ? currentDeletedUsersBin : []).filter(
         (user) => !(user.id === item.id && user.dealerCode === item.dealerCode),
@@ -8159,7 +8282,20 @@ function App() {
     ) => {
       if (!item) return;
       const confirmAction = typeof confirmFn === 'function' ? confirmFn : window.confirm;
-      if (!confirmAction(`Permanently remove ${item.dealerCode || 'this deleted user'} from recycle bin?`)) return;
+      const confirmed = await confirmAction({
+        title: 'Permanent Delete',
+        message: `Permanently remove ${item.dealerCode || 'this deleted user'} from recycle bin?`,
+        confirmLabel: 'Permanently Delete',
+        dangerNote: 'This removes the recycle-bin copy and cannot be restored from this screen.',
+        previewTitle: 'Deleting',
+        previewItems: [
+          `Dealer: ${item.dealerCode || '-'} ${item.dealerName ? `- ${item.dealerName}` : ''}`,
+          `Deleted by: ${item.deletedBy || '-'}`,
+          `Deleted at: ${formatDisplayDateTime(item.deletedAt) || '-'}`,
+          `Reason: ${item.deleteReason || '-'}`,
+        ],
+      });
+      if (!confirmed) return;
 
       const nextBin = (Array.isArray(currentDeletedUsersBin) ? currentDeletedUsersBin : []).filter(
         (user) => !(user.id === item.id && user.dealerCode === item.dealerCode),
@@ -9198,6 +9334,48 @@ function App() {
       : showHomeInfo ? 'home'
       : '';
   const updateInboxCount = pendingRequestCount + pendingDictionaryCount + contactReplyCount + (planUpgradeReplyText ? 1 : 0);
+  const userNotificationItems = [
+    isPlanExpired ? {
+      id: 'plan-expired',
+      title: 'Plan expired',
+      detail: loggedInUser?.validTill ? `Expired on ${formatDisplayDate(loggedInUser.validTill)}` : 'Renewal required to continue tools.',
+      tone: 'danger',
+      actionLabel: 'Renew Now',
+      action: { onClick: handleUpgradePlanOpen, viewKey: 'upgradePlan' },
+    } : null,
+    planUpgradeReplyText ? {
+      id: 'plan-reply',
+      title: 'Plan upgrade reply',
+      detail: planUpgradeReplyText,
+      tone: 'info',
+      actionLabel: 'Open History',
+      action: { onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true },
+    } : null,
+    ...pendingUserApprovalTypes.map((type) => ({
+      id: `pending-${type}`,
+      title: `${type} request pending`,
+      detail: 'Admin approval ka wait hai.',
+      tone: 'pending',
+      actionLabel: 'View History',
+      action: { onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true },
+    })),
+    pendingDictionaryCount > 0 ? {
+      id: 'dictionary-pending',
+      title: `${pendingDictionaryCount} dictionary request pending`,
+      detail: 'Hindi dictionary updates admin approval mein hain.',
+      tone: 'pending',
+      actionLabel: 'Open Dictionary',
+      action: { onClick: handleDictionaryOpen, viewKey: 'dictionaryUpdate' },
+    } : null,
+    ...contactReplyItems.filter((item) => !item.read).slice(0, 3).map((item) => ({
+      id: `reply-${item.replyId}`,
+      title: 'Admin reply received',
+      detail: String(item.reply || '').slice(0, 90) || 'Support reply available.',
+      tone: 'unread',
+      actionLabel: 'Open Support',
+      action: { onClick: handleContactOpen, viewKey: 'support' },
+    })),
+  ].filter(Boolean);
   const userMenuBadgeCount = updateInboxCount > 0 ? (updateInboxCount > 9 ? '9+' : updateInboxCount) : '';
   const userRole = String(loggedInUser?.role || 'user').toLowerCase();
   const profileData = loggedInUser?.profileData || {};
@@ -9950,6 +10128,7 @@ function App() {
                     pendingRequestCount={pendingRequestCount}
                     contactReplyCount={contactReplyCount}
                     updateInboxCount={updateInboxCount}
+                    userNotificationItems={userNotificationItems}
                     primaryQuickAction={primaryQuickAction}
                     secondaryQuickAction={secondaryQuickAction}
                     recommendedAction={recommendedAction}

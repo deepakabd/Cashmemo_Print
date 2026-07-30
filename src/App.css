@@ -727,6 +727,10 @@
   background: rgba(9, 21, 38, 0.24);
 }
 
+.dropdown-menu__section--notifications {
+  background: rgba(13, 45, 78, 0.22);
+}
+
 .dropdown-menu__section-title {
   font-size: 0.78rem;
   font-weight: 700;
@@ -924,6 +928,58 @@
 .dropdown-menu__empty-state {
   margin: 0 16px 10px;
   background: rgba(11, 33, 59, 0.38);
+}
+
+.dropdown-menu__notification-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+.dropdown-menu__notification {
+  width: 100%;
+  display: grid !important;
+  gap: 4px;
+  padding: 10px 12px !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 10px !important;
+  background: rgba(255,255,255,0.06) !important;
+  text-align: left !important;
+}
+
+.dropdown-menu__notification:hover {
+  background: rgba(255,255,255,0.12) !important;
+}
+
+.dropdown-menu__notification strong {
+  color: #fff;
+  font-size: 0.78rem;
+}
+
+.dropdown-menu__notification span {
+  color: #dbe7ff;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.dropdown-menu__notification em {
+  color: #a9c4ff;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.dropdown-menu__notification--danger {
+  border-color: rgba(255, 77, 79, 0.35) !important;
+}
+
+.dropdown-menu__notification--pending {
+  border-color: rgba(255, 176, 32, 0.35) !important;
+}
+
+.dropdown-menu__notification--unread,
+.dropdown-menu__notification--info {
+  border-color: rgba(117, 196, 255, 0.35) !important;
 }
 
 .dropdown-menu__contact-actions {
@@ -1521,6 +1577,79 @@
   border-radius: 14px;
   color: #4b5563;
   background: #fafafa;
+}
+
+.admin-chat-message-status {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.admin-chat-attachment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-chat-attachment-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #1f2937;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.admin-chat-attachment-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.admin-chat-attachment-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.admin-chat-attachment-row button {
+  border: 0;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.support-attachment-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 6px;
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.support-attachment-link:hover {
+  text-decoration: underline;
 }
 
 .admin-feedback-chat {
@@ -4378,6 +4507,54 @@
   color: #4c607d;
 }
 
+.user-profile-request-timeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.user-profile-request-step {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #dbe6f4;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.user-profile-request-step.is-complete {
+  border-color: #94c7a4;
+  background: #f0fdf4;
+}
+
+.user-profile-request-step--danger.is-complete {
+  border-color: #f3a5a5;
+  background: #fff1f2;
+}
+
+.user-profile-request-step--info.is-complete {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.user-profile-request-step strong,
+.user-profile-request-step span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.user-profile-request-step strong {
+  color: #163d73;
+  font-size: 11px;
+}
+
+.user-profile-request-step span {
+  margin-top: 3px;
+  color: #51647d;
+  font-size: 10px;
+}
+
 .home-layout {
   display: grid;
   grid-template-columns: repeat(3, minmax(220px, 1fr));
@@ -4655,6 +4832,47 @@
   margin: 0 0 14px;
   color: #536b87;
   line-height: 1.6;
+}
+
+.app-dialog__preview-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #dbe7f6;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.app-dialog__preview-list strong {
+  color: #173f70;
+  font-size: 12px;
+}
+
+.app-dialog__preview-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.app-dialog__preview-list span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-dialog__danger-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #fecdd3;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .app-dialog__input {
@@ -5229,12 +5447,20 @@
 }
 
 .admin-toolbar {
+  position: sticky;
+  top: 8px;
+  z-index: 60;
   display: flex;
   justify-content: space-between;
   align-items: end;
   gap: 12px;
   margin: 0 0 12px;
-  padding: 0 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(207, 220, 238, 0.92);
+  border-radius: 14px;
+  background: rgba(248, 251, 255, 0.96);
+  box-shadow: 0 10px 24px rgba(20, 53, 89, 0.08);
+  backdrop-filter: blur(8px);
 }
 
 .admin-toolbar-actions {
@@ -5243,6 +5469,23 @@
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.admin-density-toggle {
+  border: 1px solid #c9d9ec;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c447d;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 9px 12px;
+}
+
+.admin-density-toggle[aria-pressed="true"] {
+  border-color: #1f4fb2;
+  background: #e9f1ff;
+  color: #123f78;
 }
 
 .admin-saved-views {
@@ -5528,6 +5771,24 @@
   font-size: 12px;
 }
 
+.admin-panel--compact .admin-table th,
+.admin-panel--compact .admin-table td {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.admin-panel--compact .admin-actions {
+  gap: 4px;
+}
+
+.admin-panel--compact .admin-ghost-btn,
+.admin-panel--compact .feedback-read-btn,
+.admin-panel--compact .feedback-unread-btn,
+.admin-panel--compact .feedback-delete-btn {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
 .admin-table thead th {
   background: linear-gradient(180deg, #eff5ff 0%, #e6efff 100%);
   color: #0f3f9f;
@@ -5735,6 +5996,21 @@
   background: #fbfdff;
 }
 
+.admin-recycle-user {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-recycle-user strong {
+  color: #123d77;
+  font-size: 12px;
+}
+
+.admin-recycle-user span {
+  color: #5f7a97;
+  font-size: 11px;
+}
+
 .admin-device-meta {
   display: grid;
   gap: 3px;
@@ -5800,15 +6076,27 @@
   color: #17653a;
 }
 
+.admin-status-chip--success {
+  background: #e4f8ea;
+  color: #17653a;
+}
+
 .admin-status-chip--disabled {
   background: #eceff3;
   color: #4a5565;
 }
 
 .admin-status-chip--expired,
-.admin-status-chip--amber {
+.admin-status-chip--amber,
+.admin-status-chip--warning {
   background: #fff1da;
   color: #995c00;
+}
+
+.admin-status-chip--danger,
+.admin-status-chip--rose {
+  background: #ffe4e6;
+  color: #a1122a;
 }
 
 .feedback-status-stack {
@@ -5946,6 +6234,88 @@
 
 .admin-drawer-section li + li {
   margin-top: 6px;
+}
+
+.admin-request-timeline,
+.admin-support-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-request-row,
+.admin-support-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dce7f4;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.admin-request-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-request-row-head strong,
+.admin-support-row strong {
+  color: #123d77;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.admin-request-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.admin-request-step {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #e1e9f5;
+  border-radius: 9px;
+  background: #f8fbff;
+}
+
+.admin-request-step.is-complete {
+  border-color: #a7d7b6;
+  background: #f0fdf4;
+}
+
+.admin-request-step--danger.is-complete {
+  border-color: #f2a7ad;
+  background: #fff1f2;
+}
+
+.admin-request-step--info.is-complete {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.admin-request-step strong,
+.admin-request-step span,
+.admin-support-row span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.admin-request-step strong {
+  color: #173f70;
+  font-size: 10px;
+}
+
+.admin-request-step span,
+.admin-request-reply,
+.admin-support-row span {
+  color: #5f7a97;
+  font-size: 11px;
+}
+
+.admin-request-reply {
+  margin: 0;
 }
 
 .admin-drawer-field-list {
