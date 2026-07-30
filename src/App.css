@@ -100,9 +100,22 @@
 }
 
 .data-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
+}
+
+.data-table th,
+.data-table td {
+  border: 1px solid #c9d4e2;
+  padding: 8px;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .data-table thead th {
@@ -112,16 +125,67 @@
   background: #f5f9ff;
 }
 
-.data-table__sticky-col {
+.data-table__sticky-col,
+.data-table__sticky-select,
+.data-table__sticky-first {
   position: sticky;
-  left: 0;
-  z-index: 2;
   background: #fff;
 }
 
-.data-table thead .data-table__sticky-col {
+.data-table__sticky-col,
+.data-table__sticky-select {
+  left: 0;
+  z-index: 2;
+}
+
+.data-table__sticky-first {
+  left: 48px;
+  z-index: 2;
+  box-shadow: 7px 0 12px rgba(16, 34, 58, 0.08);
+}
+
+.data-table thead .data-table__sticky-col,
+.data-table thead .data-table__sticky-select {
   z-index: 4;
   background: #f5f9ff;
+}
+
+.data-table thead .data-table__sticky-first {
+  z-index: 5;
+  background: #f5f9ff;
+}
+
+.data-table__select-cell {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  text-align: center;
+}
+
+.data-table__header-label {
+  display: block;
+  padding-right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.data-table__resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 8px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 6;
+}
+
+.data-table__resize-handle:hover,
+.data-table__resize-handle:focus-visible {
+  background: rgba(28, 113, 216, 0.18);
+  outline: none;
 }
 
 /* Navbar styles */
@@ -2856,13 +2920,7 @@
 
 .table-controls {
   display: grid;
-  grid-template-columns:
-    minmax(220px, 1fr)
-    repeat(2, minmax(145px, 0.7fr))
-    minmax(145px, 0.62fr)
-    minmax(110px, 0.45fr)
-    minmax(96px, auto)
-    minmax(136px, auto);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   align-items: end;
   gap: 8px;
   margin-bottom: 12px;
@@ -2875,6 +2933,11 @@
   align-items: flex-start;
   gap: 4px;
   min-width: 0;
+}
+
+.table-control-group--smart-search {
+  grid-column: span 2;
+  align-self: stretch;
 }
 
 .table-controls .table-select,
