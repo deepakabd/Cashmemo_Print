@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 const HomeDashboardLoggedIn = ({
   homeQuickActions,
   homeAccountDetails,
@@ -10,8 +12,11 @@ const HomeDashboardLoggedIn = ({
   homeTodayFocus,
   homeSupportPoints,
   recentActivities,
-}) => (
-  <>
+}) => {
+  const [showRecentActivity, setShowRecentActivity] = useState(false);
+
+  return (
+    <>
     <div className="home-hero-grid">
       <div className="home-section home-highlight-card">
         <h3>काम करने का आसान क्रम</h3>
@@ -92,25 +97,33 @@ const HomeDashboardLoggedIn = ({
         <ul>{homeSupportPoints.map((item) => <li key={item}>{item}</li>)}</ul>
       </div>
     </div>
-    <div className="home-recent-activity">
-      <div className="home-recent-activity__header">
-        <h3>Recent Activity</h3>
-        <span>{recentActivities.length} recent actions</span>
-      </div>
-      {recentActivities.length === 0 ? (
-        <p className="home-recent-activity__empty">Abhi recent activity available nahi hai. Upload, login, ya request submit karte hi yahan summary dikhegi.</p>
-      ) : (
-        <div className="home-recent-activity__list">
-          {recentActivities.map((item) => (
-            <div key={item.id} className="home-recent-activity__item">
-              <strong>{item.message}</strong>
-              <span>{item.createdAt}</span>
+      <div className="home-recent-activity">
+        <button
+          type="button"
+          className="home-recent-activity__header home-recent-activity__toggle"
+          onClick={() => setShowRecentActivity((prev) => !prev)}
+          aria-expanded={showRecentActivity}
+        >
+          <h3>Recent Activity</h3>
+          <span>{recentActivities.length} recent actions</span>
+        </button>
+        {showRecentActivity && (
+          recentActivities.length === 0 ? (
+            <p className="home-recent-activity__empty">Abhi recent activity available nahi hai. Upload, login, ya request submit karte hi yahan summary dikhegi.</p>
+          ) : (
+            <div className="home-recent-activity__list">
+              {recentActivities.map((item) => (
+                <div key={item.id} className="home-recent-activity__item">
+                  <strong>{item.message}</strong>
+                  <span>{item.createdAt}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  </>
-);
+          )
+        )}
+      </div>
+    </>
+  );
+};
 
 export default HomeDashboardLoggedIn;

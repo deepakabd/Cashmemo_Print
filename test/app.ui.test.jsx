@@ -136,7 +136,7 @@ describe('App UI selection and print flow', () => {
     const rowPage1 = screen.getByText('Consumer 410001').closest('tr');
     fireEvent.click(within(rowPage1).getByRole('checkbox'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
     await screen.findByText('Page 2 of 2');
 
     const rowPage2 = screen.getByText('Consumer 410026').closest('tr');
@@ -163,7 +163,7 @@ describe('App UI selection and print flow', () => {
     const allCheckboxesPage1 = screen.getAllByRole('checkbox');
     fireEvent.click(allCheckboxesPage1[0]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
     await screen.findByText('Page 2 of 2');
 
     const rowPage2 = screen.getByText('Consumer 410026').closest('tr');

@@ -240,6 +240,7 @@ export const UserProfilePanel = ({
   const [data, setData] = useState(null);
   const [areaSearch, setAreaSearch] = useState('');
   const [staffSearch, setStaffSearch] = useState('');
+  const [showRequestHistory, setShowRequestHistory] = useState(initialSection === 'history');
 
   useEffect(() => {
     if (loggedInUser?.profileData) {
@@ -287,6 +288,7 @@ export const UserProfilePanel = ({
 
   useEffect(() => {
     if (initialSection !== 'history') return;
+    setShowRequestHistory(true);
     const historyBlock = document.getElementById('user-request-history');
     historyBlock?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [initialSection]);
@@ -333,21 +335,31 @@ export const UserProfilePanel = ({
         <div style={{ marginTop: '15px' }}>No additional profile details found. Please update your profile.</div>
       )}
       <div id="user-request-history" className="user-profile-history">
-        <h3>Request History</h3>
-        {requestHistoryRows.length === 0 ? (
-          <div className="user-profile-history-empty">No update requests submitted yet.</div>
-        ) : (
-          <div className="user-profile-history-list">
-            {requestHistoryRows.map((item) => (
-              <div key={`${item.type}-${item.requestedAt}-${item.lastUpdatedAt}`} className="user-profile-history-item">
-                <strong>{item.type}</strong>
-                <span>Status: {item.status || '-'}</span>
-                <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
-                <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
-                {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
-              </div>
-            ))}
-          </div>
+        <button
+          type="button"
+          className="user-profile-history-toggle"
+          onClick={() => setShowRequestHistory((prev) => !prev)}
+          aria-expanded={showRequestHistory}
+        >
+          <h3>Request History</h3>
+          <span>{requestHistoryRows.length} requests</span>
+        </button>
+        {showRequestHistory && (
+          requestHistoryRows.length === 0 ? (
+            <div className="user-profile-history-empty">No update requests submitted yet.</div>
+          ) : (
+            <div className="user-profile-history-list">
+              {requestHistoryRows.map((item) => (
+                <div key={`${item.type}-${item.requestedAt}-${item.lastUpdatedAt}`} className="user-profile-history-item">
+                  <strong>{item.type}</strong>
+                  <span>Status: {item.status || '-'}</span>
+                  <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
+                  <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
+                  {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
       <div className="user-profile-history">

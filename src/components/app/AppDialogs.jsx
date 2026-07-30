@@ -131,7 +131,12 @@ export const OnboardingTourDialog = ({
             {activeOnboardingStep?.actionLabel || 'Open'}
           </button>
           <button type="button" className="auth-secondary-button" onClick={handleOnboardingBack} disabled={onboardingStepIndex === 0}>Back</button>
-          <button type="button" className="auth-primary-button" onClick={handleOnboardingNext}>
+          <button
+            type="button"
+            className="auth-primary-button"
+            onClick={handleOnboardingNext}
+            aria-label={onboardingStepIndex === onboardingSteps.length - 1 ? 'Finish tour' : 'Next tour step'}
+          >
             {onboardingStepIndex === onboardingSteps.length - 1 ? 'Finish' : 'Next'}
           </button>
         </div>

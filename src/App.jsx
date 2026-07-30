@@ -10430,6 +10430,11 @@ function App() {
         message={adminFlashMessage}
         onClose={() => setAdminFlashMessage(null)}
       />
+
+      <footer className="app-footer">
+        <span>Designed by Deepak Singh </span>
+        <a href="mailto:deepak.youvi@gmail.com">💌deepak.youvi@gmail.com</a>
+      </footer>
     </>
   );
 }
