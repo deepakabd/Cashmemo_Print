@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
 import WorkspaceFilters from './dataWorkspace/WorkspaceFilters';
 import WorkspaceOverview from './dataWorkspace/WorkspaceOverview';
@@ -38,6 +38,7 @@ const DataWorkspace = (props) => {
     exportRowsToCsvFile,
     buildExportFilename,
     visibleHeaders,
+    setVisibleHeaders,
     clearSelection,
     pushToast,
     reportFilterOptions,
@@ -106,7 +107,6 @@ const DataWorkspace = (props) => {
     handlePrintData,
     onPreviewCustomer,
     exportFilteredRows,
-    exportReportSummary,
     shouldShowFilteredEmptyState,
     handleReUploadClick,
     openOnboardingTour,
@@ -122,6 +122,8 @@ const DataWorkspace = (props) => {
     currentPage,
     setCurrentPage,
     totalPages,
+    itemsPerPage,
+    setItemsPerPage,
     availableIsRegMobileOptions,
     isRegMobileFilter,
     setIsRegMobileFilter,
@@ -129,6 +131,56 @@ const DataWorkspace = (props) => {
 
   const [activeConsumerNo, setActiveConsumerNo] = useState('');
   const consumerDetailRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  const columnPresets = useMemo(() => {
+    const onlyAvailable = (columns) => columns.filter((header) => headers.includes(header));
+    return [
+      {
+        key: 'essential',
+        label: 'Essential',
+        columns: onlyAvailable(['Consumer No.', 'Consumer Name', 'Delivery Area', 'Mobile No.', 'Order Date', 'Cash Memo Date', 'Online Refill Payment status', 'EKYC Status']),
+      },
+      {
+        key: 'delivery',
+        label: 'Delivery',
+        columns: onlyAvailable(['Consumer No.', 'Consumer Name', 'Delivery Area', 'Delivery Man', 'Mobile No.', 'Order Date', 'Order Status', 'Cash Memo Status']),
+      },
+      {
+        key: 'payment',
+        label: 'Payment',
+        columns: onlyAvailable(['Consumer No.', 'Consumer Name', 'Mobile No.', 'Cash Memo No.', 'Cash Memo Date', 'Online Refill Payment status', 'Order Type']),
+      },
+      {
+        key: 'all',
+        label: 'All Columns',
+        columns: headers,
+      },
+    ].filter((preset) => preset.columns.length > 0);
+  }, [headers]);
+
+  useEffect(() => {
+    const handleSearchShortcut = (event) => {
+      const target = event.target;
+      const isTypingTarget = target instanceof HTMLElement && (
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable
+      );
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      if (!isTypingTarget && event.key === '/') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleSearchShortcut);
+    return () => window.removeEventListener('keydown', handleSearchShortcut);
+  }, []);
 
   useEffect(() => {
     if (!activeConsumerNo || filteredData.length === 0) {
@@ -162,7 +214,7 @@ const DataWorkspace = (props) => {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [activeConsumer]);
 
-  const formatConsumerDetailValue = (customer, header) => {
+  const formatConsumerDetailValue = useCallback((customer, header) => {
     if (!customer) return '-';
 
     if (header === 'Online Refill Payment status') {
@@ -179,7 +231,7 @@ const DataWorkspace = (props) => {
 
     const value = customer[header];
     return value === undefined || value === null || String(value).trim() === '' ? '---' : String(value);
-  };
+  }, [excelSerialDateToJSDate, formatDateToDDMMYYYY, parseDateString]);
 
   const createConsumerDetailBlob = async () => {
     const node = consumerDetailRef.current;
@@ -327,7 +379,7 @@ const DataWorkspace = (props) => {
 
       downloadConsumerDetailBlob(blob);
       pushToast?.('Clipboard support nahi mila. Screenshot download kar diya gaya hai.', 'info');
-    } catch (error) {
+    } catch {
       pushToast?.('Screenshot copy nahi ho paya. Please try again.', 'error');
     }
   };
@@ -398,7 +450,7 @@ const DataWorkspace = (props) => {
     }
 
     return sections;
-  }, [activeConsumer, headers]);
+  }, [activeConsumer, formatConsumerDetailValue, headers]);
 
   const areaSelections = getMultiFilterValues(areaFilter);
   const emptyStateActions = [
@@ -539,9 +591,56 @@ const DataWorkspace = (props) => {
       />
 
       <div className="table-controls">
-        <div className="table-control-group">
+        <div className="table-control-group table-control-group--smart-search">
           <label className="table-control-label" htmlFor="searchDataInput">Search</label>
-          <input id="searchDataInput" className="search-input" type="text" placeholder="Search within data..." value={searchTerm} onChange={handleSearchChange} />
+          <input
+            ref={searchInputRef}
+            id="searchDataInput"
+            className="search-input"
+            type="text"
+            placeholder="Consumer, mobile, name, cash memo..."
+            value={searchTerm}
+            onChange={handleSearchChange}
+          />
+        </div>
+
+        <div className="table-control-group">
+          <label className="table-control-label" htmlFor="columnPresetSelect">Column View</label>
+          <select
+            className="table-select"
+            id="columnPresetSelect"
+            onChange={(event) => {
+              const preset = columnPresets.find((item) => item.key === event.target.value);
+              if (preset) {
+                setVisibleHeaders(preset.columns);
+              }
+              event.target.value = '';
+            }}
+            value=""
+          >
+            <option value="" disabled>Choose preset</option>
+            {columnPresets.map((preset) => (
+              <option key={preset.key} value={preset.key}>{preset.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="table-control-group">
+          <label className="table-control-label" htmlFor="pageSizeSelect">Rows</label>
+          <select
+            className="table-select"
+            id="pageSizeSelect"
+            onChange={(event) => {
+              setItemsPerPage(Number(event.target.value));
+              setCurrentPage(1);
+            }}
+            value={itemsPerPage}
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={0}>All</option>
+          </select>
         </div>
 
         <div className="table-control-group">
@@ -594,7 +693,6 @@ const DataWorkspace = (props) => {
         <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
         <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
         <button className="filter-action filter-action--secondary action-button" onClick={exportFilteredRows}>Export Filtered</button>
-        <button className="filter-action filter-action--secondary action-button" onClick={exportReportSummary}>Export Report Summary</button>
       </div>
 
       <WorkspaceTable
@@ -620,6 +718,7 @@ const DataWorkspace = (props) => {
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
         totalPages={totalPages}
+        itemsPerPage={itemsPerPage}
         pushToast={pushToast}
       />
 

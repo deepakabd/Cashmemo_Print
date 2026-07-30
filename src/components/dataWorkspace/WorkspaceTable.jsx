@@ -1,3 +1,5 @@
+import { useMemo, useState } from 'react';
+
 const getCellDisplayValue = ({
   customer,
   header,
@@ -61,139 +63,192 @@ const WorkspaceTable = ({
   currentPage,
   setCurrentPage,
   totalPages,
+  itemsPerPage,
   pushToast,
-}) => (
-  <div className="table-container">
-    {shouldShowFilteredEmptyState ? (
-      <div className="data-empty-state">
-        <p className="data-empty-state__eyebrow">Nothing To Show</p>
-        <h3>Abhi koi booking current view me visible nahi hai.</h3>
-        <p>
-          {hasActiveDataFilters
-            ? 'Kuch filters bahut strict ho gaye hain. Neeche diye gaye quick fixes try kijiye aur rows wapas laaiye.'
-            : 'Latest Pending Booking file ko re-upload karke ya quick tour dekh kar next step samajh sakte ho.'}
-        </p>
-        {emptyStateActions.length > 0 && (
-          <div className="data-empty-state__suggestions">
-            {emptyStateActions.map((action) => (
-              <button key={action.key} type="button" className="data-empty-state__shortcut" onClick={action.onClick}>
-                {action.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="data-empty-state__actions">
-          {hasActiveDataFilters && (
-            <button type="button" className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>
-              Reset Filters
-            </button>
-          )}
-          <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
-            Re-Upload Data
-          </button>
-          <button type="button" className="filter-action filter-action--secondary" onClick={() => openOnboardingTour?.(0)}>
-            Open Quick Tour
-          </button>
-        </div>
-      </div>
-    ) : (
-      <>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
-                <input type="checkbox" onChange={handleSelectAllChange} checked={isAllFilteredRowsSelected} />
-              </th>
-              {visibleHeaders.map((header, index) => (
-                <th key={index} style={{ border: '1px solid black', padding: '8px', textAlign: 'left' }}>
-                  {header}
-                </th>
+}) => {
+  const [columnWidths, setColumnWidths] = useState({});
+
+  const tableColumns = useMemo(() => (
+    [
+      { key: '__select__', width: 48 },
+      ...visibleHeaders.map((header) => ({
+        key: header,
+        width: columnWidths[header] || (header === 'Consumer No.' ? 190 : 160),
+      })),
+    ]
+  ), [columnWidths, visibleHeaders]);
+
+  const startColumnResize = (event, header) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startWidth = columnWidths[header] || event.currentTarget.parentElement?.offsetWidth || 160;
+
+    const handlePointerMove = (moveEvent) => {
+      const nextWidth = Math.max(96, Math.min(420, startWidth + moveEvent.clientX - startX));
+      setColumnWidths((prev) => ({ ...prev, [header]: nextWidth }));
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const paginationText = itemsPerPage === 0
+    ? `Showing all ${filteredData.length} records`
+    : `Page ${currentPage} of ${totalPages}`;
+
+  return (
+    <div className="table-container">
+      {shouldShowFilteredEmptyState ? (
+        <div className="data-empty-state">
+          <p className="data-empty-state__eyebrow">Nothing To Show</p>
+          <h3>Abhi koi booking current view me visible nahi hai.</h3>
+          <p>
+            {hasActiveDataFilters
+              ? 'Kuch filters bahut strict ho gaye hain. Neeche diye gaye quick fixes try kijiye aur rows wapas laaiye.'
+              : 'Latest Pending Booking file ko re-upload karke ya quick tour dekh kar next step samajh sakte ho.'}
+          </p>
+          {emptyStateActions.length > 0 && (
+            <div className="data-empty-state__suggestions">
+              {emptyStateActions.map((action) => (
+                <button key={action.key} type="button" className="data-empty-state__shortcut" onClick={action.onClick}>
+                  {action.label}
+                </button>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {currentTableData.map((customer, index) => {
-              const isEkycStatusPending = customer['EKYC Status'] === 'Pending' || customer['EKYC Status'] === 'EKYC NOT DONE';
-              const consumerNo = String(customer['Consumer No.'] || '');
-              const isActiveConsumer = activeConsumerNo === consumerNo;
-              return (
-                <tr
-                  key={index}
-                  onDoubleClick={() => onPreviewCustomer?.(customer)}
-                  style={{
-                    border: '1px solid black',
-                    backgroundColor: isActiveConsumer ? '#eef6ff' : '#fff',
-                    color: isEkycStatusPending ? '#ff5252' : 'inherit',
-                    fontWeight: isEkycStatusPending ? 'bold' : 'normal',
-                    cursor: onPreviewCustomer ? 'pointer' : 'default',
-                  }}
-                >
-                  <td className="data-table__sticky-col" style={{ border: '1px solid black', padding: '8px' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedCustomerIds.includes(consumerNo)}
-                      onChange={() => handleCheckboxChange(customer['Consumer No.'])}
-                    />
-                  </td>
-                  {visibleHeaders.map((header, colIndex) => {
-                    const displayValue = getCellDisplayValue({
-                      customer,
-                      header,
-                      formatDateToDDMMYYYY,
-                      excelSerialDateToJSDate,
-                      parseDateString,
-                    });
-
-                    return (
-                      <td key={colIndex} style={{ border: '1px solid black', padding: '8px' }}>
-                        {header === 'Consumer No.' ? (
-                          <>
-                            <button
-                              type="button"
-                              className={`consumer-link-button ${isActiveConsumer ? 'is-active' : ''}`}
-                              onClick={() => onSelectConsumer?.(consumerNo)}
-                            >
-                              {displayValue}
-                            </button>
-                            <button
-                              type="button"
-                              className="consumer-copy-button"
-                              onClick={async (event) => {
-                                event.stopPropagation();
-                                try {
-                                  await copyTextToClipboard(consumerNo);
-                                  pushToast?.(`Consumer No. ${consumerNo} copied`, 'success');
-                                } catch (error) {
-                                  pushToast?.('Consumer number copy nahi ho saka.', 'error');
-                                }
-                              }}
-                              aria-label={`Copy consumer number ${consumerNo}`}
-                              title={`Copy ${consumerNo}`}
-                            >
-                              Copy
-                            </button>
-                          </>
-                        ) : (
-                          displayValue
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p>Total Records: {filteredData.length}</p>
-
-        <div className="pagination">
-          <button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1}>Previous</button>
-          <span>Page {currentPage} of {totalPages}</span>
-          <button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages}>Next</button>
+            </div>
+          )}
+          <div className="data-empty-state__actions">
+            {hasActiveDataFilters && (
+              <button type="button" className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>
+                Reset Filters
+              </button>
+            )}
+            <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
+              Re-Upload Data
+            </button>
+            <button type="button" className="filter-action filter-action--secondary" onClick={() => openOnboardingTour?.(0)}>
+              Open Quick Tour
+            </button>
+          </div>
         </div>
-      </>
-    )}
-  </div>
-);
+      ) : (
+        <>
+          <table className="data-table">
+            <colgroup>
+              {tableColumns.map((column) => (
+                <col key={column.key} style={{ width: `${column.width}px` }} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="data-table__sticky-select data-table__select-cell">
+                  <input type="checkbox" onChange={handleSelectAllChange} checked={isAllFilteredRowsSelected} />
+                </th>
+                {visibleHeaders.map((header, index) => (
+                  <th
+                    key={header}
+                    className={index === 0 ? 'data-table__sticky-first' : ''}
+                  >
+                    <span className="data-table__header-label">{header}</span>
+                    <button
+                      type="button"
+                      className="data-table__resize-handle"
+                      onPointerDown={(event) => startColumnResize(event, header)}
+                      aria-label={`Resize ${header} column`}
+                      title="Resize column"
+                    />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {currentTableData.map((customer, index) => {
+                const isEkycStatusPending = customer['EKYC Status'] === 'Pending' || customer['EKYC Status'] === 'EKYC NOT DONE';
+                const consumerNo = String(customer['Consumer No.'] || '');
+                const isActiveConsumer = activeConsumerNo === consumerNo;
+                return (
+                  <tr
+                    key={`${consumerNo || 'row'}-${index}`}
+                    onDoubleClick={() => onPreviewCustomer?.(customer)}
+                    style={{
+                      backgroundColor: isActiveConsumer ? '#eef6ff' : '#fff',
+                      color: isEkycStatusPending ? '#ff5252' : 'inherit',
+                      fontWeight: isEkycStatusPending ? 'bold' : 'normal',
+                      cursor: onPreviewCustomer ? 'pointer' : 'default',
+                    }}
+                  >
+                    <td className="data-table__sticky-select data-table__select-cell">
+                      <input
+                        type="checkbox"
+                        checked={selectedCustomerIds.includes(consumerNo)}
+                        onChange={() => handleCheckboxChange(customer['Consumer No.'])}
+                      />
+                    </td>
+                    {visibleHeaders.map((header, colIndex) => {
+                      const displayValue = getCellDisplayValue({
+                        customer,
+                        header,
+                        formatDateToDDMMYYYY,
+                        excelSerialDateToJSDate,
+                        parseDateString,
+                      });
+
+                      return (
+                        <td key={header} className={colIndex === 0 ? 'data-table__sticky-first' : ''}>
+                          {header === 'Consumer No.' ? (
+                            <>
+                              <button
+                                type="button"
+                                className={`consumer-link-button ${isActiveConsumer ? 'is-active' : ''}`}
+                                onClick={() => onSelectConsumer?.(consumerNo)}
+                              >
+                                {displayValue}
+                              </button>
+                              <button
+                                type="button"
+                                className="consumer-copy-button"
+                                onClick={async (event) => {
+                                  event.stopPropagation();
+                                  try {
+                                    await copyTextToClipboard(consumerNo);
+                                    pushToast?.(`Consumer No. ${consumerNo} copied`, 'success');
+                                  } catch {
+                                    pushToast?.('Consumer number copy nahi ho saka.', 'error');
+                                  }
+                                }}
+                                aria-label={`Copy consumer number ${consumerNo}`}
+                                title={`Copy ${consumerNo}`}
+                              >
+                                Copy
+                              </button>
+                            </>
+                          ) : (
+                            displayValue
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p>Total Records: {filteredData.length}</p>
+
+          <div className="pagination">
+            <button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1 || itemsPerPage === 0}>Previous</button>
+            <span>{paginationText}</span>
+            <button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages || itemsPerPage === 0}>Next</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 export default WorkspaceTable;
