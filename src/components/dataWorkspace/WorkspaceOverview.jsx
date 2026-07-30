@@ -1,3 +1,5 @@
+import AppIcon from '../AppIcon';
+
 const WorkspaceOverview = ({
   showBookingReport,
   filteredData,
@@ -31,6 +33,7 @@ const WorkspaceOverview = ({
   visibleHeaders,
   clearSelection,
   pushToast,
+  commonFilterPresets = [],
 }) => (
   <>
     {showBookingReport && (
@@ -99,20 +102,20 @@ const WorkspaceOverview = ({
           <div className="booking-report-section__head">
             <h4>Detailed Metrics</h4>
           </div>
-        <div className="booking-report-grid">
-          {reportCards.map((card) => (
-            <button
-              key={card.key}
-              type="button"
-              className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''} ${card.tone === 'success' ? 'booking-report-card--success' : ''} ${card.tone === 'warning' ? 'booking-report-card--warning' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
-              onClick={() => setActiveReportFilter((prev) => (prev === card.key || card.key === 'totalPendingBooking' ? '' : card.key))}
-            >
-              <span className="booking-report-label">{card.label}</span>
-              {card.areaName ? <span className="booking-report-meta">{card.areaName}</span> : null}
-              <strong>{card.displayValue || card.value}</strong>
-            </button>
-          ))}
-        </div>
+          <div className="booking-report-grid">
+            {reportCards.map((card) => (
+              <button
+                key={card.key}
+                type="button"
+                className={`booking-report-card booking-report-card--button ${activeReportFilter === card.key ? 'is-active' : ''} ${card.tone === 'success' ? 'booking-report-card--success' : ''} ${card.tone === 'warning' ? 'booking-report-card--warning' : ''} ${card.tone === 'danger' ? 'booking-report-card--danger' : ''} ${card.tone === 'info' ? 'booking-report-card--info' : ''}`}
+                onClick={() => setActiveReportFilter((prev) => (prev === card.key || card.key === 'totalPendingBooking' ? '' : card.key))}
+              >
+                <span className="booking-report-label">{card.label}</span>
+                {card.areaName ? <span className="booking-report-meta">{card.areaName}</span> : null}
+                <strong>{card.displayValue || card.value}</strong>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     )}
@@ -177,25 +180,62 @@ const WorkspaceOverview = ({
           </div>
         </div>
       )}
-      {activeFilterChips.length > 0 && (
-        <div className="filter-chip-row">
-          {activeFilterChips.map((chip) => (
-            <button key={chip.key} type="button" className="filter-chip" onClick={chip.clear}>
-              <span>{chip.label}</span>
-              <strong>Ã—</strong>
+      <div className="filter-focus-panel">
+        <div className="filter-focus-panel__summary">
+          <span className="filter-focus-panel__icon"><AppIcon name="filters" /></span>
+          <div>
+            <strong>{activeFilterChips.length} filters active</strong>
+            <span>{hasActiveDataFilters ? `${filteredData.length} rows in current view` : 'Start with a common preset or save your current view'}</span>
+          </div>
+        </div>
+        <div className="filter-focus-panel__actions">
+          {commonFilterPresets.map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              className="filter-focus-panel__preset"
+              onClick={preset.onClick}
+              disabled={preset.disabled}
+              title={preset.description}
+            >
+              <AppIcon name="filters" />
+              <span>{preset.label}</span>
             </button>
           ))}
-          <button type="button" className="filter-chip filter-chip--clear" onClick={handleResetAllFilters}>
-            Clear All
-          </button>
         </div>
-      )}
+      </div>
+      <div className="filter-chip-row filter-chip-row--prominent">
+        {activeFilterChips.length > 0 ? (
+          <>
+            {activeFilterChips.map((chip) => (
+              <button key={chip.key} type="button" className="filter-chip" onClick={chip.clear}>
+                <span>{chip.label}</span>
+                <AppIcon name="close" />
+              </button>
+            ))}
+            <button type="button" className="filter-chip filter-chip--clear" onClick={handleResetAllFilters}>
+              <AppIcon name="reset" />
+              Clear All
+            </button>
+          </>
+        ) : (
+          <span className="filter-chip-row__empty">No filters applied yet.</span>
+        )}
+      </div>
       <div className="preset-toolbar">
+        <div className="preset-toolbar__head">
+          <div>
+            <strong>Recent & Saved Filters</strong>
+            <span>{savedFilterPresets.length > 0 ? `${savedFilterPresets.length} saved preset${savedFilterPresets.length === 1 ? '' : 's'}` : 'Save a useful filter combination for one-click reuse'}</span>
+          </div>
+        </div>
         <div className="preset-toolbar__actions">
           <button type="button" className="filter-action filter-action--secondary" onClick={handleSaveCurrentPreset}>
+            <AppIcon name="save" />
             Save Current Preset
           </button>
           <button type="button" className="filter-action filter-action--secondary" onClick={() => setShowAdvancedFilters((prev) => !prev)}>
+            <AppIcon name="filters" />
             {showAdvancedFilters ? 'Hide Advanced Filters' : 'Show Advanced Filters'}
           </button>
         </div>
@@ -206,8 +246,8 @@ const WorkspaceOverview = ({
                 <button type="button" onClick={() => applyFilterPreset({ ...preset.filters, name: preset.name })}>
                   {preset.name}
                 </button>
-                <button type="button" className="preset-chip__delete" onClick={() => handleDeletePreset(preset.id)}>
-                  Ã—
+                <button type="button" className="preset-chip__delete" onClick={() => handleDeletePreset(preset.id)} aria-label={`Delete preset ${preset.name}`}>
+                  <AppIcon name="close" />
                 </button>
               </div>
             ))}
@@ -220,9 +260,11 @@ const WorkspaceOverview = ({
           <span>{selectedFilteredRows.length} visible in current filters</span>
           <div className="bulk-action-bar__actions">
             <button type="button" className="table-action table-action--blue" onClick={handlePrintCashmemo}>
+              <AppIcon name="print" />
               Print Selected
             </button>
             <button type="button" className="table-action table-action--green" onClick={exportSelectedBusinessRows}>
+              <AppIcon name="export" />
               Export Selected Business
             </button>
             <button
@@ -230,6 +272,7 @@ const WorkspaceOverview = ({
               className="filter-action filter-action--secondary"
               onClick={() => exportRowsToCsvFile(buildExportFilename('selected-visible'), selectedFilteredRows, visibleHeaders)}
             >
+              <AppIcon name="export" />
               Export Selected Visible
             </button>
             <button
@@ -240,6 +283,7 @@ const WorkspaceOverview = ({
                 pushToast('Selection cleared.', 'info');
               }}
             >
+              <AppIcon name="reset" />
               Clear Selection
             </button>
           </div>

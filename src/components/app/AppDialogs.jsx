@@ -40,6 +40,18 @@ export const ConfirmDialog = ({ dialog, onClose, onConfirm }) => {
           <button type="button" className="app-dialog__close" onClick={onClose}>x</button>
         </div>
         <p className="app-dialog__message">{dialog.message}</p>
+        {Array.isArray(dialog.previewItems) && dialog.previewItems.length > 0 && (
+          <div className="app-dialog__preview-list">
+            {dialog.previewTitle && <strong>{dialog.previewTitle}</strong>}
+            <ul>
+              {dialog.previewItems.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            {dialog.previewMoreText && <span>{dialog.previewMoreText}</span>}
+          </div>
+        )}
+        {dialog.dangerNote && <p className="app-dialog__danger-note">{dialog.dangerNote}</p>}
         <div className="app-dialog__actions">
           <button type="button" className="auth-secondary-button" onClick={onClose}>Cancel</button>
           <button type="button" className="auth-primary-button" onClick={onConfirm}>{dialog.confirmLabel}</button>
@@ -131,7 +143,12 @@ export const OnboardingTourDialog = ({
             {activeOnboardingStep?.actionLabel || 'Open'}
           </button>
           <button type="button" className="auth-secondary-button" onClick={handleOnboardingBack} disabled={onboardingStepIndex === 0}>Back</button>
-          <button type="button" className="auth-primary-button" onClick={handleOnboardingNext}>
+          <button
+            type="button"
+            className="auth-primary-button"
+            onClick={handleOnboardingNext}
+            aria-label={onboardingStepIndex === onboardingSteps.length - 1 ? 'Finish tour' : 'Next tour step'}
+          >
             {onboardingStepIndex === onboardingSteps.length - 1 ? 'Finish' : 'Next'}
           </button>
         </div>

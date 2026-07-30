@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import AppIcon from '../AppIcon';
 
 const getCellDisplayValue = ({
   customer,
@@ -125,10 +126,12 @@ const WorkspaceTable = ({
           <div className="data-empty-state__actions">
             {hasActiveDataFilters && (
               <button type="button" className="filter-action filter-action--secondary" onClick={handleResetAllFilters}>
+                <AppIcon name="reset" />
                 Reset Filters
               </button>
             )}
             <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
+              <AppIcon name="upload" />
               Re-Upload Data
             </button>
             <button type="button" className="filter-action filter-action--secondary" onClick={() => openOnboardingTour?.(0)}>
@@ -224,6 +227,7 @@ const WorkspaceTable = ({
                                 aria-label={`Copy consumer number ${consumerNo}`}
                                 title={`Copy ${consumerNo}`}
                               >
+                                <AppIcon name="copy" />
                                 Copy
                               </button>
                             </>
@@ -241,9 +245,21 @@ const WorkspaceTable = ({
           <p>Total Records: {filteredData.length}</p>
 
           <div className="pagination">
-            <button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1 || itemsPerPage === 0}>Previous</button>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1 || itemsPerPage === 0}
+              aria-label="Previous page"
+            >
+              Previous
+            </button>
             <span>{paginationText}</span>
-            <button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages || itemsPerPage === 0}>Next</button>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages || itemsPerPage === 0}
+              aria-label="Next page"
+            >
+              Next
+            </button>
           </div>
         </>
       )}

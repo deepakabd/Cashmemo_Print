@@ -240,6 +240,7 @@ export const UserProfilePanel = ({
   const [data, setData] = useState(null);
   const [areaSearch, setAreaSearch] = useState('');
   const [staffSearch, setStaffSearch] = useState('');
+  const [showRequestHistory, setShowRequestHistory] = useState(initialSection === 'history');
 
   useEffect(() => {
     if (loggedInUser?.profileData) {
@@ -281,12 +282,28 @@ export const UserProfilePanel = ({
         requestedAt: info?.requestedAt || '',
         lastUpdatedAt: mostRecentAt,
         adminReply: String(info?.adminReply || '').trim(),
+        approvedAt: info?.approvedAt || '',
+        rejectedAt: info?.rejectedAt || '',
+        adminReplyAt: info?.adminReplyAt || '',
+        timeline: [
+          { key: 'submitted', label: 'Submitted', date: info?.requestedAt || '', complete: Boolean(info?.requestedAt) },
+          { key: 'pending', label: 'Pending', date: info?.requestedAt || '', complete: ['pending', 'approved', 'rejected'].includes(status) },
+          {
+            key: status === 'rejected' ? 'rejected' : 'approved',
+            label: status === 'rejected' ? 'Rejected' : 'Approved',
+            date: status === 'rejected' ? info?.rejectedAt || '' : info?.approvedAt || '',
+            complete: status === 'approved' || status === 'rejected',
+            tone: status === 'rejected' ? 'danger' : 'success',
+          },
+          { key: 'reply', label: 'Admin Reply', date: info?.adminReplyAt || '', complete: Boolean(info?.adminReply), tone: 'info' },
+        ],
       };
     })
     .sort((a, b) => new Date(b.lastUpdatedAt || b.requestedAt || 0).getTime() - new Date(a.lastUpdatedAt || a.requestedAt || 0).getTime());
 
   useEffect(() => {
     if (initialSection !== 'history') return;
+    setShowRequestHistory(true);
     const historyBlock = document.getElementById('user-request-history');
     historyBlock?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [initialSection]);
@@ -333,21 +350,42 @@ export const UserProfilePanel = ({
         <div style={{ marginTop: '15px' }}>No additional profile details found. Please update your profile.</div>
       )}
       <div id="user-request-history" className="user-profile-history">
-        <h3>Request History</h3>
-        {requestHistoryRows.length === 0 ? (
-          <div className="user-profile-history-empty">No update requests submitted yet.</div>
-        ) : (
-          <div className="user-profile-history-list">
-            {requestHistoryRows.map((item) => (
-              <div key={`${item.type}-${item.requestedAt}-${item.lastUpdatedAt}`} className="user-profile-history-item">
-                <strong>{item.type}</strong>
-                <span>Status: {item.status || '-'}</span>
-                <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
-                <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
-                {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
-              </div>
-            ))}
-          </div>
+        <button
+          type="button"
+          className="user-profile-history-toggle"
+          onClick={() => setShowRequestHistory((prev) => !prev)}
+          aria-expanded={showRequestHistory}
+        >
+          <h3>Request History</h3>
+          <span>{requestHistoryRows.length} requests</span>
+        </button>
+        {showRequestHistory && (
+          requestHistoryRows.length === 0 ? (
+            <div className="user-profile-history-empty">No update requests submitted yet.</div>
+          ) : (
+            <div className="user-profile-history-list">
+              {requestHistoryRows.map((item) => (
+                <div key={`${item.type}-${item.requestedAt}-${item.lastUpdatedAt}`} className="user-profile-history-item">
+                  <strong>{item.type}</strong>
+                  <span>Status: {item.status || '-'}</span>
+                  <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
+                  <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
+                  {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
+                  <div className="user-profile-request-timeline">
+                    {item.timeline.map((step) => (
+                      <div
+                        key={`${item.type}-${step.key}`}
+                        className={`user-profile-request-step ${step.complete ? 'is-complete' : ''} ${step.tone ? `user-profile-request-step--${step.tone}` : ''}`}
+                      >
+                        <strong>{step.label}</strong>
+                        <span>{formatDisplayDate(step.date) || (step.complete ? 'Done' : 'Waiting')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
       <div className="user-profile-history">
@@ -424,6 +462,7 @@ export const ContactSupportPanel = ({
   const [feedbackErrors, setFeedbackErrors] = useState({});
   const [adminChatError, setAdminChatError] = useState('');
   const [selectedTicketId, setSelectedTicketId] = useState('');
+  const [supportAttachment, setSupportAttachment] = useState(null);
 
   useEffect(() => {
     setForm((prev) => ({
@@ -482,12 +521,16 @@ export const ContactSupportPanel = ({
           type: 'user',
           message: item.text || item.feedback || 'No message content.',
           createdAt: item.createdAt,
+          statusLabel: item.reply ? 'Replied' : item.read ? 'Read by admin' : 'Sent',
+          attachmentName: item.attachmentName || '',
+          attachmentDataUrl: item.attachmentDataUrl || '',
         },
         ...(item.reply ? [{
           id: `${item.replyId || item.id || item.clientFeedbackId}-admin`,
           type: 'admin',
           message: item.reply,
           createdAt: item.updatedAt || item.createdAt,
+          statusLabel: 'Reply received',
           highlight: true,
         }] : []),
       ];
@@ -550,6 +593,37 @@ export const ContactSupportPanel = ({
     setShowAdminChatPopup(false);
     setAdminReplyMessage('');
     setAdminChatError('');
+    setSupportAttachment(null);
+  };
+
+  const handleSupportAttachmentChange = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setAdminChatError('Please attach an image screenshot only.');
+      pushToast('Please attach an image screenshot only.', 'error');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setAdminChatError('Screenshot must be under 1 MB.');
+      pushToast('Screenshot must be under 1 MB.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSupportAttachment({
+        name: file.name,
+        dataUrl: typeof reader.result === 'string' ? reader.result : '',
+      });
+      setAdminChatError('');
+    };
+    reader.onerror = () => {
+      setAdminChatError('Screenshot attach nahi ho paya. Please try again.');
+      pushToast('Screenshot attach nahi ho paya. Please try again.', 'error');
+    };
+    reader.readAsDataURL(file);
   };
 
   const submitAdminChatReply = async () => {
@@ -575,6 +649,8 @@ export const ContactSupportPanel = ({
       email: loggedInUser?.email || form.email.trim() || '',
       text: adminReplyMessage.trim(),
       parentFeedbackId: activeReplyItem?.id || activeReplyItem?.clientFeedbackId || '',
+      attachmentName: supportAttachment?.name || '',
+      attachmentDataUrl: supportAttachment?.dataUrl || '',
       read: false,
       createdAt: new Date().toISOString(),
     };
@@ -612,6 +688,7 @@ export const ContactSupportPanel = ({
     if (anySaved) {
       pushToast('Your chat message has been sent. Admin will reply shortly.', 'success');
       setAdminReplyMessage('');
+      setSupportAttachment(null);
     } else {
       setAdminChatError('Unable to send your chat message. Please try again.');
       pushToast('Unable to send your chat message. Please try again.', 'error');
@@ -758,9 +835,19 @@ export const ContactSupportPanel = ({
                       >
                         <div className="support-ticket-message__meta">
                           <strong>{message.type === 'admin' ? 'Admin Reply' : 'Your Message'}</strong>
-                          <span>{formatDisplayDateTime(message.createdAt)}</span>
+                          <span>{formatDisplayDateTime(message.createdAt)} | {message.statusLabel}</span>
                         </div>
                         <p>{message.message}</p>
+                        {message.attachmentDataUrl && (
+                          <a
+                            className="support-attachment-link"
+                            href={message.attachmentDataUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Screenshot: {message.attachmentName || 'attachment'}
+                          </a>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -806,6 +893,19 @@ export const ContactSupportPanel = ({
                     <div className="admin-chat-message user-message">
                       <strong>You:</strong>
                       <p>{activeReplyItem.text || activeReplyItem.feedback || 'No message content.'}</p>
+                      <span className="admin-chat-message-status">
+                        {activeReplyItem.reply ? 'Replied' : activeReplyItem.read ? 'Read by admin' : 'Sent'}
+                      </span>
+                      {activeReplyItem.attachmentDataUrl && (
+                        <a
+                          className="support-attachment-link"
+                          href={activeReplyItem.attachmentDataUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Screenshot: {activeReplyItem.attachmentName || 'attachment'}
+                        </a>
+                      )}
                     </div>
                     <div className="admin-chat-message admin-message">
                       <strong>Admin:</strong>
@@ -827,6 +927,18 @@ export const ContactSupportPanel = ({
                   }}
                   placeholder="Type your message to admin here..."
                 />
+                <div className="admin-chat-attachment-row">
+                  <label className="admin-chat-attachment-button">
+                    Attach Screenshot
+                    <input type="file" accept="image/*" onChange={handleSupportAttachmentChange} />
+                  </label>
+                  {supportAttachment && (
+                    <span>
+                      {supportAttachment.name}
+                      <button type="button" onClick={() => setSupportAttachment(null)}>Remove</button>
+                    </span>
+                  )}
+                </div>
                 {adminChatError && <div className="form-error">{adminChatError}</div>}
                 <div className="admin-chat-actions">
                   <button type="button" className="form-button" onClick={submitAdminChatReply}>Send</button>

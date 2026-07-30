@@ -24,6 +24,7 @@ const UserMenuDropdown = ({
   pendingRequestCount,
   contactReplyCount,
   updateInboxCount,
+  userNotificationItems = [],
   primaryQuickAction,
   secondaryQuickAction,
   recommendedAction,
@@ -157,6 +158,38 @@ const UserMenuDropdown = ({
                 contactReplyCount > 0 ? `${contactReplyCount} unread reply` : '',
                 updateInboxCount > 0 ? `${updateInboxCount} total updates` : '',
               ].filter(Boolean).join(' | ')}
+        </div>
+      )}
+    </div>
+    <div className="dropdown-menu__section dropdown-menu__section--notifications">
+      <button
+        type="button"
+        className="dropdown-menu__section-toggle"
+        onClick={() => toggleSection('Notifications')}
+        aria-expanded={!isSectionCollapsed('Notifications')}
+      >
+        <span className="dropdown-menu__section-title">Notifications</span>
+        <span className="dropdown-menu__section-toggle-icon">{isSectionCollapsed('Notifications') ? 'Show' : 'Hide'}</span>
+      </button>
+      {!isSectionCollapsed('Notifications') && (
+        <div className="dropdown-menu__notification-list">
+          {userNotificationItems.length === 0 ? (
+            <div className="dropdown-menu__empty-state">No notifications right now.</div>
+          ) : (
+            userNotificationItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`dropdown-menu__notification dropdown-menu__notification--${item.tone || 'info'}`}
+                onClick={item.action ? runUserMenuItem({ ...item.action, label: item.actionLabel || item.title }) : undefined}
+                role="menuitem"
+              >
+                <strong>{item.title}</strong>
+                <span>{item.detail}</span>
+                {item.actionLabel && <em>{item.actionLabel}</em>}
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>

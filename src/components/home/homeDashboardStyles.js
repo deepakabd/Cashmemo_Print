@@ -25,5 +25,8 @@ export const homeDashboardStyles = `
   .home-layout ul { padding-left: 20px; color: #444; line-height: 1.7; }
   .home-recent-activity { background: #fff; padding: 35px; border-radius: 16px; box-shadow: 0 8px 25px rgba(0,0,0,0.06); }
   .home-recent-activity__header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f0f4f8; padding-bottom: 15px; margin-bottom: 20px; }
+  .home-recent-activity__toggle { width: 100%; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; padding-left: 0; padding-right: 0; }
+  .home-recent-activity__toggle:hover h3 { color: #007bff; }
+  .home-recent-activity__toggle:focus-visible { outline: 2px solid #8fc5ff; outline-offset: 4px; border-radius: 8px; }
   .home-recent-activity__item { padding: 15px 0; border-bottom: 1px solid #f0f4f8; display: flex; justify-content: space-between; align-items: center; }
 `;

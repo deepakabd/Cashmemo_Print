@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import WorkspaceFilters from './dataWorkspace/WorkspaceFilters';
 import WorkspaceOverview from './dataWorkspace/WorkspaceOverview';
 import WorkspaceTable from './dataWorkspace/WorkspaceTable';
+import AppIcon from './AppIcon';
 
 import { getMultiFilterValues } from './dataWorkspace/getMultiFilterValues';
 
@@ -158,6 +159,32 @@ const DataWorkspace = (props) => {
       },
     ].filter((preset) => preset.columns.length > 0);
   }, [headers]);
+
+  const essentialColumnPreset = useMemo(
+    () => columnPresets.find((preset) => preset.key === 'essential') || columnPresets[0] || null,
+    [columnPresets],
+  );
+
+  const applyColumnPreset = useCallback((preset) => {
+    if (!preset?.columns?.length) return;
+    setVisibleHeaders(preset.columns);
+  }, [setVisibleHeaders]);
+
+  useEffect(() => {
+    if (!essentialColumnPreset?.columns?.length) return;
+    setVisibleHeaders(essentialColumnPreset.columns);
+  }, [essentialColumnPreset, setVisibleHeaders]);
+
+  const selectedColumnPresetKey = useMemo(() => {
+    const visibleKey = visibleHeaders.join('\u001f');
+    const matchingPreset = columnPresets.find((preset) => preset.columns.join('\u001f') === visibleKey);
+    return matchingPreset?.key || 'custom';
+  }, [columnPresets, visibleHeaders]);
+
+  const handleResetAllFiltersWithEssentialColumns = useCallback(() => {
+    handleResetAllFilters();
+    applyColumnPreset(essentialColumnPreset);
+  }, [applyColumnPreset, essentialColumnPreset, handleResetAllFilters]);
 
   useEffect(() => {
     const handleSearchShortcut = (event) => {
@@ -453,6 +480,48 @@ const DataWorkspace = (props) => {
   }, [activeConsumer, formatConsumerDetailValue, headers]);
 
   const areaSelections = getMultiFilterValues(areaFilter);
+  const findOption = (options, matchers) => {
+    const optionList = Array.isArray(options) ? options : [];
+    const matcherList = Array.isArray(matchers) ? matchers : [matchers];
+    return optionList.find((option) => {
+      const normalizedOption = String(option || '').toLowerCase().trim();
+      return matcherList.some((matcher) => normalizedOption.includes(String(matcher || '').toLowerCase()));
+    });
+  };
+
+  const commonFilterPresets = [
+    {
+      key: 'pending-ekyc',
+      label: 'Pending eKYC',
+      description: 'Rows jahan eKYC follow-up chahiye',
+      disabled: !findOption(availableEkycOptions, ['pending', 'not done']),
+      onClick: () => {
+        const match = findOption(availableEkycOptions, ['pending', 'not done']);
+        if (match) setEKycFilter([match]);
+      },
+    },
+    {
+      key: 'online-paid',
+      label: 'Online Paid',
+      description: 'Paid refill bookings focus karo',
+      disabled: !findOption(availableOnlinePaymentOptions, 'paid'),
+      onClick: () => {
+        const match = findOption(availableOnlinePaymentOptions, 'paid');
+        if (match) setOnlineRefillPaymentStatusFilter(match);
+      },
+    },
+    {
+      key: 'cashmemo-pending',
+      label: 'Cashmemo Pending',
+      description: 'Print queue ke pending rows',
+      disabled: !findOption(availableCashMemoStatusOptions, ['not generated', 'pending', 'not printed']),
+      onClick: () => {
+        const match = findOption(availableCashMemoStatusOptions, ['not generated', 'pending', 'not printed']);
+        if (match) setCashMemoStatusFilter(match);
+      },
+    },
+  ];
+
   const emptyStateActions = [
     searchTerm ? {
       key: 'search',
@@ -544,7 +613,7 @@ const DataWorkspace = (props) => {
     headers,
     sortOrder,
     setSortOrder,
-    handleResetAllFilters,
+    handleResetAllFilters: handleResetAllFiltersWithEssentialColumns,
   };
 
   return (
@@ -567,7 +636,7 @@ const DataWorkspace = (props) => {
         parsedData={parsedData}
         uploadMetadata={uploadMetadata}
         activeFilterChips={activeFilterChips}
-        handleResetAllFilters={handleResetAllFilters}
+        handleResetAllFilters={handleResetAllFiltersWithEssentialColumns}
         handleSaveCurrentPreset={handleSaveCurrentPreset}
         showAdvancedFilters={showAdvancedFilters}
         setShowAdvancedFilters={setShowAdvancedFilters}
@@ -582,6 +651,7 @@ const DataWorkspace = (props) => {
         visibleHeaders={visibleHeaders}
         clearSelection={clearSelection}
         pushToast={pushToast}
+        commonFilterPresets={commonFilterPresets}
       />
 
       <WorkspaceFilters
@@ -612,13 +682,12 @@ const DataWorkspace = (props) => {
             onChange={(event) => {
               const preset = columnPresets.find((item) => item.key === event.target.value);
               if (preset) {
-                setVisibleHeaders(preset.columns);
+                applyColumnPreset(preset);
               }
-              event.target.value = '';
             }}
-            value=""
+            value={selectedColumnPresetKey}
           >
-            <option value="" disabled>Choose preset</option>
+            <option value="custom" disabled>Custom</option>
             {columnPresets.map((preset) => (
               <option key={preset.key} value={preset.key}>{preset.label}</option>
             ))}
@@ -687,19 +756,29 @@ const DataWorkspace = (props) => {
         )}
 
         <button type="button" className="filter-action filter-action--secondary action-button" onClick={onToggleCompactWorkspaceMode}>
+          <AppIcon name="compact" />
           {compactWorkspaceMode ? 'Normal View' : 'Compact Mode'}
         </button>
 
-        <button className="table-action table-action--green action-button" onClick={handlePrintData}>Print Data</button>
-        <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>Print Cashmemo</button>
-        <button className="filter-action filter-action--secondary action-button" onClick={exportFilteredRows}>Export Filtered</button>
+        <button className="table-action table-action--green action-button" onClick={handlePrintData}>
+          <AppIcon name="print" />
+          Print Data
+        </button>
+        <button className="table-action table-action--blue action-button" onClick={handlePrintCashmemo}>
+          <AppIcon name="print" />
+          Print Cashmemo
+        </button>
+        <button className="filter-action filter-action--secondary action-button" onClick={exportFilteredRows}>
+          <AppIcon name="export" />
+          Export Filtered
+        </button>
       </div>
 
       <WorkspaceTable
         shouldShowFilteredEmptyState={shouldShowFilteredEmptyState}
         hasActiveDataFilters={hasActiveDataFilters}
         emptyStateActions={emptyStateActions}
-        handleResetAllFilters={handleResetAllFilters}
+        handleResetAllFilters={handleResetAllFiltersWithEssentialColumns}
         handleReUploadClick={handleReUploadClick}
         openOnboardingTour={openOnboardingTour}
         visibleHeaders={visibleHeaders}
