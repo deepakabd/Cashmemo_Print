@@ -429,69 +429,15 @@ const normalizeSearchValue = (value) => String(value ?? '')
   .replace(/[^a-z0-9]+/g, ' ')
   .trim();
 
-const getSearchDistance = (source, target) => {
-  if (source === target) return 0;
-  if (!source || !target) return Math.max(source.length, target.length);
-
-  const previous = Array.from({ length: target.length + 1 }, (_, index) => index);
-  const current = Array(target.length + 1).fill(0);
-
-  for (let sourceIndex = 1; sourceIndex <= source.length; sourceIndex += 1) {
-    current[0] = sourceIndex;
-    for (let targetIndex = 1; targetIndex <= target.length; targetIndex += 1) {
-      const cost = source[sourceIndex - 1] === target[targetIndex - 1] ? 0 : 1;
-      current[targetIndex] = Math.min(
-        current[targetIndex - 1] + 1,
-        previous[targetIndex] + 1,
-        previous[targetIndex - 1] + cost,
-      );
-    }
-    previous.splice(0, previous.length, ...current);
-  }
-
-  return previous[target.length];
-};
-
-const isFuzzySearchMatch = (query, candidate) => {
-  const normalizedQuery = normalizeSearchValue(query);
-  const normalizedCandidate = normalizeSearchValue(candidate);
-  if (!normalizedQuery || !normalizedCandidate) return false;
-  if (normalizedCandidate.includes(normalizedQuery)) return true;
-
-  const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
-  const candidateTokens = normalizedCandidate.split(/\s+/).filter(Boolean);
-  return queryTokens.every((queryToken) => {
-    if (queryToken.length < 4) {
-      return candidateTokens.some((candidateToken) => candidateToken.startsWith(queryToken));
-    }
-    const tolerance = queryToken.length > 6 ? 2 : 1;
-    return candidateTokens.some((candidateToken) => {
-      if (candidateToken.includes(queryToken) || queryToken.includes(candidateToken)) return true;
-      return getSearchDistance(queryToken, candidateToken) <= tolerance;
-    });
-  });
-};
-
 const SMART_SEARCH_FIELDS = [
   'Consumer No.',
-  'Consumer Name',
-  'Mobile No.',
-  'Cash Memo No.',
-  'Cash Memo No',
-  'CashMemoNo',
-  'Cash Memo',
 ];
 
 const matchesSmartSearch = (row, query) => {
   const normalizedQuery = normalizeSearchValue(query);
   if (!normalizedQuery) return true;
 
-  const allValues = Object.values(row || {});
-  if (allValues.some((value) => normalizeSearchValue(value).includes(normalizedQuery))) {
-    return true;
-  }
-
-  return SMART_SEARCH_FIELDS.some((field) => isFuzzySearchMatch(normalizedQuery, row?.[field]));
+  return SMART_SEARCH_FIELDS.some((field) => normalizeSearchValue(row?.[field]).includes(normalizedQuery));
 };
 
 const getAnnouncementScopeLabel = (scope = 'all') => {
