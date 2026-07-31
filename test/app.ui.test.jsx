@@ -180,7 +180,7 @@ describe('App UI selection and print flow', () => {
     });
   });
 
-  it('search filters only matching consumer numbers', async () => {
+  it('search filters only matching consumer or mobile numbers', async () => {
     seedLoggedInUser();
 
     const { container } = render(<App />);
@@ -194,6 +194,13 @@ describe('App UI selection and print flow', () => {
     });
 
     fireEvent.change(searchInput, { target: { value: '410001' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Consumer 410001')).toBeTruthy();
+    });
+    expect(screen.queryByText('Consumer 410002')).toBeNull();
+
+    fireEvent.change(searchInput, { target: { value: '9000000001' } });
 
     await waitFor(() => {
       expect(screen.getByText('Consumer 410001')).toBeTruthy();

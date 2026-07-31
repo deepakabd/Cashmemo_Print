@@ -431,6 +431,7 @@ const normalizeSearchValue = (value) => String(value ?? '')
 
 const SMART_SEARCH_FIELDS = [
   'Consumer No.',
+  'Mobile No.',
 ];
 
 const matchesSmartSearch = (row, query) => {
