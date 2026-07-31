@@ -180,7 +180,7 @@ describe('App UI selection and print flow', () => {
     });
   });
 
-  it('search filters only matching consumer or mobile numbers', async () => {
+  it('search filters matching consumer, mobile, name, or delivery area values', async () => {
     seedLoggedInUser();
 
     const { container } = render(<App />);
@@ -200,12 +200,26 @@ describe('App UI selection and print flow', () => {
     });
     expect(screen.queryByText('Consumer 410002')).toBeNull();
 
+    fireEvent.change(searchInput, { target: { value: 'consumer 410001' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Consumer 410001')).toBeTruthy();
+    });
+    expect(screen.queryByText('Consumer 410002')).toBeNull();
+
     fireEvent.change(searchInput, { target: { value: '9000000001' } });
 
     await waitFor(() => {
       expect(screen.getByText('Consumer 410001')).toBeTruthy();
     });
     expect(screen.queryByText('Consumer 410002')).toBeNull();
+
+    fireEvent.change(searchInput, { target: { value: 'area b' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Consumer 410026')).toBeTruthy();
+    });
+    expect(screen.queryByText('Consumer 410001')).toBeNull();
 
     fireEvent.change(searchInput, { target: { value: 'CM-410001' } });
 
