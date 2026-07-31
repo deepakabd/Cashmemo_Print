@@ -179,4 +179,31 @@ describe('App UI selection and print flow', () => {
       expect(printWindow.writtenHtml).toContain('data-consumer="410030"');
     });
   });
+
+  it('search filters only matching consumer numbers', async () => {
+    seedLoggedInUser();
+
+    const { container } = render(<App />);
+    await uploadCsvData(container);
+
+    const searchInput = screen.getByPlaceholderText('Consumer, mobile, name, cash memo...');
+    fireEvent.change(searchInput, { target: { value: '4100' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Consumer 410001')).toBeTruthy();
+    });
+
+    fireEvent.change(searchInput, { target: { value: '410001' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Consumer 410001')).toBeTruthy();
+    });
+    expect(screen.queryByText('Consumer 410002')).toBeNull();
+
+    fireEvent.change(searchInput, { target: { value: 'CM-410001' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Consumer 410001')).toBeNull();
+    });
+  });
 });
