@@ -421,7 +421,7 @@ const CashmemoLayoutPage = ({
       <div className="label-update-header">
         <div>
           <h2>Cashmemo Layout</h2>
-          <p>Page preview me selected page type aur page size ke hisaab se sirf visible layout section dikhai dega.</p>
+          <p>In the page preview, only the visible layout section will be displayed, based on the selected page type and page size.</p>
         </div>
         <div className="label-update-actions">
           <select className="form-input" value={pageSize} onChange={(e) => setPageSize(e.target.value)}>
