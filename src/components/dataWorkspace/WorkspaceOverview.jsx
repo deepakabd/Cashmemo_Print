@@ -41,7 +41,7 @@ const WorkspaceOverview = ({
         <div className="booking-report-header">
           <div>
             <h3>Pending Booking Report</h3>
-            <p>{reportViewMode === 'full' ? 'All uploaded pending bookings ka report' : 'Current filters ke hisaab se report'}</p>
+            <p>{reportViewMode === 'full' ? 'All uploaded pending bookings report' : 'Report with Current filters'}</p>
           </div>
           <div className="booking-report-actions">
             <div className="booking-report-toggle-group">
@@ -131,7 +131,7 @@ const WorkspaceOverview = ({
         <div className="upload-journey-card__header">
           <div>
             <p className="upload-journey-card__eyebrow">Next Steps</p>
-            <h4>Upload se print tak ka fast flow</h4>
+            <h4>Flow from Upload to print</h4>
           </div>
           <span className="upload-journey-card__badge">
             {selectedCustomerIds.length > 0 ? 'Ready to print' : hasActiveDataFilters ? 'Selection next' : 'Filters next'}
@@ -143,12 +143,12 @@ const WorkspaceOverview = ({
             <span>{uploadMetadata?.fileName ? `${uploadMetadata.fileName} loaded` : `${parsedData.length} rows ready`}</span>
           </div>
           <div className={`upload-journey-step ${hasActiveDataFilters ? 'is-complete' : ''}`}>
-            <strong>2. Filter lagao</strong>
-            <span>{hasActiveDataFilters ? `${filteredData.length} matching rows found` : 'Area, eKYC, payment ya date filters apply kijiye'}</span>
+            <strong>2. Filter</strong>
+            <span>{hasActiveDataFilters ? `${filteredData.length} matching rows found` : 'Kindly Apply filter in Area, eKYC, payment or date '}</span>
           </div>
           <div className={`upload-journey-step ${selectedCustomerIds.length > 0 ? 'is-complete' : ''}`}>
             <strong>3. Select & Print</strong>
-            <span>{selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} row selected` : 'Rows select karke cashmemo ya export run kijiye'}</span>
+            <span>{selectedCustomerIds.length > 0 ? `${selectedCustomerIds.length} row selected` : 'Kindly Select Rows & print cashmemo or export to Excel'}</span>
           </div>
         </div>
       </div>
