@@ -8,7 +8,7 @@ const getKey = (user = {}) => {
 
 const getFirestoreAttendanceRef = (user = {}) => {
   const identifier = user?.id || user?.dealerCode || user?.dealerName || 'default';
-  return doc(db, 'attendance', String(identifier).trim().replace(/\s+/g, '_'));
+  return doc(db, 'users', String(identifier).trim().replace(/\s+/g, '_'));
 };
 
 const normalizeAttendanceData = (data = {}) => ({
@@ -27,7 +27,7 @@ export const loadAttendanceData = (user) => {
 
 export const saveAttendanceData = (user, data) => {
   localStorage.setItem(getKey(user), JSON.stringify(data));
-  void setDoc(getFirestoreAttendanceRef(user), { ...normalizeAttendanceData(data), updatedAt: serverTimestamp() }, { merge: true }).catch((error) => {
+  void setDoc(getFirestoreAttendanceRef(user), { attendanceData: { ...normalizeAttendanceData(data), updatedAt: serverTimestamp() } }, { merge: true }).catch((error) => {
     console.warn('Attendance cloud save failed; local copy retained.', error);
   });
 };
@@ -35,8 +35,8 @@ export const saveAttendanceData = (user, data) => {
 export const loadAttendanceDataFromFirebase = async (user) => {
   try {
     const snapshot = await getDoc(getFirestoreAttendanceRef(user));
-    if (!snapshot.exists()) return loadAttendanceData(user);
-    const data = normalizeAttendanceData(snapshot.data());
+    if (!snapshot.exists() || !snapshot.data()?.attendanceData) return loadAttendanceData(user);
+    const data = normalizeAttendanceData(snapshot.data().attendanceData);
     localStorage.setItem(getKey(user), JSON.stringify(data));
     return data;
   } catch (error) {
