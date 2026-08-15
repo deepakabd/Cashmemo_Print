@@ -20,6 +20,7 @@ export const ProfileUpdatePanel = ({
     gst: '',
     address: '',
     photoDataUrl: '',
+    paymentQrDataUrl: '',
   });
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -57,6 +58,25 @@ export const ProfileUpdatePanel = ({
 
   const handlePhotoRemove = () => {
     setFormData((prev) => ({ ...prev, photoDataUrl: '' }));
+  };
+
+  const handlePaymentQrChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      pushToast('Please choose an image file for the payment QR.', 'error');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      pushToast('Payment QR image must be under 1 MB.', 'error');
+      return;
+    }
+    try {
+      const paymentQrDataUrl = await readImageFileAsDataUrl(file);
+      setFormData((prev) => ({ ...prev, paymentQrDataUrl }));
+    } catch {
+      pushToast('Payment QR upload failed. Please try another image.', 'error');
+    }
   };
 
   const validateProfileForm = () => {
@@ -102,6 +122,20 @@ export const ProfileUpdatePanel = ({
             <input className="form-input" type="file" accept="image/*" onChange={handlePhotoChange} />
             {formData.photoDataUrl && (
               <button type="button" className="profile-photo-remove" onClick={handlePhotoRemove}>Remove Photo</button>
+            )}
+          </div>
+        </div>
+        <span className="profile-label">Payment QR</span>
+        <div className="profile-photo-field">
+          {formData.paymentQrDataUrl ? (
+            <img className="profile-photo-preview" src={formData.paymentQrDataUrl} alt="Payment QR preview" />
+          ) : (
+            <div className="profile-photo-placeholder">No payment QR selected</div>
+          )}
+          <div className="profile-photo-actions">
+            <input className="form-input" type="file" accept="image/*" onChange={handlePaymentQrChange} />
+            {formData.paymentQrDataUrl && (
+              <button type="button" className="profile-photo-remove" onClick={() => setFormData((prev) => ({ ...prev, paymentQrDataUrl: '' }))}>Remove QR</button>
             )}
           </div>
         </div>
