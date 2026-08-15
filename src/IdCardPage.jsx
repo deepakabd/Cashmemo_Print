@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { loadAttendanceData } from './attendanceStore';
+import { useEffect, useMemo, useState } from 'react';
+import { loadAttendanceData, loadAttendanceDataFromFirebase } from './attendanceStore';
 import './Attendance.css';
 
 const initials = (name = '') => name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'E';
@@ -47,13 +47,20 @@ function CardBack({ businessName, address }) {
 }
 
 export default function IdCardPage({ loggedInUser, onClose }) {
-  const [employees] = useState(() => loadAttendanceData(loggedInUser).employees);
+  const [employees, setEmployees] = useState(() => loadAttendanceData(loggedInUser).employees);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [cardType, setCardType] = useState('qr');
   const businessName = loggedInUser?.dealerName || loggedInUser?.profileData?.distributorName || 'Cashmemo';
   const address = profileAddress(loggedInUser);
   const paymentQr = paymentQrSource(loggedInUser);
   const dealerCode = loggedInUser?.dealerCode || loggedInUser?.profileData?.distributorCode || 'DEALER';
+  useEffect(() => {
+    let active = true;
+    loadAttendanceDataFromFirebase(loggedInUser).then((remoteData) => {
+      if (active) setEmployees(remoteData.employees);
+    });
+    return () => { active = false; };
+  }, [loggedInUser?.id, loggedInUser?.dealerCode, loggedInUser?.dealerName]);
   const cardsToPrint = useMemo(() => selectedEmployeeId ? employees.filter((employee) => employee.id === selectedEmployeeId) : employees, [employees, selectedEmployeeId]);
   const printIdCards = () => {
     document.body.classList.add('id-card-printing');
