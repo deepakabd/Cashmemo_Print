@@ -1543,8 +1543,9 @@
 }
 
 .admin-chat-conversation {
-  display: grid;
+  display: flex;
   gap: 12px;
+  flex-direction: column;
 }
 
 .admin-chat-message {
@@ -2380,6 +2381,7 @@
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.12), transparent 28%),
     rgba(15, 25, 41, 0.44);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   animation: consumerDetailFlash 220ms ease-out;
 }
@@ -2410,6 +2412,19 @@
   animation: consumerDetailPop 240ms ease-out;
   scrollbar-width: thin;
   scrollbar-color: rgba(96, 112, 132, 0.55) transparent;
+}
+
+.consumer-detail-modal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.consumer-detail-modal::-webkit-scrollbar-thumb {
+  background-color: rgba(96, 112, 132, 0.55);
+  border-radius: 4px;
+}
+
+.consumer-detail-modal::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @keyframes consumerDetailPop {
@@ -4223,6 +4238,22 @@
     grid-template-columns: 1fr;
   }
 }
+.hidden-file-input {
+  display: none;
+}
+
+.mb-20 {
+  margin-bottom: 20px;
+}
+
+.w-100 {
+  width: 100%;
+}
+
+.mt-8 {
+  margin-top: 8px;
+}
+
 .register-title {
   margin: 8px 0 0;
   text-align: left;
@@ -5460,6 +5491,7 @@
   border-radius: 14px;
   background: rgba(248, 251, 255, 0.96);
   box-shadow: 0 10px 24px rgba(20, 53, 89, 0.08);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 

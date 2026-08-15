@@ -68,6 +68,9 @@ const LazyBankDetailsPanel = lazy(() => import('./components/UserPanels').then((
 const LazyUserProfilePanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.UserProfilePanel })));
 const LazyContactSupportPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.ContactSupportPanel })));
 const LazyDictionaryRequestPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.DictionaryRequestPanel })));
+const LazyAttendancePage = lazy(() => import('./AttendancePage'));
+const LazyIdCardPage = lazy(() => import('./IdCardPage'));
+const LazyEmployeeProfilePage = lazy(() => import('./EmployeeProfilePage'));
 
 // Helper function to convert Excel serial date to JavaScript Date object
 const excelSerialDateToJSDate = (serial) => {
@@ -702,6 +705,9 @@ function App() {
   const [showLabelUpdate, setShowLabelUpdate] = useState(false);
   const [showHeaderUpdate, setShowHeaderUpdate] = useState(false);
   const [showCashmemoLayout, setShowCashmemoLayout] = useState(false);
+  const [showAttendance, setShowAttendance] = useState(false);
+  const [showIdCard, setShowIdCard] = useState(false);
+  const [showEmployeeProfile, setShowEmployeeProfile] = useState(false);
   const [showUpgradePlan, setShowUpgradePlan] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -1631,6 +1637,9 @@ function App() {
     setShowLabelUpdate(false);
     setShowHeaderUpdate(false);
     setShowCashmemoLayout(false);
+    setShowAttendance(false);
+    setShowIdCard(false);
+    setShowEmployeeProfile(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -1677,6 +1686,25 @@ function App() {
     hideAllViews();
     setShowCashmemoLayout(true);
     setShowUserMenu(false);
+  };
+  const handleAttendanceOpen = () => {
+    hideAllViews();
+    setShowAttendance(true);
+    setShowUserMenu(false);
+  };
+  const handleIdCardOpen = () => {
+    hideAllViews();
+    setShowIdCard(true);
+    setShowUserMenu(false);
+  };
+  const handleEmployeeProfileOpen = () => {
+    hideAllViews();
+    setShowEmployeeProfile(true);
+    setShowUserMenu(false);
+  };
+  const handleEmployeeProfileClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
   };
   const handleBankDetails = () => {
     hideAllViews();
@@ -4835,7 +4863,7 @@ function App() {
               type="button"
               className="admin-density-toggle"
               onClick={toggleAdminRowDensity}
-              aria-pressed={adminRowDensity === 'compact'}
+              aria-pressed={adminRowDensity === 'compact' ? 'true' : 'false'}
               title="Toggle table row density"
             >
               {adminRowDensity === 'compact' ? 'Compact' : 'Comfortable'}
@@ -4863,6 +4891,7 @@ function App() {
               <input
                 className="form-input admin-search-input"
                 type="text"
+              aria-label="Search current tab"
                 value={adminSearchTerm}
                 onChange={(e) => setAdminSearchTerm(e.target.value)}
                 placeholder="Search current tab..."
@@ -5066,22 +5095,22 @@ function App() {
             <span>Bulk Import Users</span>
             <div className="admin-bulk-actions">
               <button className="admin-ghost-btn" onClick={() => adminImportRef.current?.click()}>Import CSV/XLSX</button>
-              <input ref={adminImportRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={handleAdminImport} />
+              <input ref={adminImportRef} type="file" accept=".csv,.xlsx" className="hidden-file-input" onChange={handleAdminImport} />
             </div>
           </div>
           <div className="admin-form">
-            <input className="form-input" placeholder="Dealer Code" value={newUser.dealerCode} onChange={(e) => setNewUser((p) => ({ ...p, dealerCode: e.target.value }))} />
-            <input className="form-input" placeholder="Dealer Name" value={newUser.dealerName} onChange={(e) => setNewUser((p) => ({ ...p, dealerName: e.target.value }))} />
-            <input className="form-input" placeholder="Mobile" value={newUser.mobile} onChange={(e) => setNewUser((p) => ({ ...p, mobile: e.target.value }))} />
-            <input className="form-input" placeholder="Email" type="email" value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} />
-            <select className="form-input" value={newUser.package} onChange={(e) => setNewUser((p) => ({ ...p, package: e.target.value }))}>
+            <input className="form-input" aria-label="New User Dealer Code" placeholder="Dealer Code" value={newUser.dealerCode} onChange={(e) => setNewUser((p) => ({ ...p, dealerCode: e.target.value }))} />
+            <input className="form-input" aria-label="New User Dealer Name" placeholder="Dealer Name" value={newUser.dealerName} onChange={(e) => setNewUser((p) => ({ ...p, dealerName: e.target.value }))} />
+            <input className="form-input" aria-label="New User Mobile" placeholder="Mobile" value={newUser.mobile} onChange={(e) => setNewUser((p) => ({ ...p, mobile: e.target.value }))} />
+            <input className="form-input" aria-label="New User Email" placeholder="Email" type="email" value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} />
+            <select className="form-input" aria-label="New User Package" value={newUser.package} onChange={(e) => setNewUser((p) => ({ ...p, package: e.target.value }))}>
               <option value="">Select Package</option>
               {PACKAGE_OPTIONS.map((pkg) => (
                 <option key={pkg} value={pkg}>{pkg}</option>
               ))}
             </select>
-            <input className="form-input" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
-            <select className="form-input" value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
+            <input className="form-input" aria-label="New User PIN" placeholder="PIN" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
+            <select className="form-input" aria-label="New User Role" value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
               <option value="operator">Operator</option>
               <option value="viewer">Viewer</option>
               <option value="admin">Admin</option>
@@ -5200,11 +5229,11 @@ function App() {
           <div className="admin-section">
             <h3>Edit User Details</h3>
             <div className="admin-edit-grid">
-              <input className="form-input" placeholder="Dealer Code" value={editUser.dealerCode} onChange={(e) => setEditUser((p) => ({ ...p, dealerCode: e.target.value }))} />
-              <input className="form-input" placeholder="Dealer Name" value={editUser.dealerName} onChange={(e) => setEditUser((p) => ({ ...p, dealerName: e.target.value }))} />
-              <input className="form-input" placeholder="Mobile" value={editUser.mobile} onChange={(e) => setEditUser((p) => ({ ...p, mobile: e.target.value }))} />
-              <input className="form-input" placeholder="Email" value={editUser.email} onChange={(e) => setEditUser((p) => ({ ...p, email: e.target.value }))} />
-              <select className="form-input" value={editUser.package} onChange={(e) => {
+              <input className="form-input" aria-label="Edit User Dealer Code" placeholder="Dealer Code" value={editUser.dealerCode} onChange={(e) => setEditUser((p) => ({ ...p, dealerCode: e.target.value }))} />
+              <input className="form-input" aria-label="Edit User Dealer Name" placeholder="Dealer Name" value={editUser.dealerName} onChange={(e) => setEditUser((p) => ({ ...p, dealerName: e.target.value }))} />
+              <input className="form-input" aria-label="Edit User Mobile" placeholder="Mobile" value={editUser.mobile} onChange={(e) => setEditUser((p) => ({ ...p, mobile: e.target.value }))} />
+              <input className="form-input" aria-label="Edit User Email" placeholder="Email" value={editUser.email} onChange={(e) => setEditUser((p) => ({ ...p, email: e.target.value }))} />
+              <select className="form-input" aria-label="Edit User Package" value={editUser.package} onChange={(e) => {
                 const newPkg = e.target.value;
                 const validity = computeValidityDates(newPkg);
                 setEditUser((p) => ({
@@ -5219,34 +5248,34 @@ function App() {
                   <option key={pkg} value={pkg}>{pkg}</option>
                 ))}
               </select>
-              <input className="form-input" type="date" value={editUser.validFrom} onChange={(e) => setEditUser((p) => ({ ...p, validFrom: e.target.value }))} />
-              <input className="form-input" type="date" value={editUser.validTill} onChange={(e) => setEditUser((p) => ({ ...p, validTill: e.target.value }))} />
-              <input className="form-input" placeholder="PIN" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
-              <select className="form-input" value={editUser.role} onChange={(e) => setEditUser((p) => ({ ...p, role: e.target.value }))}>
+              <input className="form-input" aria-label="Edit User Valid From" type="date" value={editUser.validFrom} onChange={(e) => setEditUser((p) => ({ ...p, validFrom: e.target.value }))} />
+              <input className="form-input" aria-label="Edit User Valid Till" type="date" value={editUser.validTill} onChange={(e) => setEditUser((p) => ({ ...p, validTill: e.target.value }))} />
+              <input className="form-input" aria-label="Edit User PIN" placeholder="PIN" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
+              <select className="form-input" aria-label="Edit User Role" value={editUser.role} onChange={(e) => setEditUser((p) => ({ ...p, role: e.target.value }))}>
                 <option value="operator">Operator</option>
                 <option value="viewer">Viewer</option>
                 <option value="admin">Admin</option>
               </select>
-              <select className="form-input" value={editUser.status} onChange={(e) => setEditUser((p) => ({ ...p, status: e.target.value }))}>
+              <select className="form-input" aria-label="Edit User Status" value={editUser.status} onChange={(e) => setEditUser((p) => ({ ...p, status: e.target.value }))}>
                 <option value="active">Active</option>
                 <option value="disabled">Disabled</option>
                 <option value="expired">Expired</option>
               </select>
             </div>
             <div className="admin-edit-grid admin-edit-grid-profile">
-              <input className="form-input" placeholder="Profile Distributor Code" value={editUser.profileData.distributorCode} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, distributorCode: e.target.value } }))} />
-              <input className="form-input" placeholder="Profile Distributor Name" value={editUser.profileData.distributorName} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, distributorName: e.target.value } }))} />
-              <input className="form-input" placeholder="Profile Contact" value={editUser.profileData.contact} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, contact: e.target.value } }))} />
-              <input className="form-input" placeholder="Profile Email" value={editUser.profileData.email} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, email: e.target.value } }))} />
-              <input className="form-input" placeholder="Profile GST" value={editUser.profileData.gst} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, gst: e.target.value } }))} />
-              <input className="form-input" placeholder="Profile Address" value={editUser.profileData.address} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, address: e.target.value } }))} />
-              <input className="form-input" placeholder="Profile Photo Data URL" value={editUser.profileData.photoDataUrl} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, photoDataUrl: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Profile Distributor Code" placeholder="Profile Distributor Code" value={editUser.profileData.distributorCode} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, distributorCode: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Profile Distributor Name" placeholder="Profile Distributor Name" value={editUser.profileData.distributorName} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, distributorName: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Profile Contact" placeholder="Profile Contact" value={editUser.profileData.contact} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, contact: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Profile Email" placeholder="Profile Email" value={editUser.profileData.email} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, email: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Profile GST" placeholder="Profile GST" value={editUser.profileData.gst} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, gst: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Profile Address" placeholder="Profile Address" value={editUser.profileData.address} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, address: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Profile Photo Data URL" placeholder="Profile Photo Data URL" value={editUser.profileData.photoDataUrl} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, photoDataUrl: e.target.value } }))} />
             </div>
             <div className="admin-edit-grid admin-edit-grid-bank">
-              <input className="form-input" placeholder="Bank Name" value={editUser.bankDetailsData.bankName} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, bankName: e.target.value } }))} />
-              <input className="form-input" placeholder="Branch" value={editUser.bankDetailsData.branch} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, branch: e.target.value } }))} />
-              <input className="form-input" placeholder="Account No" value={editUser.bankDetailsData.accountNo} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, accountNo: e.target.value } }))} />
-              <input className="form-input" placeholder="IFSC" value={editUser.bankDetailsData.ifsc} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, ifsc: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Bank Name" placeholder="Bank Name" value={editUser.bankDetailsData.bankName} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, bankName: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Branch" placeholder="Branch" value={editUser.bankDetailsData.branch} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, branch: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit Account No" placeholder="Account No" value={editUser.bankDetailsData.accountNo} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, accountNo: e.target.value } }))} />
+              <input className="form-input" aria-label="Edit IFSC" placeholder="IFSC" value={editUser.bankDetailsData.ifsc} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, ifsc: e.target.value } }))} />
             </div>
             <div className="form-actions">
               <button onClick={saveEditedUser} disabled={!canMutateAdminData}>Save User Changes</button>
@@ -5419,7 +5448,7 @@ function App() {
                               </div>
                             )}
                             {replyText && (
-                              <div className="admin-feedback-chat">
+                              <div className="admin-feedback-chat mt-8">
                                 <div className="admin-feedback-chat-message user-message">
                                   <strong>User:</strong>
                                   <span>{f.text || '-'}</span>
@@ -5460,19 +5489,19 @@ function App() {
                           <td>{formatDisplayDate(f.createdAt || f.date)}</td>
                           <td>
                             <div className="admin-actions">
-                              <select className="form-input admin-inline-select" value={f.priority || 'medium'} onChange={(e) => setFeedbackPriority(f, e.target.value)} disabled={!canMutateAdminData}>
+                              <select className="form-input admin-inline-select" aria-label="Set priority" value={f.priority || 'medium'} onChange={(e) => setFeedbackPriority(f, e.target.value)} disabled={!canMutateAdminData}>
                                 <option value="high">High</option>
                                 <option value="medium">Medium</option>
                                 <option value="low">Low</option>
                               </select>
-                              <select className="form-input admin-inline-select" value={workflowState} onChange={(e) => setFeedbackWorkflow(f, e.target.value)} disabled={!canMutateAdminData}>
+                              <select className="form-input admin-inline-select" aria-label="Set workflow state" value={workflowState} onChange={(e) => setFeedbackWorkflow(f, e.target.value)} disabled={!canMutateAdminData}>
                                 <option value="awaiting-admin">Awaiting Admin</option>
                                 <option value="awaiting-user">Awaiting User</option>
                                 <option value="resolved">Resolved</option>
                               </select>
-                              <input className="form-input admin-inline-input" value={f.assignee || ''} onChange={(e) => setFeedbackAssignee(f, e.target.value)} placeholder="Assignee" disabled={!canMutateAdminData} />
-                              <input className="form-input admin-inline-input" value={f.tags || ''} onChange={(e) => setFeedbackTags(f, e.target.value)} placeholder="tags, comma separated" disabled={!canMutateAdminData} />
-                              <input className="form-input admin-inline-input" type="date" value={String(f.followUpDate || '').slice(0, 10)} onChange={(e) => setFeedbackFollowUpDate(f, e.target.value)} disabled={!canMutateAdminData} />
+                              <input className="form-input admin-inline-input" aria-label="Assignee" value={f.assignee || ''} onChange={(e) => setFeedbackAssignee(f, e.target.value)} placeholder="Assignee" disabled={!canMutateAdminData} />
+                              <input className="form-input admin-inline-input" aria-label="Tags" value={f.tags || ''} onChange={(e) => setFeedbackTags(f, e.target.value)} placeholder="tags, comma separated" disabled={!canMutateAdminData} />
+                              <input className="form-input admin-inline-input" aria-label="Follow-up date" type="date" value={String(f.followUpDate || '').slice(0, 10)} onChange={(e) => setFeedbackFollowUpDate(f, e.target.value)} disabled={!canMutateAdminData} />
                               <button type="button" className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
                                 {f.resolved ? 'Reopen' : 'Resolve'}
                               </button>
@@ -5511,16 +5540,15 @@ function App() {
                     <button type="button" className="admin-chat-popup-close" onClick={closeAdminReplyPopup}>Close</button>
                   </div>
                   <div className="admin-chat-popup-body">
-                    <div className="admin-chat-content" style={{ width: '100%' }}>
-                      <div className="admin-chat-conversation" style={{ flexDirection: 'column', gap: '12px' }}>
+                <div className="admin-chat-content w-100">
+                  <div className="admin-chat-conversation">
                         <h4>Chat History</h4>
                         {getConversationHistory(activeAdminFeedback).map((historyItem) => {
                           const replyText = feedbackReplies?.[historyItem.id] || feedbackReplies?.[historyItem.clientFeedbackId];
                           const isSelected = activeAdminFeedback && (historyItem.id === activeAdminFeedback.id || historyItem.clientFeedbackId === activeAdminFeedback.clientFeedbackId);
                           return (
                             <div key={historyItem.id || historyItem.clientFeedbackId || `${historyItem.dealerCode}-${historyItem.createdAt}`}
-                              className={`admin-feedback-chat ${isSelected ? 'admin-feedback-chat-selected' : ''}`}
-                              style={{ padding: '12px', borderRadius: '8px', background: isSelected ? '#eef6ff' : '#f8f8f8' }}>
+                          className={`admin-feedback-chat ${isSelected ? 'admin-feedback-chat-selected' : ''}`}>
                               <div className="admin-feedback-chat-message user-message">
                                 <strong>User:</strong>
                                 <span>{historyItem.text || historyItem.feedback || 'No message content.'}</span>
@@ -5542,7 +5570,7 @@ function App() {
                                 <span>{replyText || 'No reply yet.'}</span>
                                 {replyText && <small>Replied</small>}
                               </div>
-                              <div style={{ marginTop: '8px' }}>
+                              <div className="mt-8">
                                 <button
                                   type="button"
                                   className="form-button admin-chat-history-select"
@@ -5558,6 +5586,7 @@ function App() {
                       </div>
                       <textarea
                         className="form-input"
+                    aria-label="Feedback reply"
                         rows="5"
                         value={adminReplyDraft}
                         onChange={(e) => setAdminReplyDraft(e.target.value)}
@@ -5701,6 +5730,7 @@ function App() {
                             {entry.approval ? (
                               <input
                                 className="form-input admin-inline-input"
+                                aria-label="English Word for API request"
                                 value={getDictionaryApprovalPayload(entry.approval)?.englishWord || entry.englishWord}
                                 onChange={(e) => updateDictionaryApprovalEdit(entry.approval, 'englishWord', e.target.value)}
                                 disabled={!canMutateAdminData}
@@ -5711,6 +5741,7 @@ function App() {
                             {entry.approval ? (
                               <input
                                 className="form-input admin-inline-input"
+                                aria-label="Hindi Translation for API request"
                                 value={getDictionaryApprovalPayload(entry.approval)?.hindiTranslation || entry.hindiTranslation}
                                 onChange={(e) => updateDictionaryApprovalEdit(entry.approval, 'hindiTranslation', e.target.value)}
                                 disabled={!canMutateAdminData}
@@ -5858,6 +5889,7 @@ function App() {
                           <td>
                             <input
                               className="form-input"
+                              aria-label="English word"
                               value={dictionaryPayload?.englishWord || ''}
                               onChange={(e) => updateDictionaryApprovalEdit(a, 'englishWord', e.target.value)}
                               placeholder="English word"
@@ -5869,6 +5901,7 @@ function App() {
                           <td>
                             <input
                               className="form-input"
+                              aria-label="Hindi translation"
                               value={dictionaryPayload?.hindiTranslation || ''}
                               onChange={(e) => updateDictionaryApprovalEdit(a, 'hindiTranslation', e.target.value)}
                               placeholder="Hindi translation"
@@ -6184,12 +6217,14 @@ function App() {
             <div key={announcementDraftFormKey} className="admin-form admin-form--announcements">
               <input
                 className="form-input"
+                aria-label="Announcement title"
                 placeholder="Announcement title"
                 defaultValue={announcementDraft.title}
                 onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, title: e.target.value }; }}
               />
               <select
                 className="form-input"
+                aria-label="Announcement target scope"
                 defaultValue={announcementDraft.targetScope}
                 onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, targetScope: e.target.value }; }}
               >
@@ -6203,6 +6238,7 @@ function App() {
               </select>
               <select
                 className="form-input"
+                aria-label="Announcement notice type"
                 defaultValue={announcementDraft.noticeType}
                 onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, noticeType: e.target.value }; }}
               >
@@ -6213,12 +6249,14 @@ function App() {
               </select>
               <input
                 className="form-input"
+                aria-label="Announcement expiry date"
                 type="date"
                 defaultValue={announcementDraft.expiresAt}
                 onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, expiresAt: e.target.value }; }}
               />
               <textarea
                 className="form-input admin-announcement-message"
+                aria-label="Announcement message"
                 rows="3"
                 placeholder="Type announcement message"
                 defaultValue={announcementDraft.message}
@@ -9276,6 +9314,9 @@ function App() {
           ? 'deliveryStaffUpdate'
           : 'dictionaryUpdate')
       : showCashmemoLayout ? 'cashmemoLayout'
+      : showAttendance ? 'attendance'
+      : showIdCard ? 'idCard'
+      : showEmployeeProfile ? 'employeeProfile'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -9977,6 +10018,16 @@ function App() {
                 Cashmemo Layout
               </button>
             )}
+            {isLoggedIn && (
+              <button className="navbar-button" onClick={handleIdCardOpen} disabled={isPlanExpired}>
+                ID Card
+              </button>
+            )}
+            {isLoggedIn && (
+              <button className="navbar-button" onClick={handleAttendanceOpen} disabled={isPlanExpired}>
+                Attendance
+              </button>
+            )}
             {isLoggedIn && hasHindiPackageAccess && (
               <button className="navbar-button" onClick={handleDictionaryOpen} disabled={!canAccessMenuFeature('dictionaryUpdate')}>
                 Dictionary{pendingDictionaryCount > 0 ? ` (${pendingDictionaryCount})` : ''}
@@ -10138,7 +10189,7 @@ function App() {
           </div>
         </section>
       )}
-      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && (
@@ -10196,6 +10247,21 @@ function App() {
               onPrint={handlePrintCashmemoLayout}
               onClose={navigateToHome}
             />
+          )}
+          {showAttendance && (
+            <Suspense fallback={<div className="placeholder-container">Loading attendance...</div>}>
+              <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} />
+            </Suspense>
+          )}
+          {showIdCard && (
+            <Suspense fallback={<div className="placeholder-container">Loading ID cards...</div>}>
+              <LazyIdCardPage loggedInUser={loggedInUser} onClose={navigateToHome} />
+            </Suspense>
+          )}
+          {showEmployeeProfile && (
+            <Suspense fallback={<div className="placeholder-container">Loading employee profile...</div>}>
+              <LazyEmployeeProfilePage loggedInUser={loggedInUser} onClose={handleEmployeeProfileClose} />
+            </Suspense>
           )}
           {showLabelUpdate && <LabelUpdatePage />}
           {showHeaderUpdate && <HeaderUpdateForm onClose={navigateToHome} />}
