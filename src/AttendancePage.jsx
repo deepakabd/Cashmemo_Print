@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { currentTime, loadAttendanceData, saveAttendanceData, todayKey } from './attendanceStore';
+import { currentTime, loadAttendanceData, loadAttendanceDataFromFirebase, saveAttendanceData, todayKey } from './attendanceStore';
 import './Attendance.css';
 
 const STATUSES = ['Present', 'Half Day', 'Absent', 'Leave', 'Paid Leave'];
@@ -29,6 +29,13 @@ export default function AttendancePage({ loggedInUser, onClose, onEmployeeProfil
   const [salarySlip, setSalarySlip] = useState(null);
   const [message, setMessage] = useState('');
   const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let active = true;
+    loadAttendanceDataFromFirebase(loggedInUser).then((remoteData) => {
+      if (active) setData(remoteData);
+    });
+    return () => { active = false; };
+  }, [loggedInUser?.id, loggedInUser?.dealerCode, loggedInUser?.dealerName]);
   const dayRecords = data.records[date] || {};
   const selectedHoliday = data.holidays?.[date] || '';
   const persist = (next) => { setData(next); saveAttendanceData(loggedInUser, next); };
