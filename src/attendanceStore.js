@@ -29,18 +29,26 @@ export const loadAttendanceData = (user) => {
 export const saveAttendanceData = (user, data) => {
   localStorage.setItem(getKey(user), JSON.stringify(data));
   const syncKey = `${getKey(user)}_sync`;
+  const syncVersionKey = `${syncKey}_version`;
+  const syncVersion = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(syncVersionKey, syncVersion);
   localStorage.setItem(syncKey, 'pending');
   window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status: 'pending' } }));
-  void setDoc(getFirestoreAttendanceRef(user), { attendanceData: { ...normalizeAttendanceData(data), updatedAt: serverTimestamp() } }, { merge: true }).then(() => {
-    localStorage.setItem(syncKey, 'synced');
-    window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status: 'synced' } }));
+  return setDoc(getFirestoreAttendanceRef(user), { attendanceData: { ...normalizeAttendanceData(data), updatedAt: serverTimestamp() } }, { merge: true }).then(() => {
+    if (localStorage.getItem(syncVersionKey) === syncVersion) {
+      localStorage.setItem(syncKey, 'synced');
+      window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status: 'synced' } }));
+    }
+    return true;
   }).catch((error) => {
     console.warn('Attendance cloud save failed; local copy retained.', error);
-    window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status: 'offline' } }));
+    if (localStorage.getItem(syncVersionKey) === syncVersion) window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status: 'offline' } }));
+    return false;
   });
 };
 
 export const loadAttendanceDataFromFirebase = async (user) => {
+  if (localStorage.getItem(`${getKey(user)}_sync`) === 'pending') return loadAttendanceData(user);
   try {
     const snapshot = await getDoc(getFirestoreAttendanceRef(user));
     if (!snapshot.exists() || !snapshot.data()?.attendanceData) return loadAttendanceData(user);

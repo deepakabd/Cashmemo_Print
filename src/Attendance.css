@@ -74,3 +74,35 @@
 @media print{.attendance-print-table thead th:nth-last-child(-n+2),.attendance-print-table tbody td:nth-last-child(-n+2){display:none!important}}
 @media screen{.attendance-report .attendance-print-table{table-layout:auto!important}.attendance-report .attendance-print-table th.print-wage,.attendance-report .attendance-print-table td.print-wage-cell{width:max-content!important;min-width:145px!important;max-width:none!important;white-space:nowrap!important}.attendance-report .attendance-print-table td.print-wage-cell{font-size:11px!important;letter-spacing:-.04em!important;overflow:visible!important}.attendance-report .attendance-print-table td.print-wage--8,.attendance-report .attendance-print-table td.print-wage--9,.attendance-report .attendance-print-table td.print-wage--10{font-size:10px!important}.attendance-report .attendance-print-table td.print-wage--11,.attendance-report .attendance-print-table td.print-wage--12{font-size:9px!important}}
 @media screen{.attendance-report .attendance-print-table th:nth-last-child(2){width:max-content!important;min-width:145px!important;max-width:none!important;white-space:nowrap!important}}
+.profile-section-grid--wide{grid-template-columns:repeat(2,minmax(0,1fr))}.profile-fields--three{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.profile-fields--three label{min-width:0}.profile-fields--three input{width:100%;box-sizing:border-box}.profile-month-picker{display:grid;gap:5px;margin-bottom:12px;color:#65798e;font-size:11px;font-weight:800}.profile-month-picker input{padding:8px;border:1px solid #cbd9e5;border-radius:7px;font:inherit}.profile-stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.profile-stat-grid>div{padding:10px;border-radius:8px;background:#f2f7fa}.profile-stat-grid span,.profile-stat-grid b{display:block}.profile-stat-grid span{color:#718498;font-size:9px;font-weight:800;text-transform:uppercase}.profile-stat-grid b{margin-top:4px;color:#244b68;font-size:15px}.profile-history{display:grid;gap:5px;margin-top:13px}.profile-history small{padding:7px 9px;border-radius:6px;color:#60778b;background:#f5f8fa;font-size:11px}@media(max-width:900px){.profile-section-grid--wide{grid-template-columns:1fr}.profile-fields--three{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.profile-fields--three,.profile-stat-grid{grid-template-columns:1fr}}
+@media print{
+  html:has(.attendance-report-overlay),body:has(.attendance-report-overlay),body:has(.attendance-report-overlay) #root{margin:0!important;padding:0!important;min-height:0!important;height:auto!important;overflow:visible!important}
+  body:has(.attendance-report-overlay) .book-view{display:block!important;margin:0!important;padding:0!important;min-height:0!important;height:auto!important;overflow:visible!important;break-before:auto!important;break-after:auto!important}
+  body:has(.attendance-report-overlay) .attendance-page{margin:0!important;padding:0!important;min-height:0!important;height:auto!important;break-before:auto!important;break-after:auto!important}
+  body:has(.attendance-report-overlay) .attendance-report-overlay{margin:0!important;transform:none!important;break-before:auto!important;page-break-before:auto!important;break-after:auto!important;page-break-after:auto!important}
+}
+@media print{
+  @page attendance-report-page{size:A4 landscape;margin:4mm}
+  @page salary-slip-page{size:A4 portrait;margin:8mm}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-report-overlay:not(.salary-slip-overlay){page:attendance-report-page;width:100%!important;max-width:none!important}
+  body:has(.salary-slip-overlay) .salary-slip-overlay{page:salary-slip-page;width:100%!important;max-width:none!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-sheet{width:100%!important;min-width:0!important;max-width:none!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table{width:100%!important;min-width:0!important;max-width:none!important;table-layout:fixed!important}
+}
+.employee-profile-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px;padding:14px 16px;border:1px solid #dbe5ef;border-radius:12px;background:#fff;box-shadow:0 8px 20px rgba(23,47,75,.06)}
+.profile-action{min-width:92px;padding:9px 15px;border:1px solid transparent;border-radius:8px;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+.profile-action:disabled{opacity:.5;cursor:not-allowed}
+.profile-action--edit{color:#17689f;background:#eaf5fc;border-color:#c7e0f1}
+.profile-action--status{color:#876000;background:#fff5d8;border-color:#f0d68b}
+.profile-action--delete{color:#a53b3b;background:#fff0f0;border-color:#f0c5c5}
+.employee-profile-page:not(.is-editing) .profile-save{opacity:.55;cursor:not-allowed}
+@media(max-width:520px){.employee-profile-actions{justify-content:stretch}.profile-action{flex:1;min-width:0;padding-inline:8px}}
+.profile-section--full{grid-column:1/-1}
+.profile-basic-layout{display:grid;grid-template-columns:124px minmax(0,1fr);gap:18px;align-items:start}
+.employee-profile-photo{display:grid;place-items:center;width:124px;height:150px;overflow:hidden;border:3px solid #d9e8f2;border-radius:12px;color:#17689f;background:#edf6fb;font-size:32px;font-weight:800}
+.employee-profile-photo img{width:100%;height:100%;object-fit:cover}
+.profile-basic-layout .profile-fields select{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd9e5;border-radius:7px;background:#fff;font:inherit}
+.employee-profile-photo-upload{display:grid!important;gap:5px!important;padding:10px;border:1px dashed #94b9d4;border-radius:8px;color:#17689f!important;background:#f5fbff;cursor:pointer}
+.employee-profile-photo-upload input{padding:0!important;border:0!important;font-size:10px!important}
+.employee-profile-photo-upload small{color:#71869a;font-size:10px;font-weight:600}
+@media(max-width:720px){.profile-section--full{grid-column:auto}.profile-basic-layout{grid-template-columns:1fr}.employee-profile-photo{width:104px;height:126px}}

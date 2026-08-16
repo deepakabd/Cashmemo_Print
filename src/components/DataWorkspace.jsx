@@ -456,7 +456,7 @@ const DataWorkspace = (props) => {
         label: key,
         value: formatConsumerDetailValue(activeConsumer, key),
       }));
-
+//check
     const sections = [];
     if (basicFields.length > 0) {
       sections.push({
