@@ -3,6 +3,7 @@ import { generateEmployeeCode, loadAttendanceData, loadAttendanceDataFromFirebas
 import './Attendance.css';
 
 const initials = (name = '') => name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'E';
+const activeEmployeesOnly = (employees = []) => employees.filter((employee) => employee.active !== false);
 const profileAddress = (user = {}) => user.address || user.profileData?.address || user.profileData?.dealerAddress || '';
 const paymentQrSource = (user = {}) => user.paymentProfileData?.qrDataUrl
   || user.paymentProfileData?.qrCodeDataUrl
@@ -39,7 +40,7 @@ function CardBack({ businessName, address }) {
 }
 
 export default function IdCardPage({ loggedInUser, onClose }) {
-  const [employees, setEmployees] = useState(() => loadAttendanceData(loggedInUser).employees);
+  const [employees, setEmployees] = useState(() => activeEmployeesOnly(loadAttendanceData(loggedInUser).employees));
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
   const [cardType, setCardType] = useState('qr');
@@ -53,10 +54,10 @@ export default function IdCardPage({ loggedInUser, onClose }) {
   useEffect(() => {
     let active = true;
     const unsubscribe = subscribeAttendanceData(loggedInUser, (remoteData) => {
-      if (active) setEmployees(remoteData.employees);
+      if (active) setEmployees(activeEmployeesOnly(remoteData.employees));
     });
     loadAttendanceDataFromFirebase(loggedInUser).then((remoteData) => {
-      if (active) setEmployees(remoteData.employees);
+      if (active) setEmployees(activeEmployeesOnly(remoteData.employees));
     });
     return () => { active = false; unsubscribe(); };
   }, [loggedInUser?.id, loggedInUser?.dealerCode, loggedInUser?.dealerName]);
