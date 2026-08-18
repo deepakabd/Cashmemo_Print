@@ -71,6 +71,8 @@ const LazyDictionaryRequestPanel = lazy(() => import('./components/UserPanels').
 const LazyAttendancePage = lazy(() => import('./AttendancePage'));
 const LazyIdCardPage = lazy(() => import('./IdCardPage'));
 const LazyEmployeeProfilePage = lazy(() => import('./EmployeeProfilePage'));
+const LazySalarySlipPage = lazy(() => import('./SalarySlipPage'));
+const LazyAttendanceReportPage = lazy(() => import('./AttendanceReportPage'));
 
 // Helper function to convert Excel serial date to JavaScript Date object
 const excelSerialDateToJSDate = (serial) => {
@@ -708,6 +710,9 @@ function App() {
   const [showAttendance, setShowAttendance] = useState(false);
   const [showIdCard, setShowIdCard] = useState(false);
   const [showEmployeeProfile, setShowEmployeeProfile] = useState(false);
+  const [showEmployeeProfileCreate, setShowEmployeeProfileCreate] = useState(false);
+  const [showSalarySlipPage, setShowSalarySlipPage] = useState(false);
+  const [showAttendanceReportPage, setShowAttendanceReportPage] = useState(false);
   const [showUpgradePlan, setShowUpgradePlan] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -1640,6 +1645,9 @@ function App() {
     setShowAttendance(false);
     setShowIdCard(false);
     setShowEmployeeProfile(false);
+    setShowEmployeeProfileCreate(false);
+    setShowSalarySlipPage(false);
+    setShowAttendanceReportPage(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -1697,12 +1705,41 @@ function App() {
     setShowIdCard(true);
     setShowUserMenu(false);
   };
+  const handleIdCardClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
   const handleEmployeeProfileOpen = () => {
     hideAllViews();
     setShowEmployeeProfile(true);
+    setShowEmployeeProfileCreate(false);
+    setShowUserMenu(false);
+  };
+  const handleEmployeeAddOpen = () => {
+    hideAllViews();
+    setShowEmployeeProfile(true);
+    setShowEmployeeProfileCreate(true);
     setShowUserMenu(false);
   };
   const handleEmployeeProfileClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
+  const handleSalarySlipOpen = () => {
+    hideAllViews();
+    setShowSalarySlipPage(true);
+    setShowUserMenu(false);
+  };
+  const handleSalarySlipClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
+  const handleAttendanceReportOpen = () => {
+    hideAllViews();
+    setShowAttendanceReportPage(true);
+    setShowUserMenu(false);
+  };
+  const handleAttendanceReportClose = () => {
     hideAllViews();
     setShowAttendance(true);
   };
@@ -9317,6 +9354,8 @@ function App() {
       : showAttendance ? 'attendance'
       : showIdCard ? 'idCard'
       : showEmployeeProfile ? 'employeeProfile'
+      : showSalarySlipPage ? 'salarySlips'
+      : showAttendanceReportPage ? 'attendanceReport'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -10019,11 +10058,6 @@ function App() {
               </button>
             )}
             {isLoggedIn && (
-              <button className="navbar-button" onClick={handleIdCardOpen} disabled={isPlanExpired}>
-                ID Card
-              </button>
-            )}
-            {isLoggedIn && (
               <button className="navbar-button" onClick={handleAttendanceOpen} disabled={isPlanExpired}>
                 Attendance
               </button>
@@ -10189,7 +10223,7 @@ function App() {
           </div>
         </section>
       )}
-      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && (
@@ -10250,17 +10284,27 @@ function App() {
           )}
           {showAttendance && (
             <Suspense fallback={<div className="placeholder-container">Loading attendance...</div>}>
-              <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} />
+              <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} onSalarySlipOpen={handleSalarySlipOpen} onAttendanceReportOpen={handleAttendanceReportOpen} onIdCardOpen={handleIdCardOpen} onEmployeeAddOpen={handleEmployeeAddOpen} />
             </Suspense>
           )}
           {showIdCard && (
             <Suspense fallback={<div className="placeholder-container">Loading ID cards...</div>}>
-              <LazyIdCardPage loggedInUser={loggedInUser} onClose={navigateToHome} />
+              <LazyIdCardPage loggedInUser={loggedInUser} onClose={handleIdCardClose} />
             </Suspense>
           )}
           {showEmployeeProfile && (
             <Suspense fallback={<div className="placeholder-container">Loading employee profile...</div>}>
-              <LazyEmployeeProfilePage loggedInUser={loggedInUser} onClose={handleEmployeeProfileClose} />
+              <LazyEmployeeProfilePage loggedInUser={loggedInUser} onClose={handleEmployeeProfileClose} createNew={showEmployeeProfileCreate} />
+            </Suspense>
+          )}
+          {showSalarySlipPage && (
+            <Suspense fallback={<div className="placeholder-container">Loading salary slips...</div>}>
+              <LazySalarySlipPage loggedInUser={loggedInUser} onClose={handleSalarySlipClose} />
+            </Suspense>
+          )}
+          {showAttendanceReportPage && (
+            <Suspense fallback={<div className="placeholder-container">Loading attendance report...</div>}>
+              <LazyAttendanceReportPage loggedInUser={loggedInUser} onClose={handleAttendanceReportClose} />
             </Suspense>
           )}
           {showLabelUpdate && <LabelUpdatePage />}

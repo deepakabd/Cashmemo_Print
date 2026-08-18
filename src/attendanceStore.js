@@ -13,8 +13,11 @@ const getFirestoreAttendanceRef = (user = {}) => {
 };
 
 const normalizeAttendanceData = (data = {}) => ({
+  ...data,
   employees: Array.isArray(data.employees) ? data.employees : [],
   records: data.records && typeof data.records === 'object' ? data.records : {},
+  holidays: data.holidays && typeof data.holidays === 'object' ? data.holidays : {},
+  settings: data.settings && typeof data.settings === 'object' ? data.settings : {},
 });
 
 export const loadAttendanceData = (user) => {
