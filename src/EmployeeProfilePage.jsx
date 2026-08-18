@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { compressImageFile, loadAttendanceData, loadAttendanceDataFromFirebase, saveAttendanceData, subscribeAttendanceData, uploadAttendanceAsset } from './attendanceStore';
+import { compressImageFile, generateEmployeeCode, loadAttendanceData, loadAttendanceDataFromFirebase, saveAttendanceData, subscribeAttendanceData, uploadAttendanceAsset } from './attendanceStore';
 import './Attendance.css';
 
 const blankDraft = { name: '', employeeCode: '', contact: '', designation: '', address: '', wageType: 'Monthly Wage', wageAmount: '', photoDataUrl: '', dob: '', gender: '', bloodGroup: '', emergencyContact: '', currentAddress: '', permanentAddress: '', monthlyBonus: '', advanceInstallment: '', manualDeduction: '', bankAccount: '', ifsc: '', upi: '', pfNumber: '', esiNumber: '' };
@@ -7,12 +7,12 @@ const readFileAsDataUrl = (file) => new Promise((resolve, reject) => { const rea
 const withUploadTimeout = (promise, timeout = 12000) => Promise.race([promise, new Promise((_, reject) => window.setTimeout(() => reject(new Error('Upload timed out')), timeout))]);
 const isImageDocument = (document) => String(document?.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(String(document?.name || ''));
 
-export default function EmployeeProfilePage({ loggedInUser, onClose }) {
+export default function EmployeeProfilePage({ loggedInUser, onClose, createNew = false }) {
   const [data, setData] = useState(() => loadAttendanceData(loggedInUser));
   const [employeeId, setEmployeeId] = useState('');
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [draft, setDraft] = useState(blankDraft);
-  const [profileEditing, setProfileEditing] = useState(false);
+  const [profileEditing, setProfileEditing] = useState(createNew);
   const [previewDocument, setPreviewDocument] = useState(null);
   const [message, setMessage] = useState('');
   const employee = data.employees.find((item) => item.id === employeeId);
@@ -47,9 +47,23 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
     setProfileEditing(false);
     notify('Employee profile and payroll details saved.');
   };
+  const createEmployee = () => {
+    const name = draft.name.trim();
+    if (!name) { notify('Employee name is required.'); return; }
+    const dealerCode = loggedInUser?.dealerCode || loggedInUser?.profileData?.distributorCode || 'DEALER';
+    const id = `${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const employeeCode = draft.employeeCode || generateEmployeeCode({ id }, dealerCode, data.employees, data.employees.length + 1);
+    if (data.employees.some((item) => item.employeeCode === employeeCode)) { notify('Duplicate employee ID detected.'); return; }
+    const { employeeCode: ignoredCode, name: ignoredName, contact, designation, address, wageType, wageAmount, photoDataUrl, monthlyBonus, advanceInstallment, manualDeduction, ...profileDetails } = draft;
+    const employee = { id, name, employeeCode, contact, designation, address, wageType, wageAmount, photoDataUrl, monthlyBonus, advanceInstallment, manualDeduction, profile: profileDetails, profileHistory: [{ id: `${Date.now()}`, at: new Date().toISOString(), type: 'Employee created' }] };
+    save({ ...data, employees: [...data.employees, employee] });
+    setEmployeeId(id);
+    setProfileEditing(false);
+    notify('Employee added successfully.');
+  };
   const handleProfilePhotoChange = async (event) => {
     const file = event.target.files?.[0];
-    if (!file || !employee) return;
+    if (!file || (!employee && !createNew)) return;
     if (!file.type.startsWith('image/')) { notify('Please select an image for the employee photo.'); return; }
     if (file.size > 5 * 1024 * 1024) { notify('Employee photo must be under 5 MB.'); return; }
     try {
@@ -131,7 +145,16 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
     {message && <div className="attendance-toast">{message}</div>}
     <section className="employee-profile-workspace">
       <label>Select employee<select value={employeeId} onChange={(event) => selectEmployee(event.target.value)}><option value="">Choose employee</option>{data.employees.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.employeeCode || 'No ID'}{item.active === false ? ' · Inactive' : ''}</option>)}</select></label>
-      {!employee ? <div className="attendance-empty"><h3>Select an employee</h3><p>Profile dashboard and editable records will appear here.</p></div> : <>
+      {!employee ? (createNew ? <>
+        <div className="employee-profile-summary"><div><span>Workspace</span><b>Add employee</b></div><div><span>Employee ID</span><b>Auto-generated on save</b></div><div><span>Profile</span><b>Complete employee details</b></div><div><span>ID card</span><b>Ready after save</b></div></div>
+        <div className="profile-section-grid profile-section-grid--wide">
+          <section className="profile-section--full"><span className="section-label">EMPLOYEE DETAILS</span><h2>Add a team member</h2><p className="profile-help">These details will also be used in attendance reports, salary slips and ID cards.</p><div className="profile-basic-layout"><div className="employee-profile-photo">{draft.photoDataUrl ? <img src={draft.photoDataUrl} alt="New employee preview" /> : <span>NEW</span>}</div><div className="profile-fields profile-fields--three"><label>Full name *<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Employee full name" /></label><label>Employee ID / code<input value={draft.employeeCode} readOnly placeholder="Auto-generated on save" /></label><label>Contact number<input value={draft.contact} onChange={(e) => setDraft({ ...draft, contact: e.target.value })} placeholder="Mobile number" /></label><label>Designation<input value={draft.designation} onChange={(e) => setDraft({ ...draft, designation: e.target.value })} placeholder="Designation" /></label><label className="employee-profile-photo-upload">Employee photo<input type="file" accept="image/*" onChange={handleProfilePhotoChange} /><small>Upload a photo for the ID card</small></label><label>Address<input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} placeholder="Address" /></label><label>Wage type<select value={draft.wageType} onChange={(e) => setDraft({ ...draft, wageType: e.target.value })}><option>Monthly Wage</option><option>Daily Wage</option></select></label><label>Wage amount<input type="number" min="0" value={draft.wageAmount} onChange={(e) => setDraft({ ...draft, wageAmount: e.target.value })} placeholder="Wage amount" /></label></div></div></section>
+          <section><span className="section-label">PERSONAL & EMPLOYMENT</span><h2>Personal details</h2><div className="profile-fields profile-fields--three"><label>Date of birth<input type="date" value={draft.dob} onChange={(e) => setDraft({ ...draft, dob: e.target.value })} /></label><label>Gender<input value={draft.gender} onChange={(e) => setDraft({ ...draft, gender: e.target.value })} placeholder="Male / Female" /></label><label>Blood group<input value={draft.bloodGroup} onChange={(e) => setDraft({ ...draft, bloodGroup: e.target.value })} placeholder="O+" /></label><label>Emergency contact<input value={draft.emergencyContact} onChange={(e) => setDraft({ ...draft, emergencyContact: e.target.value })} placeholder="Name and mobile" /></label><label>Current address<input value={draft.currentAddress} onChange={(e) => setDraft({ ...draft, currentAddress: e.target.value })} placeholder="Current address" /></label><label>Permanent address<input value={draft.permanentAddress} onChange={(e) => setDraft({ ...draft, permanentAddress: e.target.value })} placeholder="Permanent address" /></label></div></section>
+          <section><span className="section-label">BANK & STATUTORY</span><h2>Payroll identity</h2><div className="profile-fields profile-fields--three"><label>Bank account<input value={draft.bankAccount} onChange={(e) => setDraft({ ...draft, bankAccount: e.target.value })} placeholder="Account number" /></label><label>IFSC<input value={draft.ifsc} onChange={(e) => setDraft({ ...draft, ifsc: e.target.value.toUpperCase() })} placeholder="IFSC code" /></label><label>UPI ID<input value={draft.upi} onChange={(e) => setDraft({ ...draft, upi: e.target.value })} placeholder="name@upi" /></label><label>PF number<input value={draft.pfNumber} onChange={(e) => setDraft({ ...draft, pfNumber: e.target.value })} /></label><label>ESI number<input value={draft.esiNumber} onChange={(e) => setDraft({ ...draft, esiNumber: e.target.value })} /></label></div></section>
+          <section><span className="section-label">PAYROLL ADJUSTMENTS</span><h2>Salary additions & deductions</h2><div className="profile-fields profile-fields--three"><label>Monthly bonus<input type="number" min="0" value={draft.monthlyBonus} onChange={(e) => setDraft({ ...draft, monthlyBonus: e.target.value })} /></label><label>Loan / advance<input type="number" min="0" value={draft.advanceInstallment} onChange={(e) => setDraft({ ...draft, advanceInstallment: e.target.value })} /></label><label>Other deduction<input type="number" min="0" value={draft.manualDeduction} onChange={(e) => setDraft({ ...draft, manualDeduction: e.target.value })} /></label></div></section>
+        </div>
+        <div className="employee-profile-actions" aria-label="New employee actions"><button type="button" className="profile-action profile-action--edit" onClick={createEmployee}>Save employee</button><button type="button" className="profile-action profile-action--delete" onClick={onClose}>Cancel</button></div>
+      </> : <div className="attendance-empty"><h3>Select an employee</h3><p>Profile dashboard and editable records will appear here.</p></div>) : <>
         <div className="employee-profile-summary"><div><span>Employee</span><b>{employee.name}</b></div><div><span>Employee ID</span><b>{employee.employeeCode || 'Pending ID'}</b></div><div><span>Attendance</span><b>{attendanceStats.percentage}% · {attendanceStats.working} payable working</b></div><div><span>Pending documents</span><b>{pendingDocuments ? `${pendingDocuments} pending` : 'Complete'}</b></div></div>
         <div className="profile-section-grid profile-section-grid--wide">
           <section className="profile-section--full"><span className="section-label">EMPLOYEE DETAILS</span><h2>Basic employee details</h2><div className="profile-basic-layout"><div className="employee-profile-photo">{draft.photoDataUrl ? <img src={draft.photoDataUrl} alt={`${employee.name} profile`} /> : <span>{employee.name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'E'}</span>}</div><div className="profile-fields profile-fields--three"><label>Full name<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} readOnly={!profileEditing} /></label><label>Employee ID / code<input value={draft.employeeCode} readOnly /></label><label>Contact number<input value={draft.contact} onChange={(e) => setDraft({ ...draft, contact: e.target.value })} readOnly={!profileEditing} /></label><label>Designation<input value={draft.designation} onChange={(e) => setDraft({ ...draft, designation: e.target.value })} readOnly={!profileEditing} /></label><label className="employee-profile-photo-upload">Employee photo<input type="file" accept="image/*" onChange={handleProfilePhotoChange} disabled={!profileEditing} /><small>Upload a new photo</small></label><label>Address<input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} readOnly={!profileEditing} /></label><label>Wage type<select value={draft.wageType} onChange={(e) => setDraft({ ...draft, wageType: e.target.value })} disabled={!profileEditing}><option>Monthly Wage</option><option>Daily Wage</option></select></label><label>Wage amount<input type="number" min="0" value={draft.wageAmount} onChange={(e) => setDraft({ ...draft, wageAmount: e.target.value })} readOnly={!profileEditing} /></label></div></div></section>
