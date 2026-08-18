@@ -11,10 +11,10 @@ const toMinutes = (value = '') => {
   return hour * 60 + Number(match[2]);
 };
 
-export default function SalarySlipPage({ loggedInUser, onClose }) {
+export default function SalarySlipPage({ loggedInUser, onClose, initialEmployeeId = '' }) {
   const [data, setData] = useState(() => loadAttendanceData(loggedInUser));
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [employeeId, setEmployeeId] = useState('');
+  const [employeeId, setEmployeeId] = useState(initialEmployeeId);
   const [shiftSettings, setShiftSettings] = useState(() => loadAttendanceData(loggedInUser).settings?.shift || { start: '09:00', end: '18:00' });
   const employees = (data.employees || []).filter((employee) => employee.active !== false);
   const employee = employees.find((item) => item.id === employeeId) || employees[0] || null;
