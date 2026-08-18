@@ -106,3 +106,44 @@
 .employee-profile-photo-upload input{padding:0!important;border:0!important;font-size:10px!important}
 .employee-profile-photo-upload small{color:#71869a;font-size:10px;font-weight:600}
 @media(max-width:720px){.profile-section--full{grid-column:auto}.profile-basic-layout{grid-template-columns:1fr}.employee-profile-photo{width:104px;height:126px}}
+@media print{
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)){display:block!important;width:100%!important;min-width:0!important;min-height:0!important;height:auto!important;margin:0!important;padding:0!important;overflow:visible!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) #root{display:none!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay))>.attendance-report-overlay:not(.salary-slip-overlay){display:block!important;position:static!important;width:100%!important;min-width:0!important;margin:0!important;padding:0!important;background:#fff!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-report-overlay:not(.salary-slip-overlay){page:attendance-report-page!important;overflow:visible!important;break-before:avoid!important;page-break-before:avoid!important;break-after:avoid!important;page-break-after:avoid!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-report{overflow:visible!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-sheet{overflow:visible!important;box-sizing:border-box;width:100%!important;min-width:0!important;max-width:100%!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-title{height:10mm!important;font-size:16pt!important;line-height:1!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-meta{justify-content:space-between!important;gap:0!important;padding:2mm 0!important;font-size:8pt!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-meta span{min-width:42mm!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table{display:table!important;width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed!important;font-size:5.2pt!important;line-height:1!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table th,body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table td{box-sizing:border-box!important;height:5.5mm!important;padding:.55mm .2mm!important;line-height:1!important;overflow:hidden!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table thead th:nth-child(1){width:5mm!important;min-width:5mm!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table thead th:nth-child(2){width:31mm!important;min-width:31mm!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table thead th:nth-child(3){width:7mm!important;min-width:7mm!important;height:14mm!important;font-size:5.2pt!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table thead th:nth-child(n+4):nth-child(-n+10){width:5.5mm!important;min-width:5.5mm!important;height:14mm!important;font-size:5.2pt!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table thead .print-day{width:4.35mm!important;min-width:4.35mm!important;height:14mm!important;font-size:5pt!important}
+  body:has(.attendance-report-overlay:not(.salary-slip-overlay)) .attendance-print-table .print-name-cell{font-size:5.5pt!important;text-overflow:ellipsis}
+}
+@media print{
+  body:has(.salary-slip-overlay){display:block!important;width:100%!important;min-width:0!important;min-height:0!important;height:auto!important;margin:0!important;padding:0!important;overflow:visible!important}
+  body:has(.salary-slip-overlay) #root{display:none!important}
+  body:has(.salary-slip-overlay)>.salary-slip-overlay{display:block!important;position:static!important;inset:auto!important;width:100%!important;min-width:0!important;margin:0!important;padding:0!important;background:#fff!important;page:salary-slip-page!important;break-before:avoid!important;page-break-before:avoid!important;break-after:avoid!important;page-break-after:avoid!important}
+  body:has(.salary-slip-overlay)>.salary-slip-overlay .salary-slip{display:block!important;width:calc(50% - 4mm)!important;max-width:none!important;margin:0 auto!important;box-shadow:none!important;transform:none!important;transform-origin:top center!important;break-inside:avoid!important}
+}
+.document-preview-link{flex:1;min-width:0;padding:0;border:0;color:#17689f;background:transparent;font:inherit;font-size:12px;font-weight:700;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.document-preview-link:hover{text-decoration:underline}
+.document-download-button,.document-remove-button{flex:0 0 auto;padding:6px 8px;border:0;border-radius:6px;font:inherit;font-size:10px;font-weight:800;cursor:pointer}
+.document-download-button{color:#17689f;background:#eaf4fb}
+.document-remove-button{color:#b74242;background:#fff0f0}
+.document-preview-modal{position:fixed;z-index:4200;inset:0;display:grid;place-items:center;padding:18px;background:rgba(7,28,48,.7)}
+.document-preview-dialog{display:flex;flex-direction:column;width:min(780px,100%);max-height:calc(100vh - 36px);overflow:hidden;border-radius:14px;background:#fff;box-shadow:0 24px 65px rgba(0,0,0,.3)}
+.document-preview-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 18px;border-bottom:1px solid #e3ebf2}
+.document-preview-header h2{margin:3px 0 0;color:#243f5a;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.document-preview-close{width:30px;height:30px;padding:0;border:0;border-radius:50%;color:#365b7b;background:#edf3f8;font-size:22px;line-height:1;cursor:pointer}
+.document-preview-content{display:grid;place-items:center;min-height:260px;overflow:auto;padding:18px;background:#f4f8fb}
+.document-preview-content img{display:block;max-width:100%;max-height:calc(100vh - 210px);object-fit:contain;border-radius:8px;box-shadow:0 4px 16px rgba(23,47,75,.14)}
+.document-preview-content iframe{width:100%;height:min(65vh,620px);border:0;border-radius:8px;background:#fff}
+.document-preview-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid #e3ebf2}
+@media(max-width:520px){.document-preview-modal{padding:8px}.document-preview-dialog{max-height:calc(100vh - 16px)}.document-preview-content{padding:8px}.document-preview-footer{padding:10px}.document-preview-link{font-size:11px}}
+@media print{.document-preview-modal{display:none!important}}

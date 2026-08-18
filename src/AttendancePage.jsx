@@ -37,7 +37,7 @@ export default function AttendancePage({ loggedInUser, onClose, onEmployeeProfil
   const [showReport, setShowReport] = useState(false);
   const [reportMonth, setReportMonth] = useState(todayKey().slice(0, 7));
   const [salarySlip, setSalarySlip] = useState(null);
-  const [salarySlipLayout, setSalarySlipLayout] = useState('4');
+  const [salarySlipLayout] = useState('6');
   const printOverlay = (selector, cleanup = () => {}) => {
     const overlay = document.querySelector(selector);
     if (!overlay) return;
@@ -49,10 +49,7 @@ export default function AttendancePage({ loggedInUser, onClose, onEmployeeProfil
     window.print();
   };
   const printSalarySlip = () => {
-    const selectedLayout = window.prompt('A4 salary slip size: enter 4 (quarter) or 6 (sixth)', salarySlipLayout);
-    if (selectedLayout !== '4' && selectedLayout !== '6') return;
-    setSalarySlipLayout(selectedLayout);
-    const layout = selectedLayout;
+    const layout = salarySlipLayout || '6';
     document.body.classList.add(`salary-slip-layout-${layout}`);
     printOverlay('.salary-slip-overlay', () => document.body.classList.remove('salary-slip-layout-4', 'salary-slip-layout-6'));
   };
