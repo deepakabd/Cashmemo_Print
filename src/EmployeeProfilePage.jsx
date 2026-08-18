@@ -5,6 +5,7 @@ import './Attendance.css';
 const blankDraft = { name: '', employeeCode: '', contact: '', designation: '', address: '', wageType: 'Monthly Wage', wageAmount: '', photoDataUrl: '', dob: '', gender: '', bloodGroup: '', emergencyContact: '', currentAddress: '', permanentAddress: '', monthlyBonus: '', advanceInstallment: '', manualDeduction: '', bankAccount: '', ifsc: '', upi: '', pfNumber: '', esiNumber: '' };
 const readFileAsDataUrl = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 const withUploadTimeout = (promise, timeout = 12000) => Promise.race([promise, new Promise((_, reject) => window.setTimeout(() => reject(new Error('Upload timed out')), timeout))]);
+const isImageDocument = (document) => String(document?.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(String(document?.name || ''));
 
 export default function EmployeeProfilePage({ loggedInUser, onClose }) {
   const [data, setData] = useState(() => loadAttendanceData(loggedInUser));
@@ -12,6 +13,7 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [draft, setDraft] = useState(blankDraft);
   const [profileEditing, setProfileEditing] = useState(false);
+  const [previewDocument, setPreviewDocument] = useState(null);
   const [message, setMessage] = useState('');
   const employee = data.employees.find((item) => item.id === employeeId);
   const notify = (text) => { setMessage(text); window.setTimeout(() => setMessage(''), 2400); };
@@ -32,6 +34,7 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
   const selectEmployee = (id) => {
     const selected = data.employees.find((item) => item.id === id);
     setEmployeeId(id);
+    setPreviewDocument(null);
     setProfileEditing(false);
     setDraft({ ...blankDraft, ...(selected?.profile || {}), name: selected?.name || '', employeeCode: selected?.employeeCode || '', contact: selected?.contact || '', designation: selected?.designation || '', address: selected?.address || '', wageType: selected?.wageType || 'Monthly Wage', wageAmount: selected?.wageAmount || '', photoDataUrl: selected?.photoDataUrl || '', monthlyBonus: selected?.monthlyBonus || '', advanceInstallment: selected?.advanceInstallment || '', manualDeduction: selected?.manualDeduction || '' });
   };
@@ -66,6 +69,7 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
     setEmployeeId('');
     setDraft(blankDraft);
     setProfileEditing(false);
+    setPreviewDocument(null);
     notify('Employee deleted successfully.');
   };
   const toggleEmployeeStatus = () => {
@@ -92,6 +96,27 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
     event.target.value = '';
   };
   const removeDocument = (id) => update({ documents: (employee?.documents || []).filter((document) => document.id !== id) });
+  const downloadDocument = async (document) => {
+    if (!document?.dataUrl) return;
+    try {
+      const response = await fetch(document.dataUrl);
+      const blobUrl = URL.createObjectURL(await response.blob());
+      const link = window.document.createElement('a');
+      link.href = blobUrl;
+      link.download = document.name || 'employee-document';
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch {
+      const link = window.document.createElement('a');
+      link.href = document.dataUrl;
+      link.download = document.name || 'employee-document';
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.click();
+    }
+  };
   const attendanceStats = useMemo(() => {
     const counts = { Present: 0, Absent: 0, 'Half Day': 0, Leave: 0, 'Paid Leave': 0 };
     Object.entries(data.records || {}).filter(([day]) => day.startsWith(reportMonth)).forEach(([, records]) => { const record = employee ? records[employee.id] : null; if (record?.status in counts) counts[record.status] += 1; });
@@ -114,7 +139,7 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
           <section><span className="section-label">BANK & STATUTORY</span><h2>Payroll identity</h2><div className="profile-fields profile-fields--three"><label>Bank account<input value={draft.bankAccount} onChange={(e) => setDraft({ ...draft, bankAccount: e.target.value })} placeholder="Account number" readOnly={!profileEditing} /></label><label>IFSC<input value={draft.ifsc} onChange={(e) => setDraft({ ...draft, ifsc: e.target.value.toUpperCase() })} placeholder="IFSC code" readOnly={!profileEditing} /></label><label>UPI ID<input value={draft.upi} onChange={(e) => setDraft({ ...draft, upi: e.target.value })} placeholder="name@upi" readOnly={!profileEditing} /></label><label>PF number<input value={draft.pfNumber} onChange={(e) => setDraft({ ...draft, pfNumber: e.target.value })} readOnly={!profileEditing} /></label><label>ESI number<input value={draft.esiNumber} onChange={(e) => setDraft({ ...draft, esiNumber: e.target.value })} readOnly={!profileEditing} /></label></div></section>
           <section><span className="section-label">PAYROLL ADJUSTMENTS</span><h2>Salary additions & deductions</h2><div className="profile-fields profile-fields--three"><label>Monthly bonus<input type="number" min="0" value={draft.monthlyBonus} onChange={(e) => setDraft({ ...draft, monthlyBonus: e.target.value })} readOnly={!profileEditing} /></label><label>Loan / advance<input type="number" min="0" value={draft.advanceInstallment} onChange={(e) => setDraft({ ...draft, advanceInstallment: e.target.value })} readOnly={!profileEditing} /></label><label>Other deduction<input type="number" min="0" value={draft.manualDeduction} onChange={(e) => setDraft({ ...draft, manualDeduction: e.target.value })} readOnly={!profileEditing} /></label></div><button className="attendance-primary profile-save" onClick={saveProfile} disabled={!profileEditing}>Save profile & payroll</button></section>
           <section><span className="section-label">ATTENDANCE DASHBOARD</span><h2>Monthly summary</h2><label className="profile-month-picker">Report month<input type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} /></label><div className="profile-stat-grid">{Object.entries(attendanceStats.counts).map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}<div><span>Payable days</span><b>{attendanceStats.payable}</b></div></div><p className="profile-help">Late marks, overtime and daily attendance remain available in the Attendance Report.</p></section>
-          <section><span className="section-label">DOCUMENT VAULT</span><h2>Employee documents</h2><label className="document-upload">+ Upload Aadhaar, PAN, bank proof or joining document<input type="file" accept="image/*,.pdf" onChange={uploadDocument} /></label><div className="document-list">{(employee.documents || []).length ? employee.documents.map((document) => <div key={document.id}><a href={document.dataUrl} target="_blank" rel="noreferrer">{document.name}</a><button onClick={() => removeDocument(document.id)}>Remove</button></div>) : <p>No documents uploaded yet.</p>}</div></section>
+          <section><span className="section-label">DOCUMENT VAULT</span><h2>Employee documents</h2><label className="document-upload">+ Upload Aadhaar, PAN, bank proof or joining document<input type="file" accept="image/*,.pdf" onChange={uploadDocument} /></label><div className="document-list">{(employee.documents || []).length ? employee.documents.map((document) => <div key={document.id}><button type="button" className="document-preview-link" onClick={() => setPreviewDocument(document)}>{document.name}</button><button type="button" className="document-download-button" onClick={() => downloadDocument(document)}>Download</button><button type="button" className="document-remove-button" onClick={() => removeDocument(document.id)}>Remove</button></div>) : <p>No documents uploaded yet.</p>}</div></section>
           <section><span className="section-label">ID CARD & HISTORY</span><h2>Verification readiness</h2><div className="profile-stat-grid"><div><span>Photo</span><b>{employee.photoDataUrl ? 'Uploaded' : 'Pending'}</b></div><div><span>Employee QR</span><b>{employee.employeeCode ? 'Ready' : 'Pending ID'}</b></div><div><span>ID card</span><b>{employee.active === false ? 'Inactive' : 'Active'}</b></div><div><span>Updates</span><b>{(employee.profileHistory || []).length}</b></div></div><div className="profile-history">{(employee.profileHistory || []).slice(-4).reverse().map((entry) => <small key={entry.id}>{new Date(entry.at).toLocaleDateString('en-IN')} · {entry.type}</small>)}</div></section>
         </div>
         <div className="employee-profile-actions" aria-label="Employee actions">
@@ -122,6 +147,13 @@ export default function EmployeeProfilePage({ loggedInUser, onClose }) {
           <button type="button" className="profile-action profile-action--status" onClick={toggleEmployeeStatus}>{employee.active === false ? 'Active' : 'Inactive'}</button>
           <button type="button" className="profile-action profile-action--delete" onClick={deleteEmployee}>Delete</button>
         </div>
+        {previewDocument && <div className="document-preview-modal" role="dialog" aria-modal="true" aria-label={`Preview ${previewDocument.name}`}>
+          <section className="document-preview-dialog">
+            <div className="document-preview-header"><div><span className="section-label">DOCUMENT PREVIEW</span><h2>{previewDocument.name}</h2></div><button type="button" className="document-preview-close" onClick={() => setPreviewDocument(null)} aria-label="Close preview">×</button></div>
+            <div className="document-preview-content">{isImageDocument(previewDocument) ? <img src={previewDocument.dataUrl} alt={previewDocument.name} /> : <iframe src={previewDocument.dataUrl} title={previewDocument.name} />}</div>
+            <footer className="document-preview-footer"><button type="button" className="profile-action profile-action--edit" onClick={() => downloadDocument(previewDocument)}>Download document</button><button type="button" className="form-cancel" onClick={() => setPreviewDocument(null)}>Close</button></footer>
+          </section>
+        </div>}
       </>}
     </section>
   </section>;
