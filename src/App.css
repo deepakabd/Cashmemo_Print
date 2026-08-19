@@ -6401,6 +6401,29 @@
   grid-template-columns: repeat(4, minmax(150px, 1fr));
 }
 
+.admin-file-field {
+  display: grid;
+  gap: 5px;
+  min-width: 150px;
+  color: #34506f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-file-field input[type="file"] {
+  width: 100%;
+  font-size: 11px;
+}
+
+.admin-image-preview {
+  width: 58px;
+  height: 44px;
+  object-fit: contain;
+  border: 1px solid #c9d8ea;
+  border-radius: 6px;
+  background: #fff;
+}
+
 @media (max-width: 900px) {
   .admin-panel {
     padding: 16px !important;

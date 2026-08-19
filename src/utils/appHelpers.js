@@ -622,8 +622,8 @@ export const normalizeData = (data) => data.map((row) => {
 });
 
 export const ADMIN_ROLE_PERMISSIONS = {
-  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'announcements', 'recycle-bin', 'audit'], mutate: true },
-  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'feedback', 'announcements', 'audit'], mutate: true },
-  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'announcements', 'audit'], mutate: true },
-  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
+  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
+  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'announcements'], mutate: true },
+  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'announcements'], mutate: true },
+  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback'], mutate: false },
 };
