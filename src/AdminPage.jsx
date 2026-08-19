@@ -63,9 +63,6 @@ const AdminPage = () => {
   const blockedUsers = users.filter((user) => user.status === 'disabled' || user.blocked).length;
   const expiredUsers = users.filter((user) => user.status === 'expired' || user.expired).length;
   const pendingRegistrations = users.filter((user) => user.status === 'pending' || !user.approved).length;
-  const unreadFeedback = users.filter((user) => (
-    Array.isArray(user.feedbackEntries) && user.feedbackEntries.some((entry) => entry?.read === false)
-  )).length;
 
   if (loading) {
     return <div>Loading...</div>;
@@ -84,7 +81,6 @@ const AdminPage = () => {
         <div>Blocked Users: {blockedUsers}</div>
         <div>Expired Users: {expiredUsers}</div>
         <div>Pending Registrations: {pendingRegistrations}</div>
-        <div>Unread Feedback Threads: {unreadFeedback}</div>
       </div>
 
       <table className="user-table">

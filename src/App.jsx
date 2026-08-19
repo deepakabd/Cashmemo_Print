@@ -653,10 +653,10 @@ const normalizeData = (data) => {
 };
 
 const ADMIN_ROLE_PERMISSIONS = {
-  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'feedback', 'announcements', 'recycle-bin', 'audit'], mutate: true },
-  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'feedback', 'announcements', 'audit'], mutate: true },
-  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'announcements', 'audit'], mutate: true },
-  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback', 'audit'], mutate: false },
+  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
+  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'announcements'], mutate: true },
+  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'announcements'], mutate: true },
+  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user'], mutate: false },
 };
 
 
@@ -2214,8 +2214,6 @@ function App() {
       const savedDensity = localStorage.getItem('adminRowDensity');
       return savedDensity === 'compact' ? 'compact' : 'comfortable';
     });
-    const [adminRoleMode, setAdminRoleMode] = useState('viewer');
-    const [adminRoleLoading, setAdminRoleLoading] = useState(true);
     const {
       requests,
       setRequests,
@@ -2289,6 +2287,22 @@ function App() {
       package: '',
       pin: '',
       role: 'operator',
+      profileData: {
+        distributorCode: '',
+        distributorName: '',
+        contact: '',
+        email: '',
+        gst: '',
+        address: '',
+        photoDataUrl: '',
+        paymentQrDataUrl: '',
+      },
+      bankDetailsData: {
+        bankName: '',
+        branch: '',
+        accountNo: '',
+        ifsc: '',
+      },
     });
     const [editingUserId, setEditingUserId] = useState('');
     const [dictionaryApprovalEdits, setDictionaryApprovalEdits] = useState({});
@@ -2333,6 +2347,7 @@ function App() {
         gst: '',
         address: '',
         photoDataUrl: '',
+        paymentQrDataUrl: '',
       },
       bankDetailsData: {
         bankName: '',
@@ -3016,7 +3031,9 @@ function App() {
       localStorage.setItem('deletedUsersBin', JSON.stringify(nextBin));
     };
 
-    const currentRolePermissions = ADMIN_ROLE_PERMISSIONS[adminRoleMode] || ADMIN_ROLE_PERMISSIONS['super-admin'];
+    // Admin panel is intentionally a single-admin workspace: every authenticated
+    // admin gets the complete admin permission set.
+    const currentRolePermissions = ADMIN_ROLE_PERMISSIONS['super-admin'];
     const canAccessTab = (tabKey) => currentRolePermissions.tabs.includes(tabKey);
     const canMutateAdminData = Boolean(currentRolePermissions.mutate);
 
@@ -3046,41 +3063,11 @@ function App() {
     }, []);
 
     useEffect(() => {
-      if (adminRoleLoading) return;
       if (!canAccessTab(activeAdminTab)) {
         setActiveAdminTab('dashboard');
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [adminRoleLoading, adminRoleMode, activeAdminTab]);
-
-    useEffect(() => {
-      let cancelled = false;
-      const resolveAdminRole = async () => {
-        setAdminRoleLoading(true);
-        let nextRole = activeAdminEmail === ADMIN_CONTACTS.email ? 'super-admin' : 'viewer';
-        if (activeAdminEmail) {
-          try {
-            const adminProfileSnap = await getDoc(doc(db, 'adminUsers', activeAdminEmail));
-            if (adminProfileSnap.exists()) {
-              const role = String(adminProfileSnap.data()?.role || '').trim();
-              if (ADMIN_ROLE_PERMISSIONS[role]) {
-                nextRole = role;
-              }
-            }
-          } catch (error) {
-            void error;
-          }
-        }
-        if (!cancelled) {
-          setAdminRoleMode(nextRole);
-          setAdminRoleLoading(false);
-        }
-      };
-      void resolveAdminRole();
-      return () => {
-        cancelled = true;
-      };
-    }, [activeAdminEmail]);
+    }, [activeAdminTab]);
 
     useEffect(() => {
       setAdminSubFilter('all');
@@ -3225,14 +3212,49 @@ function App() {
           role: newUser.role,
           status: 'active',
           approvalStatus: {},
+          profileData: { ...newUser.profileData },
+          bankDetailsData: { ...newUser.bankDetailsData },
           createdAt: serverTimestamp(),
           approvedAt: serverTimestamp(),
         });
-        setNewUser({ dealerCode: '', dealerName: '', mobile: '', email: '', package: '', pin: '', role: 'operator' });
+        setNewUser({
+          dealerCode: '', dealerName: '', mobile: '', email: '', package: '', pin: '', role: 'operator',
+          profileData: { distributorCode: '', distributorName: '', contact: '', email: '', gst: '', address: '', photoDataUrl: '', paymentQrDataUrl: '' },
+          bankDetailsData: { bankName: '', branch: '', accountNo: '', ifsc: '' },
+        });
         await loadData();
         logAdminActivity('manual_user_created', { dealerCode: normalizedDealerCode });
       } catch {
         pushToast('Create user failed.', 'error');
+      }
+    };
+
+    const handleAdminUserImageChange = async (event, target = 'new', field = 'photoDataUrl') => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        pushToast('Please choose an image file.', 'error');
+        return;
+      }
+      if (file.size > 1024 * 1024) {
+        pushToast('Image must be under 1 MB.', 'error');
+        return;
+      }
+      try {
+        const dataUrl = await readImageFileAsDataUrl(file);
+        if (target === 'edit') {
+          setEditUser((prev) => ({
+            ...prev,
+            profileData: { ...prev.profileData, [field]: dataUrl },
+          }));
+        } else {
+          setNewUser((prev) => ({
+            ...prev,
+            profileData: { ...prev.profileData, [field]: dataUrl },
+          }));
+        }
+      } catch {
+        pushToast('Image upload failed. Please try another image.', 'error');
       }
     };
 
@@ -3315,6 +3337,7 @@ function App() {
         role: u.role || 'operator',
         status: u.status || 'active',
         profileData: {
+          ...(u.profileData || {}),
           distributorCode: u.profileData?.distributorCode || '',
           distributorName: u.profileData?.distributorName || '',
           contact: u.profileData?.contact || '',
@@ -3322,8 +3345,10 @@ function App() {
           gst: u.profileData?.gst || '',
           address: u.profileData?.address || '',
           photoDataUrl: u.profileData?.photoDataUrl || '',
+          paymentQrDataUrl: u.profileData?.paymentQrDataUrl || '',
         },
         bankDetailsData: {
+          ...(u.bankDetailsData || {}),
           bankName: u.bankDetailsData?.bankName || '',
           branch: u.bankDetailsData?.branch || '',
           accountNo: u.bankDetailsData?.accountNo || '',
@@ -3364,6 +3389,24 @@ function App() {
           bankDetailsData: { ...editUser.bankDetailsData },
           updatedAt: serverTimestamp(),
         });
+        setLoggedInUser((currentUser) => {
+          if (!currentUser || (currentUser.id !== targetUser.id && String(currentUser.dealerCode || '').trim() !== String(targetUser.dealerCode || '').trim())) return currentUser;
+          return {
+            ...currentUser,
+            dealerCode: editUser.dealerCode.trim(),
+            dealerName: editUser.dealerName.trim(),
+            mobile: editUser.mobile.trim(),
+            email: editUser.email.trim(),
+            package: editUser.package,
+            validFrom: validFromIso,
+            validTill: validTillIso,
+            pin: editUser.pin.trim(),
+            role: editUser.role,
+            status: editUser.status,
+            profileData: { ...editUser.profileData },
+            bankDetailsData: { ...editUser.bankDetailsData },
+          };
+        });
         setEditingUserId('');
         await loadData();
         logAdminActivity('user_updated', { dealerCode: targetUser.dealerCode || '' });
@@ -3393,6 +3436,14 @@ function App() {
             : u
         ));
         writeUsersLocal(nextUsers);
+        const nextEditedUser = nextUsers.find((u) => isSameUserByToken(u, editingUserId));
+        if (nextEditedUser) {
+          setLoggedInUser((currentUser) => (
+            currentUser && (currentUser.id === nextEditedUser.id || String(currentUser.dealerCode || '').trim() === String(nextEditedUser.dealerCode || '').trim())
+              ? nextEditedUser
+              : currentUser
+          ));
+        }
         setEditingUserId('');
         logAdminActivity('user_updated_local', { dealerCode: targetUser.dealerCode || '' });
         pushToast('User updated locally. Firebase permission denied.', 'info');
@@ -3598,6 +3649,9 @@ function App() {
         if (approvalType === 'header') {
           nextStatus.hindiHeaderData = 'approved';
         }
+        const approvedTargetValue = (approvalType === 'profile' || approvalType === 'bank')
+          ? { ...(targetUser?.[targetField] || {}), ...(approval.payload || {}) }
+          : approval.payload;
         if (approvalType === 'dictionary') {
           const dictionaryPayload = getDictionaryApprovalPayload(approval);
           const englishWord = String(dictionaryPayload?.englishWord || dictionaryPayload?.eng || '').trim();
@@ -3697,11 +3751,43 @@ function App() {
           });
         } else {
           await updateDoc(doc(db, 'users', targetUser.id), {
-            [targetField]: approval.payload,
+            [targetField]: approvedTargetValue,
             approvalStatus: nextStatus,
             [`pendingUpdates.${approvalType}.status`]: 'approved',
             [`pendingUpdates.${approvalType}.approvedAt`]: new Date().toISOString(),
             updatedAt: serverTimestamp(),
+          });
+        }
+        if (targetUser?.id && targetField) {
+          const approvedAt = new Date().toISOString();
+          updateUserInStore(targetUser.id, (currentUser) => ({
+            ...currentUser,
+            [targetField]: approvedTargetValue,
+            approvalStatus: nextStatus,
+            pendingUpdates: {
+              ...(currentUser.pendingUpdates || {}),
+              [approvalType]: {
+                ...(currentUser.pendingUpdates?.[approvalType] || {}),
+                status: 'approved',
+                approvedAt,
+              },
+            },
+          }), targetUser.dealerCode);
+          setLoggedInUser((currentUser) => {
+            if (!currentUser || (currentUser.id !== targetUser.id && String(currentUser.dealerCode || '').trim() !== String(targetUser.dealerCode || '').trim())) return currentUser;
+            return {
+              ...currentUser,
+              [targetField]: approvedTargetValue,
+              approvalStatus: nextStatus,
+              pendingUpdates: {
+                ...(currentUser.pendingUpdates || {}),
+                [approvalType]: {
+                  ...(currentUser.pendingUpdates?.[approvalType] || {}),
+                  status: 'approved',
+                  approvedAt,
+                },
+              },
+            };
           });
         }
         if (approval.source !== 'userDoc' && approvalType !== 'dictionary') {
@@ -4322,10 +4408,8 @@ function App() {
       { key: 'active-user', label: 'Active User', count: activeUsersList.length },
       { key: 'total-user', label: 'Total User', count: users.length },
       { key: 'create-user', label: 'Create User', count: null },
-      { key: 'feedback', label: 'Feedback', count: unreadFeedbackCount },
       { key: 'announcements', label: 'Announcements', count: activeAnnouncementCount },
       { key: 'recycle-bin', label: 'Recycle Bin', count: deletedUsersBin.length },
-      { key: 'audit', label: 'Audit', count: auditTrail.length },
     ];
     const approvalSummaryCards = [
       { label: 'Profile', value: approvalTypeCounts.profile || 0 },
@@ -4427,7 +4511,10 @@ function App() {
         title: 'Audit Trail',
         subtitle: `${auditTrail.length} recent admin events recorded`,
       },
-    }[activeAdminTab];
+    }[activeAdminTab] || {
+      title: 'Admin Dashboard',
+      subtitle: 'Analytics, alerts, notifications, and quick admin control.',
+    };
     const activeDrawer = detailView
       ? { ...detailView, type: 'detail' }
       : viewApproval
@@ -4785,9 +4872,6 @@ function App() {
             <p>Registrations, approvals, users, and feedback ko ek jagah se manage kijiye.</p>
           </div>
           <div className="admin-header-actions">
-            <div className="form-input admin-role-select" aria-live="polite">
-              {adminRoleLoading ? 'Resolving role...' : `Role: ${adminRoleMode}`}
-            </div>
             <button className="admin-ghost-btn" onClick={loadData}>Refresh Data</button>
             <button className="admin-logout-btn" onClick={onAdminLogout}>Log Out</button>
           </div>
@@ -5174,6 +5258,18 @@ function App() {
               <option value="viewer">Viewer</option>
               <option value="admin">Admin</option>
             </select>
+            <input className="form-input" aria-label="New User Profile Distributor Code" placeholder="Profile Distributor Code (optional)" value={newUser.profileData.distributorCode} onChange={(e) => setNewUser((p) => ({ ...p, profileData: { ...p.profileData, distributorCode: e.target.value } }))} />
+            <input className="form-input" aria-label="New User Profile Distributor Name" placeholder="Profile Distributor Name (optional)" value={newUser.profileData.distributorName} onChange={(e) => setNewUser((p) => ({ ...p, profileData: { ...p.profileData, distributorName: e.target.value } }))} />
+            <input className="form-input" aria-label="New User Profile Contact" placeholder="Profile Contact (optional)" value={newUser.profileData.contact} onChange={(e) => setNewUser((p) => ({ ...p, profileData: { ...p.profileData, contact: e.target.value } }))} />
+            <input className="form-input" aria-label="New User Profile Email" placeholder="Profile Email (optional)" type="email" value={newUser.profileData.email} onChange={(e) => setNewUser((p) => ({ ...p, profileData: { ...p.profileData, email: e.target.value } }))} />
+            <input className="form-input" aria-label="New User Profile GST" placeholder="GST (optional)" value={newUser.profileData.gst} onChange={(e) => setNewUser((p) => ({ ...p, profileData: { ...p.profileData, gst: e.target.value } }))} />
+            <textarea className="form-textarea" aria-label="New User Profile Address" placeholder="Profile Address (optional)" rows="2" value={newUser.profileData.address} onChange={(e) => setNewUser((p) => ({ ...p, profileData: { ...p.profileData, address: e.target.value } }))} />
+            <label className="admin-file-field">Profile Photo<input type="file" accept="image/*" onChange={(e) => handleAdminUserImageChange(e, 'new', 'photoDataUrl')} /></label>
+            <label className="admin-file-field">Payment QR<input type="file" accept="image/*" onChange={(e) => handleAdminUserImageChange(e, 'new', 'paymentQrDataUrl')} /></label>
+            <input className="form-input" aria-label="New User Bank Name" placeholder="Bank Name (optional)" value={newUser.bankDetailsData.bankName} onChange={(e) => setNewUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, bankName: e.target.value } }))} />
+            <input className="form-input" aria-label="New User Bank Branch" placeholder="Branch (optional)" value={newUser.bankDetailsData.branch} onChange={(e) => setNewUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, branch: e.target.value } }))} />
+            <input className="form-input" aria-label="New User Bank Account" placeholder="Account No (optional)" value={newUser.bankDetailsData.accountNo} onChange={(e) => setNewUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, accountNo: e.target.value } }))} />
+            <input className="form-input" aria-label="New User Bank IFSC" placeholder="IFSC (optional)" value={newUser.bankDetailsData.ifsc} onChange={(e) => setNewUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, ifsc: e.target.value } }))} />
             <button onClick={addManualUser} disabled={!canMutateAdminData}>Create User</button>
           </div>
         </div>
@@ -5328,7 +5424,14 @@ function App() {
               <input className="form-input" aria-label="Edit Profile Email" placeholder="Profile Email" value={editUser.profileData.email} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, email: e.target.value } }))} />
               <input className="form-input" aria-label="Edit Profile GST" placeholder="Profile GST" value={editUser.profileData.gst} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, gst: e.target.value } }))} />
               <input className="form-input" aria-label="Edit Profile Address" placeholder="Profile Address" value={editUser.profileData.address} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, address: e.target.value } }))} />
-              <input className="form-input" aria-label="Edit Profile Photo Data URL" placeholder="Profile Photo Data URL" value={editUser.profileData.photoDataUrl} onChange={(e) => setEditUser((p) => ({ ...p, profileData: { ...p.profileData, photoDataUrl: e.target.value } }))} />
+              <label className="admin-file-field">Profile Photo
+                <input type="file" accept="image/*" onChange={(e) => handleAdminUserImageChange(e, 'edit', 'photoDataUrl')} />
+                {editUser.profileData.photoDataUrl && <img className="admin-image-preview" src={editUser.profileData.photoDataUrl} alt="Profile preview" />}
+              </label>
+              <label className="admin-file-field">Payment QR
+                <input type="file" accept="image/*" onChange={(e) => handleAdminUserImageChange(e, 'edit', 'paymentQrDataUrl')} />
+                {editUser.profileData.paymentQrDataUrl && <img className="admin-image-preview" src={editUser.profileData.paymentQrDataUrl} alt="Payment QR preview" />}
+              </label>
             </div>
             <div className="admin-edit-grid admin-edit-grid-bank">
               <input className="form-input" aria-label="Edit Bank Name" placeholder="Bank Name" value={editUser.bankDetailsData.bankName} onChange={(e) => setEditUser((p) => ({ ...p, bankDetailsData: { ...p.bankDetailsData, bankName: e.target.value } }))} />
@@ -6502,10 +6605,6 @@ function App() {
           </div>
         )}
 
-        <div className="form-actions">
-          <button onClick={loadData}>Refresh</button>
-          <button onClick={onClose}>Close</button>
-        </div>
       </div>
     );
   };
@@ -8881,11 +8980,6 @@ function App() {
       label: 'See Invoice Screen',
       onClick: handleInvoiceOpen,
     },
-    {
-      key: 'support',
-      label: 'Open Support & Replies',
-      onClick: handleContactOpen,
-    },
   ];
   const {
     selectedCustomerIds,
@@ -9517,11 +9611,11 @@ function App() {
             disabled: isPlanExpired && hasWorkingData,
           },
           {
-            text: 'Use support replies and request history to track approvals.',
+            text: 'Use request history to track approval updates.',
             actionLabel: 'Track Updates',
-            onClick: contactReplyCount > 0 ? handleContactOpen : handleRequestHistoryOpen,
-            beforeOpen: contactReplyCount > 0 ? undefined : () => setUserProfileInitialSection('history'),
-            viewKey: contactReplyCount > 0 ? 'support' : 'userProfile',
+            onClick: handleRequestHistoryOpen,
+            beforeOpen: () => setUserProfileInitialSection('history'),
+            viewKey: 'userProfile',
             allowSameView: true,
           },
         ]
@@ -9746,7 +9840,7 @@ function App() {
     ? { label: 'Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true }
     : !bankDetailsData.bankName
       ? { label: 'Update Bank', onClick: handleBankDetails, viewKey: 'bankUpdate' }
-      : { label: 'Open Support', onClick: handleContactOpen, viewKey: 'support' };
+    : { label: 'Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true };
   const userMenuEmptyGuidance = isPlanExpired
     ? 'Renew your plan to restore uploads, invoice tools, and update requests.'
     : !hasWorkingData
@@ -9791,15 +9885,7 @@ function App() {
         onClick: handleUpgradePlanOpen,
         viewKey: 'upgradePlan',
       }
-    : contactReplyCount > 0
-      ? {
-          label: 'Unread admin reply',
-          actionLabel: 'Open Support',
-          description: `${contactReplyCount} unread repl${contactReplyCount > 1 ? 'ies are' : 'y is'} waiting in Support & Replies.`,
-          onClick: handleContactOpen,
-          viewKey: 'support',
-        }
-      : incompleteProfileAreas.length > 0
+    : incompleteProfileAreas.length > 0
         ? {
             label: 'Profile setup pending',
             actionLabel: incompleteProfileActionItems[0]?.label || 'Complete Setup',
@@ -9953,7 +10039,6 @@ function App() {
       title: 'Updates',
       items: [
         { label: 'View Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true, hint: pendingRequestCount > 0 ? `${pendingRequestCount} request pending or recently updated.` : 'See past approval and request activity.' },
-        { label: 'Open Support & Replies', onClick: handleContactOpen, viewKey: 'support', badge: contactReplyCount > 0 ? { label: contactReplyCount > 9 ? '9+' : String(contactReplyCount), tone: 'unread' } : null, hint: contactReplyCount > 0 ? `${contactReplyCount} unread admin repl${contactReplyCount > 1 ? 'ies are' : 'y is'} waiting.` : 'Open support chat and reply history.' },
         { label: 'Open Renewal', onClick: handleUpgradePlanOpen, viewKey: 'upgradePlan', badge: getRequestBadge('planUpgrade'), hint: getRequestHint('planUpgrade', isPlanExpired ? 'Renew your plan to restore full access.' : 'Review renewal options before expiry.'), requiresConfirm: isPlanExpired, confirmMessage: 'Do you want to open the renewal form now?' },
       ],
     },
@@ -10092,9 +10177,6 @@ function App() {
             )}
             <button className="navbar-button" onClick={handleAboutOpen} disabled={isLoggedIn && !canAccessMenuFeature('about')}>
               About
-            </button>
-            <button className="navbar-button" onClick={handleContactOpen}>
-              Support & Replies{contactReplyCount > 0 ? ` (${contactReplyCount})` : ''}
             </button>
             {isLoggedIn && !isPlanExpired && !showDataButton && (
               <button className="navbar-button" onClick={handleReUploadClick} disabled={isPlanExpired}>
