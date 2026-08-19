@@ -73,6 +73,7 @@ const LazyIdCardPage = lazy(() => import('./IdCardPage'));
 const LazyEmployeeProfilePage = lazy(() => import('./EmployeeProfilePage'));
 const LazySalarySlipPage = lazy(() => import('./SalarySlipPage'));
 const LazyAttendanceReportPage = lazy(() => import('./AttendanceReportPage'));
+const LazyEmployeeReportPage = lazy(() => import('./EmployeeReportPage'));
 
 // Helper function to convert Excel serial date to JavaScript Date object
 const excelSerialDateToJSDate = (serial) => {
@@ -712,7 +713,9 @@ function App() {
   const [showEmployeeProfile, setShowEmployeeProfile] = useState(false);
   const [showEmployeeProfileCreate, setShowEmployeeProfileCreate] = useState(false);
   const [showSalarySlipPage, setShowSalarySlipPage] = useState(false);
+  const [salarySlipEmployeeId, setSalarySlipEmployeeId] = useState('');
   const [showAttendanceReportPage, setShowAttendanceReportPage] = useState(false);
+  const [showEmployeeReportPage, setShowEmployeeReportPage] = useState(false);
   const [showUpgradePlan, setShowUpgradePlan] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -1647,7 +1650,9 @@ function App() {
     setShowEmployeeProfile(false);
     setShowEmployeeProfileCreate(false);
     setShowSalarySlipPage(false);
+    setSalarySlipEmployeeId('');
     setShowAttendanceReportPage(false);
+    setShowEmployeeReportPage(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -1727,11 +1732,19 @@ function App() {
   };
   const handleSalarySlipOpen = () => {
     hideAllViews();
+    setSalarySlipEmployeeId('');
+    setShowSalarySlipPage(true);
+    setShowUserMenu(false);
+  };
+  const handleSalarySlipForEmployee = (employeeId) => {
+    hideAllViews();
+    setSalarySlipEmployeeId(employeeId || '');
     setShowSalarySlipPage(true);
     setShowUserMenu(false);
   };
   const handleSalarySlipClose = () => {
     hideAllViews();
+    setSalarySlipEmployeeId('');
     setShowAttendance(true);
   };
   const handleAttendanceReportOpen = () => {
@@ -1740,6 +1753,15 @@ function App() {
     setShowUserMenu(false);
   };
   const handleAttendanceReportClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
+  const handleEmployeeReportOpen = () => {
+    hideAllViews();
+    setShowEmployeeReportPage(true);
+    setShowUserMenu(false);
+  };
+  const handleEmployeeReportClose = () => {
     hideAllViews();
     setShowAttendance(true);
   };
@@ -9356,6 +9378,7 @@ function App() {
       : showEmployeeProfile ? 'employeeProfile'
       : showSalarySlipPage ? 'salarySlips'
       : showAttendanceReportPage ? 'attendanceReport'
+      : showEmployeeReportPage ? 'employeeReport'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -10223,7 +10246,7 @@ function App() {
           </div>
         </section>
       )}
-      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && (
@@ -10284,7 +10307,7 @@ function App() {
           )}
           {showAttendance && (
             <Suspense fallback={<div className="placeholder-container">Loading attendance...</div>}>
-              <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} onSalarySlipOpen={handleSalarySlipOpen} onAttendanceReportOpen={handleAttendanceReportOpen} onIdCardOpen={handleIdCardOpen} onEmployeeAddOpen={handleEmployeeAddOpen} />
+              <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} onSalarySlipOpen={handleSalarySlipOpen} onAttendanceReportOpen={handleAttendanceReportOpen} onEmployeeReportOpen={handleEmployeeReportOpen} onIdCardOpen={handleIdCardOpen} onEmployeeAddOpen={handleEmployeeAddOpen} />
             </Suspense>
           )}
           {showIdCard && (
@@ -10299,12 +10322,17 @@ function App() {
           )}
           {showSalarySlipPage && (
             <Suspense fallback={<div className="placeholder-container">Loading salary slips...</div>}>
-              <LazySalarySlipPage loggedInUser={loggedInUser} onClose={handleSalarySlipClose} />
+              <LazySalarySlipPage loggedInUser={loggedInUser} onClose={handleSalarySlipClose} initialEmployeeId={salarySlipEmployeeId} />
             </Suspense>
           )}
           {showAttendanceReportPage && (
             <Suspense fallback={<div className="placeholder-container">Loading attendance report...</div>}>
               <LazyAttendanceReportPage loggedInUser={loggedInUser} onClose={handleAttendanceReportClose} />
+            </Suspense>
+          )}
+          {showEmployeeReportPage && (
+            <Suspense fallback={<div className="placeholder-container">Loading employee report...</div>}>
+              <LazyEmployeeReportPage loggedInUser={loggedInUser} onClose={handleEmployeeReportClose} onSalarySlipOpen={handleSalarySlipForEmployee} />
             </Suspense>
           )}
           {showLabelUpdate && <LabelUpdatePage />}
