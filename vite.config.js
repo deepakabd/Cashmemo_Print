@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import compiler from 'babel-plugin-react-compiler'
 import { readJsonBody, sendJson, translateText } from './server/translateProxy.js'
+import { rateLimit, getClientIp, validateTranslationInput } from './server/rateLimiter.js'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -11,6 +12,9 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react({
         babel: {
+          // App.jsx is intentionally large; compact output avoids Babel's
+          // >500KB code-generator deoptimisation warning during builds.
+          compact: true,
           plugins: [compiler],
         },
       }),
@@ -23,8 +27,23 @@ export default defineConfig(({ mode }) => {
               return sendJson(res, 405, { error: 'Method not allowed' })
             }
 
+            // Rate limiting
+            const clientIp = getClientIp(req)
+            const limitResult = rateLimit(clientIp)
+            if (!limitResult.allowed) {
+              res.setHeader('Retry-After', String(Math.ceil((limitResult.resetAt - Date.now()) / 1000)))
+              return sendJson(res, 429, { error: 'Rate limit exceeded. Please try again later.' })
+            }
+
             try {
               const body = await readJsonBody(req)
+
+              // Input validation
+              const validationError = validateTranslationInput(body)
+              if (validationError) {
+                return sendJson(res, 400, { error: validationError })
+              }
+
               const translatedText = await translateText({
                 apiKey: env.GOOGLE_CLOUD_API_KEY,
                 text: body.text,

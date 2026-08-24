@@ -44,6 +44,19 @@ import {
   upsertStatusHistoryEntry,
   upsertLoginDevice,
 } from './utils/adminUiHelpers';
+import {
+  ADMIN_ROLE_PERMISSIONS,
+  CASHMEMO_LABEL_OPTIONS,
+  CASHMEMO_PAGE_TYPES,
+  DEFAULT_EXPORT_HEADERS,
+  DEFAULT_HIDDEN_LABELS_BY_PAGE_TYPE,
+  HEADER_MAPPING,
+  HINDI_ENTERPRISE_PACKAGE_NAMES,
+  PACKAGE_OPTIONS,
+  PACKAGE_PRICING,
+  PAYMENT_UPI_ID,
+  SMART_SEARCH_FIELDS,
+} from './utils/appConfig';
 import { useAdminData } from './hooks/useAdminData';
 import { useApprovalQueue } from './hooks/useApprovalQueue';
 import { useCashmemoSelection } from './hooks/useCashmemoSelection';
@@ -55,6 +68,84 @@ import {
   InputDialog,
   OnboardingTourDialog,
 } from './components/app/AppDialogs';
+import HeaderUpdateForm from './components/app/HeaderUpdateForm';
+import UpgradePlanForm from './components/app/UpgradePlanForm';
+import AboutInfo from './components/app/AboutInfo';
+import LabelUpdatePage from './components/app/LabelUpdatePage';
+import {
+  excelSerialDateToJSDate,
+  formatDateToDDMMYYYY,
+  parseDateString,
+  getNormalizedRowDate,
+  getStartOfDay,
+  getElapsedDays,
+  formatDisplayDate,
+  formatDisplayDateTime,
+  getRemainingDays,
+} from './utils/dateHelpers';
+import {
+  isEkycNotDoneStatus,
+  normalizeMultiValueFilter,
+  getMultiValueFilterValues,
+  hasMultiValueFilterSelection,
+  matchesMultiValueFilter,
+  formatMultiValueFilterLabel,
+  isAadhaarNotSeededStatus,
+  isOnlinePaidStatus,
+  isPendingSvRow,
+  isConsumerStatusMatch,
+  isOrderSourceCategoryMatch,
+  hasMeaningfulCellValue,
+  isRegisteredMobileRow,
+  hasValidPendingConsumerNo,
+  isCashMemoNotGeneratedRow,
+  getReportPercentage,
+  sortedUniqueValues,
+  matchesSmartSearch,
+} from './utils/filterHelpers';
+import {
+  isHindiEnterprisePackage,
+  computeValidityDates,
+  isUserExpired,
+  formatPackageNameForNavbar,
+} from './utils/packageHelpers';
+import {
+  USER_SESSION_STORAGE_KEY,
+  APPROVAL_REPLIES_STORAGE_KEY,
+  ADMIN_AUDIT_COLLECTION,
+  FILTER_PRESET_STORAGE_KEY_PREFIX,
+  RECENT_ACTIVITY_STORAGE_KEY_PREFIX,
+  USER_LAST_UPLOADED_DATA_LIMIT,
+  ONBOARDING_TOUR_STORAGE_KEY_PREFIX,
+  WORKSPACE_MODE_STORAGE_KEY_PREFIX,
+  ANNOUNCEMENTS_STORAGE_KEY,
+  createDefaultAnnouncementDraft,
+  getPlanUpgradeReplyStorageKey,
+  getOnboardingTourStorageKey,
+  getWorkspaceModeStorageKey,
+  getAnnouncementScopeLabel,
+  sanitizeFilenamePart,
+  normalizeDealerCode,
+  findUsersByDealerCode,
+  readImageFileAsDataUrl,
+} from './utils/storageHelpers';
+import {
+  getApiDictionaryPreviewEntry,
+  getDictionaryDocId,
+  normalizePendingTypeLabel,
+} from './utils/dictionaryHelpers';
+import {
+  getCashMemoPerPage,
+  createDefaultCashMemoLabelSettings,
+  mergeCashMemoLabelSettings,
+  getCashMemoLabelSettingsStorageKey,
+} from './utils/cashmemoHelpers';
+import {
+  HEADER_MAPPING_LOCAL,
+  normalizeData,
+} from './utils/dataNormalization';
+
+const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 
 const LazyInvoicePage = lazy(() => import('./InvoicePage'));
 const LazyHomeDashboard = lazy(() => import('./components/HomeDashboard'));
@@ -74,597 +165,6 @@ const LazyEmployeeProfilePage = lazy(() => import('./EmployeeProfilePage'));
 const LazySalarySlipPage = lazy(() => import('./SalarySlipPage'));
 const LazyAttendanceReportPage = lazy(() => import('./AttendanceReportPage'));
 const LazyEmployeeReportPage = lazy(() => import('./EmployeeReportPage'));
-
-// Helper function to convert Excel serial date to JavaScript Date object
-const excelSerialDateToJSDate = (serial) => {
-  if (typeof serial !== 'number' || isNaN(serial)) {
-    return null;
-  }
-  const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel's epoch is Dec 30, 1899
-  const ms = serial * 24 * 60 * 60 * 1000;
-  const date = new Date(excelEpoch.getTime() + ms);
-  return isNaN(date.getTime()) ? null : date; // Return null if date is invalid
-};
-
-// Helper function to format a Date object to DD-MM-YYYY OK
-
-
-const formatDateToDDMMYYYY = (date) => {
-  if (!(date instanceof Date)) {
-    return '';
-  }
-  if (isNaN(date.getTime())) {
-    return '';
-  }
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
-  const year = date.getFullYear();
-  return `${day}-${month}-${year}`;
-};
-
-const readImageFileAsDataUrl = (file) => new Promise((resolve, reject) => {
-  if (!(file instanceof File)) {
-    reject(new Error('Invalid file.'));
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-  reader.onerror = () => reject(new Error('Image read failed.'));
-  reader.readAsDataURL(file);
-});
-
-const createValidatedDate = (year, month, day, hour = 0, minute = 0, second = 0) => {
-  const date = new Date(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour) || 0,
-    Number(minute) || 0,
-    Number(second) || 0,
-  );
-  if (
-    Number.isNaN(date.getTime()) ||
-    date.getFullYear() !== Number(year) ||
-    date.getMonth() !== Number(month) - 1 ||
-    date.getDate() !== Number(day)
-  ) {
-    return null;
-  }
-  return date;
-};
-
-// Helper function to parse various date string formats
-const parseDateString = (dateString) => {
-  if (!dateString || typeof dateString !== 'string') {
-    return null;
-  }
-
-  const trimmedDateString = dateString.trim();
-  if (trimmedDateString === '') {
-    return null;
-  }
-
-  // Attempt 1: DD-MM-YYYY / DD/MM/YYYY / DD,MM,YYYY with optional HH:mm or HH:mm:ss
-  let parts = trimmedDateString.match(/^(\d{1,2})[-/,](\d{1,2})[-/,](\d{4})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
-  if (parts) {
-    const date = createValidatedDate(parts[3], parts[2], parts[1], parts[4], parts[5], parts[6]);
-    if (date) return date;
-  }
-
-  // Attempt 2: YYYY-MM-DD / YYYY/MM/DD with optional HH:mm or HH:mm:ss
-  parts = trimmedDateString.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
-  if (parts) {
-    const date = createValidatedDate(parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]);
-    if (date) return date;
-  }
-
-  // Attempt 3: only allow native parsing for unambiguous strings.
-  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmedDateString) || /[a-zA-Z]/.test(trimmedDateString)) {
-    const date = new Date(trimmedDateString);
-    if (!isNaN(date.getTime())) {
-      return date;
-    }
-  }
-
-  const compactParts = trimmedDateString.match(/^(\d{1,2})(\d{1,2})(\d{4})$/);
-  if (compactParts) {
-    const date = createValidatedDate(compactParts[3], compactParts[2], compactParts[1]);
-    if (date) {
-      return date;
-    }
-  }
-
-  if (/^\d+$/.test(trimmedDateString)) {
-    const excelValue = Number(trimmedDateString);
-    const date = excelSerialDateToJSDate(excelValue);
-    if (date) {
-      return date;
-    }
-  }
-
-  // If all attempts fail, return null
-  return null;
-};
-
-const getNormalizedRowDate = (value) => {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : new Date(value);
-  }
-  if (typeof value === 'number') {
-    return excelSerialDateToJSDate(value);
-  }
-  if (typeof value === 'string') {
-    return parseDateString(value);
-  }
-  return null;
-};
-
-const getStartOfDay = (value) => {
-  const date = getNormalizedRowDate(value);
-  if (!date) return null;
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
-
-const getElapsedDays = (value, now = new Date()) => {
-  const date = getStartOfDay(value);
-  if (!date) return null;
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  return Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-};
-
-const isEkycNotDoneStatus = (status) => {
-  const normalized = String(status || '').toLowerCase().trim();
-  return normalized === 'pending' || normalized === 'ekyc not done' || normalized === 'not done';
-};
-
-const normalizeFilterText = (value) => String(value || '')
-  .trim()
-  .replace(/\s+/g, ' ');
-
-const normalizeFilterKey = (value) => normalizeFilterText(value).toLowerCase();
-
-const normalizeMultiValueFilter = (value) => {
-  if (Array.isArray(value)) {
-    const seen = new Set();
-    const nextValues = [];
-    value.map((item) => normalizeFilterText(item)).filter(Boolean).forEach((item) => {
-      const key = normalizeFilterKey(item);
-      if (!seen.has(key) && key !== 'all') {
-        seen.add(key);
-        nextValues.push(item);
-      }
-    });
-    return nextValues.length > 0 ? nextValues : 'All';
-  }
-  const normalized = normalizeFilterText(value);
-  return normalized && normalizeFilterKey(normalized) !== 'all' ? [normalized] : 'All';
-};
-
-const getMultiValueFilterValues = (value) => (
-  Array.isArray(value)
-    ? value.map((item) => normalizeFilterText(item)).filter(Boolean)
-    : []
-);
-
-const hasMultiValueFilterSelection = (value) => getMultiValueFilterValues(value).length > 0;
-
-const matchesMultiValueFilter = (filterValue, rowValue) => {
-  const selectedValues = getMultiValueFilterValues(filterValue).map(normalizeFilterKey);
-  if (selectedValues.length === 0) return true;
-  const normalizedRowValue = normalizeFilterKey(String(rowValue || ''));
-  return selectedValues.includes(normalizedRowValue);
-};
-
-const formatMultiValueFilterLabel = (prefix, value) => {
-  const selectedValues = getMultiValueFilterValues(value);
-  if (selectedValues.length === 0) return '';
-  if (selectedValues.length === 1) return `${prefix}: ${selectedValues[0]}`;
-  return `${prefix}: ${selectedValues[0]} +${selectedValues.length - 1}`;
-};
-
-const isAadhaarNotSeededStatus = (status) => {
-  const normalized = String(status || '').toLowerCase().trim();
-  return normalized === 'aadhaar not seeded';
-};
-
-const isOnlinePaidStatus = (status) => String(status || '').toLowerCase().trim() === 'paid';
-
-const isPendingSvRow = (row = {}) => {
-  const normalizedOrderType = String(row?.['Order Type'] || '').toLowerCase().trim();
-  return normalizedOrderType.includes('pending sv');
-};
-
-const isConsumerStatusMatch = (value, target) => {
-  return String(value || '').toLowerCase().trim() === String(target || '').toLowerCase().trim();
-};
-
-const isOrderSourceCategoryMatch = (value, category) => {
-  const normalizedValue = String(value || '').toLowerCase().trim();
-  const normalizedCategory = String(category || '').toLowerCase().trim();
-
-  if (normalizedCategory === 'distributor manual') {
-    return normalizedValue === 'distributor';
-  }
-
-  if (normalizedCategory === 'vitran manual') {
-    return normalizedValue === 'vitran';
-  }
-
-  return normalizedValue === normalizedCategory;
-};
-
-const hasMeaningfulCellValue = (value) => {
-  const normalized = String(value ?? '').trim();
-  return normalized !== '' && normalized !== '-';
-};
-
-const isRegisteredMobileRow = (row = {}) => (
-  hasMeaningfulCellValue(row['Mobile No.']) && hasMeaningfulCellValue(row['Is Reg Mobile'])
-);
-
-const hasValidPendingConsumerNo = (row = {}) => /^\d{6}$/.test(String(row['Consumer No.'] || ''));
-
-const isCashMemoNotGeneratedRow = (row = {}) => {
-  const normalizedStatus = String(row?.['Cash Memo Status'] || '').toLowerCase().trim();
-  if (!normalizedStatus || normalizedStatus === '-') return true;
-  return ['not generated', 'pending', 'not printed', 'not done', 'no'].some((value) => normalizedStatus.includes(value));
-};
-
-const getReportPercentage = (value, total) => {
-  const safeValue = Number(value || 0);
-  const safeTotal = Number(total || 0);
-  if (safeTotal <= 0) return 0;
-  return Math.round((safeValue / safeTotal) * 100);
-};
-
-const sortedUniqueValues = (values) => [...new Set(values
-  .map((item) => normalizeFilterText(item))
-  .filter(Boolean))]
-  .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true }));
-
-const getCashMemoPerPage = (pageType) => {
-  if (pageType === '2 Cashmemo/Page') return 2;
-  if (pageType === '4 Cashmemo/Page') return 4;
-  return 3;
-};
-
-const CASHMEMO_PAGE_TYPES = ['2 Cashmemo/Page', '3 Cashmemo/Page', '4 Cashmemo/Page'];
-
-const CASHMEMO_LABEL_OPTIONS = [
-  { key: 'consumerName', label: 'Consumer Name', group: 'Distributor Copy' },
-  { key: 'consumerNoLpgId', label: 'Consumer No / LPG ID', group: 'Distributor Copy' },
-  { key: 'address', label: 'Address', group: 'Distributor Copy' },
-  { key: 'mobileNo', label: 'Mobile No.', group: 'Common Details' },
-  { key: 'deliveryArea', label: 'Delivery Area', group: 'Distributor Copy' },
-  { key: 'deliveryStaff', label: 'Delivery Staff', group: 'Distributor Copy' },
-  { key: 'productHsnQty', label: 'Product / HSN / Qty', group: 'Distributor Copy' },
-  { key: 'orderNoAndDate', label: 'Order No. & Order Date', group: 'Distributor Copy' },
-  { key: 'cashMemoNoAndDate', label: 'Cash Memo No. & Date', group: 'Distributor Copy' },
-  { key: 'basePrice', label: 'Base Price (Rs.)', group: 'Amount Details' },
-  { key: 'dlvryCharges', label: 'Dlvry Charges (Rs.)', group: 'Amount Details' },
-  { key: 'cashCarryRebate', label: 'C & C Rebate (Rs.)', group: 'Amount Details' },
-  { key: 'cgst', label: 'CGST (2.50%)(Rs.)', group: 'Amount Details' },
-  { key: 'sgst', label: 'SGST (2.50%)(Rs.)', group: 'Amount Details' },
-  { key: 'totalAmount', label: 'Total Amount (Rs.)', group: 'Amount Details' },
-  { key: 'eKyc', label: 'E-KYC', group: 'Common Details' },
-  { key: 'payment', label: 'Payment', group: 'Common Details' },
-  { key: 'taxConsumerName', label: 'Tax Consumer Name', group: 'Tax Invoice' },
-  { key: 'taxConsumerNo', label: 'Tax Consumer No.', group: 'Tax Invoice' },
-  { key: 'taxLpgId', label: 'Tax LPG ID', group: 'Tax Invoice' },
-  { key: 'taxAddress', label: 'Tax Address', group: 'Tax Invoice' },
-  { key: 'category', label: 'Category', group: 'Tax Invoice' },
-  { key: 'productHsn', label: 'Product/ HSN', group: 'Tax Invoice' },
-  { key: 'connectionQty', label: 'Connection/ Qty', group: 'Tax Invoice' },
-  { key: 'bookingSource', label: 'Booking Source', group: 'Tax Invoice' },
-  { key: 'orderNo', label: 'Order No.', group: 'Tax Invoice' },
-  { key: 'orderDate', label: 'Order Date', group: 'Tax Invoice' },
-  { key: 'cashMemoNo', label: 'CashMemo No.', group: 'Tax Invoice' },
-  { key: 'cashMemoDate', label: 'CashMemo Date', group: 'Tax Invoice' },
-  { key: 'deliveryCharges', label: 'Delivery Charges (Rs.)', group: 'Tax Invoice' },
-  { key: 'taxableAmount', label: 'Taxable Amount (Rs.)', group: 'Tax Invoice' },
-  { key: 'advanceOnline', label: 'Advance (Online) (Rs.)', group: 'Tax Invoice' },
-  { key: 'netPayable', label: 'Net Payable (Rs.)', group: 'Tax Invoice' },
-];
-
-const DEFAULT_HIDDEN_LABELS_BY_PAGE_TYPE = {
-  '4 Cashmemo/Page': new Set(['deliveryStaff', 'productHsnQty', 'dlvryCharges', 'cashCarryRebate', 'category', 'productHsn', 'connectionQty', 'deliveryCharges', 'taxableAmount']),
-};
-
-const createDefaultCashMemoLabelSettings = () => {
-  const settings = {};
-  CASHMEMO_PAGE_TYPES.forEach((type) => {
-    const hiddenLabels = DEFAULT_HIDDEN_LABELS_BY_PAGE_TYPE[type] || new Set();
-    settings[type] = CASHMEMO_LABEL_OPTIONS.reduce((acc, item) => {
-      acc[item.key] = !hiddenLabels.has(item.key);
-      return acc;
-    }, {});
-  });
-  return settings;
-};
-
-const mergeCashMemoLabelSettings = (savedSettings = {}) => {
-  const defaults = createDefaultCashMemoLabelSettings();
-  CASHMEMO_PAGE_TYPES.forEach((type) => {
-    defaults[type] = {
-      ...defaults[type],
-      ...(savedSettings?.[type] || {}),
-    };
-  });
-  return defaults;
-};
-
-const getCashMemoLabelSettingsStorageKey = (dealerCode = '') => (
-  dealerCode ? `cashMemoLabelSettings_${String(dealerCode).trim()}` : 'cashMemoLabelSettings'
-);
-
-const USER_SESSION_STORAGE_KEY = 'cashmemoUserSession';
-const APPROVAL_REPLIES_STORAGE_KEY = 'approvalReplies';
-const ADMIN_AUDIT_COLLECTION = 'adminAuditTrail';
-const FILTER_PRESET_STORAGE_KEY_PREFIX = 'cashmemoFilterPresets_';
-const RECENT_ACTIVITY_STORAGE_KEY_PREFIX = 'cashmemoRecentActivity_';
-const USER_LAST_UPLOADED_DATA_LIMIT = 10;
-const ONBOARDING_TOUR_STORAGE_KEY_PREFIX = 'cashmemoOnboardingTourSeen_';
-const WORKSPACE_MODE_STORAGE_KEY_PREFIX = 'cashmemoWorkspaceMode_';
-const ANNOUNCEMENTS_STORAGE_KEY = 'cashmemoAnnouncements';
-
-const createDefaultAnnouncementDraft = () => ({
-  title: '',
-  message: '',
-  targetScope: 'all',
-  noticeType: 'notice',
-  expiresAt: '',
-});
-
-const getPlanUpgradeReplyStorageKey = ({ userId = '', dealerCode = '', dealerName = '' } = {}) => {
-  const userKey = String(userId || dealerCode || dealerName || '').trim();
-  return userKey ? `planUpgrade-${userKey}` : 'planUpgrade';
-};
-
-const getOnboardingTourStorageKey = (dealerCode = '') => (
-  `${ONBOARDING_TOUR_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
-);
-
-const getWorkspaceModeStorageKey = (dealerCode = '') => (
-  `${WORKSPACE_MODE_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
-);
-
-const normalizeSearchValue = (value) => String(value ?? '')
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, ' ')
-  .trim();
-
-const SMART_SEARCH_FIELDS = [
-  'Consumer No.',
-  'Consumer Name',
-  'Mobile No.',
-  'Delivery Area',
-];
-
-const matchesSmartSearch = (row, query) => {
-  const normalizedQuery = normalizeSearchValue(query);
-  if (!normalizedQuery) return true;
-
-  return SMART_SEARCH_FIELDS.some((field) => normalizeSearchValue(row?.[field]).includes(normalizedQuery));
-};
-
-const getAnnouncementScopeLabel = (scope = 'all') => {
-  const normalized = String(scope || 'all').toLowerCase();
-  if (normalized === 'all') return 'All Users';
-  if (normalized === 'active') return 'Active Users';
-  if (normalized === 'expiring') return 'Expiring Soon';
-  if (normalized === 'expired') return 'Expired Users';
-  return scope;
-};
-
-const PACKAGE_OPTIONS = [
-  'Premium Package - 30 Days',
-  'Enterprise Package - 365 Days',
-  'Enterprise Package with (हिंदी) - 365 Days',
-];
-
-const PACKAGE_PRICING = {
-  'Premium Package - 30 Days': 'Rs. 1999',
-  'Enterprise Package - 365 Days': 'Rs. 4999',
-  'Enterprise Package with (हिंदी) - 365 Days': 'Rs. 6999',
-};
-
-const PAYMENT_UPI_ID = '8002074620@ybl';
-const HINDI_ENTERPRISE_PACKAGE_NAMES = [
-  'Enterprise Package with (हिंदी) - 365 Days',
-];
-
-const getPackageValidityDays = (packageName = '') => {
-  const normalized = String(packageName || '').toLowerCase();
-  if (
-    normalized.includes('enterprise package with (हिंदी)')
-  ) return 365;
-  if (normalized.includes('premium')) return 30;
-  if (normalized.includes('enterprise')) return 365;
-  return 0;
-};
-
-const isHindiEnterprisePackage = (packageName = '') => HINDI_ENTERPRISE_PACKAGE_NAMES.includes(packageName);
-
-const computeValidityDates = (packageName = '', baseDate = new Date()) => {
-  const days = getPackageValidityDays(packageName);
-  const validFrom = new Date(baseDate);
-  const validTill = new Date(baseDate);
-  if (days > 0) {
-    validTill.setDate(validTill.getDate() + days);
-  }
-  return {
-    packageDays: days,
-    validFrom: validFrom.toISOString(),
-    validTill: validTill.toISOString(),
-  };
-};
-
-const isUserExpired = (user) => {
-  const validTillRaw = user?.validTill;
-  if (!validTillRaw) return false;
-  const validTillDate = new Date(validTillRaw);
-  if (Number.isNaN(validTillDate.getTime())) return false;
-  return new Date().getTime() > validTillDate.getTime();
-};
-
-const formatDisplayDate = (value) => {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('en-GB');
-};
-
-const formatDisplayDateTime = (value) => {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('en-GB');
-};
-
-const getRemainingDays = (validTill) => {
-  if (!validTill) return null;
-  const end = new Date(validTill);
-  if (Number.isNaN(end.getTime())) return null;
-  const now = new Date();
-  const diffMs = end.getTime() - now.getTime();
-  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-};
-
-const formatPackageNameForNavbar = (packageName = '') => {
-  const name = String(packageName || '')
-    .trim();
-  if (!name) return 'N/A';
-  return name.replace(/\s*-\s*\d+\s*Days?\s*$/i, '').trim();
-};
-
-const formatPackageOptionLabel = (packageName = '') => {
-  const days = getPackageValidityDays(packageName);
-  const validityText = days > 0 ? `${days} ${days === 1 ? 'Day' : 'Days'}` : 'N/A';
-  return `${formatPackageNameForNavbar(packageName)} - ${PACKAGE_PRICING[packageName] || '-'} - Validity: ${validityText}`;
-};
-
-const DEFAULT_EXPORT_HEADERS = [
-  'Consumer No.',
-  'Consumer Name',
-  'Delivery Area',
-  'Mobile No.',
-  'Order Date',
-  'Cash Memo Date',
-  'Order Type',
-  'Order Status',
-  'Online Refill Payment status',
-  'EKYC Status',
-];
-
-const sanitizeFilenamePart = (value = '') => String(value || '')
-  .trim()
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '') || 'all';
-
-const normalizeDealerCode = (value = '') => String(value || '').trim().toUpperCase();
-
-const findUsersByDealerCode = (users = [], dealerCode = '') => {
-  const normalizedDealerCode = normalizeDealerCode(dealerCode);
-  if (!normalizedDealerCode) return [];
-  return (Array.isArray(users) ? users : []).filter((user) => (
-    normalizeDealerCode(user?.dealerCode) === normalizedDealerCode
-  ));
-};
-
-const getApiDictionaryPreviewEntry = (entry = {}) => {
-  const payload = entry?.payload || {};
-  return {
-    approvalId: entry?.id || entry?.approvalId || payload?.approvalId || '',
-    englishWord: String(entry?.englishWord || payload?.englishWord || payload?.eng || '').trim(),
-    hindiTranslation: String(entry?.hindiTranslation || payload?.hindiTranslation || payload?.hin || '').trim(),
-    phraseKind: String(entry?.phraseKind || payload?.phraseKind || 'token').trim(),
-    requestSource: String(entry?.requestSource || payload?.requestSource || '').trim(),
-    queueLabel: String(entry?.queueLabel || payload?.queueLabel || '').trim(),
-    requestedFrom: String(entry?.requestedFrom || payload?.requestedFrom || '').trim(),
-    status: String(entry?.status || payload?.status || 'pending').trim(),
-  };
-};
-
-const getDictionaryDocId = (englishWord = '') => (
-  encodeURIComponent(String(englishWord || '').trim().toLowerCase()).replace(/\./g, '%2E') || `word-${Date.now()}`
-);
-
-const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
-
-const normalizePendingTypeLabel = (type) => {
-  const raw = String(type || '').toLowerCase().trim();
-  if (raw === 'profile' || raw === 'profiledata') return 'profile';
-  if (raw === 'bank' || raw === 'bankdetails' || raw === 'bankdetailsdata') return 'bank';
-  if (raw === 'rates' || raw === 'rate' || raw === 'ratesdata') return 'rates';
-  if (raw === 'header' || raw === 'hindiheader' || raw === 'hindiheaderdata') return 'header';
-  if (raw === 'planupgrade' || raw === 'plan' || raw === 'package') return 'plan upgrade';
-  if (raw === 'deliveryarea' || raw === 'delivery area') return 'Delivery Area';
-  if (raw === 'deliverystaff' || raw === 'delivery staff') return 'Delivery Staff';
-  return raw;
-};
-
-const headerMapping = {
-  uniqueconsumerid: 'UniqueConsumerId',
-  consumerno: 'Consumer No.',
-  consumername: 'Consumer Name',
-  naturecode_desc: 'Consumer Nature',
-  packagecode_desc: 'Consumer Package',
-  consumertype: 'Consumer Type',
-  orderno: 'Order No.',
-  orderstatus: 'Order Status',
-  orderdate: 'Order Date',
-  ordersource: 'Order Source',
-  ordertype: 'Order Type',
-  cashmemono: 'Cash Memo No.',
-  cashmemostatus: 'Cash Memo Status',
-  cashmemodate: 'Cash Memo Date',
-  orderquantity: 'Order Qty.',
-  consumedsubsidyqty: 'Consumed Subsidy Qty',
-  areaname: 'Delivery Area',
-  deliveryman: 'Delivery Man',
-  refillpaymentstatus: 'Online Refill Payment status',
-  ivrsbookingnumber: 'IVR Booking No.',
-  mobileno: 'Mobile No.',
-  mobilenumber: 'Mobile No.',
-  bookingdonethroughregisteremobile: 'Is Reg Mobile',
-  consumeraddress: 'Address',
-  isrefillport: 'IsRefillPort',
-  ekycstatus: 'EKYC Status',
-};
-
-const normalizeData = (data) => {
-  return data.map(row => {
-    const newRow = {};
-    for (const key in row) {
-      if (Object.prototype.hasOwnProperty.call(row, key)) {
-        const cleanedKey = key.trim().replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
-        const newKey = headerMapping[cleanedKey] || key.trim();
-        newRow[newKey] = row[key];
-      }
-    }
-    if (!newRow['LPG ID'] && newRow.UniqueConsumerId) {
-      newRow['LPG ID'] = newRow.UniqueConsumerId;
-    }
-    return newRow;
-  });
-};
-
-const ADMIN_ROLE_PERMISSIONS = {
-  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
-  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'announcements'], mutate: true },
-  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'announcements'], mutate: true },
-  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user'], mutate: false },
-};
-
-
-
-
-
-
-
 
 function App() {
   const fileInputRef = useRef(null);
@@ -1318,94 +818,6 @@ function App() {
   };
 
 
-  const HeaderUpdateForm = ({ onClose }) => {
-    const [formData, setFormData] = useState({
-      distributorName: '',
-      address: '',
-      email: '',
-      gstn: '',
-      telephone: '',
-    });
-    const [errors, setErrors] = useState({});
-    const [isSaving, setIsSaving] = useState(false);
-
-    useEffect(() => {
-      if (loggedInUser?.hindiHeaderData) {
-        setFormData((prev) => ({ ...prev, ...loggedInUser.hindiHeaderData }));
-      }
-    }, []);
-
-    const handleChange = (e) => {
-      const { name, value } = e.target;
-      setFormData((prev) => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    };
-
-    const validateHeaderForm = () => {
-      const nextErrors = {};
-      if (!formData.distributorName.trim()) nextErrors.distributorName = 'Distributor name is required.';
-      if (!formData.address.trim()) nextErrors.address = 'Address is required.';
-      if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) nextErrors.email = 'Enter a valid email address.';
-      if (!formData.gstn.trim()) nextErrors.gstn = 'GSTN is required.';
-      if (!/^\d{10}$/.test(formData.telephone.trim())) nextErrors.telephone = 'Enter a valid 10-digit telephone number.';
-      setErrors(nextErrors);
-      return Object.keys(nextErrors).length === 0;
-    };
-
-    const handleSave = async () => {
-      if (!validateHeaderForm()) return;
-      setIsSaving(true);
-      const ok = await submitUpdateApprovalRequest({
-        type: 'header',
-        payload: formData,
-        localKey: 'hindiHeaderData',
-        successMessage: 'Header details update request submitted. Your request is pending with admin for approval.',
-      });
-      setIsSaving(false);
-      if (ok) {
-        logRecentActivity('Submitted header update request');
-        onClose();
-      }
-    };
-
-    return (
-      <div className="placeholder-container">
-        <h2>Header Update (Hindi / Local)</h2>
-        <div className="profile-form">
-          <span className="profile-label">Distributor Name</span>
-          <div>
-            <input className={`form-input${errors.distributorName ? ' form-input--error' : ''}`} name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} placeholder="उदा: MAHADEV HP GAS..." />
-            {errors.distributorName && <div className="form-error">{errors.distributorName}</div>}
-          </div>
-          <span className="profile-label">Address</span>
-          <div>
-            <textarea className={`form-textarea${errors.address ? ' form-input--error' : ''}`} name="address" rows="3" value={formData.address} onChange={handleChange} placeholder="उदा: ATHARI, RUNNISAIDPUR..." />
-            {errors.address && <div className="form-error">{errors.address}</div>}
-          </div>
-          <span className="profile-label">Email</span>
-          <div>
-            <input className={`form-input${errors.email ? ' form-input--error' : ''}`} name="email" type="text" value={formData.email} onChange={handleChange} placeholder="उदा: mahadev.sitamarhi@gmail.com" />
-            {errors.email && <div className="form-error">{errors.email}</div>}
-          </div>
-          <span className="profile-label">GSTN</span>
-          <div>
-            <input className={`form-input${errors.gstn ? ' form-input--error' : ''}`} name="gstn" type="text" value={formData.gstn} onChange={handleChange} placeholder="उदा: 10ABBFM6137E1ZU" />
-            {errors.gstn && <div className="form-error">{errors.gstn}</div>}
-          </div>
-          <span className="profile-label">Telephone</span>
-          <div>
-            <input className={`form-input${errors.telephone ? ' form-input--error' : ''}`} name="telephone" type="text" value={formData.telephone} onChange={handleChange} placeholder="उदा: 7070236555" />
-            {errors.telephone && <div className="form-error">{errors.telephone}</div>}
-          </div>
-        </div>
-        <div className="form-actions">
-          <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-          <button onClick={onClose} disabled={isSaving}>Close</button>
-        </div>
-      </div>
-    );
-  };
-
   // Placeholder Component for Rate Update
   // const RateUpdatePlaceholder = () => (
   //   <div className="placeholder-container">
@@ -2046,167 +1458,7 @@ function App() {
   };
 
 
-  const UpgradePlanForm = ({ onClose }) => {
-    const hasPendingUpgrade = String(loggedInUser?.pendingUpdates?.planUpgrade?.status || '').toLowerCase() === 'pending'
-      || String(loggedInUser?.approvalStatus?.planUpgrade || '').toLowerCase() === 'pending';
-    const [selectedPackage, setSelectedPackage] = useState(PLAN_UPGRADE_OPTIONS[0] || '');
-    const [paymentDetails, setPaymentDetails] = useState({
-      utr: '',
-      paymentDate: '',
-      paymentNote: '',
-    });
-    const [errors, setErrors] = useState({});
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const handlePaymentDetailsChange = (e) => {
-      const { name, value } = e.target;
-      setPaymentDetails((prev) => ({ ...prev, [name]: value }));
-      setErrors((prev) => ({ ...prev, [name]: '', selectedPackage: '' }));
-    };
-
-    const submitUpgradeRequest = async () => {
-      const nextErrors = {};
-      if (!selectedPackage) nextErrors.selectedPackage = 'Please select a plan.';
-      if (!paymentDetails.utr.trim()) nextErrors.utr = 'UTR number is required.';
-      if (!paymentDetails.paymentDate) nextErrors.paymentDate = 'Payment date is required.';
-      setErrors(nextErrors);
-      if (Object.keys(nextErrors).length > 0) return;
-      setIsSubmitting(true);
-      const payload = {
-        package: selectedPackage,
-        packagePrice: PACKAGE_PRICING[selectedPackage] || '',
-        currentPackage: loggedInUser?.package || '',
-        currentValidTill: loggedInUser?.validTill || '',
-        paymentUpiId: PAYMENT_UPI_ID,
-        paymentUtr: paymentDetails.utr.trim(),
-        paymentDate: paymentDetails.paymentDate,
-        paymentNote: paymentDetails.paymentNote.trim(),
-        requestedAt: new Date().toISOString(),
-      };
-      const ok = await submitUpdateApprovalRequest({
-        type: 'planUpgrade',
-        payload,
-        successMessage: 'Plan upgrade request submitted. Your request is pending with admin for approval.',
-      });
-      setIsSubmitting(false);
-      if (ok) {
-        logRecentActivity('Submitted plan upgrade request');
-        onClose();
-      }
-    };
-
-    return (
-      <div className="placeholder-container auth-panel upgrade-plan-panel">
-        <div className="auth-panel__hero">
-          <div>
-            <span className="auth-panel__eyebrow">Plan Renewal</span>
-            <h2>Upgrade Plan</h2>
-            <p className="auth-panel__subtitle">
-              Naya package select kijiye, payment details bhariye, aur request admin approval ke liye bhejiye.
-            </p>
-          </div>
-          <div className="auth-panel__hero-badges">
-            <span className="auth-panel__badge">Approval based</span>
-            <span className="auth-panel__badge">Secure payment proof</span>
-          </div>
-        </div>
-        <div className="auth-panel__content auth-panel__content--wide">
-          <div className="auth-section-card">
-            <div className="auth-section-card__header">
-              <h3>Renewal Details</h3>
-              <p>Current plan review karke next package aur payment reference submit kijiye.</p>
-            </div>
-            <div className="upgrade-plan-summary">
-              <div className="upgrade-plan-summary__item">
-                <span className="upgrade-plan-summary__label">Current Package</span>
-                <strong>{formatPackageNameForNavbar(loggedInUser?.package)}</strong>
-              </div>
-              <div className="upgrade-plan-summary__item">
-                <span className="upgrade-plan-summary__label">Expired On</span>
-                <strong>{formatDisplayDate(loggedInUser?.validTill)}</strong>
-              </div>
-            </div>
-            <form
-              className="register-form register-form--enhanced"
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitUpgradeRequest();
-              }}
-            >
-              <div>
-                <label className="auth-field-label">Choose New Plan</label>
-                <select
-                  className={`form-input${errors.selectedPackage ? ' form-input--error' : ''}`}
-                  value={selectedPackage}
-                  onChange={(e) => {
-                    setSelectedPackage(e.target.value);
-                    setErrors((prev) => ({ ...prev, selectedPackage: '' }));
-                  }}
-                  disabled={hasPendingUpgrade || isSubmitting}
-                >
-                  {PLAN_UPGRADE_OPTIONS.map((pkg) => (
-                    <option key={pkg} value={pkg}>
-                      {formatPackageOptionLabel(pkg)}
-                    </option>
-                  ))}
-                </select>
-                {errors.selectedPackage && <div className="form-error">{errors.selectedPackage}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Payment UPI ID</label>
-                <div className="upgrade-plan-upi">{PAYMENT_UPI_ID}</div>
-              </div>
-              <div>
-                <label className="auth-field-label">UTR Number</label>
-                <input
-                  className={`form-input${errors.utr ? ' form-input--error' : ''}`}
-                  name="utr"
-                  value={paymentDetails.utr}
-                  onChange={handlePaymentDetailsChange}
-                  placeholder="Enter UTR / Transaction ID"
-                  disabled={hasPendingUpgrade || isSubmitting}
-                />
-                {errors.utr && <div className="form-error">{errors.utr}</div>}
-              </div>
-              <div>
-                <label className="auth-field-label">Payment Date</label>
-                <input
-                  className={`form-input${errors.paymentDate ? ' form-input--error' : ''}`}
-                  name="paymentDate"
-                  type="date"
-                  value={paymentDetails.paymentDate}
-                  onChange={handlePaymentDetailsChange}
-                  disabled={hasPendingUpgrade || isSubmitting}
-                />
-                {errors.paymentDate && <div className="form-error">{errors.paymentDate}</div>}
-              </div>
-              <div className="upgrade-plan-field upgrade-plan-field--full">
-                <label className="auth-field-label">Payment Remark</label>
-                <textarea
-                  className="form-textarea"
-                  name="paymentNote"
-                  value={paymentDetails.paymentNote}
-                  onChange={handlePaymentDetailsChange}
-                  placeholder="Optional payment note"
-                  disabled={hasPendingUpgrade || isSubmitting}
-                />
-              </div>
-            </form>
-            {hasPendingUpgrade && (
-              <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
-            )}
-            <div className="upi-note upi-note--card">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
-            <div className="form-actions auth-panel__actions">
-              <button className="auth-primary-button" onClick={submitUpgradeRequest} type="button" disabled={hasPendingUpgrade || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Send Request'}</button>
-              <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const AdminPanel = ({ onClose, onAdminLogout }) => {
+  const AdminPanel = ({ onAdminLogout }) => {
     const adminImportRef = useRef(null);
     const dictionaryImportRef = useRef(null);
     const [adminItemsPerPage] = useState(30);
@@ -4043,7 +3295,6 @@ function App() {
     const pendingCount = pendingRegistrationRequests.length;
     const activeUsers = users.filter((u) => u.status === 'active').length;
     const activeUsersList = users.filter((u) => u.status === 'active');
-    const disabledUsers = users.filter((u) => u.status === 'disabled').length;
     const unreadFeedbackCount = feedback.filter((item) => !item?.read).length;
     const approvalTypeCounts = combinedPendingApprovals.reduce((acc, item) => {
       const key = normalizeApprovalType(item?.type);
@@ -6609,211 +5860,6 @@ function App() {
     );
   };
 
-  const AboutInfo = () => {
-
-    return (
-      <div className="placeholder-container about-summary-modern">
-        <style>{`
-          .about-summary-modern { max-width: 1200px; margin: 40px auto; padding: 40px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.08); }
-          .about-info-title-modern { font-size: 2.8rem; text-align: center; background: linear-gradient(90deg, #1e3c72, #2a5298); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 15px; position: relative; padding-bottom: 25px; font-weight: 900; letter-spacing: -0.5px; }
-          .about-info-title-modern::after { content: ''; position: absolute; width: 120px; height: 7px; background: linear-gradient(90deg, #1e3c72, #007bff); bottom: 0; left: 50%; transform: translateX(-50%); border-radius: 5px; }
-          .about-tagline { text-align: center; font-size: 1.3rem; color: #2c3e50; margin-bottom: 40px; font-weight: 500; line-height: 1.6; }
-          .about-tagline-hindi { font-size: 1.1rem; color: #34495e; margin-top: 8px; }
-          .about-content-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 30px; margin-bottom: 40px; }
-          .about-card { background: #fff; padding: 35px; border-radius: 16px; box-shadow: 0 8px 25px rgba(0,0,0,0.08); border-left: 7px solid #007bff; transition: all 0.4s ease; }
-          .about-card:hover { box-shadow: 0 15px 40px rgba(0,0,0,0.15); transform: translateY(-8px); }
-          .about-card h3 { margin-top: 0; color: #1e3c72; font-size: 1.6em; margin-bottom: 20px; border-bottom: 3px solid #007bff; padding-bottom: 15px; font-weight: 700; }
-          .about-card p { line-height: 1.8; color: #2c3e50; font-size: 1.05em; margin-bottom: 15px; }
-          .about-card p.hindi-text { color: #555; font-size: 0.97em; font-weight: 500; }
-          .about-card ul { padding-left: 25px; margin: 0; }
-          .about-card ul li { margin-bottom: 18px; font-size: 1.05em; color: #2c3e50; line-height: 1.7; }
-          .about-feature-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin: 15px 0; box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3); }
-          .about-feature-box strong { display: block; font-size: 1.2em; margin-bottom: 8px; }
-          .about-cta-block { background: linear-gradient(135deg, #1e3c72, #2a5298); color: #fff; padding: 50px 30px; border-radius: 16px; text-align: center; box-shadow: 0 15px 40px rgba(30, 60, 114, 0.4); margin-top: 40px; }
-          .about-cta-block p { color: #f8f9fa; font-size: 1.3em; margin: 12px 0; font-weight: 500; line-height: 1.7; }
-          .about-cta-block p.hindi { color: #cce5ff; font-size: 1.15em; margin-top: 15px; }
-          .about-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 25px; margin: 30px 0; }
-          .about-stat { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
-          .about-stat-number { font-size: 2.5em; font-weight: 800; display: block; margin-bottom: 8px; }
-          .about-stat-label { font-size: 1.05em; font-weight: 600; }
-        `}</style>
-        <h2 className="about-info-title-modern">🚀 About Cashmemo_Print | Cashmemo_Print के बारे में</h2>
-        
-        <div className="about-tagline">
-          <p>
-            A Complete Digital Solution for HPCL LPG Distributors | HPCL LPG डिस्ट्रीब्यूटर्स के लिए एक संपूर्ण डिजिटल समाधान
-          </p>
-          <div className="about-tagline-hindi">
-            तेजी से बिलिंग करें, गलतियां कम करें, और अपना व्यवसाय आसानी से संचालित करें
-          </div>
-        </div>
-
-        {/* <div className="about-stats">
-          <div className="about-stat">
-            <span className="about-stat-number">50+</span>
-            <span className="about-stat-label">HPCL LPG Distributors</span>
-          </div>
-          <div className="about-stat">
-            <span className="about-stat-number">10K+</span>
-            <span className="about-stat-label">Daily Cashmemos Printed</span>
-          </div>
-          <div className="about-stat">
-            <span className="about-stat-number">100%</span>
-            <span className="about-stat-label">Paperless & Secure</span>
-          </div>
-        </div> */}
-        <div className="home-important-note" style={{ background: '#fff3cd', borderLeft: '6px solid #ffecb5', padding: '15px 20px', borderRadius: '8px', marginBottom: '30px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-          {!isLoggedIn && <h2 style={{ margin: '0 0 15px 0', color: '#856404', fontSize: '1.2em' }}>वेबसाइट टेस्ट करने के लिए ID- 41099999 , Pin - 0000 का उपयोग करे</h2>}
-          <h3 style={{ color: '#856404', margin: '0 0 10px 0', fontSize: '1.15em' }}>📌 महत्वपूर्ण सूचना (Cashmemo Print हेतु)</h3>
-          <p style={{ color: '#856404', margin: '0 0 8px 0', lineHeight: '1.5' }}>Cashmemo प्रिंट करने से पहले कृपया अपने Pending Cashmemo को cDCMS से डाउनलोड या सेव अवश्य करें।</p>
-          <p style={{ color: '#856404', margin: '0 0 8px 0', lineHeight: '1.5' }}><strong>डाउनलोड करने का पथ (Path):</strong> cDCMS -&gt; Order Fulfillment -&gt; Pending Booking</p>
-          <p style={{ color: '#856404', margin: '0 0 8px 0', lineHeight: '1.5' }}>डाउनलोड की गई फ़ाइल को इस पोर्टल के Top Navbar में Upload करें, फिर “Show Data” पर क्लिक करके डेटा प्रदर्शित करें।</p>
-          <p style={{ color: '#856404', margin: '0', lineHeight: '1.5' }}><strong>बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</strong></p>
-        </div>
-
-        <div className="about-content-grid">
-          <div className="about-card" style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%)' }}>
-            <h3>🎯 विस्तृत विवरण (Detailed Description)</h3>
-            <p><strong>Cashmemo_Print</strong> एक आधुनिक, वेब-आधारित एप्लिकेशन है जिसे <strong>Hindustan Petroleum Corporation Limited (HPCL)</strong> के LPG डिस्ट्रीब्यूटर्स के लिए विशेष रूप से डिज़ाइन किया गया है।</p>
-            <p>यह प्लेटफॉर्म कैश मेमो बनाने की प्रक्रिया को न केवल सरल बनाता है, बल्कि इसे तेज़, सुरक्षित और पूरी तरह से ट्रैक योग्य भी बनाता है। हर दिन हजारों डिलीवरी के साथ काम करने वाले डिस्ट्रीब्यूटर्स अब अपने बिलिंग को कुछ ही क्लिक में पूरा कर सकते हैं।</p>
-            <p className="hindi-text">यह सिस्टम <strong>LPG वितरण के वास्तविक कार्यप्रवाह</strong> को गहराई से समझकर बनाया गया है, जिससे डिलीवरी के समय <strong>तुरंत और सही बिलिंग</strong> संभव है।</p>
-          </div>
-
-          <div className="about-card" style={{ gridColumn: '1 / -1', borderLeftColor: '#28a745' }}>
-            <h3>✨ मुख्य क्षमताएं (Key System Capabilities)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginTop: '15px' }}>
-              <div style={{ background: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
-                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>📊 डेटा प्रबंधन</strong>
-                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>cDCMS से सीधे फ़ाइल अपलोड, Pending Booking की पहचान, Aging reports (2-5 दिन), और स्मार्ट डेटा सत्यापन।</p>
-              </div>
-              <div style={{ background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
-                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>🖨️ बल्क प्रिंटिंग</strong>
-                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>2, 3, या 4 Cashmemos प्रति पेज, ऑटोमैटिक GST कैलकुलेशन, डायनामिक रेट, और Tax Invoice जनरेशन।</p>
-              </div>
-              <div style={{ background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
-                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>🌐 बहुभाषी समर्थन</strong>
-                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>ऑटोमैटिक English-to-Hindi Dictionary, कस्टमाइज़्ड हेडर, डिलीवरी स्टाफ प्रबंधन, और एरिया सेटअप।</p>
-              </div>
-              <div style={{ background: 'linear-gradient(135deg, #ff9a56 0%, #ff6a88 100%)', padding: '20px', borderRadius: '10px', color: 'white' }}>
-                <strong style={{ display: 'block', marginBottom: '10px', fontSize: '1.1em' }}>🛡️ सुरक्षित एक्सेस</strong>
-                <p style={{ fontSize: '0.95em', margin: '0 0 5px', lineHeight: '1.6' }}>PIN-based सुरक्षित लॉगिन, Role-based एक्सेस कंट्रोल, Approval workflows, और एडमिन सपोर्ट चैट।</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="about-card" style={{ borderLeftColor: '#28a745' }}>
-            <h3>🎯 मुख्य उद्देश्य (Core Objectives)</h3>
-            <ul>
-              <li>✅ <strong>बिलिंग प्रक्रिया को सरल करना</strong> - कोडित डेटा, प्रि-फिल्ड फॉर्म, और एक-क्लिक प्रिंटिंग</li>
-              <li>✅ <strong>मानवीय त्रुटियों को कम करना</strong> - डेटा वेलिडेशन, ऑटोमैटिक कैलकुलेशन, और रीयल-टाइम चेक</li>
-              <li>✅ <strong>तेजी से प्रिंटिंग</strong> - बल्क प्रिंटिंग (2, 3, या 4 प्रति पेज), सिंगल-क्लिक वर्कफ्लो</li>
-              <li>✅ <strong>डेटा प्रबंधन में सुधार</strong> - फ़िल्टर्स, सर्च, एडवांस्ड रिपोर्ट्स, और डाउनलोड विकल्प</li>
-              <li>✅ <strong>डिस्ट्रीब्यूटर्स का समर्थन</strong> - इन-ऐप चैट, FAQ, और डेडिकेटेड एडमिन सपोर्ट</li>
-            </ul>
-          </div>
-
-          <div className="about-card" style={{ borderLeftColor: '#ffc107' }}>
-            <h3>💻 तकनीकी आधार (Technology Stack)</h3>
-            <p>यह सिस्टम <strong>React + Vite</strong> जैसी आधुनिक तकनीकों पर बनाया गया है, जो इसे:</p>
-            <ul>
-              <li><strong>हल्का और तेज़</strong> - तेजी से लोडिंग और रिस्पॉन्स</li>
-              <li><strong>सुरक्षित</strong> - Firebase-based सुरक्षित लॉगिन और डेटा स्टोरेज</li>
-              <li><strong>स्कैलेबल</strong> - हजारों यूजर्स को एक साथ सपोर्ट कर सकता है</li>
-              <li><strong>मोबाइल-फ्रेंडली</strong> - किसी भी डिवाइस से एक्सेस करें</li>
-            </ul>
-            <div className="about-feature-box">
-              <strong>🚀 Performance:</strong> Optimized for speed with minimal data transfer
-            </div>
-          </div>
-
-          {/* <div className="about-card" style={{ borderLeftColor: '#17a2b8' }}>
-            <h3>🎨 दृष्टिकोण (Vision & Mission)</h3>
-            <p><strong>विजन:</strong> HPCL LPG डिस्ट्रीब्यूटर्स को एक स्मार्ट, विश्वसनीय और पूरी तरह से डिजिटल समाधान प्रदान करना जो उनके दैनिक संचालन को आसान बनाए।</p>
-            <p><strong>मिशन:</strong> डिजिटल बिलिंग को सरल, पारदर्शी, और सभी के लिए सुलभ बनाना।</p>
-            <div className="about-feature-box">
-              <strong>📍 फोकस:</strong> हर डिस्ट्रीब्यूटर की सफलता में योगदान देना
-            </div>
-          </div> */}
-
-          <div className="about-card" style={{ borderLeftColor: '#e83e8c' }}>
-            <h3>📦 सदस्यता पैकेज (Subscription Plans)</h3>
-            <ul>
-              <li>
-                <strong>{formatPackageOptionLabel('Premium Package - 30 Days')}:</strong><br/>
-                <span className="hindi-text">Core billing, reports, filters, printing, and support access.</span>
-              </li>
-              <li>
-                <strong>{formatPackageOptionLabel('Enterprise Package - 365 Days')}:</strong><br/>
-                <span className="hindi-text">Annual access with advanced workflow tools and admin support.</span>
-              </li>
-              <li>
-                <strong>{formatPackageOptionLabel('Enterprise Package with (हिंदी) - 365 Days')}:</strong><br/>
-                <span className="hindi-text">Annual access with Hindi dictionary, header, delivery area, and staff tools.</span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="about-card" style={{ borderLeftColor: '#fd7e14' }}>
-            <h3>🔐 सुरक्षा और गोपनीयता (Security & Privacy)</h3>
-            <ul>
-              <li>
-                <strong>PIN-आधारित लॉगिन:</strong> सभी यूजर्स के लिए सुरक्षित एक्सेस, डुअल-लेयर सुरक्षा
-              </li>
-              <li>
-                <strong>एडमिन अप्रूवल वर्कफ्लो:</strong> Profile, Bank Details, और Rate परिवर्तन को सख्ती से सत्यापित
-              </li>
-              <li>
-                <strong>एन्क्रिप्टेड डेटा:</strong> Firebase के साथ एंड-टू-एंड एन्क्रिप्शन
-              </li>
-              <li>
-                <strong>ऑडिट ट्रेल:</strong> हर ऑपरेशन को लॉग किया जाता है ट्रैकिंग के लिए
-              </li>
-              <li>
-                <strong>24/7 सहायता:</strong> Built-in feedback और support ticket workflow, Direct admin chat
-              </li>
-            </ul>
-          </div>
-
-          <div className="about-card" style={{ gridColumn: '1 / -1', borderLeftColor: '#6f42c1' }}>
-            <h3>🌟 लाभ और विशेषताएं (Benefits & Features)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginTop: '15px' }}>
-              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #007bff' }}>
-                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>⏱️ समय बचाएं</strong>
-                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>मैनुअल डेटा एंट्री से बचें, bulk operations करें, और घंटों का काम मिनटों में पूरा करें।</p>
-              </div>
-              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #28a745' }}>
-                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>📈 बेहतर सटीकता</strong>
-                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>ऑटोमैटिक कैलकुलेशन, GST हिसाब, और रीयल-टाइम वेलिडेशन से त्रुटियां शून्य।</p>
-              </div>
-              {/* <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #ffc107' }}>
-                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>💰 लागत में कमी</strong>
-                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>कागज, प्रिंटर की खपत, और मानव संसाधन में भारी बचत।</p>
-              </div> */}
-              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #dc3545' }}>
-                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>🔒 पूर्ण सुरक्षा</strong>
-                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>Firebase integration, encrypted data, audit trails, और role-based access control।</p>
-              </div>
-              <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #17a2b8' }}>
-                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>📱 कहीं से भी एक्सेस</strong>
-                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>Desktop, tablet, या phone से कहीं भी, कभी भी काम करें।</p>
-              </div>
-              {/* <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #6f42c1' }}>
-                <strong style={{ color: '#1e3c72', display: 'block', marginBottom: '8px' }}>🎓 आसान प्रशिक्षण</strong>
-                <p style={{ fontSize: '0.95em', color: '#555', margin: '0' }}>सहज इंटरफेस, built-in help, और dedicated support team।</p>
-              </div> */}
-            </div>
-          </div>
-        </div>
-
-        <div className="about-cta-block">
-          <p><strong>🚀 यह केवल एक बिलिंग सॉफ्टवेयर नहीं है...</strong></p>
-          <p>यह HPCL LPG डिस्ट्रीब्यूटर्स के <strong>दैनिक संचालन को पूरी तरह सरल बनाने का एक समाधान</strong> है।</p>
-          <p style={{ color: '#cce5ff', marginTop: '20px', fontSize: '1.15em' }}>यह एक <strong>भरोसेमंद पार्टनर</strong> है जो आपके व्यवसाय को और भी बेहतर बनाता है।</p>
-          <p className="hindi">सिस्टम को समझें, इसका उपयोग करें, और अपनी बिलिंग को अगले स्तर पर ले जाएं।</p>
-        </div>
-      </div>
-    );
-  };
   const [labelUpdatePageType, setLabelUpdatePageType] = useState('3 Cashmemo/Page');
   const [cashMemoLabelSettings, setCashMemoLabelSettings] = useState(() => {
     try {
@@ -8904,9 +7950,10 @@ function App() {
   }, [activeReportFilter, allPendingRows, baseFilteredData, reportViewMode, topPendingAreaFilterMap]);
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setCurrentPage(1);
     }, 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     searchTerm,
@@ -9364,63 +8411,6 @@ function App() {
     });
   };
 
-  const LabelUpdatePage = () => {
-    const activeSettings = labelDraftSettings[labelUpdatePageType] || {};
-    const groupedLabels = CASHMEMO_LABEL_OPTIONS.reduce((acc, item) => {
-      if (!acc[item.group]) acc[item.group] = [];
-      acc[item.group].push(item);
-      return acc;
-    }, {});
-
-    return (
-      <div className="placeholder-container label-update-page">
-        <div className="label-update-header">
-          <div>
-            <h2>Label Update</h2>
-            <p>Cashmemo print labels, page type select.</p>
-          </div>
-          <div className="label-update-actions">
-            <select className="form-input" value={labelUpdatePageType} onChange={(e) => setLabelUpdatePageType(e.target.value)}>
-              {CASHMEMO_PAGE_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-            <button type="button" onClick={() => setAllCashMemoLabelsForPage(labelUpdatePageType, true)}>Select All</button>
-            <button type="button" onClick={() => setAllCashMemoLabelsForPage(labelUpdatePageType, false)}>Clear All</button>
-            <button type="button" onClick={() => resetCashMemoLabelsForPage(labelUpdatePageType)}>Reset Default</button>
-          </div>
-        </div>
-
-        <div className="label-update-grid">
-          {Object.entries(groupedLabels).map(([group, items]) => (
-            <section key={group} className="label-update-section">
-              <h3>{group}</h3>
-              <div className="label-checkbox-list">
-                {items.map((item) => (
-                  <label key={item.key} className="label-checkbox-item">
-                    <input
-                      type="checkbox"
-                      checked={activeSettings[item.key] !== false}
-                      onChange={(e) => updateCashMemoLabelSetting(labelUpdatePageType, item.key, e.target.checked)}
-                    />
-                    <span>{item.label}</span>
-                  </label>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-
-        <div className="form-actions">
-          <button onClick={handleSaveCashMemoLabels}>Save</button>
-          <button onClick={() => {
-            setLabelDraftSettings(mergeCashMemoLabelSettings(cashMemoLabelSettings));
-            navigateToHome();
-          }}>Close</button>
-        </div>
-      </div>
-    );
-  };
 //test
   const hideUserNavbar = showAdminPanel;
   const pendingTypesFromUpdates = Object.entries(loggedInUser?.pendingUpdates || {})
@@ -10367,7 +9357,7 @@ function App() {
               />
             </Suspense>
           )}
-          {showAboutInfo && <AboutInfo />}
+          {showAboutInfo && <AboutInfo isLoggedIn={isLoggedIn} />}
           {showInvoicePage && (
             <Suspense fallback={<div className="placeholder-container">Loading invoice...</div>}>
               <LazyInvoicePage loggedInUser={loggedInUser} />
@@ -10417,8 +9407,28 @@ function App() {
               <LazyEmployeeReportPage loggedInUser={loggedInUser} onClose={handleEmployeeReportClose} onSalarySlipOpen={handleSalarySlipForEmployee} />
             </Suspense>
           )}
-          {showLabelUpdate && <LabelUpdatePage />}
-          {showHeaderUpdate && <HeaderUpdateForm onClose={navigateToHome} />}
+          {showLabelUpdate && (
+            <LabelUpdatePage
+              labelDraftSettings={labelDraftSettings}
+              labelUpdatePageType={labelUpdatePageType}
+              setLabelUpdatePageType={setLabelUpdatePageType}
+              setAllCashMemoLabelsForPage={setAllCashMemoLabelsForPage}
+              resetCashMemoLabelsForPage={resetCashMemoLabelsForPage}
+              updateCashMemoLabelSetting={updateCashMemoLabelSetting}
+              handleSaveCashMemoLabels={handleSaveCashMemoLabels}
+              navigateToHome={navigateToHome}
+              cashMemoLabelSettings={cashMemoLabelSettings}
+              setLabelDraftSettings={setLabelDraftSettings}
+            />
+          )}
+          {showHeaderUpdate && (
+            <HeaderUpdateForm
+              onClose={navigateToHome}
+              loggedInUser={loggedInUser}
+              submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+              logRecentActivity={logRecentActivity}
+            />
+          )}
           {showAdminPanel && <AdminPanel onClose={navigateToHome} onAdminLogout={handleAdminLogout} />}
           {showAdminLogin && (
             <Suspense fallback={<div className="placeholder-container">Loading admin login...</div>}>
