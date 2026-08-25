@@ -7609,7 +7609,7 @@ function App() {
     let tempFilteredData = rows.filter((row) => hasValidPendingConsumerNo(row));
 
     if (searchTerm) {
-      tempFilteredData = tempFilteredData.filter((row) => matchesSmartSearch(row, searchTerm));
+      tempFilteredData = tempFilteredData.filter((row) => matchesSmartSearch(row, searchTerm, SMART_SEARCH_FIELDS));
     }
 
     if (!excluded.has('eKycFilter') && hasMultiValueFilterSelection(eKycFilter)) {
