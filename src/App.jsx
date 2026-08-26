@@ -165,6 +165,7 @@ const LazyEmployeeProfilePage = lazy(() => import('./EmployeeProfilePage'));
 const LazySalarySlipPage = lazy(() => import('./SalarySlipPage'));
 const LazyAttendanceReportPage = lazy(() => import('./AttendanceReportPage'));
 const LazyEmployeeReportPage = lazy(() => import('./EmployeeReportPage'));
+const LazyStockRegisterPage = lazy(() => import('./StockRegisterPage'));
 
 function App() {
   const fileInputRef = useRef(null);
@@ -216,6 +217,7 @@ function App() {
   const [salarySlipEmployeeId, setSalarySlipEmployeeId] = useState('');
   const [showAttendanceReportPage, setShowAttendanceReportPage] = useState(false);
   const [showEmployeeReportPage, setShowEmployeeReportPage] = useState(false);
+  const [showStockRegister, setShowStockRegister] = useState(false);
   const [showUpgradePlan, setShowUpgradePlan] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -1065,6 +1067,7 @@ function App() {
     setSalarySlipEmployeeId('');
     setShowAttendanceReportPage(false);
     setShowEmployeeReportPage(false);
+    setShowStockRegister(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -1115,6 +1118,11 @@ function App() {
   const handleAttendanceOpen = () => {
     hideAllViews();
     setShowAttendance(true);
+    setShowUserMenu(false);
+  };
+  const handleStockRegisterOpen = () => {
+    hideAllViews();
+    setShowStockRegister(true);
     setShowUserMenu(false);
   };
   const handleIdCardOpen = () => {
@@ -8463,6 +8471,7 @@ function App() {
       : showSalarySlipPage ? 'salarySlips'
       : showAttendanceReportPage ? 'attendanceReport'
       : showEmployeeReportPage ? 'employeeReport'
+      : showStockRegister ? 'stockRegister'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -9160,6 +9169,11 @@ function App() {
                 Attendance
               </button>
             )}
+            {isLoggedIn && (
+              <button className="navbar-button" onClick={handleStockRegisterOpen} disabled={isPlanExpired}>
+                Stock Register
+              </button>
+            )}
             {isLoggedIn && hasHindiPackageAccess && (
               <button className="navbar-button" onClick={handleDictionaryOpen} disabled={!canAccessMenuFeature('dictionaryUpdate')}>
                 Dictionary{pendingDictionaryCount > 0 ? ` (${pendingDictionaryCount})` : ''}
@@ -9318,7 +9332,7 @@ function App() {
           </div>
         </section>
       )}
-      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
           {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
           {showDictionaryForm && (
@@ -9405,6 +9419,11 @@ function App() {
           {showEmployeeReportPage && (
             <Suspense fallback={<div className="placeholder-container">Loading employee report...</div>}>
               <LazyEmployeeReportPage loggedInUser={loggedInUser} onClose={handleEmployeeReportClose} onSalarySlipOpen={handleSalarySlipForEmployee} />
+            </Suspense>
+          )}
+          {showStockRegister && (
+            <Suspense fallback={<div className="placeholder-container">Loading stock register...</div>}>
+              <LazyStockRegisterPage loggedInUser={loggedInUser} onClose={navigateToHome} />
             </Suspense>
           )}
           {showLabelUpdate && (
