@@ -10,8 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-*.local
-.env*
+.env
+.env.*
+
 !.env.example
 coverage
 .cache
@@ -37,4 +38,3 @@ tmp
 *.njsproj
 *.sln
 *.sw?
-
