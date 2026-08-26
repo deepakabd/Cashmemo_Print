@@ -7,34 +7,67 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-.env*
-!.env.example
-coverage
-.cache
-.vite
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Coverage
+coverage/
+
+# Cache
+.cache/
+.vite/
 .eslintcache
-.agents
-.agents/*
-.tmp
-tmp
+
+# Agent / temporary files
+.agents/
+.tmp/
+tmp/
 *.tmp
 *.temp
+
+# Patch / diff files
 *.diff
 *.patch
+
+# TypeScript build info
 *.tsbuildinfo
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Visual Studio
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
+# Local Firebase files
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Vercel
+.vercel/
+
+# Netlify
+.netlify/
+
+# Misc
+*.local
