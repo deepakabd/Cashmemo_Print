@@ -15,10 +15,14 @@ const HomeDashboard = ({
   actionCenterCards,
   recentActivities,
   onQuickAction,
+  onLogin,
+  onExplore,
+  onStockRegister,
+  onAttendance,
 }) => (
   <div className="placeholder-container home-dashboard">
     <style>{homeDashboardStyles}</style>
-    <HomeDashboardMarketing isLoggedIn={isLoggedIn} />
+    <HomeDashboardMarketing isLoggedIn={isLoggedIn} onLogin={onLogin} onExplore={onExplore} />
     {isLoggedIn && (
       <HomeDashboardLoggedIn
         homeQuickActions={homeQuickActions}
@@ -31,6 +35,8 @@ const HomeDashboard = ({
         announcements={announcements}
         homeTodayFocus={homeTodayFocus}
         homeSupportPoints={homeSupportPoints}
+        onStockRegister={onStockRegister}
+        onAttendance={onAttendance}
         recentActivities={recentActivities}
       />
     )}

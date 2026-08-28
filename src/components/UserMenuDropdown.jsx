@@ -41,6 +41,9 @@ const UserMenuDropdown = ({
     'Account Setup': true,
   });
   const navbarOnlyViewKeys = new Set(['support', 'invoice', 'about']);
+  const aboutMenuItem = userMenuSections
+    .flatMap((section) => section.items)
+    .find((item) => item.viewKey === 'about');
   const searchLower = menuSearch.trim().toLowerCase();
   const filteredSections = useMemo(() => (
     userMenuSections
@@ -305,6 +308,23 @@ const UserMenuDropdown = ({
         <a className="dropdown-menu__contact-link" href={adminContacts.whatsapp} target="_blank" rel="noopener noreferrer">WhatsApp Admin</a>
       </div>
     </div>
+    {aboutMenuItem && (
+      <div className="dropdown-menu__section">
+        <button
+          type="button"
+          className={aboutMenuItem.active ? 'dropdown-menu__button dropdown-menu__button--active' : 'dropdown-menu__button'}
+          onClick={runUserMenuItem(aboutMenuItem)}
+          disabled={aboutMenuItem.disabled}
+          title={aboutMenuItem.reason || aboutMenuItem.hint || ''}
+          role="menuitem"
+        >
+          <span className="dropdown-menu__button-row"><span>{aboutMenuItem.label}</span></span>
+          {(aboutMenuItem.reason || aboutMenuItem.hint || aboutMenuItem.active) && (
+            <span className="dropdown-menu__button-subtext">{aboutMenuItem.active ? 'You are viewing this section.' : (aboutMenuItem.reason || aboutMenuItem.hint)}</span>
+          )}
+        </button>
+      </div>
+    )}
   </div>
   );
 };
