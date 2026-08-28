@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { lazy, Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
@@ -242,7 +243,7 @@ function App() {
     lastUpdatedAt: '',
     apiWords: [],
   });
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
   const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
   const onboardingAutoOpenedRef = useRef(false);
 //test the
@@ -261,6 +262,7 @@ function App() {
       title: config.title || 'Please Confirm',
       message: config.message || '',
       confirmLabel: config.confirmLabel || 'Confirm',
+      cancelLabel: config.cancelLabel || 'Cancel',
       onConfirm: typeof config.onConfirm === 'function' ? config.onConfirm : null,
       onCancel: typeof config.onCancel === 'function' ? config.onCancel : null,
       previewItems: Array.isArray(config.previewItems) ? config.previewItems : [],
@@ -272,14 +274,14 @@ function App() {
 
   const closeConfirmDialog = useCallback(() => {
     const callback = confirmDialog.onCancel;
-    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
     if (typeof callback === 'function') {
       callback();
     }
   }, [confirmDialog.onCancel]);
 
   const resetConfirmDialog = useCallback(() => {
-    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
   }, []);
 
   const handleConfirmDialogSubmit = useCallback(() => {
@@ -992,7 +994,7 @@ function App() {
     setSampleDataAttempted(false);
     persistUserSession(localUser);
     setShowUserLogin(false);
-    setShowAboutInfo(true);
+    setShowHomeInfo(true);
     setUserDealerCode('');
     setUserPin('');
     setUserPinVisible(false);
@@ -1295,6 +1297,7 @@ function App() {
   };
 
   const handleAboutOpen = () => {
+    if (isLoggedIn) return;
     hideAllViews();
     setShowAboutInfo(true);
     setShowUserMenu(false);
@@ -1341,9 +1344,18 @@ function App() {
   };
 
   const handleAdminLoginOpen = () => {
-    hideAllViews();
-    setShowAdminLogin(true);
-    setShowUserMenu(false);
+    openConfirmDialog({
+      title: 'Admin Access',
+      message: 'Are you admin?, if Yes then login',
+      confirmLabel: 'Yes, Login as Admin',
+      cancelLabel: 'No, Go to User Login',
+      onConfirm: () => {
+        hideAllViews();
+        setShowAdminLogin(true);
+        setShowUserMenu(false);
+      },
+      onCancel: handleLogin,
+    });
   };
 
   const onboardingSteps = [
@@ -9052,7 +9064,7 @@ function App() {
         { label: 'Cashmemo Layout', onClick: handleCashmemoLayoutOpen, viewKey: 'cashmemoLayout', disabled: !canAccessMenuFeature('labelUpdate'), reason: getDisabledReason('labelUpdate'), hint: isPlanExpired ? getDisabledReason('labelUpdate') : 'Preview and print cashmemo header layout by page type.' },
         { label: 'Update Labels', onClick: handleLabelUpdate, viewKey: 'labelUpdate', disabled: !canAccessMenuFeature('labelUpdate'), reason: getDisabledReason('labelUpdate'), hint: isPlanExpired ? getDisabledReason('labelUpdate') : 'Adjust print layout labels for cashmemo output.' },
         {
-          label: 'Update Dictionary',
+          label: 'Dictionary',
           onClick: handleDictionaryOpen,
           viewKey: 'dictionaryUpdate',
           disabled: !canAccessMenuFeature('dictionaryUpdate'),
@@ -9104,7 +9116,6 @@ function App() {
       title: 'Account',
       items: [
         { label: 'View Profile', onClick: handleUserProfile, viewKey: 'userProfile', allowSameView: true, hint: 'View account details, package info, and profile summary.' },
-        { label: 'Open About', onClick: handleAboutOpen, viewKey: 'about', disabled: !canAccessMenuFeature('about'), reason: getDisabledReason('about') },
       ],
     },
   ];
@@ -9160,11 +9171,6 @@ function App() {
               </button>
             )}
             {isLoggedIn && (
-              <button className="navbar-button" onClick={handleCashmemoLayoutOpen} disabled={!canAccessMenuFeature('labelUpdate')}>
-                Cashmemo Layout
-              </button>
-            )}
-            {isLoggedIn && (
               <button className="navbar-button" onClick={handleAttendanceOpen} disabled={isPlanExpired}>
                 Attendance
               </button>
@@ -9174,14 +9180,11 @@ function App() {
                 Stock Register
               </button>
             )}
-            {isLoggedIn && hasHindiPackageAccess && (
-              <button className="navbar-button" onClick={handleDictionaryOpen} disabled={!canAccessMenuFeature('dictionaryUpdate')}>
-                Dictionary{pendingDictionaryCount > 0 ? ` (${pendingDictionaryCount})` : ''}
+            {!isLoggedIn && (
+              <button className="navbar-button" onClick={handleAboutOpen}>
+                About
               </button>
             )}
-            <button className="navbar-button" onClick={handleAboutOpen} disabled={isLoggedIn && !canAccessMenuFeature('about')}>
-              About
-            </button>
             {isLoggedIn && !isPlanExpired && !showDataButton && (
               <button className="navbar-button" onClick={handleReUploadClick} disabled={isPlanExpired}>
                 Upload Data
@@ -9475,6 +9478,7 @@ function App() {
                 handleUserLoginSubmit={handleUserLoginSubmit}
                 navigateToHome={navigateToHome}
                 handleContactOpen={handleContactOpen}
+                onRegister={handleRegister}
               />
             </Suspense>
           )}
@@ -9519,6 +9523,7 @@ function App() {
                 pushToast={pushToast}
                 logRecentActivity={logRecentActivity}
                 onClose={navigateToHome}
+                onLogin={handleLogin}
               />
             </Suspense>
           )}
@@ -9742,16 +9747,10 @@ function App() {
               Aaj ka `Pending Booking` CSV ya XLSX upload karte hi filters, cashmemo print,
               reports, aur quick profile actions start ho jayenge.
             </p>
-            <p>
-              Agar pehli baar use kar rahe ho to quick tour dekh lo. Agar format ya process me doubt ho,
-              About steps aur Support & Replies dono available hain.
-            </p>
+            <p>Agar pehli baar use kar rahe ho to quick tour dekh lo. Format ya process me doubt ho to Support & Replies use kijiye.</p>
             <div className="data-empty-state__actions">
               <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
                 Upload Today's File
-              </button>
-              <button type="button" className="filter-action filter-action--secondary" onClick={handleAboutOpen}>
-                View Upload Steps
               </button>
             </div>
             <div className="data-empty-state__suggestions">
@@ -9817,3 +9816,4 @@ function App() {
 }
 
 export default App;
+

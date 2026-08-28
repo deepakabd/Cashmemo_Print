@@ -11,6 +11,7 @@ export const RegisterPanel = ({
   pushToast,
   logRecentActivity,
   onClose,
+  onLogin,
 }) => {
   const [form, setForm] = useState({
     package: '',
@@ -190,6 +191,10 @@ export const RegisterPanel = ({
           <div className="upi-note upi-note--card">UPI ID for Payment: {paymentUpiId}</div>
           <div className="form-actions auth-panel__actions">
             <button className="auth-primary-button" onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'रजिस्टर करें'}</button>
+            <div className="auth-switch-action">
+              <span className="auth-switch-prompt">Already have an account?</span>
+              <button className="auth-secondary-button" onClick={onLogin} disabled={isSubmitting}>Login</button>
+            </div>
             <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
           </div>
         </div>
@@ -276,6 +281,7 @@ export const UserLoginPanel = ({
   handleUserLoginSubmit,
   navigateToHome,
   handleContactOpen,
+  onRegister,
 }) => (
   <div className="placeholder-container auth-panel auth-panel--login">
     <div className="auth-panel__hero">
@@ -343,6 +349,10 @@ export const UserLoginPanel = ({
         </form>
         <div className="form-actions auth-panel__actions">
           <button className="auth-primary-button" onClick={handleUserLoginSubmit} type="button" disabled={isUserLoginSubmitting}>{isUserLoginSubmitting ? 'Logging in...' : 'Login'}</button>
+          <div className="auth-switch-action">
+            <span className="auth-switch-prompt">Don&apos;t have an account?</span>
+            <button className="auth-secondary-button" onClick={onRegister} type="button" disabled={isUserLoginSubmitting}>Register</button>
+          </div>
           <button className="auth-secondary-button" onClick={navigateToHome} disabled={isUserLoginSubmitting}>Close</button>
         </div>
       </div>
