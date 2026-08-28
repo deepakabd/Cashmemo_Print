@@ -53,7 +53,7 @@ export const ConfirmDialog = ({ dialog, onClose, onConfirm }) => {
         )}
         {dialog.dangerNote && <p className="app-dialog__danger-note">{dialog.dangerNote}</p>}
         <div className="app-dialog__actions">
-          <button type="button" className="auth-secondary-button" onClick={onClose}>Cancel</button>
+          <button type="button" className="auth-secondary-button" onClick={onClose}>{dialog.cancelLabel || 'Cancel'}</button>
           <button type="button" className="auth-primary-button" onClick={onConfirm}>{dialog.confirmLabel}</button>
         </div>
       </div>

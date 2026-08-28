@@ -3715,7 +3715,26 @@
 
 .auth-panel__actions {
   justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
   margin-top: 20px;
+}
+
+.auth-switch-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid #dbe6f1;
+  border-radius: 14px;
+  background: #f8fbfe;
+}
+
+.auth-switch-prompt {
+  color: #60758d;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .auth-primary-button,
@@ -4356,10 +4375,23 @@
 
   .form-actions.auth-panel__actions {
     flex-direction: column;
+    align-items: stretch;
   }
 
   .form-actions.auth-panel__actions button {
     width: 100%;
+  }
+
+  .auth-switch-prompt {
+    text-align: center;
+  }
+
+  .auth-switch-action {
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    box-sizing: border-box;
   }
 }
 
