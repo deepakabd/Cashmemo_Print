@@ -1,5 +1,5 @@
 import './AboutInfo.css';
-
+//CHECK
 const operations = [
   ['Customer & Booking Management', 'Manage customer and booking records with upload, search, sorting, and operational filters.', 'Customer और Booking records को upload, search, sorting और operational filters के साथ manage करें।'],
   ['Cash Memo Management', 'Generate print-ready cash memos from customer records using configurable printing options.', 'Customer records से configurable printing options के साथ print-ready Cash Memo generate करें।'],
