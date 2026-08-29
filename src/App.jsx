@@ -1297,7 +1297,6 @@ function App() {
   };
 
   const handleAboutOpen = () => {
-    if (isLoggedIn) return;
     hideAllViews();
     setShowAboutInfo(true);
     setShowUserMenu(false);
@@ -9116,6 +9115,7 @@ function App() {
       title: 'Account',
       items: [
         { label: 'View Profile', onClick: handleUserProfile, viewKey: 'userProfile', allowSameView: true, hint: 'View account details, package info, and profile summary.' },
+        { label: 'About cDCMS', onClick: handleAboutOpen, viewKey: 'about', allowSameView: true, hint: 'Learn about cDCMS features and workflow.' },
       ],
     },
   ];
@@ -9371,10 +9371,14 @@ function App() {
                   createdAt: formatDisplayDateTime(item.createdAt),
                 }))}
                 onQuickAction={handleDashboardQuickAction}
+                onLogin={handleLogin}
+                onExplore={handleAboutOpen}
+                onStockRegister={handleStockRegisterOpen}
+                onAttendance={handleAttendanceOpen}
               />
             </Suspense>
           )}
-          {showAboutInfo && <AboutInfo isLoggedIn={isLoggedIn} />}
+          {showAboutInfo && <AboutInfo onLogin={handleLogin} />}
           {showInvoicePage && (
             <Suspense fallback={<div className="placeholder-container">Loading invoice...</div>}>
               <LazyInvoicePage loggedInUser={loggedInUser} />
@@ -9816,4 +9820,3 @@ function App() {
 }
 
 export default App;
-

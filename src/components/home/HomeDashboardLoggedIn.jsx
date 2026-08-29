@@ -1,129 +1,28 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 
-const HomeDashboardLoggedIn = ({
-  homeQuickActions,
-  homeAccountDetails,
-  actionCenterCards,
-  onQuickAction,
-  todayOrders,
-  pendingEkycCount,
-  activePackageStatus,
-  announcements,
-  homeTodayFocus,
-  homeSupportPoints,
-  recentActivities,
-}) => {
-  const [showRecentActivity, setShowRecentActivity] = useState(false);
+const HomeDashboardLoggedIn = ({ homeAccountDetails, todayOrders, pendingEkycCount, activePackageStatus, announcements, homeTodayFocus, actionCenterCards, onQuickAction, onStockRegister, onAttendance }) => {
+  const now = useMemo(() => new Date(), []);
+  const dealerName = homeAccountDetails.find((item) => item.label === 'Dealer Name')?.value || 'Dealer';
+  const greeting = now.getHours() < 12 ? 'Good Morning' : now.getHours() < 17 ? 'Good Afternoon' : 'Good Evening';
+  const dateTime = now.toLocaleString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const overview = [
+    ['Today’s Bookings', todayOrders, 'Orders recorded for today'],
+    ['Pending eKYC', pendingEkycCount, 'Records needing review'],
+    ['Selected Records', homeTodayFocus.find((item) => item.includes('selected'))?.match(/^\d+/)?.[0] || '0', 'Ready for print or export'],
+    ['Plan Status', activePackageStatus, 'Current account package'],
+  ];
+  const attention = [
+    pendingEkycCount > 0 ? { tone: 'danger', text: String(pendingEkycCount) + ' customer record(s) have pending eKYC', action: 'Review eKYC' } : null,
+    ...homeTodayFocus.slice(2, 4).map((text) => ({ tone: 'info', text, action: 'Open workspace' })),
+  ].filter(Boolean);
 
-  return (
-    <>
-    <div className="home-hero-grid">
-      <div className="home-section home-highlight-card">
-        <h3>काम करने का आसान क्रम</h3>
-        <ol className="home-steps-list">
-          {homeQuickActions.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ol>
-      </div>
-      <div className="home-section home-highlight-card">
-        <h3>अकाउंट की झलक</h3>
-        <div className="home-account-grid">
-          {homeAccountDetails.map((item) => (
-            <div key={item.label} className="home-account-item">
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-    <div className="home-action-center">
-      <div className="home-action-center__header">
-        <div>
-          <p className="home-action-center__eyebrow">Action Center</p>
-          <h3>आज का अगला काम यहीं से पकड़ें</h3>
-        </div>
-        <div className="home-action-center__meta">
-          <span>{todayOrders} bookings today</span>
-          <span>{pendingEkycCount} eKYC pending</span>
-          <span>{activePackageStatus}</span>
-        </div>
-      </div>
-      <div className="home-action-center__grid">
-        {actionCenterCards.map((card) => (
-          <button
-            key={card.key}
-            type="button"
-            className={`home-action-card home-action-card--${card.tone || 'default'}`}
-            onClick={() => onQuickAction(card.action)}
-            disabled={card.disabled}
-            title={card.description}
-          >
-            <div className="home-action-card__top">
-              <span className="home-action-card__label">{card.label}</span>
-              {card.badge ? <span className="home-action-card__badge">{card.badge}</span> : null}
-            </div>
-            <strong>{card.title}</strong>
-            <p>{card.description}</p>
-            <span className="home-action-card__cta">{card.cta}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-    <div className="home-layout">
-      {announcements.length > 0 && (
-        <div className="home-section">
-          <h3>Latest Announcements</h3>
-          <ul>
-            {announcements.map((item) => (
-              <li key={item.id}>
-                <strong>{item.title}</strong> - {item.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <div className="home-section">
-        <h3>त्वरित कार्य</h3>
-        <ul>{homeQuickActions.map((item) => <li key={item}>{item}</li>)}</ul>
-      </div>
-      <div className="home-section">
-        <h3>आज का फोकस</h3>
-        <ul>{homeTodayFocus.map((item) => <li key={item}>{item}</li>)}</ul>
-      </div>
-      <div className="home-section">
-        <h3>सहायता और सुझाव</h3>
-        <ul>{homeSupportPoints.map((item) => <li key={item}>{item}</li>)}</ul>
-      </div>
-    </div>
-      <div className="home-recent-activity">
-        <button
-          type="button"
-          className="home-recent-activity__header home-recent-activity__toggle"
-          onClick={() => setShowRecentActivity((prev) => !prev)}
-          aria-expanded={showRecentActivity}
-        >
-          <h3>Recent Activity</h3>
-          <span>{recentActivities.length} recent actions</span>
-        </button>
-        {showRecentActivity && (
-          recentActivities.length === 0 ? (
-            <p className="home-recent-activity__empty">Abhi recent activity available nahi hai. Upload, login, ya request submit karte hi yahan summary dikhegi.</p>
-          ) : (
-            <div className="home-recent-activity__list">
-              {recentActivities.map((item) => (
-                <div key={item.id} className="home-recent-activity__item">
-                  <strong>{item.message}</strong>
-                  <span>{item.createdAt}</span>
-                </div>
-              ))}
-            </div>
-          )
-        )}
-      </div>
-    </>
-  );
+  return <section className="home-logged-dashboard">
+    <header className="home-dashboard-welcome"><div><span className="home-dashboard-welcome__eyebrow">DAILY OPERATIONS OVERVIEW</span><h2>{greeting}, {dealerName}</h2><p>Welcome back! Here&apos;s your daily operational overview.</p><p className="home-dashboard-welcome__hindi">आज के महत्वपूर्ण operations और pending activities का overview नीचे दिया गया है।</p></div><div className="home-dashboard-welcome__status"><strong>● System Operational</strong><span>{dateTime}</span></div></header>
+    <section className="home-dashboard-block"><div className="home-dashboard-block__heading"><div><span>TODAY&apos;S OVERVIEW</span><h3>Today&apos;s overview</h3></div><p>Only data currently available in your system is shown.</p></div><div className="home-summary-grid">{overview.map(([label, value, helper]) => <article key={label}><span>{label}</span><strong>{value}</strong><small>{helper}</small></article>)}</div></section>
+    <section className="home-dashboard-block"><div className="home-dashboard-block__heading"><div><span>QUICK ACTIONS</span><h3>Quick actions</h3></div><p>जल्दी किए जाने वाले कार्य</p></div><div className="home-action-center__grid home-action-center__grid--dashboard">{actionCenterCards.slice(0, 6).map((card) => <button key={card.key} type="button" className={'home-action-card home-action-card--' + (card.tone || 'default')} onClick={() => onQuickAction(card.action)} disabled={card.disabled} title={card.description}><div className="home-action-card__top"><span className="home-action-card__label">{card.label}</span>{card.badge && <span className="home-action-card__badge">{card.badge}</span>}</div><strong>{card.title}</strong><p>{card.description}</p><span className="home-action-card__cta">{card.cta} →</span></button>)}</div></section>
+    <div className="home-dashboard-columns"><section className="home-dashboard-panel"><div className="home-dashboard-block__heading"><div><span>TODAY&apos;S OPERATIONS</span><h3>What&apos;s happening today</h3></div></div><div className="home-operation-list">{homeTodayFocus.map((item, index) => <div key={item}><span className={index < 2 ? 'is-ready' : 'is-info'}>{index < 2 ? '✓' : '•'}</span><p>{item}</p></div>)}</div></section><section className="home-dashboard-panel"><div className="home-dashboard-block__heading"><div><span>NEEDS YOUR ATTENTION</span><h3>Pending tasks</h3></div></div>{attention.length ? <div className="home-attention-list">{attention.map((item) => <div key={item.text} className={'home-attention-item home-attention-item--' + item.tone}><p>{item.text}</p><button type="button" onClick={() => onQuickAction('showData')}>{item.action} →</button></div>)}</div> : <p className="home-dashboard-empty">No pending task needs attention right now.</p>}</section></div>
+    <div className="home-dashboard-columns"><section className="home-dashboard-panel"><div className="home-dashboard-block__heading"><div><span>STOCK SNAPSHOT</span><h3>Stock overview</h3></div></div><p className="home-dashboard-empty">Today&apos;s stock summary will appear here after stock register data is available.</p><button type="button" className="home-dashboard-link" onClick={onStockRegister}>View Stock Register →</button></section><section className="home-dashboard-panel"><div className="home-dashboard-block__heading"><div><span>EMPLOYEE ATTENDANCE</span><h3>Attendance today</h3></div></div><p className="home-dashboard-empty">Attendance counts will appear here after today&apos;s attendance is recorded.</p><button type="button" className="home-dashboard-link" onClick={onAttendance}>Manage Attendance →</button></section></div>
+    {announcements.length > 0 && <section className="home-dashboard-panel home-dashboard-panel--wide"><div className="home-dashboard-block__heading"><div><span>IMPORTANT UPDATES</span><h3>Announcements</h3></div></div><div className="home-announcement-list">{announcements.map((item) => <div key={item.id}><strong>{item.title}</strong><p>{item.message}</p></div>)}</div></section>}
+  </section>;
 };
-
 export default HomeDashboardLoggedIn;
