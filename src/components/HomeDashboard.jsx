@@ -1,6 +1,8 @@
 import HomeDashboardLoggedIn from './home/HomeDashboardLoggedIn';
 import HomeDashboardMarketing from './home/HomeDashboardMarketing';
+import HomeKnowledgeHub from './home/HomeKnowledgeHub';
 import { homeDashboardStyles } from './home/homeDashboardStyles';
+import BrandMark from './BrandMark';
 
 const HomeDashboard = ({
   isLoggedIn,
@@ -22,7 +24,10 @@ const HomeDashboard = ({
 }) => (
   <div className="placeholder-container home-dashboard">
     <style>{homeDashboardStyles}</style>
-    <HomeDashboardMarketing isLoggedIn={isLoggedIn} onLogin={onLogin} onExplore={onExplore} />
+    {!isLoggedIn && <div className="home-dashboard__brand"><BrandMark size="large" /></div>}
+    <HomeKnowledgeHub>
+      <HomeDashboardMarketing isLoggedIn={isLoggedIn} onLogin={onLogin} onExplore={onExplore} />
+    </HomeKnowledgeHub>
     {isLoggedIn && (
       <HomeDashboardLoggedIn
         homeQuickActions={homeQuickActions}

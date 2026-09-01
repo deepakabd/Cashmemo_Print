@@ -20,6 +20,12 @@ const normalizeAttendanceData = (data = {}) => ({
   settings: data.settings && typeof data.settings === 'object' ? data.settings : {},
 });
 
+const setSyncStatus = (user, status) => {
+  const syncKey = `${getKey(user)}_sync`;
+  localStorage.setItem(syncKey, status);
+  window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status } }));
+};
+
 export const loadAttendanceData = (user) => {
   try {
     const data = JSON.parse(localStorage.getItem(getKey(user)) || '{}');
@@ -51,7 +57,18 @@ export const saveAttendanceData = (user, data) => {
 };
 
 export const loadAttendanceDataFromFirebase = async (user) => {
-  if (localStorage.getItem(`${getKey(user)}_sync`) === 'pending') return loadAttendanceData(user);
+  const localData = loadAttendanceData(user);
+  if (localStorage.getItem(`${getKey(user)}_sync`) === 'pending') {
+    try {
+      await setDoc(getFirestoreAttendanceRef(user), { attendanceData: { ...localData, updatedAt: serverTimestamp() } }, { merge: true });
+      setSyncStatus(user, 'synced');
+      return localData;
+    } catch (error) {
+      console.warn('Pending attendance sync retry failed; using local copy.', error);
+      setSyncStatus(user, 'offline');
+      return localData;
+    }
+  }
   try {
     const snapshot = await getDoc(getFirestoreAttendanceRef(user));
     if (!snapshot.exists() || !snapshot.data()?.attendanceData) return loadAttendanceData(user);
@@ -70,7 +87,7 @@ export const subscribeAttendanceData = (user, onData, onError) => onSnapshot(
     const remoteData = snapshot.data()?.attendanceData;
     if (remoteData) {
       if (localStorage.getItem(`${getKey(user)}_sync`) === 'pending') {
-        window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status: 'conflict' } }));
+        window.dispatchEvent(new CustomEvent('attendance-sync-status', { detail: { status: 'pending' } }));
         return;
       }
       onData(normalizeAttendanceData(remoteData));

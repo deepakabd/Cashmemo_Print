@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { addDoc, collection, getDocs, query, serverTimestamp, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
+import BrandMark from './BrandMark';
 
 export const RegisterPanel = ({
   packageOptions,
@@ -26,6 +27,7 @@ export const RegisterPanel = ({
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPaymentUpi, setShowPaymentUpi] = useState(false);
 
   const onChange = (e) => {
     const { name, value } = e.target;
@@ -41,7 +43,7 @@ export const RegisterPanel = ({
     if (!/^\d{10}$/.test(form.mobile.trim())) nextErrors.mobile = 'Enter a valid 10-digit mobile number.';
     if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) nextErrors.email = 'Enter a valid email address.';
     if (!/^\d{4}$/.test(form.pin.trim())) nextErrors.pin = 'PIN must be exactly 4 digits.';
-    if (form.pin !== form.confirmPin) nextErrors.confirmPin = 'PIN aur Confirm PIN match nahi kar rahe.';
+    if (form.pin !== form.confirmPin) nextErrors.confirmPin = 'PIN and Confirm PIN do not match.';
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -121,28 +123,44 @@ export const RegisterPanel = ({
     <div className="placeholder-container auth-panel auth-panel--register">
       <div className="auth-panel__hero">
         <div>
-          <span className="auth-panel__eyebrow">New Account</span>
-          <h2 className="register-title">रजिस्टर करें</h2>
-          <p className="auth-panel__subtitle">
-            Apna distributor account create kijiye, package select kijiye, aur request admin approval ke liye bhejiye.
-          </p>
-        </div>
-        <div className="auth-panel__hero-badges">
-          <span className="auth-panel__badge">Fast approval flow</span>
-          <span className="auth-panel__badge">Secure 4-digit PIN</span>
+          <BrandMark size="small" />
+          <h2 className="register-title">Register</h2>
+          <div className="auth-switch-action auth-switch-action--under-title">
+            <span className="auth-switch-prompt">Already have an account?</span>
+            <button className="auth-secondary-button" onClick={onLogin} type="button" disabled={isSubmitting}>Login</button>
+          </div>
         </div>
       </div>
       <div className="auth-panel__content auth-panel__content--wide">
+        <div className="auth-panel__upi-area">
+          <span
+            className="auth-panel__upi-text"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowPaymentUpi(true)}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setShowPaymentUpi(true); }}
+          >
+            UPI ID for Payment ▾
+          </span>
+        </div>
+        {showPaymentUpi && (
+          <div className="auth-panel__upi-flash" role="dialog" aria-modal="true" aria-label="UPI ID for payment" onClick={() => setShowPaymentUpi(false)}>
+            <div className="auth-panel__upi-flash-card" onClick={(event) => event.stopPropagation()}>
+              <span>UPI ID for Payment</span>
+              <strong>{paymentUpiId}</strong>
+              <button type="button" className="auth-panel__upi-hide" onClick={() => setShowPaymentUpi(false)}>Hide</button>
+            </div>
+          </div>
+        )}
         <div className="auth-section-card">
           <div className="auth-section-card__header">
             <h3>Account Details</h3>
-            <p>Basic registration details enter karke request submit kijiye.</p>
           </div>
           <div className="register-form register-form--enhanced">
             <div>
               <label className="auth-field-label">Package</label>
               <select name="package" value={form.package} onChange={onChange} className={`form-input${errors.package ? ' form-input--error' : ''}`}>
-                <option value="">पैकेज चुनें</option>
+                <option value="">Select package</option>
                 {packageOptions.map((opt) => (
                   <option key={opt} value={opt}>{`${opt} - ${packagePricing[opt] || '-'}`}</option>
                 ))}
@@ -151,50 +169,45 @@ export const RegisterPanel = ({
             </div>
             <div>
               <label className="auth-field-label">Dealer Code</label>
-              <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="डीलर कोड (8-अंक)" value={form.dealerCode} onChange={onChange} maxLength={8} />
+              <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="Dealer code (8 digits)" value={form.dealerCode} onChange={onChange} maxLength={8} />
               {errors.dealerCode && <div className="form-error">{errors.dealerCode}</div>}
             </div>
             <div>
               <label className="auth-field-label">Dealer Name</label>
-              <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="डीलर का नाम" value={form.dealerName} onChange={onChange} />
+              <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="Dealer name" value={form.dealerName} onChange={onChange} />
               {errors.dealerName && <div className="form-error">{errors.dealerName}</div>}
             </div>
             <div>
               <label className="auth-field-label">Mobile Number</label>
-              <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="मोबाइल नंबर (10-अंक)" value={form.mobile} onChange={onChange} maxLength={10} />
+              <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="Mobile number (10 digits)" value={form.mobile} onChange={onChange} maxLength={10} />
               {errors.mobile && <div className="form-error">{errors.mobile}</div>}
             </div>
             <div>
               <label className="auth-field-label">Email ID</label>
-              <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="ईमेल आईडी" type="email" value={form.email} onChange={onChange} />
+              <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="Email ID" type="email" value={form.email} onChange={onChange} />
               {errors.email && <div className="form-error">{errors.email}</div>}
             </div>
             <div>
               <label className="auth-field-label">PIN</label>
-              <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="पिन (4-अंक)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
+              <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="PIN (4 digits)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
               {errors.pin && <div className="form-error">{errors.pin}</div>}
             </div>
             <div>
               <label className="auth-field-label">Confirm PIN</label>
-              <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="पिन की पुष्टि करें" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
+              <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="Confirm PIN" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
               {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
             </div>
             <div>
               <label className="auth-field-label">UTR Number</label>
-              <input name="utr" className="form-input" placeholder="UTR नंबर" value={form.utr} onChange={onChange} />
+              <input name="utr" className="form-input" placeholder="UTR number" value={form.utr} onChange={onChange} />
             </div>
             <div>
               <label className="auth-field-label">Payment Date</label>
-              <input name="date" className="form-input" placeholder="तिथि चुनें" type="date" value={form.date} onChange={onChange} />
+              <input name="date" className="form-input" placeholder="Select date" type="date" value={form.date} onChange={onChange} />
             </div>
           </div>
-          <div className="upi-note upi-note--card">UPI ID for Payment: {paymentUpiId}</div>
           <div className="form-actions auth-panel__actions">
-            <button className="auth-primary-button" onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'रजिस्टर करें'}</button>
-            <div className="auth-switch-action">
-              <span className="auth-switch-prompt">Already have an account?</span>
-              <button className="auth-secondary-button" onClick={onLogin} disabled={isSubmitting}>Login</button>
-            </div>
+            <button className="auth-primary-button" onClick={onSubmit} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'Register'}</button>
             <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
           </div>
         </div>
@@ -215,22 +228,14 @@ export const AdminLoginPanel = ({
   <div className="placeholder-container auth-panel auth-panel--login">
     <div className="auth-panel__hero">
       <div>
-        <span className="auth-panel__eyebrow">Secure Access</span>
+        <BrandMark size="small" />
         <h2>Admin Login</h2>
-        <p className="auth-panel__subtitle">
-          Admin dashboard access ke liye approved email aur password use kijiye.
-        </p>
-      </div>
-      <div className="auth-panel__hero-badges">
-        <span className="auth-panel__badge">Protected access</span>
-        <span className="auth-panel__badge">Firebase auth</span>
       </div>
     </div>
     <div className="auth-panel__content">
       <div className="auth-section-card">
         <div className="auth-section-card__header">
           <h3>Welcome Back</h3>
-          <p>Sign in to manage users, approvals, and support replies.</p>
         </div>
         <form
           className="register-form register-form--enhanced"
@@ -280,30 +285,23 @@ export const UserLoginPanel = ({
   isUserLoginSubmitting,
   handleUserLoginSubmit,
   navigateToHome,
-  handleContactOpen,
   onRegister,
 }) => (
   <div className="placeholder-container auth-panel auth-panel--login">
     <div className="auth-panel__hero">
       <div>
-        <span className="auth-panel__eyebrow">Dealer Access</span>
+        <BrandMark size="small" />
         <h2>User Login</h2>
-        <p className="auth-panel__subtitle">
-          Dealer Code aur 4-digit PIN se secure login kijiye aur apna workflow continue kijiye.
-        </p>
-      </div>
-      <div className="auth-panel__hero-badges">
-        <span className="auth-panel__badge">Fast sign in</span>
-        <span className="auth-panel__badge">Support ready</span>
+        <div className="auth-switch-action auth-switch-action--under-title">
+          <span className="auth-switch-prompt">Don&apos;t have an account?</span>
+          <button className="auth-secondary-button" onClick={onRegister} type="button" disabled={isUserLoginSubmitting}>Register</button>
+        </div>
       </div>
     </div>
     <div className="auth-panel__content">
       <div className="auth-section-card">
         <div className="auth-section-card__header">
           <h3>Welcome Back</h3>
-          <p className="login-helper-text">
-            Agar PIN yaad nahi hai, to Support & Replies ya admin contact use karke help le sakte hain.
-          </p>
         </div>
         <form
           className="register-form register-form--enhanced"
@@ -342,17 +340,10 @@ export const UserLoginPanel = ({
               />
               <span>Show PIN</span>
             </label>
-            <button type="button" className="login-help-link" onClick={handleContactOpen}>
-              Forgot PIN / Contact Admin
-            </button>
           </div>
         </form>
         <div className="form-actions auth-panel__actions">
           <button className="auth-primary-button" onClick={handleUserLoginSubmit} type="button" disabled={isUserLoginSubmitting}>{isUserLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-          <div className="auth-switch-action">
-            <span className="auth-switch-prompt">Don&apos;t have an account?</span>
-            <button className="auth-secondary-button" onClick={onRegister} type="button" disabled={isUserLoginSubmitting}>Register</button>
-          </div>
           <button className="auth-secondary-button" onClick={navigateToHome} disabled={isUserLoginSubmitting}>Close</button>
         </div>
       </div>
