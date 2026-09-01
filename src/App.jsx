@@ -72,6 +72,7 @@ import {
 import HeaderUpdateForm from './components/app/HeaderUpdateForm';
 import UpgradePlanForm from './components/app/UpgradePlanForm';
 import AboutInfo from './components/app/AboutInfo';
+import { BrandedLoading, BrandedNotFound } from './components/BrandMark';
 import LabelUpdatePage from './components/app/LabelUpdatePage';
 import {
   excelSerialDateToJSDate,
@@ -9006,20 +9007,6 @@ function App() {
       disabled: incompleteProfileActionItems[0]?.disabled,
     },
     {
-      key: 'updates',
-      label: 'Updates Inbox',
-      title: updateInboxCount > 0 ? `${updateInboxCount} update waiting` : 'No pending updates',
-      description: contactReplyCount > 0
-        ? `${contactReplyCount} unread admin repl${contactReplyCount > 1 ? 'ies' : 'y'} available.`
-        : pendingRequestCount > 0
-          ? `${pendingRequestCount} request approval mein hai.`
-          : 'Support replies aur approval history yahan se track kijiye.',
-      cta: contactReplyCount > 0 ? 'Open Support' : 'Open History',
-      badge: updateInboxCount > 0 ? String(updateInboxCount) : '',
-      tone: updateInboxCount > 0 ? 'info' : 'default',
-      action: contactReplyCount > 0 ? secondaryQuickAction : { label: 'Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true },
-    },
-    {
       key: 'work',
       label: 'Work Status',
       title: hasWorkingData ? `${parsedData.length} rows ready` : 'No working data',
@@ -9037,6 +9024,10 @@ function App() {
   ];
   const handleDashboardQuickAction = (action) => {
     if (!action) return;
+    if (action === 'showData') {
+      handleShowData();
+      return;
+    }
     runUserMenuItem(action)();
   };
   const handleOpenRenewalHistory = () => {
@@ -9145,6 +9136,16 @@ function App() {
     isPlanExpired ? { label: 'Plan Expired', tone: 'rejected' } : { label: userMenuStatusText, tone: 'approved' },
     { label: profileCompletenessLabel, tone: incompleteProfileAreas.length > 0 ? 'pending' : 'approved' },
   ].filter(Boolean);
+
+  const isNotFoundPath = window.location.pathname !== '/';
+  const handleNotFoundHome = () => {
+    window.history.replaceState({}, '', '/');
+    navigateToHome();
+  };
+
+  if (isNotFoundPath) {
+    return <BrandedNotFound onHome={handleNotFoundHome} />;
+  }
 
   return (
     <>
@@ -9354,7 +9355,7 @@ function App() {
             </Suspense>
           )}
           {showHomeInfo && (
-            <Suspense fallback={<div className="placeholder-container">Loading dashboard...</div>}>
+            <Suspense fallback={<BrandedLoading label="Loading dashboard..." />}>
               <LazyHomeDashboard
                 isLoggedIn={isLoggedIn}
                 todayOrders={todayOrders}
@@ -9378,7 +9379,7 @@ function App() {
               />
             </Suspense>
           )}
-          {showAboutInfo && <AboutInfo onLogin={handleLogin} />}
+          {showAboutInfo && <AboutInfo onLogin={handleLogin} isLoggedIn={isLoggedIn} />}
           {showInvoicePage && (
             <Suspense fallback={<div className="placeholder-container">Loading invoice...</div>}>
               <LazyInvoicePage loggedInUser={loggedInUser} />
@@ -9470,7 +9471,7 @@ function App() {
             </Suspense>
           )}
           {showUserLogin && (
-            <Suspense fallback={<div className="placeholder-container">Loading login...</div>}>
+            <Suspense fallback={<BrandedLoading label="Loading login..." />}>
               <LazyUserLoginPanel
                 userDealerCode={userDealerCode}
                 setUserDealerCode={setUserDealerCode}
@@ -9481,7 +9482,6 @@ function App() {
                 isUserLoginSubmitting={isUserLoginSubmitting}
                 handleUserLoginSubmit={handleUserLoginSubmit}
                 navigateToHome={navigateToHome}
-                handleContactOpen={handleContactOpen}
                 onRegister={handleRegister}
               />
             </Suspense>

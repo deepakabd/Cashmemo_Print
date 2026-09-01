@@ -62,7 +62,8 @@ export default function AttendancePage({ loggedInUser, onClose, onEmployeeProfil
   const printAttendanceReport = () => printOverlay('.attendance-report-overlay:not(.salary-slip-overlay)');
   const [message, setMessage] = useState('');
   const [now, setNow] = useState(() => new Date());
-  const [syncStatus, setSyncStatus] = useState(() => localStorage.getItem(`${String(loggedInUser?.dealerCode || loggedInUser?.id || loggedInUser?.dealerName || 'default').trim().replace(/\s+/g, '_')}_sync`) || 'synced');
+  const attendanceStorageKey = `cashmemoAttendance_${String(loggedInUser?.dealerCode || loggedInUser?.id || loggedInUser?.dealerName || 'default').trim().replace(/\s+/g, '_')}`;
+  const [syncStatus, setSyncStatus] = useState(() => localStorage.getItem(`${attendanceStorageKey}_sync`) || 'synced');
   useEffect(() => {
     const handleSyncStatus = (event) => setSyncStatus(event.detail?.status || 'synced');
     window.addEventListener('attendance-sync-status', handleSyncStatus);
