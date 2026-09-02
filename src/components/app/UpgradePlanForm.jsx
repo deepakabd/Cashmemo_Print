@@ -3,7 +3,7 @@ import { PACKAGE_PRICING, PAYMENT_UPI_ID } from '../../utils/appConfig';
 import { formatDisplayDate } from '../../utils/dateHelpers';
 import { formatPackageNameForNavbar, formatPackageOptionLabel } from '../../utils/packageHelpers';
 
-const UpgradePlanForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, logRecentActivity, planUpgradeOptions }) => {
+const UpgradePlanForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, logRecentActivity, planUpgradeOptions = [] }) => {
   const hasPendingUpgrade = String(loggedInUser?.pendingUpdates?.planUpgrade?.status || '').toLowerCase() === 'pending'
     || String(loggedInUser?.approvalStatus?.planUpgrade || '').toLowerCase() === 'pending';
   const [selectedPackage, setSelectedPackage] = useState(planUpgradeOptions[0] || '');
@@ -14,6 +14,7 @@ const UpgradePlanForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, l
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPaymentUpi, setShowPaymentUpi] = useState(false);
 
   const handlePaymentDetailsChange = (e) => {
     const { name, value } = e.target;
@@ -53,25 +54,36 @@ const UpgradePlanForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, l
   };
 
   return (
-    <div className="placeholder-container auth-panel upgrade-plan-panel">
+    <div className="placeholder-container auth-panel auth-panel--register upgrade-plan-panel">
       <div className="auth-panel__hero">
         <div>
-          <span className="auth-panel__eyebrow">Plan Renewal</span>
           <h2>Upgrade Plan</h2>
-          <p className="auth-panel__subtitle">
-            Naya package select kijiye, payment details bhariye, aur request admin approval ke liye bhejiye.
-          </p>
-        </div>
-        <div className="auth-panel__hero-badges">
-          <span className="auth-panel__badge">Approval based</span>
-          <span className="auth-panel__badge">Secure payment proof</span>
         </div>
       </div>
       <div className="auth-panel__content auth-panel__content--wide">
+        <div className="auth-panel__upi-area">
+          <span
+            className="auth-panel__upi-text"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowPaymentUpi(true)}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setShowPaymentUpi(true); }}
+          >
+            UPI ID for Payment ▾
+          </span>
+        </div>
+        {showPaymentUpi && (
+          <div className="auth-panel__upi-flash" role="dialog" aria-modal="true" aria-label="UPI ID for payment" onClick={() => setShowPaymentUpi(false)}>
+            <div className="auth-panel__upi-flash-card" onClick={(event) => event.stopPropagation()}>
+              <span>UPI ID for Payment</span>
+              <strong>{PAYMENT_UPI_ID}</strong>
+              <button type="button" className="auth-panel__upi-hide" onClick={() => setShowPaymentUpi(false)}>Hide</button>
+            </div>
+          </div>
+        )}
         <div className="auth-section-card">
           <div className="auth-section-card__header">
             <h3>Renewal Details</h3>
-            <p>Current plan review karke next package aur payment reference submit kijiye.</p>
           </div>
           <div className="upgrade-plan-summary">
             <div className="upgrade-plan-summary__item">
@@ -108,10 +120,6 @@ const UpgradePlanForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, l
                 ))}
               </select>
               {errors.selectedPackage && <div className="form-error">{errors.selectedPackage}</div>}
-            </div>
-            <div>
-              <label className="auth-field-label">Payment UPI ID</label>
-              <div className="upgrade-plan-upi">{PAYMENT_UPI_ID}</div>
             </div>
             <div>
               <label className="auth-field-label">UTR Number</label>
@@ -152,7 +160,6 @@ const UpgradePlanForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, l
           {hasPendingUpgrade && (
             <p className="upgrade-plan-pending">Your plan upgrade request is already pending with admin.</p>
           )}
-          <div className="upi-note upi-note--card">UPI ID for Payment: {PAYMENT_UPI_ID}</div>
           <div className="form-actions auth-panel__actions">
             <button className="auth-primary-button" onClick={submitUpgradeRequest} type="button" disabled={hasPendingUpgrade || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Send Request'}</button>
             <button className="auth-secondary-button" onClick={onClose} disabled={isSubmitting}>Close</button>
