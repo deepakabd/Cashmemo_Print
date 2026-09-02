@@ -74,6 +74,8 @@ import UpgradePlanForm from './components/app/UpgradePlanForm';
 import AboutInfo from './components/app/AboutInfo';
 import { BrandedLoading, BrandedNotFound } from './components/BrandMark';
 import LabelUpdatePage from './components/app/LabelUpdatePage';
+import CashmemoPrintGuide from './components/CashmemoPrintGuide';
+import ExpiredPlanGuide from './components/ExpiredPlanGuide';
 import {
   excelSerialDateToJSDate,
   formatDateToDDMMYYYY,
@@ -196,6 +198,8 @@ function App() {
   const [isAdminLoginSubmitting, setIsAdminLoginSubmitting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [showLogoUpdates, setShowLogoUpdates] = useState(false);
   const [showProfileUpdate, setShowProfileUpdate] = useState(false);
   const [showRateUpdate, setShowRateUpdate] = useState(false);
   const [showBankDetails, setShowBankDetails] = useState(false);
@@ -211,6 +215,7 @@ function App() {
   const [showLabelUpdate, setShowLabelUpdate] = useState(false);
   const [showHeaderUpdate, setShowHeaderUpdate] = useState(false);
   const [showCashmemoLayout, setShowCashmemoLayout] = useState(false);
+  const [showCashmemoPrintGuide, setShowCashmemoPrintGuide] = useState(false);
   const [showAttendance, setShowAttendance] = useState(false);
   const [showIdCard, setShowIdCard] = useState(false);
   const [showEmployeeProfile, setShowEmployeeProfile] = useState(false);
@@ -474,16 +479,21 @@ function App() {
   const userMenuRef = useRef(null);
   const userMenuButtonRef = useRef(null);
   const firstUserMenuActionRef = useRef(null);
+  const mainMenuRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setShowUserMenu(false);
       }
+      if (mainMenuRef.current && !mainMenuRef.current.contains(event.target)) {
+        setShowMainMenu(false);
+      }
     };
     const handleEscape = (event) => {
       if (event.key === 'Escape') {
         setShowUserMenu(false);
+        setShowMainMenu(false);
         window.requestAnimationFrame(() => {
           userMenuButtonRef.current?.focus();
         });
@@ -1062,6 +1072,7 @@ function App() {
     setShowLabelUpdate(false);
     setShowHeaderUpdate(false);
     setShowCashmemoLayout(false);
+    setShowCashmemoPrintGuide(false);
     setShowAttendance(false);
     setShowIdCard(false);
     setShowEmployeeProfile(false);
@@ -1116,6 +1127,11 @@ function App() {
   const handleCashmemoLayoutOpen = () => {
     hideAllViews();
     setShowCashmemoLayout(true);
+    setShowUserMenu(false);
+  };
+  const handleCashmemoPrintGuideOpen = () => {
+    hideAllViews();
+    setShowCashmemoPrintGuide(true);
     setShowUserMenu(false);
   };
   const handleAttendanceOpen = () => {
@@ -9040,7 +9056,6 @@ function App() {
       title: 'Updates',
       items: [
         { label: 'View Request History', onClick: handleRequestHistoryOpen, viewKey: 'userProfile', beforeOpen: () => setUserProfileInitialSection('history'), allowSameView: true, hint: pendingRequestCount > 0 ? `${pendingRequestCount} request pending or recently updated.` : 'See past approval and request activity.' },
-        { label: 'Open Renewal', onClick: handleUpgradePlanOpen, viewKey: 'upgradePlan', badge: getRequestBadge('planUpgrade'), hint: getRequestHint('planUpgrade', isPlanExpired ? 'Renew your plan to restore full access.' : 'Review renewal options before expiry.'), requiresConfirm: isPlanExpired, confirmMessage: 'Do you want to open the renewal form now?' },
       ],
     },
     {
@@ -9049,20 +9064,7 @@ function App() {
         { label: 'Update Profile', onClick: handleProfileUpdate, viewKey: 'profileUpdate', disabled: !canAccessMenuFeature('profileUpdate'), reason: getDisabledReason('profileUpdate'), badge: getRequestBadge('profile'), hint: getRequestHint('profile', 'Update distributor profile details.') },
         { label: 'Update Bank Details', onClick: handleBankDetails, viewKey: 'bankUpdate', disabled: !canAccessMenuFeature('bankUpdate'), reason: getDisabledReason('bankUpdate'), badge: getRequestBadge('bank'), hint: getRequestHint('bank', 'Update bank details for records and billing.') },
         { label: 'Update Rates', onClick: handleRateUpdate, viewKey: 'rateUpdate', disabled: !canAccessMenuFeature('rateUpdate'), reason: getDisabledReason('rateUpdate'), badge: getRequestBadge('rates'), hint: getRequestHint('rates', 'Send revised rate data for approval.') },
-        { label: showParsedData ? 'Open Data View' : 'Upload Data', onClick: showParsedData ? handleShowData : handleReUploadClick, viewKey: 'dataUpload', disabled: isPlanExpired, reason: isPlanExpired ? 'Renew plan to upload and manage working data again.' : '', hint: showParsedData ? `Return to your uploaded data view${hasWorkingData ? ` (${parsedData.length} rows loaded)` : ''}.` : 'Upload distributor working data.' },
-        { label: 'Open Invoice', onClick: handleInvoiceOpen, viewKey: 'invoice', disabled: !canAccessMenuFeature('invoice'), reason: getDisabledReason('invoice'), hint: isPlanExpired ? getDisabledReason('invoice') : 'Open invoice tools and exports.' },
-        { label: 'Cashmemo Layout', onClick: handleCashmemoLayoutOpen, viewKey: 'cashmemoLayout', disabled: !canAccessMenuFeature('labelUpdate'), reason: getDisabledReason('labelUpdate'), hint: isPlanExpired ? getDisabledReason('labelUpdate') : 'Preview and print cashmemo header layout by page type.' },
         { label: 'Update Labels', onClick: handleLabelUpdate, viewKey: 'labelUpdate', disabled: !canAccessMenuFeature('labelUpdate'), reason: getDisabledReason('labelUpdate'), hint: isPlanExpired ? getDisabledReason('labelUpdate') : 'Adjust print layout labels for cashmemo output.' },
-        {
-          label: 'Dictionary',
-          onClick: handleDictionaryOpen,
-          viewKey: 'dictionaryUpdate',
-          disabled: !canAccessMenuFeature('dictionaryUpdate'),
-          reason: !hasHindiPackageAccess ? 'Available in Hindi package.' : getDisabledReason('dictionaryUpdate'),
-          badge: pendingDictionaryCount > 0 ? { label: String(pendingDictionaryCount), tone: 'pending' } : null,
-          hint: pendingDictionaryCount > 0 ? 'Dictionary changes are waiting for admin approval.' : 'Manage Hindi translation dictionary updates.',
-          show: hasHindiPackageAccess,
-        },
         {
           label: 'Upgrade Plan',
           onClick: handleUpgradePlanOpen,
@@ -9106,7 +9108,6 @@ function App() {
       title: 'Account',
       items: [
         { label: 'View Profile', onClick: handleUserProfile, viewKey: 'userProfile', allowSameView: true, hint: 'View account details, package info, and profile summary.' },
-        { label: 'About cDCMS', onClick: handleAboutOpen, viewKey: 'about', allowSameView: true, hint: 'Learn about cDCMS features and workflow.' },
       ],
     },
   ];
@@ -9125,6 +9126,21 @@ function App() {
                 || (!item.beforeOpen && userProfileInitialSection !== 'history')))
             : item.viewKey === currentUserView,
         })),
+    }))
+    .filter((section) => section.items.length > 0);
+  const allWorkMenuItems = userMenuSections.find((section) => section.title === 'Work')?.items || [];
+  const upgradePlanMenuItem = allWorkMenuItems.find((item) => item.viewKey === 'upgradePlan');
+  const workMenuItems = allWorkMenuItems.filter((item) => item.viewKey !== 'upgradePlan');
+  const allUpdateMenuItems = userMenuSections.find((section) => section.title === 'Updates')?.items || [];
+  const updateMenuItems = allUpdateMenuItems.filter((item) => item.viewKey !== 'userProfile' || !item.beforeOpen);
+  const profileMenuItem = userMenuSections
+    .find((section) => section.title === 'Account')?.items
+    .find((item) => item.viewKey === 'userProfile');
+  const accountMenuSections = userMenuSections
+    .filter((section) => !['Work', 'Updates'].includes(section.title))
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => item.viewKey !== 'userProfile'),
     }))
     .filter((section) => section.items.length > 0);
 
@@ -9165,29 +9181,76 @@ function App() {
       {!hideUserNavbar && (
         <nav className="navbar">
           <div className="navbar-left">
-            <button className="navbar-button" onClick={handleHomeOpen} disabled={isPlanExpired}>Home</button>
-            {isLoggedIn && (
-              <button className="navbar-button" onClick={handleInvoiceOpen} disabled={!canAccessMenuFeature('invoice')}>
-                Invoice
+            <div className="navbar-main-menu" ref={mainMenuRef}>
+              <button
+                type="button"
+                className={`navbar-brand-button ${showMainMenu ? 'active' : ''}`}
+                onClick={() => setShowMainMenu((visible) => {
+                  if (visible) setShowLogoUpdates(false);
+                  return !visible;
+                })}
+                aria-label="Open main menu"
+                aria-haspopup="menu"
+                aria-expanded={showMainMenu}
+              >
+                <img src="/branding.png" alt="LPG CashMemo" />
               </button>
-            )}
-            {isLoggedIn && (
-              <button className="navbar-button" onClick={handleAttendanceOpen} disabled={isPlanExpired}>
-                Attendance
-              </button>
-            )}
-            {isLoggedIn && (
-              <button className="navbar-button" onClick={handleStockRegisterOpen} disabled={isPlanExpired}>
-                Stock Register
-              </button>
-            )}
-            {!isLoggedIn && (
-              <button className="navbar-button" onClick={handleAboutOpen}>
-                About
-              </button>
-            )}
-            {isLoggedIn && !isPlanExpired && !showDataButton && (
-              <button className="navbar-button" onClick={handleReUploadClick} disabled={isPlanExpired}>
+              {showMainMenu && (
+                <div className="navbar-submenu" role="menu" aria-label="Main menu">
+                  <button type="button" className="navbar-submenu-item" onClick={() => { handleHomeOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">🏠 Home</button>
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoPrintGuideOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">🖨️ Cashmemo Print</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAttendanceOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">👥 Attendance</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">📦 Stock Register</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
+                  {isLoggedIn && hasHindiPackageAccess && <button type="button" className="navbar-submenu-item" onClick={() => { handleDictionaryOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('dictionaryUpdate')} role="menuitem">📖 Dictionary</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('invoice')} role="menuitem">🧾 Invoice</button>}
+                  <button type="button" className="navbar-submenu-item" onClick={() => { handleAboutOpen(); setShowMainMenu(false); }} role="menuitem">ℹ️ About Us</button>
+                  {isLoggedIn && workMenuItems.length > 0 && (
+                    <>
+                      <div className="navbar-submenu-divider" />
+                      <button type="button" className="navbar-submenu-heading navbar-submenu-heading--toggle" onClick={() => setShowLogoUpdates((visible) => !visible)} aria-expanded={showLogoUpdates}>
+                        <span>Updates</span><span>{showLogoUpdates ? '−' : '+'}</span>
+                      </button>
+                      {showLogoUpdates && workMenuItems.map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          className="navbar-submenu-item"
+                          onClick={() => { runUserMenuItem(item)(); setShowMainMenu(false); }}
+                          disabled={item.disabled}
+                          title={item.reason || item.hint || ''}
+                          role="menuitem"
+                        >
+                          {item.label}{item.badge ? ` (${item.badge.label})` : ''}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {isLoggedIn && updateMenuItems.length > 0 && (
+                    <>
+                      <div className="navbar-submenu-divider" />
+                      <div className="navbar-submenu-heading">Updates</div>
+                      {updateMenuItems.map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          className="navbar-submenu-item"
+                          onClick={() => { runUserMenuItem(item)(); setShowMainMenu(false); }}
+                          disabled={item.disabled}
+                          title={item.reason || item.hint || ''}
+                          role="menuitem"
+                        >
+                          {item.label}{item.badge ? ` (${item.badge.label})` : ''}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {!isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAboutOpen(); setShowMainMenu(false); }} role="menuitem">ℹ️ About</button>}
+                </div>
+              )}
+            </div>
+            {isLoggedIn && showCashmemoPrintGuide && (
+              <button type="button" onClick={handleReUploadClick} className="navbar-button" disabled={isPlanExpired}>
                 Upload Data
               </button>
             )}
@@ -9204,7 +9267,6 @@ function App() {
             {isLoggedIn && !isPlanExpired && showDataButton && (
               <>
                 <button onClick={handleShowData} className="navbar-button" disabled={isPlanExpired}>{showParsedData ? 'Hide Data' : 'Show Data'}</button>
-                <button onClick={handleReUploadClick} className="navbar-button" disabled={isPlanExpired}>Re-Upload</button>
                 {showParsedData && !showBookingReport && (
                   <button onClick={() => setShowBookingReport(true)} className="navbar-button" disabled={isPlanExpired}>Show Report</button>
                 )}
@@ -9279,7 +9341,9 @@ function App() {
                     primaryQuickAction={primaryQuickAction}
                     secondaryQuickAction={secondaryQuickAction}
                     recommendedAction={recommendedAction}
-                    userMenuSections={userMenuSections}
+                    profileMenuItem={profileMenuItem}
+                    upgradePlanMenuItem={upgradePlanMenuItem}
+                    userMenuSections={accountMenuSections}
                     adminContacts={ADMIN_CONTACTS}
                     handleLogout={handleLogoutWithConfirm}
                     closeUserMenuAndRun={closeUserMenuAndRun}
@@ -9311,34 +9375,18 @@ function App() {
           ))}
         </div>
       )}
-      {isLoggedIn && isPlanExpired && (
-        <section className="expired-recovery-panel">
-          <div className="expired-recovery-panel__content">
-            <div>
-              <p className="expired-recovery-panel__eyebrow">Plan Expired</p>
-              <h3>Working tools are paused until renewal is approved.</h3>
-              <p>
-                Upload, invoice, and update tools are currently blocked for this account.
-                Choose the next step below to continue faster.
-              </p>
-            </div>
-            <div className="expired-recovery-panel__actions">
-              <button type="button" className="expired-recovery-panel__primary" onClick={handleUpgradePlanOpen}>
-                Renew Now
-              </button>
-              <button type="button" className="expired-recovery-panel__secondary" onClick={handleContactOpen}>
-                Contact Admin
-              </button>
-              <button type="button" className="expired-recovery-panel__secondary" onClick={handleOpenRenewalHistory}>
-                See Renewal History
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-      {(showUpgradePlan || showUserProfile || showContactForm || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showAboutInfo || showInvoicePage || showCashmemoLayout || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {isLoggedIn && isPlanExpired && !showUpgradePlan && !showAboutInfo && !showUserProfile && <ExpiredPlanGuide onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
+      {(showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className="book-view">
-          {showUpgradePlan && <UpgradePlanForm onClose={navigateToHome} />}
+          {showUpgradePlan && (
+            <UpgradePlanForm
+              onClose={navigateToHome}
+              loggedInUser={loggedInUser}
+              submitUpdateApprovalRequest={submitUpdateApprovalRequest}
+              logRecentActivity={logRecentActivity}
+              planUpgradeOptions={PLAN_UPGRADE_OPTIONS}
+            />
+          )}
           {showDictionaryForm && (
             <Suspense fallback={<div className="placeholder-container">Loading request form...</div>}>
               <LazyDictionaryRequestPanel
@@ -9379,7 +9427,7 @@ function App() {
               />
             </Suspense>
           )}
-          {showAboutInfo && <AboutInfo onLogin={handleLogin} isLoggedIn={isLoggedIn} />}
+          {showAboutInfo && <AboutInfo onLogin={handleLogin} isLoggedIn={isLoggedIn} isPlanExpired={isPlanExpired} onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
           {showInvoicePage && (
             <Suspense fallback={<div className="placeholder-container">Loading invoice...</div>}>
               <LazyInvoicePage loggedInUser={loggedInUser} />
@@ -9399,6 +9447,7 @@ function App() {
               onClose={navigateToHome}
             />
           )}
+          {showCashmemoPrintGuide && <CashmemoPrintGuide onUpload={handleReUploadClick} />}
           {showAttendance && (
             <Suspense fallback={<div className="placeholder-container">Loading attendance...</div>}>
               <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} onSalarySlipOpen={handleSalarySlipOpen} onAttendanceReportOpen={handleAttendanceReportOpen} onEmployeeReportOpen={handleEmployeeReportOpen} onIdCardOpen={handleIdCardOpen} onEmployeeAddOpen={handleEmployeeAddOpen} />

@@ -32,8 +32,15 @@ const topics = [
   ['Using Reports for Faster Business Decisions', 'Reports और operational data से सही समय पर बेहतर business decisions लेने का तरीका।', 'Use daily and monthly reports to identify pending bookings, payment trends, stock needs, attendance patterns, and the operational areas that need attention first.', 'INSIGHT BRIEF · REPORTS'],
 ];
 
-const AboutInfo = ({ onLogin, isLoggedIn = false }) => {
+const AboutInfo = ({ onLogin, isLoggedIn = false, isPlanExpired = false, onUpgrade, adminContacts }) => {
   const [selectedTopic, setSelectedTopic] = useState(null);
+  const expiredActions = isPlanExpired && (
+    <div className="about-expired-actions">
+      <button type="button" className="about-expired-actions__upgrade" onClick={onUpgrade}>Upgrade Plan</button>
+      <a href={`mailto:${adminContacts?.email || ''}`}>Email Admin</a>
+      <a href={adminContacts?.whatsapp || '#'} target="_blank" rel="noopener noreferrer">WhatsApp Admin</a>
+    </div>
+  );
 
   useEffect(() => {
     if (!selectedTopic) return undefined;
@@ -55,6 +62,7 @@ const AboutInfo = ({ onLogin, isLoggedIn = false }) => {
       <p className="about-hero-copy">cDCMS is a digital management system designed to simplify and organize everyday operations for LPG distributors. It brings customer management, billing, documentation, stock tracking, employee management, and reporting into one centralized workspace.</p>
       <p className="about-hindi">cDCMS LPG distributors के daily operations को आसान और व्यवस्थित बनाने वाला digital management system है। यह customer management, billing, documentation, stock tracking, employee management और reporting को एक centralized workspace में लाता है।</p>
     </header>
+    {isPlanExpired && <section className="about-expired-actions--top">{expiredActions}</section>}
 
     <section className="about-section about-copy-section">
       <span className="about-eyebrow">WHY cDCMS?</span>
@@ -121,6 +129,7 @@ const AboutInfo = ({ onLogin, isLoggedIn = false }) => {
       <p className="about-hindi">अपने Daily Operations को एक organized digital workspace में manage करें।</p>
       <button type="button" onClick={onLogin}>Login <span>→</span></button>
     </section>}
+    {isPlanExpired && <section className="about-section about-expired-actions--bottom">{expiredActions}</section>}
     {selectedTopic && <div className="about-article-dialog" role="dialog" aria-modal="true" aria-labelledby="about-article-title" onClick={() => setSelectedTopic(null)}>
       <div className="about-article-dialog__panel" onClick={(event) => event.stopPropagation()}>
         <span className="about-eyebrow">KNOWLEDGE HUB ARTICLE</span>

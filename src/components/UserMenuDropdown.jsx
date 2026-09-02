@@ -11,11 +11,8 @@ const UserMenuDropdown = ({
   profileCompletenessChecks,
   profileCompletionPercent,
   userRole,
-  userMenuPackageTips,
-  packageAccessBreakdown,
   renewalUrgencyLabel,
   recentActivities,
-  userMenuEmptyGuidance,
   incompleteProfileAreas,
   incompleteProfileActionItems,
   runUserMenuItem,
@@ -24,10 +21,11 @@ const UserMenuDropdown = ({
   pendingRequestCount,
   contactReplyCount,
   updateInboxCount,
-  userNotificationItems = [],
   primaryQuickAction,
   secondaryQuickAction,
   recommendedAction,
+  profileMenuItem,
+  upgradePlanMenuItem,
   userMenuSections,
   adminContacts,
   handleLogout,
@@ -35,7 +33,6 @@ const UserMenuDropdown = ({
   firstUserMenuActionRef,
   formatDisplayDate,
 }) => {
-  const [showTips, setShowTips] = useState(false);
   const [menuSearch, setMenuSearch] = useState('');
   const [collapsedSections, setCollapsedSections] = useState({
     'Account Setup': true,
@@ -130,9 +127,6 @@ const UserMenuDropdown = ({
               </div>
             ))}
           </div>
-          <div className="dropdown-menu__summary-note dropdown-menu__summary-note--tip">
-            {userMenuPackageTips[0]?.text || ''}
-          </div>
         </>
       )}
       {incompleteProfileActionItems.length > 0 && (
@@ -164,98 +158,36 @@ const UserMenuDropdown = ({
         </div>
       )}
     </div>
-    <div className="dropdown-menu__section dropdown-menu__section--notifications">
-      <button
-        type="button"
-        className="dropdown-menu__section-toggle"
-        onClick={() => toggleSection('Notifications')}
-        aria-expanded={!isSectionCollapsed('Notifications')}
-      >
-        <span className="dropdown-menu__section-title">Notifications</span>
-        <span className="dropdown-menu__section-toggle-icon">{isSectionCollapsed('Notifications') ? 'Show' : 'Hide'}</span>
-      </button>
-      {!isSectionCollapsed('Notifications') && (
-        <div className="dropdown-menu__notification-list">
-          {userNotificationItems.length === 0 ? (
-            <div className="dropdown-menu__empty-state">No notifications right now.</div>
-          ) : (
-            userNotificationItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`dropdown-menu__notification dropdown-menu__notification--${item.tone || 'info'}`}
-                onClick={item.action ? runUserMenuItem({ ...item.action, label: item.actionLabel || item.title }) : undefined}
-                role="menuitem"
-              >
-                <strong>{item.title}</strong>
-                <span>{item.detail}</span>
-                {item.actionLabel && <em>{item.actionLabel}</em>}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-    <div className="dropdown-menu__section">
-      <button
-        type="button"
-        className="dropdown-menu__section-toggle"
-        onClick={() => toggleSection('Package & Access')}
-        aria-expanded={!isSectionCollapsed('Package & Access')}
-      >
-        <span className="dropdown-menu__section-title">Package & Access</span>
-        <span className="dropdown-menu__section-toggle-icon">{isSectionCollapsed('Package & Access') ? 'Show' : 'Hide'}</span>
-      </button>
-      {!isSectionCollapsed('Package & Access') && (
-        <div className="dropdown-menu__insight-grid">
-          <div className="dropdown-menu__insight-card">
-            <strong>Available Now</strong>
-            <span>{packageAccessBreakdown.availableNow.length > 0 ? packageAccessBreakdown.availableNow.join(', ') : 'No active tools right now.'}</span>
-          </div>
-          <div className="dropdown-menu__insight-card">
-            <strong>Locked Until Renewal</strong>
-            <span>{packageAccessBreakdown.lockedUntilRenewal.length > 0 ? packageAccessBreakdown.lockedUntilRenewal.join(', ') : 'Nothing locked by renewal.'}</span>
-          </div>
-          <div className="dropdown-menu__insight-card">
-            <strong>Hindi Package Only</strong>
-            <span>{packageAccessBreakdown.hindiPackageOnly.length > 0 ? packageAccessBreakdown.hindiPackageOnly.join(', ') : 'Hindi tools active in current package.'}</span>
-          </div>
-        </div>
-      )}
-    </div>
-    <div className="dropdown-menu__section">
-      <button
-        type="button"
-        className="dropdown-menu__section-toggle"
-        onClick={() => setShowTips((prev) => !prev)}
-        aria-expanded={showTips}
-        aria-controls="user-menu-tips-panel"
-      >
-        <span className="dropdown-menu__section-title">Tips</span>
-        <span className="dropdown-menu__section-toggle-icon">{showTips ? 'Hide' : 'Show'}</span>
-      </button>
-      {showTips && (
-        <>
-          <div className="dropdown-menu__tips" id="user-menu-tips-panel">
-            {userMenuPackageTips.map((tip) => (
-              <button
-                key={tip.text}
-                type="button"
-                className="dropdown-menu__tip dropdown-menu__tip--action"
-                onClick={runUserMenuItem(tip)}
-                disabled={tip.disabled}
-                title={tip.disabled ? getDisabledReason(tip.viewKey) : tip.text}
-                role="menuitem"
-              >
-                <span>{tip.text}</span>
-                <strong>{tip.actionLabel}</strong>
-              </button>
-            ))}
-          </div>
-          <div className="dropdown-menu__empty-state">{userMenuEmptyGuidance}</div>
-        </>
-      )}
-    </div>
+    {profileMenuItem && (
+      <div className="dropdown-menu__section dropdown-menu__section--profile-action">
+        <button
+          type="button"
+          className="dropdown-menu__button"
+          onClick={runUserMenuItem(profileMenuItem)}
+          disabled={profileMenuItem.disabled}
+          title={profileMenuItem.reason || profileMenuItem.hint || ''}
+          role="menuitem"
+        >
+          <span className="dropdown-menu__button-row"><span>View Profile</span></span>
+          <span className="dropdown-menu__button-subtext">Account details, package information, and profile summary.</span>
+        </button>
+      </div>
+    )}
+    {upgradePlanMenuItem && (
+      <div className="dropdown-menu__section dropdown-menu__section--profile-action">
+        <button
+          type="button"
+          className="dropdown-menu__button"
+          onClick={runUserMenuItem(upgradePlanMenuItem)}
+          disabled={upgradePlanMenuItem.disabled}
+          title={upgradePlanMenuItem.reason || upgradePlanMenuItem.hint || ''}
+          role="menuitem"
+        >
+          <span className="dropdown-menu__button-row"><span>Upgrade Plan</span></span>
+          <span className="dropdown-menu__button-subtext">Review and submit your plan upgrade request.</span>
+        </button>
+      </div>
+    )}
     {filteredSections.map((section) => (
       <div key={section.title} className="dropdown-menu__section">
         <button
@@ -296,11 +228,6 @@ const UserMenuDropdown = ({
         ))}
       </div>
     ))}
-    {filteredSections.length === 0 && (
-      <div className="dropdown-menu__section">
-        <div className="dropdown-menu__empty-state">No menu actions matched your search.</div>
-      </div>
-    )}
     <div className="dropdown-menu__section">
       <div className="dropdown-menu__section-title">Admin Contact</div>
       <div className="dropdown-menu__contact-actions">

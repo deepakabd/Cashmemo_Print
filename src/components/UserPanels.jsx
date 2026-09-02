@@ -286,6 +286,9 @@ export const UserProfilePanel = ({
 
   const currentPackage = loggedInUser?.package || '-';
   const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
+  const validityDate = loggedInUser?.validTill ? new Date(`${loggedInUser.validTill}T23:59:59`) : null;
+  const isPlanExpired = String(loggedInUser?.status || '').toLowerCase() === 'expired'
+    || (validityDate instanceof Date && !Number.isNaN(validityDate.getTime()) && validityDate < new Date());
   const profilePhotoDataUrl = data?.photoDataUrl || '';
   const deliveryAreaUpdates = Array.isArray(loggedInUser?.deliveryAreaUpdates) ? loggedInUser.deliveryAreaUpdates : [];
   const deliveryStaffUpdates = Array.isArray(loggedInUser?.deliveryStaffUpdates) ? loggedInUser.deliveryStaffUpdates : [];
@@ -362,7 +365,7 @@ export const UserProfilePanel = ({
         <span className="profile-label">Current Package</span>
         <span>{currentPackage}</span>
         <span className="profile-label">Package Validity</span>
-        <span>{validity}</span>
+        <span className={isPlanExpired ? 'profile-validity--expired' : ''}>{validity}{isPlanExpired ? ' — Expired' : ''}</span>
         {data && (
           <>
             <span className="profile-label">Distributor Code</span>
