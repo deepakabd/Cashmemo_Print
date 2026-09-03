@@ -1,11 +1,30 @@
-const CashmemoPrintGuide = ({ onUpload }) => (
+const CashmemoPrintGuide = ({ onUpload, canUpload = true }) => (
   <section className="cashmemo-guide">
     <header className="cashmemo-guide__hero">
-      <span>CAS HMEMO PRINT WORKFLOW</span>
+      <span>CASHMEMO PRINT WORKFLOW</span>
       <h2>Upload Pending Booking File</h2>
       <p>Cashmemo print karne se pehle cDCMS se downloaded pending booking Excel file upload kijiye.</p>
-      <button type="button" className="cashmemo-guide__upload" onClick={onUpload}>Upload Pending Booking Excel</button>
+      {canUpload && <button type="button" className="cashmemo-guide__upload" onClick={onUpload}>Upload Pending Booking Excel</button>}
     </header>
+    <section className="cashmemo-guide__instructions" aria-label="Cashmemo printing instructions">
+      <h3>📌 आवश्यक निर्देश: Cashmemo प्रिंट के लिए (Important Instructions for Printing)</h3>
+      <ol className="cashmemo-guide__steps">
+        <li className="cashmemo-guide__step cashmemo-guide__step--yellow"><strong>Step 1: cDCMS में जाकर Pending Booking file डाउनलोड करें</strong><span>Path: cDCMS → Order Fulfillment → Pending Booking (डाउनलोड करें)</span></li>
+        <li className="cashmemo-guide__step cashmemo-guide__step--purple"><strong>Step 2: इस पोर्टल के Top Navbar में CSV/Excel फाइल Upload करें</strong><span>Upload बटन में जाकर अपनी Pending Booking फाइल चुनें।</span></li>
+        <li className="cashmemo-guide__step cashmemo-guide__step--cyan"><strong>Step 3: “Show Data” बटन दबाकर डेटा को सत्यापित करें</strong><span>सभी rows को जाँचें और आवश्यक फ़िल्टर सही हैं यह सुनिश्चित करें।</span></li>
+        <li className="cashmemo-guide__step cashmemo-guide__step--green"><strong>Step 4: फ़िल्टर लागू करें और Cashmemo प्रिंट करें</strong><span>Advanced filters (eKYC, Payment Status, Area) का उपयोग करके चयनित cashmemo प्रिंट करें।</span></li>
+      </ol>
+      <p className="cashmemo-guide__warning">⚠️ महत्वपूर्ण: बिना cDCMS से Pending Booking डेटा अपलोड किए Cashmemo प्रिंट संभव नहीं होगा।</p>
+      <div className="cashmemo-guide__features">
+        <h3>✨ मुख्य विशेषताएं (Key Features):</h3>
+        <ul>
+          <li>📊 स्मार्ट डेटा विश्लेषण: Aging reports (2-5 दिन), Advanced filters और Real-time insights</li>
+          <li>🖨️ बल्क प्रिंटिंग: 2, 3 या 4 cashmemos प्रति पेज, GST कैलकुलेशन के साथ</li>
+          <li>🌐 द्विभाषी सपोर्ट: Hindi-English Dictionary, यूनिकोड और बेहतर प्रिंटिंग सपोर्ट</li>
+          <li>🛡️ सुरक्षित एक्सेस: PIN-based login, Role-based access और Approval workflows</li>
+        </ul>
+      </div>
+    </section>
     <div className="cashmemo-guide__grid">
       <article>
         <strong>1. Pending Booking download karein</strong>
