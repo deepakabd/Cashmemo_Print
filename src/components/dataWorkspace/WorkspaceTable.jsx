@@ -47,6 +47,7 @@ const WorkspaceTable = ({
   emptyStateActions,
   handleResetAllFilters,
   handleReUploadClick,
+  canUpload = true,
   openOnboardingTour,
   visibleHeaders,
   currentTableData,
@@ -130,10 +131,12 @@ const WorkspaceTable = ({
                 Reset Filters
               </button>
             )}
-            <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
-              <AppIcon name="upload" />
-              Re-Upload Data
-            </button>
+            {canUpload && (
+              <button type="button" className="table-action table-action--blue" onClick={handleReUploadClick}>
+                <AppIcon name="upload" />
+                Re-Upload Data
+              </button>
+            )}
             <button type="button" className="filter-action filter-action--secondary" onClick={() => openOnboardingTour?.(0)}>
               Open Quick Tour
             </button>

@@ -342,6 +342,7 @@ function App() {
   }, [closeInputDialog, inputDialog.onSubmit, inputDialog.value, pushToast]);
 
   const handleReUploadClick = () => {
+    if (String(loggedInUser?.dealerCode || '').trim() === '41099999') return;
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
@@ -9245,11 +9246,10 @@ function App() {
                       ))}
                     </>
                   )}
-                  {!isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAboutOpen(); setShowMainMenu(false); }} role="menuitem">ℹ️ About</button>}
                 </div>
               )}
             </div>
-            {isLoggedIn && showCashmemoPrintGuide && (
+            {isLoggedIn && !isTestUser && showCashmemoPrintGuide && (
               <button type="button" onClick={handleReUploadClick} className="navbar-button" disabled={isPlanExpired}>
                 Upload Data
               </button>
@@ -9267,6 +9267,11 @@ function App() {
             {isLoggedIn && !isPlanExpired && showDataButton && (
               <>
                 <button onClick={handleShowData} className="navbar-button" disabled={isPlanExpired}>{showParsedData ? 'Hide Data' : 'Show Data'}</button>
+                {!isTestUser && (
+                  <button type="button" onClick={handleReUploadClick} className="navbar-button">
+                    Re-Upload
+                  </button>
+                )}
                 {showParsedData && !showBookingReport && (
                   <button onClick={() => setShowBookingReport(true)} className="navbar-button" disabled={isPlanExpired}>Show Report</button>
                 )}
@@ -9447,7 +9452,7 @@ function App() {
               onClose={navigateToHome}
             />
           )}
-          {showCashmemoPrintGuide && <CashmemoPrintGuide onUpload={handleReUploadClick} />}
+          {showCashmemoPrintGuide && <CashmemoPrintGuide onUpload={handleReUploadClick} canUpload={!isTestUser} />}
           {showAttendance && (
             <Suspense fallback={<div className="placeholder-container">Loading attendance...</div>}>
               <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} onSalarySlipOpen={handleSalarySlipOpen} onAttendanceReportOpen={handleAttendanceReportOpen} onEmployeeReportOpen={handleEmployeeReportOpen} onIdCardOpen={handleIdCardOpen} onEmployeeAddOpen={handleEmployeeAddOpen} />
@@ -9773,6 +9778,7 @@ function App() {
             exportFilteredRows={exportFilteredRows}
             shouldShowFilteredEmptyState={shouldShowFilteredEmptyState}
             handleReUploadClick={handleReUploadClick}
+            canUpload={!isTestUser}
             openOnboardingTour={openOnboardingTour}
             compactWorkspaceMode={compactWorkspaceMode}
             onToggleCompactWorkspaceMode={handleToggleCompactWorkspaceMode}
@@ -9791,7 +9797,7 @@ function App() {
           />
         </Suspense>
       )}
-      {!isPlanExpired && shouldShowEmptyUploadState && (
+      {!isTestUser && !isPlanExpired && shouldShowEmptyUploadState && (
         <div className="filters-shell">
           <div className="data-empty-state data-empty-state--upload">
             <p className="data-empty-state__eyebrow">Start Here</p>

@@ -54,6 +54,7 @@ const AboutInfo = ({ onLogin, isLoggedIn = false, isPlanExpired = false, onUpgra
   return (
   <section className="about-page about-page--final">
     <style>{`.about-feature-label{display:inline-flex;align-items:center;justify-content:center;width:auto;min-height:32px;padding:0 10px;box-sizing:border-box;border-radius:999px;background:#eaf4ff;color:#126bc5;font-size:10px;font-weight:800;letter-spacing:.08em;line-height:1.2;white-space:normal;text-align:center}`}</style>
+    {!isLoggedIn && <div className="demo-access-banner"><strong>🔒 Demo Access Available</strong><span>ID: 41099999 | PIN: 0000</span><small>डेमो अकाउंट देखने के लिए ID - 41099999, Pin - 0000 का उपयोग करें।</small></div>}
     <header className="about-hero">
       <BrandMark size="large" />
       <span className="about-eyebrow">ABOUT cDCMS</span>

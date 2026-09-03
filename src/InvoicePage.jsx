@@ -1072,9 +1072,13 @@ function InvoicePage({ loggedInUser }) {
         dateRow.remove();
       }
     }
-    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map((node) => node.outerHTML)
-      .join('');
+    // A print popup starts as about:blank. Set a base URL explicitly so assets
+    // and the Vite-generated stylesheet keep resolving after deployment too.
+    // Do not copy the app's complete stylesheet into the popup. The live app
+    // also contains print rules for other pages; copying them to about:blank
+    // can hide every element in this invoice popup.
+    const styles = '';
+    const printBaseUrl = new URL('./', document.baseURI).href;
     const printOnlyStyles = `
       <style>
         @page {
@@ -1093,15 +1097,49 @@ function InvoicePage({ loggedInUser }) {
           align-items: initial !important;
           justify-content: initial !important;
           overflow: auto !important;
+          color: #000 !important;
+          background: #fff !important;
+          font-family: Arial, Helvetica, sans-serif !important;
         }
+        *, *::before, *::after { visibility: visible !important; }
         .book-view {
-          margin-top: 20px !important;
+          display: block !important;
+          margin: 0 !important;
           padding: 0 !important;
         }
         .invoice-container {
           width: 100% !important;
           max-width: 100% !important;
+          margin: 0 !important;
+          padding: 12px !important;
           box-sizing: border-box !important;
+          color: #000 !important;
+          background: #fff !important;
+          border: 1px solid #5f6b7c !important;
+          font-size: 12px !important;
+        }
+        .invoice-header { padding: 6px 6px 8px !important; border-bottom: 2px solid #9aa6b8 !important; background: #eaf4ff !important; }
+        .invoice-brand { display: grid !important; grid-template-columns: 180px 1fr !important; align-items: center !important; gap: 8px !important; }
+        .invoice-brand-logo { display: flex !important; align-items: center !important; justify-content: center !important; }
+        .invoice-brand-details { min-width: 0 !important; }
+        .invoice-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 10px !important; margin-top: 10px !important; padding-bottom: 10px !important; }
+        .section-box { position: relative !important; padding: 8px !important; border: 1px solid #aeb8c7 !important; border-radius: 4px !important; background: #f9fbff !important; }
+        .section-label { display: inline-block !important; margin: -18px 0 6px !important; padding: 2px 6px !important; border: 1px solid #aeb8c7 !important; border-radius: 4px !important; color: #1f4fb2 !important; background: #eaf4ff !important; font-size: 11px !important; }
+        .billto-form { display: grid !important; grid-template-columns: 1.5fr .9fr !important; gap: 6px !important; }
+        .billto-field label { display: block !important; margin: 2px 0 !important; color: #1f2937 !important; font-size: 11px !important; font-weight: 700 !important; }
+        .billto-inline-row { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6px !important; }
+        .billto-address, .billto-gstin, .billto-date-row { grid-column: 1 / -1 !important; }
+        .billto-date-row { display: flex !important; justify-content: flex-end !important; }
+        .invoice-table, .summary-table { width: 100% !important; border-collapse: collapse !important; }
+        .invoice-table { margin-top: 10px !important; font-size: 9px !important; }
+        .invoice-table th, .invoice-table td, .summary-table td { border: 1px solid #9ea9ba !important; padding: 4px 5px !important; text-align: left !important; color: #000 !important; }
+        .invoice-table th { background: #f1f5f9 !important; font-weight: 700 !important; }
+        .invoice-summary { display: grid !important; grid-template-columns: 2fr 1fr !important; gap: 10px !important; margin-top: 10px !important; }
+        .summary-box, .invoice-footer > div { padding: 8px !important; border: 1px solid #aeb8c7 !important; border-radius: 4px !important; background: #f9fbff !important; }
+        .summary-header { padding: 6px 8px !important; margin-bottom: 6px !important; border: 1px solid #aeb8c7 !important; color: #1f4fb2 !important; background: #eaf4ff !important; font-weight: 700 !important; }
+        .invoice-total-words-bar { margin-top: 10px !important; padding: 8px 10px !important; border: 1px solid #dfe3eb !important; background: #eef4ff !important; }
+        .invoice-footer { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 10px !important; margin-top: 10px !important; font-size: 11px !important; }
+        .invoice-bottom { margin-top: 10px !important; color: #1f4fb2 !important; text-align: center !important; font-weight: 600 !important; }
         }
         .invoice-tax-label {
           font-size: 12px !important;
@@ -1222,6 +1260,7 @@ function InvoicePage({ loggedInUser }) {
       <html>
         <head>
           <title>Invoice</title>
+          <base href="${printBaseUrl}">
           ${styles}
           ${printOnlyStyles}
         </head>
@@ -1234,11 +1273,30 @@ function InvoicePage({ loggedInUser }) {
     `;
     printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
+    let printed = false;
+    const triggerPrint = async () => {
+      if (printed) return;
+      printed = true;
+      const images = Array.from(printWindow.document.images || []);
+      await Promise.all(images.map((image) => {
+        if (image.complete) return Promise.resolve();
+        return new Promise((resolve) => {
+          image.addEventListener('load', resolve, { once: true });
+          image.addEventListener('error', resolve, { once: true });
+        });
+      }));
+      await printWindow.document.fonts?.ready;
       printWindow.scrollTo(0, 0);
+      printWindow.focus();
       printWindow.print();
-    }, 300);
+    };
+    printWindow.addEventListener('load', triggerPrint, { once: true });
+    // Some browsers mark a document written with document.write as complete
+    // before the listener is attached.
+    if (printWindow.document.readyState === 'complete') {
+      void triggerPrint();
+    }
+    window.setTimeout(() => void triggerPrint(), 2500);
   };
 
   useEffect(() => {

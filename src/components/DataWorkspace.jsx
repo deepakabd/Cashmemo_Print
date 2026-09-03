@@ -110,6 +110,7 @@ const DataWorkspace = (props) => {
     exportFilteredRows,
     shouldShowFilteredEmptyState,
     handleReUploadClick,
+    canUpload = true,
     openOnboardingTour,
     compactWorkspaceMode,
     onToggleCompactWorkspaceMode,
@@ -780,6 +781,7 @@ const DataWorkspace = (props) => {
         emptyStateActions={emptyStateActions}
         handleResetAllFilters={handleResetAllFiltersWithEssentialColumns}
         handleReUploadClick={handleReUploadClick}
+        canUpload={canUpload}
         openOnboardingTour={openOnboardingTour}
         visibleHeaders={visibleHeaders}
         currentTableData={currentTableData}
