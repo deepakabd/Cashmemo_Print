@@ -1,6 +1,6 @@
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { db } from './firebase';
+import { uploadToCloudinary } from './cloudinary';
 
 const getKey = (user = {}) => {
   const identifier = user?.dealerCode || user?.id || user?.dealerName || 'default';
@@ -101,11 +101,10 @@ export const subscribeAttendanceData = (user, onData, onError) => onSnapshot(
 
 export const uploadAttendanceAsset = async (user, file, folder = 'files') => {
   const identifier = String(user?.id || user?.dealerCode || user?.dealerName || 'default').trim().replace(/\s+/g, '_');
-  const safeName = String(file.name || 'upload').replace(/[^a-z0-9._-]/gi, '_');
-  const assetRef = ref(storage, `attendance/${identifier}/${folder}/${Date.now()}-${safeName}`);
-  await uploadBytes(assetRef, file);
-  return getDownloadURL(assetRef);
+  return uploadToCloudinary(file, `lpg-dashboard/attendance/${identifier}/${folder}`);
 };
+
+export { uploadEmployeePhoto } from './cloudinary';
 
 export const compressImageFile = (file, maxDimension = 1200, quality = 0.82) => new Promise((resolve) => {
   if (!file?.type?.startsWith('image/') || typeof URL === 'undefined' || typeof Image === 'undefined') return resolve(file);
