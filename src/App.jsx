@@ -1,11 +1,10 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { lazy, Suspense, useCallback } from 'react';
+import { Suspense, useCallback } from 'react';
 import FileUpload from './FileUpload';
 import CashMemoEnglish from './CashMemoEnglish';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet, getLayoutPrintStyles } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 //TEST
@@ -32,7 +31,6 @@ import {
 import {
   formatDrawerFieldLabel,
   formatDrawerFieldValue,
-  getCurrentDeviceInfo,
   getDeviceStatusLabel,
   getDrawerDetailSections,
   getDrawerSummaryRows,
@@ -43,7 +41,6 @@ import {
   sanitizeUsersForCache,
   toTagList,
   upsertStatusHistoryEntry,
-  upsertLoginDevice,
 } from './utils/adminUiHelpers';
 import {
   ADMIN_ROLE_PERMISSIONS,
@@ -148,28 +145,56 @@ import {
   HEADER_MAPPING_LOCAL,
   normalizeData,
 } from './utils/dataNormalization';
+import {
+  buildAuditEntry,
+  writeLocalAuditTrail,
+  writeFirestoreAuditEntry,
+} from './services/logging';
+import {
+  lookupDealerByCode,
+  registerLoginDevice,
+  markUserExpiredIfDue,
+} from './auth/userAuth';
+import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
+import {
+  readUsersCache as readUsersData,
+  writeUsersCache as writeUsersData,
+  persistUserSession,
+  clearUserSession,
+} from './services/storage';
+import {
+  mergeDealerIntoCache,
+  mergeDealerLabelSettings,
+} from './dealer/dealerRepository';
+import {
+  buildMenuAccessRules,
+  canAccessMenuFeature as canAccessMenuFeatureByRules,
+  buildPackageAccessBreakdown,
+  getAdminTabAccess,
+} from './app/permissions';
+import {
+  LazyInvoicePage,
+  LazyHomeDashboard,
+  LazyDataWorkspace,
+  LazyRateUpdatePage,
+  LazyRegisterPanel,
+  LazyAdminLoginPanel,
+  LazyUserLoginPanel,
+  LazyProfileUpdatePanel,
+  LazyBankDetailsPanel,
+  LazyUserProfilePanel,
+  LazyContactSupportPanel,
+  LazyDictionaryRequestPanel,
+  LazyAttendancePage,
+  LazyIdCardPage,
+  LazyEmployeeProfilePage,
+  LazySalarySlipPage,
+  LazyAttendanceReportPage,
+  LazyEmployeeReportPage,
+  LazyStockRegisterPage,
+} from './app/routes';
 
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
-
-const LazyInvoicePage = lazy(() => import('./InvoicePage'));
-const LazyHomeDashboard = lazy(() => import('./components/HomeDashboard'));
-const LazyDataWorkspace = lazy(() => import('./components/DataWorkspace'));
-const LazyRateUpdatePage = lazy(() => import('./RateUpdatePage'));
-const LazyRegisterPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.RegisterPanel })));
-const LazyAdminLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.AdminLoginPanel })));
-const LazyUserLoginPanel = lazy(() => import('./components/AuthPanels').then((module) => ({ default: module.UserLoginPanel })));
-const LazyProfileUpdatePanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.ProfileUpdatePanel })));
-const LazyBankDetailsPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.BankDetailsPanel })));
-const LazyUserProfilePanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.UserProfilePanel })));
-const LazyContactSupportPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.ContactSupportPanel })));
-const LazyDictionaryRequestPanel = lazy(() => import('./components/UserPanels').then((module) => ({ default: module.DictionaryRequestPanel })));
-const LazyAttendancePage = lazy(() => import('./AttendancePage'));
-const LazyIdCardPage = lazy(() => import('./IdCardPage'));
-const LazyEmployeeProfilePage = lazy(() => import('./EmployeeProfilePage'));
-const LazySalarySlipPage = lazy(() => import('./SalarySlipPage'));
-const LazyAttendanceReportPage = lazy(() => import('./AttendanceReportPage'));
-const LazyEmployeeReportPage = lazy(() => import('./EmployeeReportPage'));
-const LazyStockRegisterPage = lazy(() => import('./StockRegisterPage'));
 
 function App() {
   const fileInputRef = useRef(null);
@@ -385,8 +410,9 @@ function App() {
     (String(loggedInUser?.status || '').toLowerCase() === 'expired' || isUserExpired(loggedInUser))
   );
 
-  const isTestUser = String(loggedInUser?.dealerCode || '').trim() === '41099999'
-    && String(loggedInUser?.pin || '').trim() === '0000';
+  // Demo/test user: PIN verification already happened at login, so the
+  // dealerCode check alone is sufficient (PIN never stored in runtime state).
+  const isTestUser = String(loggedInUser?.dealerCode || '').trim() === '41099999';
 
   const getPendingDictionaryRequestCount = (user) => (
     Array.isArray(user?.pendingDictionaryRequests)
@@ -687,31 +713,7 @@ function App() {
     return Array.from(mergedApprovals.values());
   }, [translationDictionary]);
 
-  const readUsersData = () => {
-    try {
-      const raw = localStorage.getItem('usersData');
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const writeUsersData = (users) => {
-    localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(users)));
-  };
-
-  const persistUserSession = (user) => {
-    if (!user) return;
-    localStorage.setItem(USER_SESSION_STORAGE_KEY, JSON.stringify({
-      id: user.id || '',
-      dealerCode: user.dealerCode || '',
-    }));
-  };
-
-  const clearUserSession = () => {
-    localStorage.removeItem(USER_SESSION_STORAGE_KEY);
-  };
+  // users cache & session persistence now live in src/services/storage.js
 
   const updateUserInStore = (userId, updater, dealerCode = '') => {
     if (!userId && !dealerCode) return null;
@@ -851,7 +853,6 @@ function App() {
 
   const handleUserLoginSubmit = async () => {
     const dealerCode = userDealerCode.trim();
-    const normalizedDealerCode = normalizeDealerCode(dealerCode);
     const pin = userPin.trim();
     if (!dealerCode || !pin) {
       pushToast('Dealer Code aur PIN required hai.', 'error');
@@ -862,51 +863,15 @@ function App() {
     let firestoreUser = null;
     let dealerLookupStatus = 'not-found';
     try {
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('dealerCode', '==', dealerCode));
-      const snap = await getDocs(q);
-      if (snap.size > 1) {
+      const lookup = await lookupDealerByCode(dealerCode, pin);
+      if (lookup.outcome === 'duplicate') {
         pushToast('Is dealer code par multiple accounts mil rahe hain. Login block kiya gaya hai, admin se contact kijiye.', 'error');
         setIsUserLoginSubmitting(false);
         return;
       }
-      if (!snap.empty) {
-        const docData = snap.docs[0].data();
-        const status = String(docData?.status || 'active').toLowerCase();
-        dealerLookupStatus = status === 'pending'
-          ? 'pending'
-          : status === 'disabled'
-            ? 'disabled'
-            : 'dealer-found';
-        if (String(docData?.pin || '') === pin) {
-          firestoreUser = {
-            id: snap.docs[0].id,
-            dealerCode: docData.dealerCode || dealerCode,
-            dealerName: docData.dealerName || '',
-            mobile: docData.mobile || '',
-            email: docData.email || '',
-            package: docData.package || '',
-            packageDays: docData.packageDays || 0,
-            validFrom: docData.validFrom || '',
-            validTill: docData.validTill || '',
-            pin: docData.pin || '',
-            role: docData.role || 'operator',
-            status: docData.status || 'active',
-            approvalStatus: docData.approvalStatus || {},
-            pendingUpdates: docData.pendingUpdates || {},
-            dictionaryPendingCount: Number(docData.dictionaryPendingCount || 0),
-            profileData: docData.profileData || null,
-            bankDetailsData: docData.bankDetailsData || null,
-            ratesData: Array.isArray(docData.ratesData) ? docData.ratesData : [],
-            cashMemoLabelSettings: mergeCashMemoLabelSettings(docData.cashMemoLabelSettings || {}),
-            deliveryAreaUpdates: Array.isArray(docData.deliveryAreaUpdates) ? docData.deliveryAreaUpdates : [],
-            deliveryStaffUpdates: Array.isArray(docData.deliveryStaffUpdates) ? docData.deliveryStaffUpdates : [],
-            loginDevices: normalizeLoginDevices(docData.loginDevices),
-          };
-          if (status !== 'active') {
-            firestoreUser.status = status;
-          }
-        }
+      if (lookup.outcome === 'ok') {
+        firestoreUser = lookup.firestoreUser;
+        dealerLookupStatus = lookup.dealerLookupStatus;
       }
     } catch {
       pushToast('Firebase login check failed. Please try again.', 'error');
@@ -928,23 +893,12 @@ function App() {
       return;
     }
 
-    const currentDeviceInfo = getCurrentDeviceInfo();
-    const currentDevice = normalizeLoginDevices(firestoreUser.loginDevices)
-      .find((device) => device.deviceId === currentDeviceInfo.deviceId);
-    if (currentDevice?.blocked) {
+    const deviceResult = await registerLoginDevice(firestoreUser);
+    if (deviceResult.outcome === 'blocked') {
       pushToast('Is device par login blocked hai. Admin se unblock karwaiye.', 'error');
       setIsUserLoginSubmitting(false);
       return;
     }
-    const loginDevices = upsertLoginDevice(firestoreUser.loginDevices, currentDeviceInfo);
-    firestoreUser.loginDevices = loginDevices;
-    try {
-      await updateDoc(doc(db, 'users', firestoreUser.id), {
-        loginDevices,
-        lastLoginAt: loginDevices[0]?.lastLoginAt || new Date().toISOString(),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) { void e; }
 
     if (firestoreUser.status === 'pending') {
       pushToast('Your registration is pending with admin approval.', 'info');
@@ -958,46 +912,17 @@ function App() {
       return;
     }
 
-    if (isUserExpired(firestoreUser)) {
-      try {
-        await updateDoc(doc(db, 'users', firestoreUser.id), {
-          status: 'expired',
-          updatedAt: serverTimestamp(),
-        });
-      } catch (e) { void e; }
+    if (await markUserExpiredIfDue(firestoreUser)) {
       firestoreUser.status = 'expired';
     }
 
-    let users = readUsersData();
-    const existingIdx = users.findIndex((u) => normalizeDealerCode(u?.dealerCode) === normalizedDealerCode);
-    const localUser = existingIdx >= 0
-      ? { ...users[existingIdx], ...firestoreUser, id: firestoreUser.id }
-      : {
-        ...firestoreUser,
-        id: firestoreUser.id,
-        createdAt: new Date().toISOString(),
-      };
-    if (existingIdx >= 0) {
-      users[existingIdx] = localUser;
-    } else {
-      users = [...users, localUser];
-    }
-    writeUsersData(users);
+    const localUser = mergeDealerIntoCache(firestoreUser);
 
-    let cachedLabelSettings = {};
-    try {
-      cachedLabelSettings = JSON.parse(localStorage.getItem(getCashMemoLabelSettingsStorageKey(firestoreUser.dealerCode)) || '{}');
-    } catch {
-      cachedLabelSettings = {};
-    }
-    const userLabelSettings = mergeCashMemoLabelSettings(firestoreUser.cashMemoLabelSettings || cachedLabelSettings);
+    const userLabelSettings = mergeDealerLabelSettings(
+      { ...firestoreUser, cashMemoLabelSettings: localUser.cashMemoLabelSettings },
+      setCashMemoLabelSettings,
+    );
     localUser.cashMemoLabelSettings = userLabelSettings;
-    const syncedUsers = readUsersData().map((user) => (
-      user.id === localUser.id ? { ...user, cashMemoLabelSettings: userLabelSettings } : user
-    ));
-    writeUsersData(syncedUsers);
-    localStorage.setItem(getCashMemoLabelSettingsStorageKey(firestoreUser.dealerCode), JSON.stringify(userLabelSettings));
-    setCashMemoLabelSettings(userLabelSettings);
     setLabelDraftSettings(mergeCashMemoLabelSettings(userLabelSettings));
     setLoggedInUser(localUser);
     setIsLoggedIn(true);
@@ -1464,7 +1389,7 @@ function App() {
 
   const handleAdminLogout = async () => {
     try {
-      await signOut(auth);
+      await adminSignOut();
     } catch (e) { void e; }
     hideAllViews();
     setShowAboutInfo(true);
@@ -1474,15 +1399,14 @@ function App() {
   };
 
   const handleAdminLoginSubmit = async () => {
-    const loginId = adminLoginId.trim().toLowerCase();
-    const password = adminPassword.trim();
-    if (!loginId || !password) {
+    const { loginId, password, valid } = validateAdminCredentials(adminLoginId, adminPassword);
+    if (!valid) {
       pushToast('Admin Email and Password required.', 'error');
       return;
     }
     setIsAdminLoginSubmitting(true);
     try {
-      await signInWithEmailAndPassword(auth, loginId, password);
+      await adminSignIn(loginId, password);
       setShowAdminLogin(false);
       setShowAdminPanel(true);
       setAdminLoginId('');
@@ -2125,16 +2049,10 @@ function App() {
     };
 
     const logAdminActivity = (action, details = {}) => {
-      const entry = {
-        id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        action,
-        details,
-        createdAt: new Date().toISOString(),
-        actor: activeAdminEmail || 'admin',
-      };
+      const entry = buildAuditEntry(action, details, activeAdminEmail || 'admin');
       setAuditTrail((prev) => {
         const next = [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 150);
-        localStorage.setItem('adminAuditTrail', JSON.stringify(next));
+        writeLocalAuditTrail(next);
         return next;
       });
       if (auditSyncDisabled) {
@@ -2147,12 +2065,7 @@ function App() {
       }
       void (async () => {
         try {
-          await addDoc(collection(db, ADMIN_AUDIT_COLLECTION), {
-            action,
-            details,
-            actor: activeAdminEmail || 'admin',
-            createdAt: serverTimestamp(),
-          });
+          await writeFirestoreAuditEntry(action, details, activeAdminEmail || 'admin');
           setAuditSyncState({
             source: 'firebase',
             lastSyncAt: new Date().toISOString(),
@@ -2322,9 +2235,7 @@ function App() {
 
     // Admin panel is intentionally a single-admin workspace: every authenticated
     // admin gets the complete admin permission set.
-    const currentRolePermissions = ADMIN_ROLE_PERMISSIONS['super-admin'];
-    const canAccessTab = (tabKey) => currentRolePermissions.tabs.includes(tabKey);
-    const canMutateAdminData = Boolean(currentRolePermissions.mutate);
+    const { canAccessTab, canMutateAdminData } = getAdminTabAccess();
 
     const setRegistrationOverride = (id, status) => {
       setRegistrationStatusOverrides((prev) => {
@@ -6449,18 +6360,18 @@ function App() {
       const formatAddress = (text) => {
         if (!text) return '';
         let formatted = text;
-        
+
         // 1. '-' , '+' और ',' जैसे चिन्हों के आगे-पीछे स्पेस दें
         formatted = formatted.replace(/([-+,])/g, ' $1 ');
-        
+
         // 2. 'S/O', 'W/O', 'D/O', 'C/O' (या बिना स्लैश के 'SO', 'WO') के ठीक बाद अगर लेटर है, तो स्पेस दें
         formatted = formatted.replace(/\b([SWDCswdc]\/?[Oo])([a-zA-Z]{3,})/g, '$1 $2');
-        
+
         // 3. अंकों और अक्षरों को अलग करें (e.g., 16VILL -> 16 VILL या WARD16 -> WARD 16)
         formatted = formatted.replace(/(\d)([a-zA-Z])/g, '$1 $2');
         formatted = formatted.replace(/([a-zA-Z])(\d)/g, '$1 $2');
-        
-        // 4. कुछ खास चिपके हुए शब्दों (Keywords और Surnames) को अलग करें 
+
+        // 4. कुछ खास चिपके हुए शब्दों (Keywords और Surnames) को अलग करें
         const keywords = [
           'WARD', 'VILL', 'VPO', 'POST', 'PO', 'PS', 'DIST', 'PIN', 'BLOCK', 'TEHSIL', 'NAGAR', 'ROAD', 'GALI', 'TOLA', 'CHOWK',
           'KUMARI', 'KUMAR', 'DEVI', 'SINGH', 'SAHNI', 'PASWAN', 'THAKUR', 'YADAV', 'MAHTO', 'SHARMA', 'MANDAL', 'CHAUDHARY', 'PANDIT', 'MISHRA', 'MUKHIYA', 'MANJHI', 'CHAUHAN'
@@ -6469,16 +6380,16 @@ function App() {
           const regex = new RegExp(`(${keyword})`, 'gi');
           formatted = formatted.replace(regex, ' $1 ');
         });
-        
+
         // 5. लगातार एक जैसे अलग-अलग शब्दों को एक करें (e.g., "VILL VILL" -> "VILL")
         formatted = formatted.replace(/\b(\w+)(?:\s+\1)+\b/gi, '$1');
-        
+
         // 6. चिपके हुए एक जैसे शब्दों (कम से कम 4 अक्षर) को सिंगल करें (e.g., "SAHNISONPURVASONPURVA" -> "SAHNISONPURVA")
         formatted = formatted.replace(/(\w{4,})\1+/gi, '$1');
 
         // 7. एक्स्ट्रा स्पेस को हटाकर शब्दों को Array में बदलें
         let words = formatted.replace(/\s+/g, ' ').trim().split(' ');
-        
+
         // 8. आस-पास के मिलते-जुलते शब्दों को हटाएं (Typos in village names e.g., "SONPURVA Sonpurwa")
         let uniqueWords = [];
         for (let i = 0; i < words.length; i++) {
@@ -8664,49 +8575,14 @@ function App() {
             confirmMessage: 'Do you want to open the renewal form now?',
           },
         ];
-  const menuAccessRules = {
-    profileOverview: () => true,
-    requestHistory: () => true,
-    about: () => !isPlanExpired,
-    invoice: () => !isPlanExpired,
-    profileUpdate: () => !isPlanExpired,
-    bankUpdate: () => !isPlanExpired,
-    rateUpdate: () => !isPlanExpired,
-    labelUpdate: () => !isPlanExpired,
-    dictionaryUpdate: () => !isPlanExpired && hasHindiPackageAccess,
-    deliveryAreaUpdate: () => !isPlanExpired && hasHindiPackageAccess,
-    deliveryStaffUpdate: () => !isPlanExpired && hasHindiPackageAccess,
-    headerUpdate: () => !isPlanExpired && hasHindiPackageAccess,
-    upgradePlan: () => true,
-    support: () => true,
-  };
-  const canAccessMenuFeature = (featureKey) => {
-    const rule = menuAccessRules[featureKey];
-    return typeof rule === 'function' ? rule() : true;
-  };
-  const packageAccessBreakdown = {
-    availableNow: [
-      canAccessMenuFeature('profileUpdate') ? 'Profile update' : '',
-      canAccessMenuFeature('bankUpdate') ? 'Bank update' : '',
-      canAccessMenuFeature('rateUpdate') ? 'Rate update' : '',
-      hasWorkingData && canAccessMenuFeature('invoice') ? 'Invoice tools' : '',
-      hasWorkingData && !isPlanExpired ? 'Data view' : '',
-      canAccessMenuFeature('support') ? 'Support & replies' : '',
-    ].filter(Boolean),
-    lockedUntilRenewal: [
-      !canAccessMenuFeature('invoice') ? 'Invoice tools' : '',
-      !canAccessMenuFeature('rateUpdate') ? 'Rate update' : '',
-      !canAccessMenuFeature('labelUpdate') ? 'Label update' : '',
-      !canAccessMenuFeature('profileUpdate') ? 'Profile update' : '',
-      !canAccessMenuFeature('bankUpdate') ? 'Bank update' : '',
-    ].filter(Boolean),
-    hindiPackageOnly: [
-      !hasHindiPackageAccess ? 'Dictionary update' : '',
-      !hasHindiPackageAccess ? 'Delivery area update' : '',
-      !hasHindiPackageAccess ? 'Delivery staff update' : '',
-      !hasHindiPackageAccess ? 'Header update' : '',
-    ].filter(Boolean),
-  };
+  const menuAccessRules = buildMenuAccessRules({ isPlanExpired, hasHindiPackageAccess });
+  const canAccessMenuFeature = (featureKey) => canAccessMenuFeatureByRules(menuAccessRules, featureKey);
+  const packageAccessBreakdown = buildPackageAccessBreakdown({
+    canAccessMenuFeature,
+    hasWorkingData,
+    isPlanExpired,
+    hasHindiPackageAccess,
+  });
   const collectMenuNames = (labels = [], predicate) => labels.filter((label) => {
     try {
       return Boolean(predicate(label));
@@ -9611,7 +9487,7 @@ function App() {
           )}
         </div>
       )}
-      
+
       <style>{`
         input[type="checkbox"] {
           -webkit-appearance: checkbox;

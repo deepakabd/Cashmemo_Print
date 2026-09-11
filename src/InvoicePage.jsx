@@ -1291,8 +1291,9 @@ function InvoicePage({ loggedInUser }) {
       printWindow.print();
     };
     printWindow.addEventListener('load', triggerPrint, { once: true });
-    // Some browsers mark a document written with document.write as complete
+    // Some browsers mark a document written with document.write as complete,
     // before the listener is attached.
+    //test
     if (printWindow.document.readyState === 'complete') {
       void triggerPrint();
     }
