@@ -1,4 +1,5 @@
 import { normalizeDealerCode } from "../utils/storageHelpers";
+import { sanitizeUserForCache } from "../utils/appHelpers";
 import {
   mergeCashMemoLabelSettings,
   getCashMemoLabelSettingsStorageKey,
@@ -13,12 +14,12 @@ export const mergeDealerIntoCache = (firestoreUser) => {
   );
   const localUser =
     existingIdx >= 0
-      ? { ...users[existingIdx], ...firestoreUser, id: firestoreUser.id }
-      : {
+      ? sanitizeUserForCache({ ...users[existingIdx], ...firestoreUser, id: firestoreUser.id })
+      : sanitizeUserForCache({
           ...firestoreUser,
           id: firestoreUser.id,
           createdAt: new Date().toISOString(),
-        };
+        });
   if (existingIdx >= 0) {
     users[existingIdx] = localUser;
   } else {

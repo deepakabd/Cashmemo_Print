@@ -231,7 +231,7 @@
   border: none;
   cursor: pointer;
   font-size: 0.88rem;
-  
+
 }
 
 .navbar-left a:hover, .navbar-right a:hover, .navbar-right button:hover {
@@ -439,6 +439,8 @@
   justify-content: center;
   line-height: 1;
   border: none;
+  padding: 0;
+  overflow: hidden;
   color: #fff;
   position: relative;
 }
@@ -5476,8 +5478,8 @@
   color: #1f2937;
   line-height: 1.55;
   font-size: 12px;
- 
- 
+
+
 }
 
 .about-summary-grid {

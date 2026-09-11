@@ -32,3 +32,19 @@ App.jsx (~9,400 lines) को target module structure में तोड़न�
 - हर extraction के बाद build पास होता है (वेरिफाई किया गया)।
 - `npm run lint` में जो errors हैं वे पहले से repo-wide हैं (CashMemoEnglish, Attendance आदि);
   refactor से जुड़ी files के नए errors fix कर दिए गए हैं।
+
+## Security posture: device identity
+
+Device fingerprint (`deviceId`, `deviceName`, `platform`) **convenience-only** है,
+security boundary नहीं:
+
+- `deviceId` localStorage में random UUID है — clear करते ही नया device बन जाता है,
+  यानी admin का "block device" client-side abuse management है, न कि hard enforcement.
+- `registerLoginDevice` का blocked-check client के अपने fetched data पर चलता है;
+  attacker से आसानी से bypass हो सकता है.
+- **कब use करें:** "is browser को block/unblock करो" (incident response convenience).
+- **कब use न करें:** "ye cryptographically trusted device है" — उसके लिए
+  Firebase App Check, security rules या WebAuthn/device-bound credentials चाहिए.
+
+खासकर PIN verification जैसे sensitive flows कभी भी device identity पर मत टिकाना —
+वे server-side (security rules / callable function) से enforce होने चाहिए.

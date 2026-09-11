@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDoc, arrayUnion, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 import { db } from '../firebase';
+import { getAccessState } from '../app/permissions';
+import { mirrorUserPatchToSubcollections } from '../services/userSubcollections';
 import { getDictionaryTranslation, getExistingDictionaryEntry } from '../utils/dictionaryWorkflow';
 
 export const ProfileUpdatePanel = ({
@@ -287,8 +289,8 @@ export const UserProfilePanel = ({
   const currentPackage = loggedInUser?.package || '-';
   const validity = loggedInUser?.validTill ? formatDisplayDate(loggedInUser.validTill) : '-';
   const validityDate = loggedInUser?.validTill ? new Date(`${loggedInUser.validTill}T23:59:59`) : null;
-  const isPlanExpired = String(loggedInUser?.status || '').toLowerCase() === 'expired'
-    || (validityDate instanceof Date && !Number.isNaN(validityDate.getTime()) && validityDate < new Date());
+  // Central permission engine — local expiry duplication hataya gaya.
+  const isPlanExpired = !getAccessState(loggedInUser, { isLoggedIn: Boolean(loggedInUser?.id) }).planActive;
   const profilePhotoDataUrl = data?.photoDataUrl || '';
   const deliveryAreaUpdates = Array.isArray(loggedInUser?.deliveryAreaUpdates) ? loggedInUser.deliveryAreaUpdates : [];
   const deliveryStaffUpdates = Array.isArray(loggedInUser?.deliveryStaffUpdates) ? loggedInUser.deliveryStaffUpdates : [];
@@ -1093,6 +1095,7 @@ export const DictionaryRequestPanel = ({
           pendingDictionaryRequests: arrayUnion(...pendingRequests),
           updatedAt: serverTimestamp(),
         });
+        mirrorUserPatchToSubcollections(loggedInUser.id, { pendingDictionaryRequests: pendingRequests }).forEach((p) => { void p.catch(() => {}); });
       } catch {
         if (!approvalSavedCount) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
       }
