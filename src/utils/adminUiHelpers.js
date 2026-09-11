@@ -135,6 +135,17 @@ export const getDrawerDetailSections = (data = {}) => {
   };
 };
 
+// DEVICE IDENTITY — CONVENIENCE ONLY, NOT A SECURITY BOUNDARY.
+//
+// deviceId ek localStorage-persisted random UUID hai. Ye:
+//   - localStorage clear karne se turant regenerate ho jata hai (naya device ban jata hai)
+//   - browser profile copy/clone par duplicate ho jata hai
+//   - client-supplied hai, cryptographically trustworthy nahi
+//
+// USE CASE: admin panel me "is browser ko block/unblock karo" (abuse
+// management, incident response convenience).
+// NOT A USE CASE: "ye cryptographically trusted device hai" — uske liye
+// App Check / Play Integrity / WebAuthn jaisa mechanism chahiye.
 const USER_DEVICE_STORAGE_KEY = 'cashmemoDeviceId';
 
 const createBrowserDeviceId = () => {

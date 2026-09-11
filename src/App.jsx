@@ -6,7 +6,7 @@ import CashMemoEnglish from './CashMemoEnglish';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet, getLayoutPrintStyles } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { auth, db } from './firebase';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 //TEST
 import './App.css';
 import {
@@ -153,8 +153,11 @@ import {
 import {
   lookupDealerByCode,
   registerLoginDevice,
+  fetchAdminUsersPage,
+  fetchAdminUserDetail,
   markUserExpiredIfDue,
 } from './auth/userAuth';
+import { mirrorUserPatchToSubcollections } from './services/userSubcollections';
 import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
 import {
   readUsersCache as readUsersData,
@@ -167,6 +170,7 @@ import {
   mergeDealerLabelSettings,
 } from './dealer/dealerRepository';
 import {
+  getAccessState,
   buildMenuAccessRules,
   canAccessMenuFeature as canAccessMenuFeatureByRules,
   buildPackageAccessBreakdown,
@@ -199,7 +203,15 @@ const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 function App() {
   const fileInputRef = useRef(null);
   const translationMemoryCacheRef = useRef(new Map());
-  const [translationDictionary, setTranslationDictionary] = useState({});
+  const [translationDictionary, setTranslationDictionary] = useState(() => {
+    try {
+      const raw = localStorage.getItem('translationDictionaryCache');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
   const [toastItems, setToastItems] = useState([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [savedFilterPresets, setSavedFilterPresets] = useState([]);
@@ -264,6 +276,9 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [adminUsersCursor, setAdminUsersCursor] = useState(null);
+  const [adminUsersHasMore, setAdminUsersHasMore] = useState(false);
+  const [adminUsersLoadingMore, setAdminUsersLoadingMore] = useState(false);
   const [showOnboardingTour, setShowOnboardingTour] = useState(false);
   const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
   const [translationObservability, setTranslationObservability] = useState({
@@ -404,11 +419,6 @@ function App() {
       return next;
     });
   }, [loggedInUser?.dealerCode]);
-  const isPlanExpired = Boolean(
-    isLoggedIn &&
-    loggedInUser &&
-    (String(loggedInUser?.status || '').toLowerCase() === 'expired' || isUserExpired(loggedInUser))
-  );
 
   // Demo/test user: PIN verification already happened at login, so the
   // dealerCode check alone is sufficient (PIN never stored in runtime state).
@@ -544,13 +554,41 @@ function App() {
     const loadDict = async () => {
       if (!isLoggedIn && !showAdminPanel) return;
       try {
+        // Fast path: previously-synced dictionary from localStorage so the app
+        // works instantly even when Firestore is unreachable.
         let nextDictionary = {};
-        const docSnap = await getDoc(doc(db, 'settings', 'translationDictionary'));
-        if (docSnap.exists()) {
-          nextDictionary = docSnap.data() || {};
+        try {
+          const cached = localStorage.getItem('translationDictionaryCache');
+          const parsed = cached ? JSON.parse(cached) : {};
+          if (parsed && typeof parsed === 'object') nextDictionary = parsed;
+        } catch {
+          // Corrupt cache — ignore and fetch fresh.
+        }
+        if (Object.keys(nextDictionary).length > 0) {
+          setTranslationDictionary(nextDictionary);
+        }
+        const withTimeout = (promise, ms) => Promise.race([
+          promise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timeout — using cached dictionary')), ms)),
+        ]);
+        try {
+          const docSnap = await withTimeout(getDoc(doc(db, 'settings', 'translationDictionary')), 8000);
+          if (docSnap.exists()) {
+            nextDictionary = { ...nextDictionary, ...(docSnap.data() || {}) };
+          }
+        } catch (cacheErr) {
+          // Backend unreachable — try the persistent Firestore cache before giving up.
+          try {
+            const cachedSnap = await getDocFromCache(doc(db, 'settings', 'translationDictionary'));
+            if (cachedSnap.exists()) {
+              nextDictionary = { ...nextDictionary, ...(cachedSnap.data() || {}) };
+            }
+          } catch {
+            // No cached document yet — keep whatever we have (localStorage / empty).
+          }
         }
         try {
-          const dictRowsSnap = await getDocs(collection(db, 'translationDictionary'));
+          const dictRowsSnap = await withTimeout(getDocs(collection(db, 'translationDictionary')), 8000);
           dictRowsSnap.docs.forEach((item) => {
             const data = item.data() || {};
             const englishWord = String(data.englishWord || '').trim();
@@ -560,11 +598,33 @@ function App() {
             }
           });
         } catch {
-          // User-document fallback below still lets admin see the request.
+          // Per-row collection is best-effort; offline cache fallback:
+          try {
+            const cachedRows = await getDocsFromCache(collection(db, 'translationDictionary'));
+            cachedRows.docs.forEach((item) => {
+              const data = item.data() || {};
+              const englishWord = String(data.englishWord || '').trim();
+              const hindiTranslation = String(data.hindiTranslation || '').trim();
+              if (englishWord && hindiTranslation) {
+                nextDictionary[englishWord] = hindiTranslation;
+              }
+            });
+          } catch {
+            // User-document fallback below still lets admin see the request.
+          }
         }
         setTranslationDictionary(nextDictionary);
+        try {
+          localStorage.setItem('translationDictionaryCache', JSON.stringify(nextDictionary));
+        } catch {
+          // Storage full / private mode — dictionary still works in memory.
+        }
       } catch (err) {
-        console.error('Failed to load dictionary', err);
+        // Offline / flaky network: app keeps running on the cached dictionary
+        // instead of spamming the console on every load.
+        if (String(err?.code || '') !== 'unavailable' && !/offline|timeout/i.test(String(err?.message || ''))) {
+          console.error('Failed to load dictionary', err);
+        }
       }
     };
     loadDict();
@@ -727,10 +787,11 @@ function App() {
     const nextUsers = [...users];
     nextUsers[idx] = nextUser;
     writeUsersData(nextUsers);
+    const safeNextUser = sanitizeUserForCache(nextUser);
     setLoggedInUser((prev) => {
       if (!prev) return prev;
-      if (prev?.id === userId) return nextUser;
-      if (dealerCode && String(prev?.dealerCode || '').trim() === String(dealerCode).trim()) return nextUser;
+      if (prev?.id === userId) return safeNextUser;
+      if (dealerCode && String(prev?.dealerCode || '').trim() === String(dealerCode).trim()) return safeNextUser;
       return prev;
     });
     return nextUser;
@@ -742,6 +803,9 @@ function App() {
     if (userId) {
       try {
         await updateDoc(doc(db, 'users', userId), payload);
+        // Dual-write: heavy structures subcollections me mirror karo so the
+        // users/{uid} doc eventually shrinks. Non-blocking.
+        mirrorUserPatchToSubcollections(userId, patch).forEach((p) => { void p.catch(() => {}); });
         return userId;
       } catch (e) { void e; }
     }
@@ -751,6 +815,7 @@ function App() {
       if (!snap.empty) {
         const resolvedId = snap.docs[0].id;
         await updateDoc(doc(db, 'users', resolvedId), payload);
+        mirrorUserPatchToSubcollections(resolvedId, patch).forEach((p) => { void p.catch(() => {}); });
         return resolvedId;
       }
     }
@@ -1188,7 +1253,7 @@ function App() {
           deliveryStaffUpdates: Array.isArray(matchedUser.deliveryStaffUpdates) ? matchedUser.deliveryStaffUpdates : [],
         };
 
-      setLoggedInUser(restoredUser);
+      setLoggedInUser(sanitizeUserForCache(restoredUser));
       setCashMemoLabelSettings(restoredUser.cashMemoLabelSettings);
       setLabelDraftSettings(mergeCashMemoLabelSettings(restoredUser.cashMemoLabelSettings));
       setIsLoggedIn(true);
@@ -1824,6 +1889,7 @@ function App() {
         let firebaseApprovals = [];
         let firebaseFeedback = [];
         let firebaseAuditTrail = [];
+        const fetchOk = { requests: false, users: false, feedback: false };
 
         try {
           const reqSnap = await getDocs(collection(db, 'registrationRequests'));
@@ -1833,11 +1899,15 @@ function App() {
             createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
             approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
           }));
+          fetchOk.requests = true;
         } catch (e) { void e; }
 
         try {
-          const userSnap = await getDocs(collection(db, 'users'));
-          firebaseUsers = userSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const firstPage = await fetchAdminUsersPage();
+          firebaseUsers = firstPage.users;
+          setAdminUsersCursor(firstPage.cursor);
+          setAdminUsersHasMore(firstPage.hasMore);
+          fetchOk.users = true;
         } catch (e) { void e; }
 
         try {
@@ -1858,6 +1928,7 @@ function App() {
             ...d.data(),
             createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
           }));
+          fetchOk.feedback = true;
         } catch (e) { void e; }
 
         try {
@@ -1871,22 +1942,17 @@ function App() {
             .slice(0, 150);
         } catch (e) { void e; }
 
-        if (firebaseRequests.length === 0) {
-          const reqRaw = localStorage.getItem('registrationRequests');
-          const reqList = reqRaw ? JSON.parse(reqRaw) : [];
-          firebaseRequests = Array.isArray(reqList) ? reqList : [];
+        // Firebase is the single source of truth when reachable. An empty
+        // Firestore collection is legitimate data (e.g. all requests
+        // processed), so never overlay stale localStorage mirrors here —
+        // that was the source of Firebase/browser mismatches. Local cache
+        // is only read in the offline catch branch below.
+        if (!fetchOk.requests && !fetchOk.users && !fetchOk.feedback) {
+          // Every collection read failed — Firebase is unreachable or rules
+          // deny everything. Fall through to the offline cache branch so the
+          // admin still sees last-known data instead of an empty UI.
+          throw new Error('all-admin-collections-unreachable');
         }
-        if (firebaseUsers.length === 0) {
-          const usersRaw = localStorage.getItem('usersData');
-          const userList = usersRaw ? JSON.parse(usersRaw) : [];
-          firebaseUsers = Array.isArray(userList) ? userList : [];
-        }
-        if (firebaseFeedback.length === 0) {
-          const fbRaw = localStorage.getItem('feedbackData');
-          const fbList = fbRaw ? JSON.parse(fbRaw) : [];
-          firebaseFeedback = Array.isArray(fbList) ? fbList : [];
-        }
-
         const reqWithOverrides = firebaseRequests.map((r) => {
           const overriddenStatus = registrationStatusOverrides[r.id];
           return overriddenStatus ? { ...r, status: overriddenStatus } : r;
@@ -1951,11 +2017,23 @@ function App() {
           })
           .sort((a, b) => new Date(b.createdAt || b.date || '').getTime() - new Date(a.createdAt || a.date || '').getTime());
 
-        setRequests(reqWithOverrides);
-        setUsers(firebaseUsers);
+        // Only apply/commit data that actually came from a successful fetch.
+        // A failed read leaves its slice untouched in both state and cache,
+        // so a permission error or network blip can never wipe newer data.
+        if (fetchOk.requests) {
+          setRequests(reqWithOverrides);
+          localStorage.setItem('registrationRequests', JSON.stringify(reqWithOverrides));
+        }
+        if (fetchOk.users) {
+          setUsers(firebaseUsers);
+          localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(firebaseUsers)));
+        }
+        if (fetchOk.feedback) {
+          setFeedback(mergedFeedback);
+          setAllFeedbackEntries(fullFeedbackEntries);
+          localStorage.setItem('feedbackData', JSON.stringify(fullFeedbackEntries));
+        }
         setUpdateApprovals(firebaseApprovals);
-        setFeedback(mergedFeedback);
-        setAllFeedbackEntries(fullFeedbackEntries);
         if (firebaseAuditTrail.length > 0) {
           setAuditTrail(firebaseAuditTrail);
           localStorage.setItem('adminAuditTrail', JSON.stringify(firebaseAuditTrail));
@@ -1972,11 +2050,8 @@ function App() {
             detail: prev.detail || 'Using browser audit history',
           }));
         }
-        localStorage.setItem('registrationRequests', JSON.stringify(reqWithOverrides));
-        localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(firebaseUsers)));
-        localStorage.setItem('feedbackData', JSON.stringify(fullFeedbackEntries));
         setAdminDataHealth({
-          source: firebaseUsers.length > 0 || firebaseRequests.length > 0 || firebaseApprovals.length > 0 || firebaseFeedback.length > 0 ? 'firebase+local' : 'local',
+          source: fetchOk.requests || fetchOk.users || fetchOk.feedback || firebaseApprovals.length > 0 ? 'firebase+local' : 'local',
           lastSyncAt: new Date().toISOString(),
           firebaseReachable: true,
         });
@@ -2032,6 +2107,26 @@ function App() {
     const writeUsersLocal = (nextUsers) => {
       setUsers(nextUsers);
       localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(nextUsers)));
+    };
+
+    const loadMoreAdminUsers = async () => {
+      if (!adminUsersHasMore || !adminUsersCursor || adminUsersLoadingMore) return;
+      setAdminUsersLoadingMore(true);
+      try {
+        const nextPage = await fetchAdminUsersPage({ cursor: adminUsersCursor });
+        setUsers((prev) => {
+          const next = [...prev, ...nextPage.users];
+          localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(next)));
+          return next;
+        });
+        setAdminUsersCursor(nextPage.cursor);
+        setAdminUsersHasMore(nextPage.hasMore);
+      } catch (e) {
+        void e;
+        pushToast('Users page load nahi ho payi. Dobara try karein.', 'error');
+      } finally {
+        setAdminUsersLoadingMore(false);
+      }
     };
 
     const toDateInputValue = (value) => {
@@ -2523,36 +2618,40 @@ function App() {
       });
     };
 
-    const startEditUser = (u) => {
-      setEditingUserId(resolveEditToken(u));
+    const startEditUser = async (u) => {
+      // List pages skip heavy payloads; fetch the full doc before editing so
+      // profile/bank fields don't get blanked out on save.
+      const full = u?.id ? await fetchAdminUserDetail(u.id).catch(() => null) : null;
+      const source = full || u;
+      setEditingUserId(resolveEditToken(source));
       setEditUser({
-        dealerCode: u.dealerCode || '',
-        dealerName: u.dealerName || '',
-        mobile: u.mobile || '',
-        email: u.email || '',
-        package: u.package || '',
-        validFrom: toDateInputValue(u.validFrom),
-        validTill: toDateInputValue(u.validTill),
-        pin: u.pin || '',
-        role: u.role || 'operator',
-        status: u.status || 'active',
+        dealerCode: source.dealerCode || '',
+        dealerName: source.dealerName || '',
+        mobile: source.mobile || '',
+        email: source.email || '',
+        package: source.package || '',
+        validFrom: toDateInputValue(source.validFrom),
+        validTill: toDateInputValue(source.validTill),
+        pin: source.pin || '',
+        role: source.role || 'operator',
+        status: source.status || 'active',
         profileData: {
-          ...(u.profileData || {}),
-          distributorCode: u.profileData?.distributorCode || '',
-          distributorName: u.profileData?.distributorName || '',
-          contact: u.profileData?.contact || '',
-          email: u.profileData?.email || '',
-          gst: u.profileData?.gst || '',
-          address: u.profileData?.address || '',
-          photoDataUrl: u.profileData?.photoDataUrl || '',
-          paymentQrDataUrl: u.profileData?.paymentQrDataUrl || '',
+          ...(source.profileData || {}),
+          distributorCode: source.profileData?.distributorCode || '',
+          distributorName: source.profileData?.distributorName || '',
+          contact: source.profileData?.contact || '',
+          email: source.profileData?.email || '',
+          gst: source.profileData?.gst || '',
+          address: source.profileData?.address || '',
+          photoDataUrl: source.profileData?.photoDataUrl || '',
+          paymentQrDataUrl: source.profileData?.paymentQrDataUrl || '',
         },
         bankDetailsData: {
-          ...(u.bankDetailsData || {}),
-          bankName: u.bankDetailsData?.bankName || '',
-          branch: u.bankDetailsData?.branch || '',
-          accountNo: u.bankDetailsData?.accountNo || '',
-          ifsc: u.bankDetailsData?.ifsc || '',
+          ...(source.bankDetailsData || {}),
+          bankName: source.bankDetailsData?.bankName || '',
+          branch: source.bankDetailsData?.branch || '',
+          accountNo: source.bankDetailsData?.accountNo || '',
+          ifsc: source.bankDetailsData?.ifsc || '',
         },
       });
     };
@@ -2591,21 +2690,22 @@ function App() {
         });
         setLoggedInUser((currentUser) => {
           if (!currentUser || (currentUser.id !== targetUser.id && String(currentUser.dealerCode || '').trim() !== String(targetUser.dealerCode || '').trim())) return currentUser;
-          return {
-            ...currentUser,
-            dealerCode: editUser.dealerCode.trim(),
-            dealerName: editUser.dealerName.trim(),
-            mobile: editUser.mobile.trim(),
-            email: editUser.email.trim(),
-            package: editUser.package,
-            validFrom: validFromIso,
-            validTill: validTillIso,
-            pin: editUser.pin.trim(),
-            role: editUser.role,
-            status: editUser.status,
-            profileData: { ...editUser.profileData },
-            bankDetailsData: { ...editUser.bankDetailsData },
-          };
+        const safeCurrentUser = sanitizeUserForCache({
+          ...currentUser,
+          dealerCode: editUser.dealerCode.trim(),
+          dealerName: editUser.dealerName.trim(),
+          mobile: editUser.mobile.trim(),
+          email: editUser.email.trim(),
+          package: editUser.package,
+          validFrom: validFromIso,
+          validTill: validTillIso,
+          pin: editUser.pin.trim(),
+          role: editUser.role,
+          status: editUser.status,
+          profileData: { ...editUser.profileData },
+          bankDetailsData: { ...editUser.bankDetailsData },
+        });
+        return safeCurrentUser;
         });
         setEditingUserId('');
         await loadData();
@@ -2638,9 +2738,10 @@ function App() {
         writeUsersLocal(nextUsers);
         const nextEditedUser = nextUsers.find((u) => isSameUserByToken(u, editingUserId));
         if (nextEditedUser) {
+          const safeNextEditedUser = sanitizeUserForCache(nextEditedUser);
           setLoggedInUser((currentUser) => (
             currentUser && (currentUser.id === nextEditedUser.id || String(currentUser.dealerCode || '').trim() === String(nextEditedUser.dealerCode || '').trim())
-              ? nextEditedUser
+              ? safeNextEditedUser
               : currentUser
           ));
         }
@@ -2892,6 +2993,7 @@ function App() {
               pendingDictionaryRequests: nextPendingDictionaryRequests,
               updatedAt: serverTimestamp(),
             });
+            mirrorUserPatchToSubcollections(targetUser.id, { pendingDictionaryRequests: nextPendingDictionaryRequests }).forEach((p) => { void p.catch(() => {}); });
           }
           const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
           if (approvalDocId) {
@@ -3052,6 +3154,7 @@ function App() {
               pendingDictionaryRequests: nextPendingDictionaryRequests,
               updatedAt: serverTimestamp(),
             });
+            mirrorUserPatchToSubcollections(targetUser.id, { pendingDictionaryRequests: nextPendingDictionaryRequests }).forEach((p) => { void p.catch(() => {}); });
           } else {
             await updateDoc(doc(db, 'users', targetUser.id), {
               approvalStatus: nextStatus,
@@ -4499,7 +4602,7 @@ function App() {
                   <th>Bank Updated</th>
                   <th>Rate Updated</th>
                   <th>Header Updated</th>
-                  <th>Login Devices</th>
+                  <th>Login Devices <span title="Convenience only — user localStorage clear karke naya deviceId le sakta hai; strong security ke liye App Check / security rules chahiye.">ⓘ</span></th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -4561,7 +4664,10 @@ function App() {
                         </td>
                         <td>
                           <div className="admin-actions">
-                            <button onClick={() => setDetailView({ title: `User - ${u?.dealerCode || ''}`, data: u, noteKey: `user:${u?.id || u?.dealerCode}:general` })}>View</button>
+                            <button onClick={async () => {
+                              const detail = await fetchAdminUserDetail(u.id).catch(() => null);
+                              setDetailView({ title: `User - ${u?.dealerCode || ''}`, data: detail || u, noteKey: `user:${u?.id || u?.dealerCode}:general` });
+                            }}>View</button>
                             <button onClick={() => startEditUser(u)} disabled={!canMutateAdminData}>Edit</button>
                             <button onClick={() => toggleUserStatus(u)} disabled={!canMutateAdminData}>
                               {u.status === 'active' ? 'Disable' : 'Enable'}
@@ -4576,6 +4682,13 @@ function App() {
               </tbody>
             </table>
           </div>
+          {adminUsersHasMore && (
+            <div className="admin-section" style={{ textAlign: 'center' }}>
+              <button type="button" onClick={loadMoreAdminUsers} disabled={adminUsersLoadingMore}>
+                {adminUsersLoadingMore ? 'Loading…' : `Load more users (${users.length} loaded)`}
+              </button>
+            </div>
+          )}
         </div>
         )}
 
@@ -8370,6 +8483,15 @@ function App() {
   const pendingUserApprovalTypes = Array.from(new Set([...pendingTypesFromUpdates, ...pendingTypesFromStatus]));
   const deliveryAreaUpdates = Array.isArray(loggedInUser?.deliveryAreaUpdates) ? loggedInUser.deliveryAreaUpdates : [];
   const deliveryStaffUpdates = Array.isArray(loggedInUser?.deliveryStaffUpdates) ? loggedInUser.deliveryStaffUpdates : [];
+  // Central permission engine — single source for all access decisions.
+  // (Declared early: isPlanExpired is referenced by blocks below.)
+  const accessState = getAccessState(loggedInUser, {
+    isLoggedIn,
+    hasWorkingData: Array.isArray(parsedData) && parsedData.length > 0,
+  });
+  const isPlanExpired = accessState.isPlanExpired;
+  const hasWorkingData = accessState.hasWorkingData;
+  const hasHindiPackageAccess = accessState.hasHindiPackageAccess;
   const navbarPackageName = formatPackageNameForNavbar(loggedInUser?.package);
   const packageValidityText = loggedInUser?.validTill
     ? isPlanExpired
@@ -8505,7 +8627,7 @@ function App() {
     }
     return source.slice(0, 2).toUpperCase();
   })();
-  const userAvatarImage = profileData.photoDataUrl || '';
+  const userAvatarImage = loggedInUser?.profileData?.photoDataUrl || '';
   const remainingDays = getRemainingDays(loggedInUser?.validTill);
   const renewalUrgencyLabel = isPlanExpired
     ? 'Plan expired. Renew to unlock tools again.'
@@ -8520,8 +8642,6 @@ function App() {
             : remainingDays <= 7
               ? `${remainingDays} days left. Renewal recommended.`
               : `${remainingDays} days left on current plan.`;
-  const hasWorkingData = Array.isArray(parsedData) && parsedData.length > 0;
-  const hasHindiPackageAccess = isHindiEnterprisePackage(loggedInUser?.package);
   const userMenuPackageTips = hasHindiPackageAccess
     ? [
         {

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,5 +13,19 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+
+// Persistent local cache lets Firestore reads (dictionary, attendance, etc.)
+// resolve instantly from cache when the backend is unreachable (offline /
+// flaky network) instead of hanging ~10s and throwing "client is offline".
+let firestoreInstance;
+try {
+  firestoreInstance = initializeFirestore(app, {
+    localCache: persistentLocalCache({}),
+  });
+} catch {
+  // Already initialized (HMR / tests) — fall back to the default instance.
+  firestoreInstance = getFirestore(app);
+}
+
+export const db = firestoreInstance;
 export const auth = getAuth(app);
