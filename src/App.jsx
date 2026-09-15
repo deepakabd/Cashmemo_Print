@@ -158,6 +158,7 @@ import {
   markUserExpiredIfDue,
 } from './auth/userAuth';
 import { mirrorUserPatchToSubcollections } from './services/userSubcollections';
+import { fetchFirestoreCollectionRest } from './services/firestoreRest';
 import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
 import {
   readUsersCache as readUsersData,
@@ -1883,6 +1884,25 @@ function App() {
     };
 //test check
     const loadData = async () => {
+      const readWithTimeout = (operation, label) => Promise.race([
+        operation,
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error(`${label} read timed out after 4 seconds.`)), 4000);
+        }),
+      ]);
+
+      // The admin panel must never remain on the initial "unknown" state
+      // forever when Firestore's WebChannel is stalled by a network, rule, or
+      // browser-cache issue.
+      if (!auth.currentUser) {
+        setAdminDataHealth({
+          source: 'unavailable',
+          lastSyncAt: new Date().toISOString(),
+          firebaseReachable: false,
+          error: 'No Firebase Authentication session. Log out, then sign in again with the Firebase admin account.',
+        });
+        return;
+      }
       try {
         let firebaseRequests = [];
         let firebaseUsers = [];
@@ -1890,54 +1910,51 @@ function App() {
         let firebaseFeedback = [];
         let firebaseAuditTrail = [];
         const fetchOk = { requests: false, users: false, feedback: false };
+        const fetchErrors = {};
 
         try {
-          const reqSnap = await getDocs(collection(db, 'registrationRequests'));
-          firebaseRequests = reqSnap.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-            createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
-            approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
-          }));
+          firebaseRequests = await fetchFirestoreCollectionRest('registrationRequests');
           fetchOk.requests = true;
-        } catch (e) { void e; }
+        } catch (e) {
+          try {
+            firebaseRequests = await fetchFirestoreCollectionRest('registrationRequests');
+            fetchOk.requests = true;
+            fetchErrors.requests = 'Loaded with REST fallback.';
+          } catch {
+            fetchErrors.requests = e?.message || 'Registration requests could not be read.';
+          }
+        }
 
         try {
-          const firstPage = await fetchAdminUsersPage();
-          firebaseUsers = firstPage.users;
-          setAdminUsersCursor(firstPage.cursor);
-          setAdminUsersHasMore(firstPage.hasMore);
+          firebaseUsers = await fetchFirestoreCollectionRest('users');
+          setAdminUsersCursor(null);
+          setAdminUsersHasMore(false);
           fetchOk.users = true;
-        } catch (e) { void e; }
+        } catch (e) {
+          try {
+            firebaseUsers = await fetchFirestoreCollectionRest('users');
+            setAdminUsersCursor(null);
+            setAdminUsersHasMore(false);
+            fetchOk.users = true;
+            fetchErrors.users = 'Loaded with REST fallback.';
+          } catch {
+            fetchErrors.users = e?.message || 'Users could not be read.';
+          }
+        }
 
         try {
-          const approvalSnap = await getDocs(collection(db, 'updateApprovals'));
-          firebaseApprovals = approvalSnap.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-            requestedAt: d.data()?.requestedAt?.toDate?.()?.toISOString?.() || d.data()?.requestedAt || '',
-            approvedAt: d.data()?.approvedAt?.toDate?.()?.toISOString?.() || d.data()?.approvedAt || '',
-            rejectedAt: d.data()?.rejectedAt?.toDate?.()?.toISOString?.() || d.data()?.rejectedAt || '',
-          }));
-        } catch (e) { void e; }
+          firebaseApprovals = await fetchFirestoreCollectionRest('updateApprovals');
+        } catch (e) {
+          void e;
+        }
 
         try {
-          const feedbackSnap = await getDocs(collection(db, 'feedback'));
-          firebaseFeedback = feedbackSnap.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-            createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
-          }));
+          firebaseFeedback = await fetchFirestoreCollectionRest('feedback');
           fetchOk.feedback = true;
-        } catch (e) { void e; }
+        } catch (e) { fetchErrors.feedback = e?.message || 'Feedback could not be read.'; }
 
         try {
-          const auditSnap = await getDocs(collection(db, ADMIN_AUDIT_COLLECTION));
-          firebaseAuditTrail = auditSnap.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-            createdAt: d.data()?.createdAt?.toDate?.()?.toISOString?.() || d.data()?.createdAt || '',
-          }))
+          firebaseAuditTrail = (await fetchFirestoreCollectionRest(ADMIN_AUDIT_COLLECTION))
             .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
             .slice(0, 150);
         } catch (e) { void e; }
@@ -2054,8 +2071,9 @@ function App() {
           source: fetchOk.requests || fetchOk.users || fetchOk.feedback || firebaseApprovals.length > 0 ? 'firebase+local' : 'local',
           lastSyncAt: new Date().toISOString(),
           firebaseReachable: true,
+          error: Object.values(fetchErrors).filter(Boolean).join(' '),
         });
-      } catch {
+      } catch (error) {
         try {
           const reqRaw = localStorage.getItem('registrationRequests');
           const reqList = reqRaw ? JSON.parse(reqRaw) : [];
@@ -2084,6 +2102,7 @@ function App() {
             source: 'local',
             lastSyncAt: new Date().toISOString(),
             firebaseReachable: false,
+            error: error?.message || 'Firestore data could not be read. Check Firebase rules and admin login.',
           });
         } catch {
           setRequests([]);
@@ -2099,6 +2118,7 @@ function App() {
             source: 'unavailable',
             lastSyncAt: new Date().toISOString(),
             firebaseReachable: false,
+            error: error?.message || 'Admin data sync unavailable.',
           });
         }
       }
@@ -3320,20 +3340,33 @@ function App() {
       logAdminActivity('feedback_resolved', { id: item.id, resolved });
     };
 
-    const openDetailView = (user, type) => {
+    const openDetailView = async (user, type) => {
+      // Admin list rows intentionally contain only lightweight fields. Fetch
+      // the complete record on demand before opening a profile/bank/rate view.
+      // Without this, the controls below were hidden because those fields are
+      // not part of the paginated list payload.
+      let fullUser = user;
+      if (user?.id) {
+        try {
+          const fetched = await fetchAdminUserDetail(user.id);
+          if (fetched) fullUser = fetched;
+        } catch (error) {
+          pushToast('Full user details Firebase se load nahi ho paayi; available data dikhaya gaya hai.', 'error');
+        }
+      }
       if (type === 'profile') {
-        setDetailView({ title: `Profile - ${user?.dealerCode || ''}`, data: user?.profileData || {}, noteKey: `user:${user?.id || user?.dealerCode}:profile` });
+        setDetailView({ title: `Profile - ${fullUser?.dealerCode || ''}`, data: fullUser?.profileData || {}, noteKey: `user:${fullUser?.id || fullUser?.dealerCode}:profile` });
         return;
       }
       if (type === 'bank') {
-        setDetailView({ title: `Bank - ${user?.dealerCode || ''}`, data: user?.bankDetailsData || {}, noteKey: `user:${user?.id || user?.dealerCode}:bank` });
+        setDetailView({ title: `Bank - ${fullUser?.dealerCode || ''}`, data: fullUser?.bankDetailsData || {}, noteKey: `user:${fullUser?.id || fullUser?.dealerCode}:bank` });
         return;
       }
       if (type === 'header') {
-        setDetailView({ title: `Header - ${user?.dealerCode || ''}`, data: user?.hindiHeaderData || {}, noteKey: `user:${user?.id || user?.dealerCode}:header` });
+        setDetailView({ title: `Header - ${fullUser?.dealerCode || ''}`, data: fullUser?.hindiHeaderData || {}, noteKey: `user:${fullUser?.id || fullUser?.dealerCode}:header` });
         return;
       }
-      setDetailView({ title: `Rates - ${user?.dealerCode || ''}`, data: user?.ratesData || [], noteKey: `user:${user?.id || user?.dealerCode}:rates` });
+      setDetailView({ title: `Rates - ${fullUser?.dealerCode || ''}`, data: fullUser?.ratesData || [], noteKey: `user:${fullUser?.id || fullUser?.dealerCode}:rates` });
     };
 
     const pendingRegistrationRequests = requests.filter((r) => {
@@ -4422,6 +4455,12 @@ function App() {
                     <span>Audit Sync</span>
                     <strong>{`${auditSyncState.source || 'local fallback'}${auditSyncState.lastSyncAt ? ` - ${formatDisplayDate(auditSyncState.lastSyncAt)}` : ''}`}</strong>
                   </div>
+                  {adminDataHealth.error && (
+                    <div className="admin-health-card">
+                      <span>Sync Detail</span>
+                      <strong title={adminDataHealth.error}>{adminDataHealth.error}</strong>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -4630,10 +4669,10 @@ function App() {
                           {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
                         </td>
                         <td>{maskSecret(u.pin, 0)}</td>
-                        <td>{u.profileData ? <button onClick={() => openDetailView(u, 'profile')}>View</button> : '-'}</td>
-                        <td>{u.bankDetailsData ? <button onClick={() => openDetailView(u, 'bank')}>View</button> : '-'}</td>
-                        <td>{Array.isArray(u.ratesData) && u.ratesData.length > 0 ? <button onClick={() => openDetailView(u, 'rates')}>View</button> : '-'}</td>
-                        <td>{u.hindiHeaderData ? <button onClick={() => openDetailView(u, 'header')}>View</button> : '-'}</td>
+                        <td><button type="button" onClick={() => { void openDetailView(u, 'profile'); }}>View</button></td>
+                        <td><button type="button" onClick={() => { void openDetailView(u, 'bank'); }}>View</button></td>
+                        <td><button type="button" onClick={() => { void openDetailView(u, 'rates'); }}>View</button></td>
+                        <td><button type="button" onClick={() => { void openDetailView(u, 'header'); }}>View</button></td>
                         <td>
                           {loginDevices.length === 0 ? (
                             <span className="admin-empty-device">No login yet</span>

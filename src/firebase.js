@@ -21,6 +21,10 @@ let firestoreInstance;
 try {
   firestoreInstance = initializeFirestore(app, {
     localCache: persistentLocalCache({}),
+    // Some browsers/networks keep Firestore's streaming WebChannel open but
+    // never deliver query snapshots. Long polling avoids that transport path
+    // and lets admin collection reads complete reliably.
+    experimentalForceLongPolling: true,
   });
 } catch {
   // Already initialized (HMR / tests) — fall back to the default instance.
