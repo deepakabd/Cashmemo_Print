@@ -25,6 +25,7 @@ import {
 } from "../utils/adminUiHelpers";
 import { isUserExpired } from "../utils/packageHelpers";
 import { mergeCashMemoLabelSettings } from "../utils/cashmemoHelpers";
+import { fetchFirestoreCollectionRest, fetchFirestoreDocumentRest } from "../services/firestoreRest";
 
 export const mapFirestoreUserDoc = (docId, docData, dealerCode) => ({
   id: docId,
@@ -227,14 +228,37 @@ export const fetchAdminUsersPage = async ({ pageSize = ADMIN_USERS_PAGE_SIZE, cu
   const usersRef = collection(db, "users");
   const constraints = [orderBy("dealerCode"), limit(pageSize + 1)];
   if (cursor) constraints.push(startAfter(cursor));
-  const snap = await getDocs(query(usersRef, ...constraints));
+  let snap;
+  let usedFallback = false;
+  try {
+    snap = await getDocs(query(usersRef, ...constraints));
+  } catch (queryError) {
+    // Older Firestore rule sets can allow a collection read while rejecting
+    // an ordered query.  Keep the admin usable in that case instead of
+    // silently rendering every count as zero.
+    if (cursor) throw queryError;
+    try {
+      snap = await getDocs(usersRef);
+      usedFallback = true;
+    } catch (collectionError) {
+      try {
+        const users = await fetchFirestoreCollectionRest('users', pageSize);
+        return { users, cursor: null, hasMore: false, usedFallback: true };
+      } catch {
+        const message = collectionError?.message || queryError?.message || "Unable to read users from Firestore.";
+        throw new Error(message);
+      }
+    }
+  }
 
-  const docs = snap.docs;
+  const docs = usedFallback
+    ? [...snap.docs].sort((a, b) => String(a.data()?.dealerCode || "").localeCompare(String(b.data()?.dealerCode || "")))
+    : snap.docs;
   const hasMore = docs.length > pageSize;
   const pageDocs = hasMore ? docs.slice(0, pageSize) : docs;
   const users = pageDocs.map((docSnap) => mapAdminUserDoc(docSnap, ADMIN_USER_LIST_FIELDS));
   const nextCursor = pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null;
-  return { users, cursor: nextCursor, hasMore };
+  return { users, cursor: nextCursor, hasMore, usedFallback };
 };
 
 /**
@@ -243,13 +267,15 @@ export const fetchAdminUsersPage = async ({ pageSize = ADMIN_USERS_PAGE_SIZE, cu
  */
 export const fetchAdminUserDetail = async (userId) => {
   if (!userId) return null;
-  const snap = await getDoc(doc(db, "users", userId));
-  if (!snap.exists()) return null;
-  const detail = mapAdminUserDoc(snap, ADMIN_USER_DETAIL_FIELDS);
+  let detail;
   try {
-    const sub = await readUserSubcollections(userId);
-    return mergeUserDocWithSubcollections(detail, sub);
+    const fallback = await fetchFirestoreDocumentRest('users', userId);
+    if (!fallback) return null;
+    detail = mapFirestoreUserDoc(fallback.id, fallback, fallback.dealerCode || '');
   } catch {
-    return detail;
+    const snap = await getDoc(doc(db, "users", userId));
+    if (!snap.exists()) return null;
+    detail = mapAdminUserDoc(snap, ADMIN_USER_DETAIL_FIELDS);
   }
+  return detail;
 };

@@ -54,7 +54,7 @@ export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } 
     return Array.isArray(parsed) ? parsed : [];
   });
   const [adminNotifications, setAdminNotifications] = useState([]);
-  const [adminDataHealth, setAdminDataHealth] = useState({ source: 'unknown', lastSyncAt: '', firebaseReachable: false });
+  const [adminDataHealth, setAdminDataHealth] = useState({ source: 'unknown', lastSyncAt: '', firebaseReachable: false, error: '' });
   const [hiddenApprovalIds, setHiddenApprovalIds] = useState([]);
   const [registrationStatusOverrides, setRegistrationStatusOverrides] = useState(() => {
     const parsed = readStorageValue('registrationStatusOverrides', {});
