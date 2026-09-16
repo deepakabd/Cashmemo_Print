@@ -612,9 +612,6 @@ export const normalizeData = (data) => data.map((row) => {
   return newRow;
 });
 
-export const ADMIN_ROLE_PERMISSIONS = {
-  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
-  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'announcements'], mutate: true },
-  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'announcements'], mutate: true },
-  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user'], mutate: false },
-};
+// Single source of truth: re-exported from appConfig so the two copies can
+// never drift apart.
+export { ADMIN_ROLE_PERMISSIONS } from './appConfig';

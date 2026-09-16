@@ -14,6 +14,11 @@ dist-ssr
 .env.*
 
 !.env.example
+# Service account credentials for the login API — NEVER commit these.
+serviceAccount*.json
+*service-account*.json
+service-account*.json
+firebase-adminsdk*.json
 coverage
 .cache
 .vite

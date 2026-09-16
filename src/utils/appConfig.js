@@ -91,9 +91,11 @@ export const HEADER_MAPPING = {
   ekycstatus: 'EKYC Status',
 };
 
+// Admin panel is a single-role workspace: there is exactly one role, `admin`.
+// `viewer` is the view-only fallback for a missing/unknown role — it must never
+// be widened to `admin`. Keep this map and `viewer` in sync with the Firestore
+// Security Rules admin check; the frontend copy is UI guidance, not security.
 export const ADMIN_ROLE_PERMISSIONS = {
-  'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
-  'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'announcements'], mutate: true },
-  'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'announcements'], mutate: true },
+  admin: { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
   viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user'], mutate: false },
 };

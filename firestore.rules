@@ -1,0 +1,143 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------------------
+// Cashmemo Firestore Security Rules
+//
+// These rules are the ACTUAL security boundary. The React app's permission
+// engine (src/app/permissions.js, getAdminTabAccess) only decides what the UI
+// shows — anyone can bypass it from devtools.
+//
+// Auth model after the PIN migration:
+//   * Users sign in with dealer code + PIN via POST /api/login. The server
+//     verifies a scrypt hash and returns a Firebase custom token, which the
+//     client exchanges for a real Auth session. So `request.auth` is populated
+//     for both admins and dealers.
+//   * The token carries custom claims: dealerCode, role, accountActive, planActive.
+//   * Admins sign in with Firebase Auth email/password (adminSignIn).
+//
+// Admin identity is derived from the `role` custom claim, NOT from the client.
+// Set it with:
+//   admin.auth().setCustomUserClaims(uid, { role: 'admin' })
+//
+// DEPLOY:  firebase deploy --only firestore:rules
+// ---------------------------------------------------------------------------
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers -----------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Admins opt in via a custom claim set through the Admin SDK.
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.role == 'admin';
+    }
+
+    // Account/plan state comes from the verified token, so a client cannot
+    // claim to be active by patching its own document.
+    function isActiveAccount() {
+      return isSignedIn() && request.auth.token.accountActive == true;
+    }
+
+    function hasActivePlan() {
+      return isSignedIn() && request.auth.token.planActive == true;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // The signed-in dealer's own document, matched by its dealerCode claim.
+    function isOwnDealerDoc() {
+      return isSignedIn()
+        && request.auth.token.dealerCode != null
+        && request.auth.token.dealerCode == resource.data.dealerCode;
+    }
+
+    // A user may only ever touch their own credential material in a document
+    // they are otherwise allowed to write. Plaintext `pin` is rejected outright.
+    function pinFieldsSafe() {
+      return !request.resource.data.keys().hasAny(['pin']);
+    }
+
+    // ---- users -------------------------------------------------------------
+
+    match /users/{userId} {
+
+      // A dealer may read only their own profile. Admins read all.
+      // Anonymous reads are denied: this collection used to hold plaintext PINs
+      // and must never be enumerable from the public registration form again.
+      allow read: if isAdmin() || isSelf(userId) || isOwnDealerDoc();
+
+      // Dealers cannot create their own user document; registration goes
+      // through `registrationRequests` and is actioned by an admin.
+      allow create, delete: if isAdmin();
+
+      // Update is a single rule covering both cases (Firestore ORs multiple
+      // `allow update` statements, so a careless second rule would grant more
+      // than intended):
+      //   * an admin may update anything;
+      //   * a dealer may update only their own doc, only while their account is
+      //     active, and never the credential/privilege fields.
+      allow update: if (isAdmin() && pinFieldsSafe())
+        || (
+          (isSelf(userId) || isOwnDealerDoc())
+          && isActiveAccount()
+          && pinFieldsSafe()
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['role', 'status', 'package', 'packageDays', 'validFrom', 'validTill', 'pinHash', 'pin', 'authUid', 'approvalStatus'])
+        );
+    }
+
+    // ---- registration requests --------------------------------------------
+
+    // Created by an unauthenticated visitor during sign-up, then actioned by an
+    // admin. Reads are admin-only so pending applications (which include contact
+    // details) are not publicly listable.
+    match /registrationRequests/{requestId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ---- update approvals --------------------------------------------------
+
+    match /updateApprovals/{approvalId} {
+      allow read: if isAdmin() || (isSignedIn() && isActiveAccount());
+      allow create: if isSignedIn() && isActiveAccount() && hasActivePlan();
+      allow update, delete: if isAdmin();
+    }
+
+    // ---- shared dictionary / settings --------------------------------------
+
+    // Translation dictionary is used by all signed-in clients; only admins and
+    // the dictionary approval flow may write to it.
+    match /translationDictionary/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---- admin-only collections -------------------------------------------
+
+    match /adminAuditTrail/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /announcements/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---- default deny ------------------------------------------------------
+
+    // Anything not explicitly matched above is denied. This is intentional:
+    // adding a new collection requires an explicit rule decision.
+  }
+}

@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { addDoc, collection, getDocs, query, serverTimestamp, where } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 import { db } from '../firebase';
+import { buildPinWritePatch } from '../auth/userAuth';
 import BrandMark from './BrandMark';
 
 export const RegisterPanel = ({
   packageOptions,
   packagePricing,
   paymentUpiId,
-  computeValidityDates,
   pushToast,
   logRecentActivity,
   onClose,
@@ -66,33 +66,21 @@ export const RegisterPanel = ({
     };
     let requestRef = null;
     try {
-      const usersRef = collection(db, 'users');
-      const existingQuery = query(usersRef, where('dealerCode', '==', form.dealerCode.trim()));
-      const existing = await getDocs(existingQuery);
-      if (!existing.empty) {
-        pushToast('You already have a registered account. If you forgot your PIN, contact admin.', 'info');
-        setIsSubmitting(false);
-        return;
-      }
+      // NOTE: intentionally does NOT query the `users` collection.
+      //
+      // That read used to run unauthenticated to detect duplicate dealer codes,
+      // which meant any anonymous visitor could enumerate `users` (and read the
+      // plaintext PIN field it used to contain). Duplicate detection is now the
+      // admin's job at approval time, where the request is already reviewed.
+      //
+      // The PIN is hashed server-side, so no readable credential is written.
+      const pinPatch = await buildPinWritePatch(form.pin);
 
       requestRef = await addDoc(collection(db, 'registrationRequests'), {
         ...request,
-        createdAt: serverTimestamp(),
-      });
-
-      const validity = computeValidityDates(form.package);
-      await addDoc(usersRef, {
-        dealerCode: form.dealerCode.trim(),
-        dealerName: form.dealerName.trim(),
-        mobile: form.mobile.trim(),
-        email: form.email.trim(),
-        pin: form.pin.trim(),
-        package: form.package,
-        packageDays: validity.packageDays,
-        validFrom: validity.validFrom,
-        validTill: validity.validTill,
-        role: 'operator',
-        status: 'pending',
+        // Never store the plaintext PIN on the request document either.
+        pin: null,
+        ...pinPatch,
         createdAt: serverTimestamp(),
       });
     } catch {

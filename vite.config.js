@@ -3,10 +3,28 @@ import react from '@vitejs/plugin-react'
 import compiler from 'babel-plugin-react-compiler'
 import { readJsonBody, sendJson, translateText } from './server/translateProxy.js'
 import { rateLimit, getClientIp, validateTranslationInput } from './server/rateLimiter.js'
+import { LoginError, verifyDealerLogin } from './server/loginService.js'
+import { validateLoginInput, LOGIN_RATE_LIMIT } from './api/login.js'
+import { buildPinHashPatch } from './server/pinAdmin.js'
+import { checkLoginServiceConfig } from './server/loginConfigCheck.js'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+
+  // loadEnv returns values without populating process.env. The server-side
+  // Admin SDK reads process.env, so explicitly forward only its configuration.
+  // These credentials must never be exposed through Vite's client defines.
+  for (const key of [
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'FIREBASE_SERVICE_ACCOUNT',
+    'FIREBASE_PROJECT_ID',
+    'VITE_FIREBASE_PROJECT_ID',
+  ]) {
+    if (process.env[key] === undefined && env[key] !== undefined) {
+      process.env[key] = env[key]
+    }
+  }
 
   return {
     plugins: [
@@ -60,6 +78,76 @@ export default defineConfig(({ mode }) => {
             }
           })
 
+        },
+      },
+      {
+        name: 'login-api-dev-route',
+        configureServer(server) {
+          // Warn at boot, not just at the first failed login.
+          checkLoginServiceConfig();
+
+          server.middlewares.use('/api/login', async (req, res) => {
+            if (req.method !== 'POST') {
+              res.setHeader('Allow', 'POST')
+              return sendJson(res, 405, { error: 'Method not allowed' })
+            }
+
+            const clientIp = getClientIp(req)
+            const limitResult = rateLimit(clientIp, LOGIN_RATE_LIMIT)
+            if (!limitResult.allowed) {
+              res.setHeader('Retry-After', String(Math.ceil((limitResult.resetAt - Date.now()) / 1000)))
+              return sendJson(res, 429, { error: 'Too many login attempts. Please try again later.', code: 'rate-limited' })
+            }
+
+            try {
+              const body = await readJsonBody(req)
+
+              const validationError = validateLoginInput(body)
+              if (validationError) {
+                return sendJson(res, 400, { error: validationError, code: 'invalid-input' })
+              }
+
+              const result = await verifyDealerLogin({
+                dealerCode: body.dealerCode,
+                pin: body.pin,
+              })
+
+              return sendJson(res, 200, result)
+            } catch (error) {
+              if (error instanceof LoginError) {
+                return sendJson(res, error.status, { error: error.message, code: error.code })
+              }
+              console.error('Login failed:', error instanceof Error ? error.message : error)
+              return sendJson(res, 500, { error: 'Login failed. Please try again.', code: 'server-error' })
+            }
+          })
+
+          server.middlewares.use('/api/pin-hash', async (req, res) => {
+            if (req.method !== 'POST') {
+              res.setHeader('Allow', 'POST')
+              return sendJson(res, 405, { error: 'Method not allowed' })
+            }
+
+            const limitResult = rateLimit(getClientIp(req), { windowMs: 60 * 1000, maxRequests: 30 })
+            if (!limitResult.allowed) {
+              res.setHeader('Retry-After', String(Math.ceil((limitResult.resetAt - Date.now()) / 1000)))
+              return sendJson(res, 429, { error: 'Too many requests.', code: 'rate-limited' })
+            }
+
+            try {
+              const body = await readJsonBody(req)
+              if (!body?.pin || typeof body.pin !== 'string') {
+                return sendJson(res, 400, { error: 'Missing or invalid "pin" field.', code: 'invalid-input' })
+              }
+              return sendJson(res, 200, await buildPinHashPatch(body.pin))
+            } catch (error) {
+              if (error instanceof LoginError) {
+                return sendJson(res, error.status, { error: error.message, code: error.code })
+              }
+              console.error('PIN hash failed:', error instanceof Error ? error.message : error)
+              return sendJson(res, 500, { error: 'PIN hashing failed.', code: 'server-error' })
+            }
+          })
         },
       },
     ],
