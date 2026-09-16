@@ -27,7 +27,7 @@ export const getAccessState = (user, { isLoggedIn = false, hasWorkingData = fals
     && status !== "expired"
     && !isUserExpired(user);
   const accountActive = authenticated && status !== "disabled" && status !== "pending";
-  const allowed = authenticated && planActive;
+  const allowed = authenticated && accountActive && planActive;
   const hasHindiPackageAccess = isHindiEnterprisePackage(user?.package);
 
   return {
@@ -100,10 +100,33 @@ export const buildPackageAccessBreakdown = ({
   ].filter(Boolean),
 });
 
-export const getAdminTabAccess = () => {
-  const currentRolePermissions = ADMIN_ROLE_PERMISSIONS["super-admin"];
+// ---------------------------------------------------------------------------
+// getAdminTabAccess — admin panel RBAC.
+//
+// Admin panel ek single-role workspace hai, isliye aaj sirf `admin` role exist
+// karta hai. Role NA hone par ya unknown role par sabse kam permission milti
+// hai (view-only fallback) — kabhi bhi full access default nahi hota.
+//
+// NOTE: ye frontend authorization hai. Ye UI ko sahi dikhane ke liye hai, ye
+// security boundary NAHI hai. Firestore Security Rules / trusted backend par
+// bhi same role check hona chahiye, warna user devtools/localStorage patch kar
+// ke UI ko bypass kar sakta hai.
+// ---------------------------------------------------------------------------
+export const ADMIN_ROLE_FALLBACK_KEY = "viewer";
+
+export const resolveAdminRolePermissions = (role) => {
+  const requested = ADMIN_ROLE_PERMISSIONS[String(role || "").trim()];
+  if (requested) return requested;
+  console.warn(`[RBAC] Unknown admin role "${role}" — applying view-only fallback.`);
+  return ADMIN_ROLE_PERMISSIONS[ADMIN_ROLE_FALLBACK_KEY];
+};
+
+export const getAdminTabAccess = (role) => {
+  const permissions = resolveAdminRolePermissions(role);
+
   return {
-    canAccessTab: (tabKey) => currentRolePermissions.tabs.includes(tabKey),
-    canMutateAdminData: Boolean(currentRolePermissions.mutate),
+    role: String(role || "").trim(),
+    canAccessTab: (tabKey) => permissions.tabs.includes(tabKey),
+    canMutateAdminData: Boolean(permissions.mutate),
   };
 };

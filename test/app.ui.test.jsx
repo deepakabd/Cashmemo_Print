@@ -132,7 +132,9 @@ const createPrintWindow = () => {
 };
 
 describe('App UI selection and print flow', () => {
-  it('keeps manual selections across pages and prints selected consumers only', async () => {
+  // Same async print path as the test below (two dynamic imports + 2 rendered
+  // memos), so it needs the same budget when the suite runs with other workers.
+  it('keeps manual selections across pages and prints selected consumers only', { timeout: 20000 }, async () => {
     seedLoggedInUser();
     const printWindow = createPrintWindow();
     window.open = vi.fn(() => printWindow);
@@ -156,9 +158,11 @@ describe('App UI selection and print flow', () => {
       expect(printWindow.writtenHtml).toContain('data-consumer="410001"');
       expect(printWindow.writtenHtml).toContain('data-consumer="410026"');
       expect(printWindow.writtenHtml).not.toContain('data-consumer="410002"');
-    });
+    }, { timeout: 15000 });
   });
 
+  // Printing 30 memos goes through two dynamic imports (react-dom/server + the memo
+  // template), which alone can exceed Vitest's 5s default on a cold module cache.
   it('select all carries to the next page and prints the full filtered set', async () => {
     seedLoggedInUser();
     const printWindow = createPrintWindow();
@@ -184,8 +188,8 @@ describe('App UI selection and print flow', () => {
       expect(matches).toHaveLength(30);
       expect(printWindow.writtenHtml).toContain('data-consumer="410001"');
       expect(printWindow.writtenHtml).toContain('data-consumer="410030"');
-    });
-  });
+    }, { timeout: 15000 });
+  }, 20000);
 
   it('search filters matching consumer, mobile, name, or delivery area values', async () => {
     seedLoggedInUser();

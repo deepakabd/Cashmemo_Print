@@ -149,6 +149,7 @@ import {
   fetchAdminUsersPage,
   fetchAdminUserDetail,
   markUserExpiredIfDue,
+  buildPinWritePatch,
 } from './auth/userAuth';
 import { mirrorUserPatchToSubcollections } from './services/userSubcollections';
 import { fetchFirestoreCollectionRest, retryDeniedFirestoreReads } from './services/firestoreRest';
@@ -869,8 +870,19 @@ function App() {
         firestoreUser = lookup.firestoreUser;
         dealerLookupStatus = lookup.dealerLookupStatus;
       }
-    } catch {
-      pushToast('Firebase login check failed. Please try again.', 'error');
+    } catch (loginError) {
+      const reason = loginError instanceof Error ? loginError.message : '';
+      pushToast(
+        reason === 'login-rate-limited'
+          ? 'Bahut zyada login attempts. Kuch minute baad dobara koshish karein.'
+          : reason === 'login-not-configured'
+            ? 'Login service server par configure nahi hai. Admin se contact kijiye.'
+            // Server returned a specific, actionable setup error — show it.
+            : reason && !reason.startsWith('login-')
+              ? reason
+              : 'Firebase login check failed. Please try again.',
+        'error',
+      );
       setIsUserLoginSubmitting(false);
       return;
     }
@@ -1411,7 +1423,9 @@ function App() {
     } catch (error) {
       pushToast(error?.code === 'auth/network-request-failed'
         ? 'Firebase se connection nahi ho pa raha. Internet/DNS check karein ya mobile hotspot se dobara login karein.'
-        : 'Admin login failed. Check Firebase Authentication credentials.', 'error');
+        : error?.code === 'auth/admin-role-required'
+          ? error.message
+          : 'Admin login failed. Check Firebase Authentication credentials.', 'error');
     }
     setIsAdminLoginSubmitting(false);
   };
@@ -2054,6 +2068,15 @@ function App() {
           const rows = XLSX.utils.sheet_to_json(worksheet);
           const seenDealerCodes = new Set(users.map((user) => String(user?.dealerCode || '').trim().toLowerCase()).filter(Boolean));
           const validationFailures = [];
+          // Hash every row's PIN up front, so nothing plaintext is ever carried
+          // into local storage. Failed hashes simply omit the patch (PIN unset).
+          const pinPatches = new Map(
+            await Promise.all(rows.map(async (row, index) => [
+              index,
+              await buildPinWritePatch(row.pin || row.PIN || ''),
+            ])),
+          );
+
           const importedUsers = rows.reduce((acc, row, index) => {
             const candidate = {
               dealerCode: String(row.dealerCode || row['Dealer Code'] || '').trim(),
@@ -2061,6 +2084,8 @@ function App() {
               mobile: String(row.mobile || row.Mobile || '').trim(),
               email: String(row.email || row.Email || '').trim(),
               package: String(row.package || row.Package || '').trim(),
+              // `pin` is only used for validation below; the hashed patch is
+              // merged in at push time so plaintext is never stored.
               pin: String(row.pin || row.PIN || '').trim(),
               role: String(row.role || row.Role || 'operator').trim().toLowerCase() || 'operator',
               status: String(row.status || row.Status || 'active').trim().toLowerCase() || 'active',
@@ -2085,7 +2110,9 @@ function App() {
               return acc;
             }
             seenDealerCodes.add(candidate.dealerCode.toLowerCase());
-            acc.push(candidate);
+            // Drop the plaintext PIN and store only the hashed patch.
+            const { pin: _plainPin, ...rest } = candidate;
+            acc.push({ ...rest, ...pinPatches.get(index) });
             return acc;
           }, []);
           const nextUsers = [...users, ...importedUsers];
@@ -2119,9 +2146,12 @@ function App() {
       localStorage.setItem('deletedUsersBin', JSON.stringify(nextBin));
     };
 
-    // Admin panel is intentionally a single-admin workspace: every authenticated
-    // admin gets the complete admin permission set.
-    const { canAccessTab, canMutateAdminData } = getAdminTabAccess();
+    // Admin panel is intentionally a single-admin workspace: the only role is
+    // `admin`, and it is only resolved from a real Firebase-authenticated admin
+    // session (`auth.currentUser`). Without that session the engine falls back
+    // to view-only, so a stale `showAdminPanel` flag cannot grant write access.
+    const adminRole = auth?.currentUser ? 'admin' : undefined;
+    const { canAccessTab, canMutateAdminData } = getAdminTabAccess(adminRole);
 
     const registrationStatusOverridesRef = useRef(registrationStatusOverrides);
     const setRegistrationOverride = (id, status) => {
@@ -2197,7 +2227,7 @@ function App() {
             packageDays: validity.packageDays,
             validFrom: validity.validFrom,
             validTill: validity.validTill,
-            pin: req.pin || '',
+            ...(await buildPinWritePatch(req.pin)),
             status: 'active',
             role: existingUser.role || 'operator',
             approvedAt: serverTimestamp(),
@@ -2213,7 +2243,7 @@ function App() {
             packageDays: validity.packageDays,
             validFrom: validity.validFrom,
             validTill: validity.validTill,
-            pin: req.pin || '',
+            ...(await buildPinWritePatch(req.pin)),
             role: 'operator',
             status: 'active',
             approvalStatus: {},
@@ -2302,7 +2332,8 @@ function App() {
           packageDays: validity.packageDays,
           validFrom: validity.validFrom,
           validTill: validity.validTill,
-          pin: newUser.pin.trim(),
+          // PIN is hashed server-side; the plaintext never reaches Firestore.
+          ...(await buildPinWritePatch(newUser.pin)),
           role: newUser.role,
           status: 'active',
           approvalStatus: {},
@@ -2431,7 +2462,9 @@ function App() {
         package: source.package || '',
         validFrom: toDateInputValue(source.validFrom),
         validTill: toDateInputValue(source.validTill),
-        pin: source.pin || '',
+        // The stored PIN is a one-way hash, so it cannot be prefilled. Leaving
+        // this blank keeps the existing PIN untouched on save.
+        pin: '',
         role: source.role || 'operator',
         status: source.status || 'active',
         profileData: {
@@ -2480,7 +2513,7 @@ function App() {
           packageDays: Number.isFinite(diffDays) ? diffDays : fallbackValidity.packageDays,
           validFrom: validFromIso,
           validTill: validTillIso,
-          pin: editUser.pin.trim(),
+          ...(await buildPinWritePatch(editUser.pin)),
           role: editUser.role,
           status: editUser.status,
           profileData: { ...editUser.profileData },
@@ -2498,7 +2531,7 @@ function App() {
           package: editUser.package,
           validFrom: validFromIso,
           validTill: validTillIso,
-          pin: editUser.pin.trim(),
+          // PIN is never mirrored into local/runtime state.
           role: editUser.role,
           status: editUser.status,
           profileData: { ...editUser.profileData },
@@ -2526,7 +2559,7 @@ function App() {
               packageDays: Number.isFinite(diffDays) ? diffDays : fallbackValidity.packageDays,
               validFrom: validFromIso,
               validTill: validTillIso,
-              pin: editUser.pin.trim(),
+              // PIN is never mirrored into local cache.
               role: editUser.role,
               status: editUser.status,
               profileData: { ...editUser.profileData },
@@ -8850,7 +8883,6 @@ function App() {
                 packageOptions={PACKAGE_OPTIONS}
                 packagePricing={PACKAGE_PRICING}
                 paymentUpiId={PAYMENT_UPI_ID}
-                computeValidityDates={computeValidityDates}
                 pushToast={pushToast}
                 logRecentActivity={logRecentActivity}
                 onClose={navigateToHome}
