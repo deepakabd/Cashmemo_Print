@@ -4,6 +4,20 @@ let deniedReads = new WeakMap();
 const pendingReads = new WeakMap();
 export const retryDeniedFirestoreReads = () => { deniedReads = new WeakMap(); };
 
+export const retryFirestoreRequest = async (fn, maxAttempts = 3) => {
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new RangeError('maxAttempts must be a positive integer.');
+  }
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === maxAttempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** attempt)));
+    }
+  }
+};
+
 const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
 
@@ -66,12 +80,19 @@ const sendRequest = async (path, user) => {
   return response.json();
 };
 
-export const fetchFirestoreCollectionRest = async (collectionName, pageSize = 200, options = {}) => {
-  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}`, options);
-  return (data.documents || []).map((document) => ({
+export const fetchFirestoreCollectionPageRest = async (collectionName, pageSize = 200, options = {}) => {
+  const pageToken = options.pageToken ? `&pageToken=${encodeURIComponent(options.pageToken)}` : '';
+  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}${pageToken}`, options);
+  const documents = (data.documents || []).map((document) => ({
     id: document.name.split('/').pop(),
     ...decodeFields(document.fields),
   }));
+  return { documents, nextPageToken: data.nextPageToken || null };
+};
+
+export const fetchFirestoreCollectionRest = async (collectionName, pageSize = 200, options = {}) => {
+  const { documents } = await fetchFirestoreCollectionPageRest(collectionName, pageSize, options);
+  return documents;
 };
 
 export const fetchFirestoreDocumentRest = async (collectionName, documentId) => {

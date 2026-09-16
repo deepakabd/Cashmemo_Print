@@ -17,6 +17,7 @@
 
 import { verifyPin, hashPin, isHashedPin } from './pinCredentials.js';
 import { resolveAdminCredential } from './adminCredential.js';
+import { getUserAccountStatus } from '../src/utils/userAccountStatus.js';
 
 const FIRESTORE_SCOPE = 'https://www.googleapis.com/auth/datastore';
 
@@ -98,15 +99,6 @@ const findUserByDealerCode = async (firestore, dealerCode) => {
   return { id: docSnap.id, ...docSnap.data() };
 };
 
-/** Maps internal status to the client-visible outcome. */
-const resolveAccountStatus = (status) => {
-  const normalized = String(status || 'active').toLowerCase();
-  if (normalized === 'pending') return 'pending';
-  if (normalized === 'disabled') return 'disabled';
-  if (normalized === 'expired') return 'expired';
-  return 'active';
-};
-
 /**
  * Verifies dealer code + PIN and returns a Firebase custom token.
  *
@@ -135,7 +127,7 @@ export const verifyDealerLogin = async ({ dealerCode, pin }) => {
     throw new LoginError('bad-credentials', 'Dealer code or PIN is incorrect.', 401);
   }
 
-  const accountStatus = resolveAccountStatus(user.status);
+  const accountStatus = getUserAccountStatus(user);
   if (accountStatus === 'pending') {
     throw new LoginError('pending', 'Your registration is pending admin approval.', 403);
   }
@@ -143,8 +135,7 @@ export const verifyDealerLogin = async ({ dealerCode, pin }) => {
     throw new LoginError('disabled', 'Your account is disabled. Contact admin.', 403);
   }
 
-  const validTill = user.validTill ? new Date(user.validTill) : null;
-  const expired = validTill && !Number.isNaN(validTill.getTime()) && Date.now() > validTill.getTime();
+  const expired = accountStatus === 'expired';
 
   // Expired accounts may still sign in (the UI shows the renewal guide), but the
   // claim records it so Security Rules can deny data access.
@@ -209,4 +200,4 @@ export const verifyDealerLogin = async ({ dealerCode, pin }) => {
 };
 
 /** Exported for tests / tooling. */
-export const __internals = { findUserByDealerCode, resolveAccountStatus, FIRESTORE_SCOPE };
+export const __internals = { findUserByDealerCode, getUserAccountStatus, FIRESTORE_SCOPE };
