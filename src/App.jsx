@@ -861,6 +861,7 @@ function App() {
     let dealerLookupStatus = 'not-found';
     try {
       const lookup = await lookupDealerByCode(dealerCode, pin);
+      dealerLookupStatus = lookup.dealerLookupStatus || 'not-found';
       if (lookup.outcome === 'duplicate') {
         pushToast('Is dealer code par multiple accounts mil rahe hain. Login block kiya gaya hai, admin se contact kijiye.', 'error');
         setIsUserLoginSubmitting(false);
@@ -868,7 +869,6 @@ function App() {
       }
       if (lookup.outcome === 'ok') {
         firestoreUser = lookup.firestoreUser;
-        dealerLookupStatus = lookup.dealerLookupStatus;
       }
     } catch (loginError) {
       const reason = loginError instanceof Error ? loginError.message : '';
