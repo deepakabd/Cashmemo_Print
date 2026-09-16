@@ -26,8 +26,8 @@ const login = async (data) => {
   return verifyDealerLogin({ dealerCode: '123', pin: '1234' });
 };
 
-it('rejects a blocked legacy account even when approved', async () => {
-  await expect(login({ blocked: true, approved: true })).rejects.toMatchObject({ code: 'disabled' });
+it('requires canonical status even when legacy approved is true', async () => {
+  await expect(login({ blocked: true, approved: true })).rejects.toMatchObject({ code: 'pending' });
   expect(mocks.token).not.toHaveBeenCalled();
 });
 

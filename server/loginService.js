@@ -38,7 +38,7 @@ let adminInitError = null;
  *   - FIREBASE_SERVICE_ACCOUNT (inline JSON string), or
  *   - Application Default Credentials (Cloud Functions / GCP runtime).
  */
-const getAdmin = async () => {
+export const getAdmin = async () => {
   if (adminApp) return adminApp;
   if (adminInitError) throw adminInitError;
 

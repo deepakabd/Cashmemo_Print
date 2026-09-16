@@ -430,6 +430,7 @@ export const sanitizeUserForCache = (user = {}) => {
   if (!user || typeof user !== 'object') return user;
   const nextUser = { ...user };
   delete nextUser.pin;
+  delete nextUser.approved;
   return nextUser;
 };
 

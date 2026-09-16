@@ -82,7 +82,8 @@ const sendRequest = async (path, user) => {
 
 export const fetchFirestoreCollectionPageRest = async (collectionName, pageSize = 200, options = {}) => {
   const pageToken = options.pageToken ? `&pageToken=${encodeURIComponent(options.pageToken)}` : '';
-  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}${pageToken}`, options);
+  const mask = (options.fieldPaths || []).map((path) => `&mask.fieldPaths=${encodeURIComponent(path)}`).join('');
+  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}${pageToken}${mask}`, options);
   const documents = (data.documents || []).map((document) => ({
     id: document.name.split('/').pop(),
     ...decodeFields(document.fields),
@@ -95,8 +96,9 @@ export const fetchFirestoreCollectionRest = async (collectionName, pageSize = 20
   return documents;
 };
 
-export const fetchFirestoreDocumentRest = async (collectionName, documentId) => {
+export const fetchFirestoreDocumentRest = async (collectionName, documentId, options = {}) => {
   if (!documentId) return null;
-  const data = await request(`${encodeURIComponent(collectionName)}/${encodeURIComponent(documentId)}`);
+  const mask = (options.fieldPaths || []).map((path) => `mask.fieldPaths=${encodeURIComponent(path)}`).join('&');
+  const data = await request(`${encodeURIComponent(collectionName)}/${encodeURIComponent(documentId)}${mask ? `?${mask}` : ''}`, options);
   return { id: documentId, ...decodeFields(data.fields) };
 };

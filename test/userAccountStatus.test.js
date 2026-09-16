@@ -19,12 +19,12 @@ describe('canonical account status', () => {
   });
 
   it.each([
-    [{ blocked: true, active: true, approved: true }, 'disabled'],
-    [{ disabled: true, expired: true }, 'disabled'],
+    [{ blocked: true, active: true, approved: true }, 'pending'],
+    [{ disabled: true, expired: true }, 'pending'],
     [{ approved: false, active: true, expired: true }, 'pending'],
-    [{ expired: true, approved: true }, 'expired'],
-    [{ active: true }, 'active'],
-    [{ approved: true }, 'active'],
+    [{ expired: true, approved: true }, 'pending'],
+    [{ active: true }, 'pending'],
+    [{ approved: true }, 'pending'],
     [{}, 'pending'],
     [null, 'pending'],
     [{ status: 'unknown' }, 'pending'],
@@ -50,8 +50,8 @@ describe('canonical account status', () => {
   it('uses the same mutually exclusive status for counters and access', () => {
     const users = [
       { id: 'active', status: 'active', approved: false, blocked: true },
-      { id: 'disabled', blocked: true, approved: true },
-      { id: 'pending', approved: false },
+      { id: 'disabled', status: 'disabled', approved: true },
+      { id: 'pending', status: 'pending', approved: true },
       { id: 'expired', status: 'active', validTill: past },
     ];
     expect(getAdminUserStatistics(users).byStatus).toEqual({ active: 1, disabled: 1, pending: 1, expired: 1 });
