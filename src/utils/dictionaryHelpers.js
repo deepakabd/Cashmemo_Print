@@ -16,6 +16,16 @@ export const getDictionaryDocId = (englishWord = '') => (
   encodeURIComponent(String(englishWord || '').trim().toLowerCase()).replace(/\./g, '%2E') || `word-${Date.now()}`
 );
 
+export const isMatchingDictionaryRequest = (request, approval, userId) => {
+  const approvalId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
+  const clientId = approval.clientRequestId || approval.payload?.clientRequestId;
+  return Boolean(
+    (approvalId && request.approvalId === approvalId)
+    || (clientId && (request.id === clientId || request.payload?.clientRequestId === clientId))
+    || (request.id && approval.id === `userdict-${userId}-${request.id}`)
+  );
+};
+
 export const normalizePendingTypeLabel = (type) => {
   const raw = String(type || '').toLowerCase().trim();
   if (raw === 'profile' || raw === 'profiledata') return 'profile';

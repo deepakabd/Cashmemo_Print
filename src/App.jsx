@@ -6,7 +6,7 @@ import CashMemoEnglish from './CashMemoEnglish';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet, getLayoutPrintStyles } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { auth, db } from './firebase';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, runTransaction, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 //TEST
 import './App.css';
 import {
@@ -24,23 +24,15 @@ import {
   mergeDictionaryWithEntries,
 } from './utils/dictionaryWorkflow';
 import {
-  buildFeedbackStatusHistory,
-  getFeedbackSlaTone,
-  getFeedbackWorkflowState,
-} from './utils/feedbackWorkflow';
-import {
   formatDrawerFieldLabel,
   formatDrawerFieldValue,
   getDeviceStatusLabel,
   getDrawerDetailSections,
   getDrawerSummaryRows,
-  getFeedbackSlaDaysValue,
   maskSecret,
   normalizeLoginDevices,
   sanitizeUserForCache,
   sanitizeUsersForCache,
-  toTagList,
-  upsertStatusHistoryEntry,
 } from './utils/adminUiHelpers';
 import {
   ADMIN_ROLE_PERMISSIONS,
@@ -133,6 +125,7 @@ import {
 import {
   getApiDictionaryPreviewEntry,
   getDictionaryDocId,
+  isMatchingDictionaryRequest,
   normalizePendingTypeLabel,
 } from './utils/dictionaryHelpers';
 import {
@@ -158,7 +151,7 @@ import {
   markUserExpiredIfDue,
 } from './auth/userAuth';
 import { mirrorUserPatchToSubcollections } from './services/userSubcollections';
-import { fetchFirestoreCollectionRest } from './services/firestoreRest';
+import { fetchFirestoreCollectionRest, retryDeniedFirestoreReads } from './services/firestoreRest';
 import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
 import {
   readUsersCache as readUsersData,
@@ -425,49 +418,17 @@ function App() {
   // dealerCode check alone is sufficient (PIN never stored in runtime state).
   const isTestUser = String(loggedInUser?.dealerCode || '').trim() === '41099999';
 
+  // Support-reply inbox has been retired with the removed feature. Keep
+  // neutral empty values for the surrounding menu/dashboard layout.
+  const contactReplyItems = [];
+  const contactReplyCount = 0;
+  const markUserContactRepliesAsRead = () => {};
+
   const getPendingDictionaryRequestCount = (user) => (
     Array.isArray(user?.pendingDictionaryRequests)
       ? user.pendingDictionaryRequests.filter((req) => String(req?.status || 'pending').toLowerCase() === 'pending').length
       : 0
   );
-
-  const readFeedbackDataFromStorage = () => {
-    try {
-      const raw = localStorage.getItem('feedbackData');
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const readFeedbackRepliesFromStorage = () => {
-    try {
-      const raw = localStorage.getItem('feedbackReplies');
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-
-  const readFeedbackReplyReadStatusFromStorage = () => {
-    try {
-      const raw = localStorage.getItem('feedbackRepliesRead');
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-
-  const persistFeedbackReplyReadStatus = (nextStatus) => {
-    try {
-      localStorage.setItem('feedbackRepliesRead', JSON.stringify(nextStatus || {}));
-    } catch (error) {
-      void error;
-    }
-  };
 
   const readApprovalRepliesFromStorage = () => {
     try {
@@ -478,37 +439,6 @@ function App() {
       return {};
     }
   };
-
-  const getUserContactReplies = () => {
-    if (!loggedInUser) return [];
-    const feedbackData = readFeedbackDataFromStorage();
-    const replyMap = readFeedbackRepliesFromStorage();
-    const replyReadStatus = readFeedbackReplyReadStatusFromStorage();
-    return feedbackData
-      .filter((item) => item.userId === loggedInUser?.id || item.dealerCode === loggedInUser?.dealerCode)
-      .map((item) => {
-        const idKey = item.id || item.clientFeedbackId || '';
-        const reply = replyMap[idKey] || '';
-        const read = Boolean(replyReadStatus[idKey]);
-        return { ...item, reply, read, replyId: idKey };
-      })
-      .filter((item) => item.reply);
-  };
-
-  const markUserContactRepliesAsRead = () => {
-    if (!loggedInUser) return;
-    const replies = getUserContactReplies();
-    if (replies.length === 0) return;
-    const readStatus = readFeedbackReplyReadStatusFromStorage();
-    const nextStatus = { ...readStatus };
-    replies.forEach((item) => {
-      if (item.replyId) nextStatus[item.replyId] = true;
-    });
-    persistFeedbackReplyReadStatus(nextStatus);
-  };
-
-  const contactReplyItems = getUserContactReplies();
-  const contactReplyCount = contactReplyItems.filter((item) => !item.read).length;
   const ADMIN_CONTACTS = {
     email: 'deepak.youvi@gmail.com',
     whatsapp: 'https://wa.me/918789358400',
@@ -577,7 +507,7 @@ function App() {
           if (docSnap.exists()) {
             nextDictionary = { ...nextDictionary, ...(docSnap.data() || {}) };
           }
-        } catch (cacheErr) {
+        } catch {
           // Backend unreachable — try the persistent Firestore cache before giving up.
           try {
             const cachedSnap = await getDocFromCache(doc(db, 'settings', 'translationDictionary'));
@@ -1478,8 +1408,10 @@ function App() {
       setAdminLoginId('');
       setAdminPassword('');
       pushToast('Admin login successful.', 'success');
-    } catch {
-      pushToast('Admin login failed. Check Firebase Authentication credentials.', 'error');
+    } catch (error) {
+      pushToast(error?.code === 'auth/network-request-failed'
+        ? 'Firebase se connection nahi ho pa raha. Internet/DNS check karein ya mobile hotspot se dobara login karein.'
+        : 'Admin login failed. Check Firebase Authentication credentials.', 'error');
     }
     setIsAdminLoginSubmitting(false);
   };
@@ -1498,8 +1430,6 @@ function App() {
       setRequests,
       users,
       setUsers,
-      feedback,
-      setFeedback,
       updateApprovals,
       setUpdateApprovals,
       activeAdminTab,
@@ -1522,18 +1452,12 @@ function App() {
       setAuditTrail,
       adminNotes,
       setAdminNotes,
-      feedbackMetaOverrides,
-      setFeedbackMetaOverrides,
-      feedbackReplies,
-      setFeedbackReplies,
       approvalReplies,
       setApprovalReplies,
       savedAdminViews,
       setSavedAdminViews,
       deletedUsersBin,
       setDeletedUsersBin,
-      adminNotifications,
-      setAdminNotifications,
       adminDataHealth,
       setAdminDataHealth,
       hiddenApprovalIds,
@@ -1604,9 +1528,6 @@ function App() {
     const dictionaryRequestView = dictionaryRequestViewState;
     const [apiWordsCurrentPage, setApiWordsCurrentPage] = useState(1);
     const [selectedApiWordApprovalIds, setSelectedApiWordApprovalIds] = useState([]);
-    const [activeAdminFeedback, setActiveAdminFeedback] = useState(null);
-    const [adminReplyDraft, setAdminReplyDraft] = useState('');
-    const [showAdminReplyPopup, setShowAdminReplyPopup] = useState(false);
     const [editUser, setEditUser] = useState({
       dealerCode: '',
       dealerName: '',
@@ -1638,7 +1559,6 @@ function App() {
     const [showApprovalReplyPopup, setShowApprovalReplyPopup] = useState(false);
     const [activeApprovalReply, setActiveApprovalReply] = useState(null);
     const [approvalReplyDraft, setApprovalReplyDraft] = useState('');
-    const [allFeedbackEntries, setAllFeedbackEntries] = useState([]);
     const [auditSyncState, setAuditSyncState] = useState({ source: 'local fallback', lastSyncAt: '', detail: '' });
     const [auditSyncDisabled, setAuditSyncDisabled] = useState(false);
     const [bulkActionState, setBulkActionState] = useState({ active: false, label: '', processed: 0, total: 0, failures: [] });
@@ -1686,7 +1606,7 @@ function App() {
       }
       setBulkActionState((prev) => ({ ...prev, active: false, failures }));
       if (typeof onComplete === 'function') {
-        onComplete(failures);
+        await onComplete(failures);
       }
     };
 
@@ -1696,71 +1616,6 @@ function App() {
         return;
       }
       exportRowsAsCsv('admin-bulk-failures.csv', bulkActionState.failures);
-    };
-
-    const getConversationKey = (item) => {
-      if (!item) return '';
-      return item.userId || item.dealerCode || item.email || item.clientFeedbackId || item.id || '';
-    };
-
-    const getConversationHistory = (item) => {
-      const conversationKey = getConversationKey(item);
-      if (!conversationKey) return [];
-      return allFeedbackEntries
-        .filter((entry) => getConversationKey(entry) === conversationKey)
-        .sort((a, b) => new Date(a.createdAt || a.date || '').getTime() - new Date(b.createdAt || b.date || '').getTime());
-    };
-
-    const openAdminReplyPopup = (item) => {
-      if (!item) return;
-      const currentReply = feedbackReplies?.[item.id] || feedbackReplies?.[item.clientFeedbackId] || '';
-      setActiveAdminFeedback(item);
-      setAdminReplyDraft(currentReply);
-      setShowAdminReplyPopup(true);
-    };
-
-    const closeAdminReplyPopup = () => {
-      setShowAdminReplyPopup(false);
-      setActiveAdminFeedback(null);
-      setAdminReplyDraft('');
-    };
-
-    const submitAdminReply = () => {
-      if (!activeAdminFeedback) return;
-      if (!adminReplyDraft.trim()) {
-        pushToast('Please enter a reply before saving.', 'error');
-        return;
-      }
-      const replyKey = activeAdminFeedback.id || activeAdminFeedback.clientFeedbackId || '';
-      const replyAt = new Date().toISOString();
-      const nextReplies = {
-        ...feedbackReplies,
-        [replyKey]: adminReplyDraft.trim(),
-      };
-      persistFeedbackReplies(nextReplies);
-      const existingHistory = buildFeedbackStatusHistory(activeAdminFeedback, feedbackReplies, feedbackMetaOverrides);
-      const nextOverrides = {
-        ...feedbackMetaOverrides,
-        [activeAdminFeedback.id]: {
-          ...(feedbackMetaOverrides[activeAdminFeedback.id] || {}),
-          workflowState: 'awaiting-user',
-          lastAdminReplyAt: replyAt,
-          statusHistory: upsertStatusHistoryEntry(existingHistory, {
-            key: 'awaiting-user',
-            label: 'Admin Replied',
-            at: replyAt,
-          }),
-        },
-      };
-      persistFeedbackMetaOverrides(nextOverrides);
-      logAdminActivity('feedback_reply_saved', { id: replyKey, dealerCode: activeAdminFeedback.dealerCode || '' });
-      if (activeAdminFeedback?.id && activeAdminFeedback?.source !== 'userDoc' && !String(activeAdminFeedback.id).startsWith('userfb-')) {
-        void updateDoc(doc(db, 'feedback', activeAdminFeedback.id), {
-          adminReply: adminReplyDraft.trim(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-      closeAdminReplyPopup();
     };
 
     const getApprovalReplyKey = (approval) => {
@@ -1884,13 +1739,6 @@ function App() {
     };
 //test check
     const loadData = async () => {
-      const readWithTimeout = (operation, label) => Promise.race([
-        operation,
-        new Promise((_, reject) => {
-          window.setTimeout(() => reject(new Error(`${label} read timed out after 4 seconds.`)), 4000);
-        }),
-      ]);
-
       // The admin panel must never remain on the initial "unknown" state
       // forever when Firestore's WebChannel is stalled by a network, rule, or
       // browser-cache issue.
@@ -1907,9 +1755,8 @@ function App() {
         let firebaseRequests = [];
         let firebaseUsers = [];
         let firebaseApprovals = [];
-        let firebaseFeedback = [];
         let firebaseAuditTrail = [];
-        const fetchOk = { requests: false, users: false, feedback: false };
+        const fetchOk = { requests: false, users: false };
         const fetchErrors = {};
 
         try {
@@ -1949,90 +1796,34 @@ function App() {
         }
 
         try {
-          firebaseFeedback = await fetchFirestoreCollectionRest('feedback');
-          fetchOk.feedback = true;
-        } catch (e) { fetchErrors.feedback = e?.message || 'Feedback could not be read.'; }
-
-        try {
-          firebaseAuditTrail = (await fetchFirestoreCollectionRest(ADMIN_AUDIT_COLLECTION))
+          firebaseAuditTrail = (await fetchFirestoreCollectionRest(ADMIN_AUDIT_COLLECTION, 200, { pauseOnForbidden: true }))
             .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
             .slice(0, 150);
-        } catch (e) { void e; }
+        } catch (error) {
+          const detail = `Audit history: ${error.code || error.status || 'read failed'} — ${error.message || 'Unable to load audit history.'}`;
+          fetchErrors.audit = detail;
+          setAuditSyncState({
+            source: 'local fallback',
+            lastSyncAt: '',
+            detail,
+          });
+        }
 
         // Firebase is the single source of truth when reachable. An empty
         // Firestore collection is legitimate data (e.g. all requests
         // processed), so never overlay stale localStorage mirrors here —
         // that was the source of Firebase/browser mismatches. Local cache
         // is only read in the offline catch branch below.
-        if (!fetchOk.requests && !fetchOk.users && !fetchOk.feedback) {
+        if (!fetchOk.requests && !fetchOk.users) {
           // Every collection read failed — Firebase is unreachable or rules
           // deny everything. Fall through to the offline cache branch so the
           // admin still sees last-known data instead of an empty UI.
           throw new Error('all-admin-collections-unreachable');
         }
         const reqWithOverrides = firebaseRequests.map((r) => {
-          const overriddenStatus = registrationStatusOverrides[r.id];
+          const overriddenStatus = registrationStatusOverridesRef.current[r.id];
           return overriddenStatus ? { ...r, status: overriddenStatus } : r;
         });
-
-        const userFeedback = firebaseUsers.flatMap((u) => {
-          const list = Array.isArray(u?.feedbackEntries) ? u.feedbackEntries : [];
-          return list.map((entry, idx) => ({
-            ...entry,
-            id: entry?.id || `userfb-${u.id}-${entry?.clientFeedbackId || idx}`,
-            source: 'userDoc',
-            userId: u.id,
-            dealerCode: entry?.dealerCode || u.dealerCode || '',
-            dealerName: entry?.dealerName || u.dealerName || '',
-            email: entry?.email || u.email || '',
-            createdAt: entry?.createdAt || '',
-          }));
-        });
-
-        const mergedFeedbackMap = new Map();
-        [...firebaseFeedback.map((f) => ({ ...f, source: f.source || 'collection' })), ...userFeedback].forEach((f, idx) => {
-          const key = f.clientFeedbackId
-            ? `${f.userId || f.dealerCode || 'x'}-${f.clientFeedbackId}`
-            : `${f.id || 'fb'}-${idx}`;
-          if (!mergedFeedbackMap.has(key)) {
-            mergedFeedbackMap.set(key, f);
-          }
-        });
-
-        const latestFeedbackByUser = new Map();
-        Array.from(mergedFeedbackMap.values()).forEach((item) => {
-          const userKey = item.dealerCode || item.email || item.userId || item.id || `unknown-${item.clientFeedbackId || ''}`;
-          const itemTimestamp = new Date(item.createdAt || item.date || '').getTime() || 0;
-          const existing = latestFeedbackByUser.get(userKey);
-          const existingTimestamp = existing ? new Date(existing.createdAt || existing.date || '').getTime() || 0 : 0;
-          if (!existing || itemTimestamp >= existingTimestamp) {
-            latestFeedbackByUser.set(userKey, item);
-          }
-        });
-
-        const fullFeedbackEntries = Array.from(mergedFeedbackMap.values())
-          .map((item) => {
-            const override = feedbackMetaOverrides[item.id] || {};
-            return {
-              priority: 'medium',
-              resolved: false,
-              ...item,
-              ...override,
-            };
-          })
-          .sort((a, b) => new Date(a.createdAt || a.date || '').getTime() - new Date(b.createdAt || b.date || '').getTime());
-
-        const mergedFeedback = Array.from(latestFeedbackByUser.values())
-          .map((item) => {
-            const override = feedbackMetaOverrides[item.id] || {};
-            return {
-              priority: 'medium',
-              resolved: false,
-              ...item,
-              ...override,
-            };
-          })
-          .sort((a, b) => new Date(b.createdAt || b.date || '').getTime() - new Date(a.createdAt || a.date || '').getTime());
 
         // Only apply/commit data that actually came from a successful fetch.
         // A failed read leaves its slice untouched in both state and cache,
@@ -2045,11 +1836,6 @@ function App() {
           setUsers(firebaseUsers);
           localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(firebaseUsers)));
         }
-        if (fetchOk.feedback) {
-          setFeedback(mergedFeedback);
-          setAllFeedbackEntries(fullFeedbackEntries);
-          localStorage.setItem('feedbackData', JSON.stringify(fullFeedbackEntries));
-        }
         setUpdateApprovals(firebaseApprovals);
         if (firebaseAuditTrail.length > 0) {
           setAuditTrail(firebaseAuditTrail);
@@ -2060,7 +1846,7 @@ function App() {
             detail: 'Firestore audit active',
           });
         }
-        if (firebaseAuditTrail.length === 0) {
+        if (firebaseAuditTrail.length === 0 && !fetchErrors.audit) {
           setAuditSyncState((prev) => ({
             source: prev.source === 'firebase' ? prev.source : 'local fallback',
             lastSyncAt: prev.lastSyncAt || new Date().toISOString(),
@@ -2068,7 +1854,7 @@ function App() {
           }));
         }
         setAdminDataHealth({
-          source: fetchOk.requests || fetchOk.users || fetchOk.feedback || firebaseApprovals.length > 0 ? 'firebase+local' : 'local',
+          source: fetchOk.requests || fetchOk.users || firebaseApprovals.length > 0 ? 'firebase+local' : 'local',
           lastSyncAt: new Date().toISOString(),
           firebaseReachable: true,
           error: Object.values(fetchErrors).filter(Boolean).join(' '),
@@ -2079,18 +1865,15 @@ function App() {
           const reqList = reqRaw ? JSON.parse(reqRaw) : [];
           const usersRaw = localStorage.getItem('usersData');
           const userList = usersRaw ? JSON.parse(usersRaw) : [];
-          const fbRaw = localStorage.getItem('feedbackData');
-          const fbList = fbRaw ? JSON.parse(fbRaw) : [];
           const auditRaw = localStorage.getItem('adminAuditTrail');
           const auditList = auditRaw ? JSON.parse(auditRaw) : [];
           const reqArray = Array.isArray(reqList) ? reqList : [];
           const reqWithOverrides = reqArray.map((r) => {
-            const overriddenStatus = registrationStatusOverrides[r.id];
+            const overriddenStatus = registrationStatusOverridesRef.current[r.id];
             return overriddenStatus ? { ...r, status: overriddenStatus } : r;
           });
           setRequests(reqWithOverrides);
           setUsers(Array.isArray(userList) ? userList : []);
-          setFeedback(Array.isArray(fbList) ? fbList : []);
           setUpdateApprovals([]);
           setAuditTrail(Array.isArray(auditList) ? auditList : []);
           setAuditSyncState({
@@ -2107,7 +1890,6 @@ function App() {
         } catch {
           setRequests([]);
           setUsers([]);
-          setFeedback([]);
           setUpdateApprovals([]);
           setAuditSyncState({
             source: 'unavailable',
@@ -2208,17 +1990,6 @@ function App() {
       persistAdminNotes(nextNotes);
       logAdminActivity('note_saved', { noteKey });
     };
-
-    const persistFeedbackMetaOverrides = (nextOverrides) => {
-      setFeedbackMetaOverrides(nextOverrides);
-      localStorage.setItem('feedbackMetaOverrides', JSON.stringify(nextOverrides));
-    };
-
-    const persistFeedbackReplies = (nextReplies) => {
-      setFeedbackReplies(nextReplies);
-      localStorage.setItem('feedbackReplies', JSON.stringify(nextReplies));
-    };
-
     const persistApprovalReplies = (nextReplies) => {
       setApprovalReplies(nextReplies);
       localStorage.setItem(APPROVAL_REPLIES_STORAGE_KEY, JSON.stringify(nextReplies));
@@ -2352,12 +2123,20 @@ function App() {
     // admin gets the complete admin permission set.
     const { canAccessTab, canMutateAdminData } = getAdminTabAccess();
 
+    const registrationStatusOverridesRef = useRef(registrationStatusOverrides);
     const setRegistrationOverride = (id, status) => {
-      setRegistrationStatusOverrides((prev) => {
-        const next = { ...(prev || {}), [id]: status };
+      const next = { ...registrationStatusOverridesRef.current, [id]: status };
+      registrationStatusOverridesRef.current = next;
+      setRegistrationStatusOverrides(next);
+      setRequests((prev) => prev.map((request) => (
+        request.id === id ? { ...request, status } : request
+      )));
+      setSelectedRequestIds((prev) => prev.filter((requestId) => requestId !== id));
+      try {
         localStorage.setItem('registrationStatusOverrides', JSON.stringify(next));
-        return next;
-      });
+      } catch {
+        // The completed action must still clear the queue when storage is full.
+      }
     };
 
     const resolveEditToken = (user) => {
@@ -2397,7 +2176,6 @@ function App() {
       if (!req) return { ok: false, reason: 'Registration request not found.' };
       if (!options.skipConfirm && !(await confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
-        setRegistrationOverride(id, 'approved');
         const validity = computeValidityDates(req.package || '');
         const requestId = String(id || '');
         const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
@@ -2443,6 +2221,7 @@ function App() {
             approvedAt: serverTimestamp(),
           });
         }
+        setRegistrationOverride(id, 'approved');
         if (!isLocalOnlyRequest) {
           try {
             await updateDoc(doc(db, 'registrationRequests', id), {
@@ -2478,7 +2257,6 @@ function App() {
       if (!req) return { ok: false, reason: 'Registration request not found.' };
       if (!options.skipConfirm && !(await confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
-        setRegistrationOverride(id, 'rejected');
         const requestId = String(id || '');
         const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
         if (!isLocalOnlyRequest) {
@@ -2491,6 +2269,7 @@ function App() {
           setRequests(nextLocal);
           localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
         }
+        setRegistrationOverride(id, 'rejected');
         await loadData();
         logAdminActivity('registration_rejected', { id, dealerCode: req?.dealerCode || '' });
         return { ok: true };
@@ -2879,26 +2658,10 @@ function App() {
 
     const apiRequestDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => isApiDictionaryApproval(approval));
     const manualDictionaryApprovals = dictionaryPendingApprovals.filter((approval) => !isApiDictionaryApproval(approval));
-    const apiRequestApprovalMap = new Map(
-      apiRequestDictionaryApprovals.map((approval) => [String(approval.id || ''), approval])
-    );
-    const apiWordDisplayRows = (Array.isArray(translationObservability.apiWords) && translationObservability.apiWords.length > 0
-      ? translationObservability.apiWords
-      : apiRequestDictionaryApprovals.map((approval) => getApiDictionaryPreviewEntry(approval))
-    ).map((entry) => {
-      const normalizedEntry = getApiDictionaryPreviewEntry(entry);
-      const linkedApproval = apiRequestApprovalMap.get(String(normalizedEntry.approvalId || ''))
-        || apiRequestDictionaryApprovals.find((approval) => {
-          const payload = getDictionaryApprovalPayload(approval);
-          return String(payload?.englishWord || approval?.englishWord || '').trim().toLowerCase() === normalizedEntry.englishWord.toLowerCase()
-            && String(payload?.hindiTranslation || approval?.hindiTranslation || '').trim() === normalizedEntry.hindiTranslation;
-        })
-        || null;
-      return {
-        ...normalizedEntry,
-        approval: linkedApproval,
-      };
-    });
+    const apiWordDisplayRows = apiRequestDictionaryApprovals.map((approval) => ({
+      ...getApiDictionaryPreviewEntry(approval),
+      approval,
+    }));
     const apiWordTotalPages = Math.max(1, Math.ceil(apiWordDisplayRows.length / adminItemsPerPage));
     const pagedApiWordDisplayRows = paginateAdminRows(apiWordDisplayRows, adminItemsPerPage, apiWordsCurrentPage);
     const toggleApiWordSelection = (approvalId) => {
@@ -2931,6 +2694,52 @@ function App() {
           [field]: value,
         },
       }));
+    };
+
+    const dictionaryChangesRef = useRef({});
+    const completedDictionaryIdsRef = useRef([]);
+    const clearCompletedDictionaryRows = () => {
+      const ids = completedDictionaryIdsRef.current;
+      completedDictionaryIdsRef.current = [];
+      setHiddenApprovalIds((prev) => [...new Set([...prev, ...ids])]);
+      setSelectedApiWordApprovalIds((prev) => prev.filter((id) => !ids.includes(id)));
+      setDictionaryApprovalEdits((prev) => Object.fromEntries(
+        Object.entries(prev).filter(([id]) => !ids.includes(id)),
+      ));
+    };
+    const completeDictionaryRequest = async (approval, status) => {
+      const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
+      const targetUser = users.find((user) => user.id === approval.userId
+        || (approval.dealerCode && user.dealerCode === approval.dealerCode));
+      await runTransaction(db, async (transaction) => {
+        const userRef = targetUser?.id ? doc(db, 'users', targetUser.id) : null;
+        const snapshot = userRef ? await transaction.get(userRef) : null;
+        if (snapshot?.exists()) {
+          const pending = Array.isArray(snapshot.data().pendingDictionaryRequests) ? snapshot.data().pendingDictionaryRequests : [];
+          const remaining = pending.filter((request) => !isMatchingDictionaryRequest(request, approval, targetUser.id));
+          transaction.update(userRef, {
+            pendingDictionaryRequests: remaining,
+            dictionaryPendingCount: remaining.length,
+            ...(approval.id === `userdoc-${targetUser.id}-${approval.type}` ? {
+              [`pendingUpdates.${approval.type}.status`]: status,
+            } : {}),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        if (approvalDocId) {
+          transaction.update(doc(db, 'updateApprovals', approvalDocId), {
+            status,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      });
+    };
+    const flushDictionaryChanges = () => {
+      const changes = dictionaryChangesRef.current;
+      dictionaryChangesRef.current = {};
+      if (Object.keys(changes).length > 0) {
+        setTranslationDictionary((current) => ({ ...current, ...changes }));
+      }
     };
 
     const approveUpdateRequest = async (approval, options = {}) => {
@@ -2978,11 +2787,10 @@ function App() {
           const englishWord = String(dictionaryPayload?.englishWord || dictionaryPayload?.eng || '').trim();
           const hindiTranslation = String(dictionaryPayload?.hindiTranslation || dictionaryPayload?.hin || '').trim();
           if (!englishWord || !hindiTranslation) {
-            pushToast('Dictionary request needs both English word and Hindi translation.', 'error');
+            if (!options.skipAlert) pushToast('Dictionary request needs both English word and Hindi translation.', 'error');
             return { ok: false, reason: 'Dictionary request needs both English word and Hindi translation.' };
           }
-          const nextDict = { ...translationDictionary, [englishWord]: hindiTranslation };
-          await setDoc(doc(db, 'settings', 'translationDictionary'), nextDict);
+          await setDoc(doc(db, 'settings', 'translationDictionary'), { [englishWord]: hindiTranslation }, { merge: true });
           await setDoc(doc(db, 'translationDictionary', getDictionaryDocId(englishWord)), {
             englishWord,
             hindiTranslation,
@@ -2998,31 +2806,8 @@ function App() {
             approvedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
-          setTranslationDictionary(nextDict);
-          if (targetUser?.id) {
-            const nextPendingDictionaryRequests = (Array.isArray(targetUser.pendingDictionaryRequests) ? targetUser.pendingDictionaryRequests : [])
-              .filter((request) => {
-                const matchesRequest = request?.approvalId === approval.id
-                  || request?.approvalId === approval.approvalId
-                  || request?.id === dictionaryPayload?.clientRequestId
-                  || request?.payload?.clientRequestId === dictionaryPayload?.clientRequestId;
-                return !matchesRequest;
-              });
-            await updateDoc(doc(db, 'users', targetUser.id), {
-              dictionaryPendingCount: Math.max(0, nextPendingDictionaryRequests.length),
-              pendingDictionaryRequests: nextPendingDictionaryRequests,
-              updatedAt: serverTimestamp(),
-            });
-            mirrorUserPatchToSubcollections(targetUser.id, { pendingDictionaryRequests: nextPendingDictionaryRequests }).forEach((p) => { void p.catch(() => {}); });
-          }
-          const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
-          if (approvalDocId) {
-            try {
-              await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
-            } catch (error) {
-              void error;
-            }
-          }
+          await completeDictionaryRequest(approval, 'approved');
+          dictionaryChangesRef.current[englishWord] = hindiTranslation;
         } else if (approvalType === 'planUpgrade') {
           const nextPackage = approval.payload?.package || approval.payload?.selectedPackage || '';
           if (!nextPackage) {
@@ -3120,20 +2905,19 @@ function App() {
             });
         } catch (e) { void e; }
         }
-        setDictionaryApprovalEdits((prev) => {
-          const next = { ...prev };
-          delete next[approval.id];
-          return next;
-        });
-        setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
-        await loadData();
+        completedDictionaryIdsRef.current.push(approval.id);
+        if (!options.skipRefresh) {
+          clearCompletedDictionaryRows();
+          await loadData();
+          flushDictionaryChanges();
+        }
         logAdminActivity('update_approved', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
         if (!options.skipAlert) {
           pushToast('Request approved successfully.', 'success');
         }
         return { ok: true };
       } catch {
-        pushToast('Approval failed.', 'error');
+        if (!options.skipAlert) pushToast('Approval failed.', 'error');
         return { ok: false, reason: 'Approval failed.' };
       }
     };
@@ -3159,23 +2943,7 @@ function App() {
           if (approvalType === 'header') {
             nextStatus.hindiHeaderData = 'rejected';
           }
-          if (approvalType === 'dictionary') {
-            const dictionaryPayload = getDictionaryApprovalPayload(approval);
-            const nextPendingDictionaryRequests = (Array.isArray(targetUser.pendingDictionaryRequests) ? targetUser.pendingDictionaryRequests : [])
-              .filter((request) => {
-                const matchesRequest = request?.approvalId === approval.id
-                  || request?.approvalId === approval.approvalId
-                  || request?.id === dictionaryPayload?.clientRequestId
-                  || request?.payload?.clientRequestId === dictionaryPayload?.clientRequestId;
-                return !matchesRequest;
-              });
-            await updateDoc(doc(db, 'users', targetUser.id), {
-              dictionaryPendingCount: Math.max(0, nextPendingDictionaryRequests.length),
-              pendingDictionaryRequests: nextPendingDictionaryRequests,
-              updatedAt: serverTimestamp(),
-            });
-            mirrorUserPatchToSubcollections(targetUser.id, { pendingDictionaryRequests: nextPendingDictionaryRequests }).forEach((p) => { void p.catch(() => {}); });
-          } else {
+          if (approvalType !== 'dictionary') {
             await updateDoc(doc(db, 'users', targetUser.id), {
               approvalStatus: nextStatus,
               [`pendingUpdates.${approvalType}.status`]: 'rejected',
@@ -3184,160 +2952,27 @@ function App() {
             });
           }
         }
+        if (approvalType === 'dictionary') await completeDictionaryRequest(approval, 'rejected');
         const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
-        if (approvalDocId) {
+        if (approvalDocId && approvalType !== 'dictionary') {
           try {
             await deleteDoc(doc(db, 'updateApprovals', approvalDocId));
           } catch (error) {
             void error;
           }
         }
-        setDictionaryApprovalEdits((prev) => {
-          const next = { ...prev };
-          delete next[approval.id];
-          return next;
-        });
-        setHiddenApprovalIds((prev) => (prev.includes(approval.id) ? prev : [...prev, approval.id]));
-        await loadData();
+        completedDictionaryIdsRef.current.push(approval.id);
+        if (!options.skipRefresh) {
+          clearCompletedDictionaryRows();
+          await loadData();
+          flushDictionaryChanges();
+        }
         logAdminActivity('update_rejected', { id: approval.id, dealerCode: approval.dealerCode || '', type: approval.type || '' });
         return { ok: true };
       } catch {
-        pushToast('Reject failed.', 'error');
+        if (!options.skipAlert) pushToast('Reject failed.', 'error');
         return { ok: false, reason: 'Reject failed.' };
       }
-    };
-
-    const toggleFeedbackRead = async (item) => {
-      const nextRead = !item?.read;
-      try {
-        if (item?.id) {
-          try {
-            await updateDoc(doc(db, 'feedback', item.id), {
-              read: nextRead,
-              updatedAt: serverTimestamp(),
-            });
-        } catch (e) { void e; }
-        }
-        const nextFeedback = feedback.map((f) => (f.id === item.id ? { ...f, read: nextRead } : f));
-        setFeedback(nextFeedback);
-        localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
-        logAdminActivity('feedback_read_toggle', { id: item.id, read: nextRead });
-      } catch {
-        pushToast('Unable to update feedback status.', 'error');
-      }
-    };
-
-    const deleteFeedbackItem = async (item) => {
-      const targetUser = users.find((u) => u.id === item?.userId || String(u?.dealerCode || '').trim() === String(item?.dealerCode || '').trim());
-      if (!(await confirmAdminAction({
-        title: 'Delete Feedback',
-        message: `Delete feedback from ${item?.dealerCode || 'this user'}?`,
-        confirmLabel: 'Delete',
-        dangerNote: 'Deleted feedback cannot be recovered from this inbox.',
-      }))) return;
-      try {
-        if (item?.source !== 'userDoc' && item?.id && !String(item.id).startsWith('userfb-')) {
-          try {
-            await deleteDoc(doc(db, 'feedback', item.id));
-          } catch (e) { void e; }
-        }
-
-        if (targetUser?.id) {
-          const existingEntries = Array.isArray(targetUser.feedbackEntries) ? targetUser.feedbackEntries : [];
-          const filteredEntries = existingEntries.filter((entry) => {
-            if (item?.clientFeedbackId) {
-              return entry?.clientFeedbackId !== item.clientFeedbackId;
-            }
-            return String(entry?.text || '') !== String(item?.text || '') || String(entry?.createdAt || '') !== String(item?.createdAt || '');
-          });
-          try {
-            await updateDoc(doc(db, 'users', targetUser.id), {
-              feedbackEntries: filteredEntries,
-              updatedAt: serverTimestamp(),
-            });
-          } catch (e) { void e; }
-          const nextUsers = users.map((u) => (u.id === targetUser.id ? { ...u, feedbackEntries: filteredEntries } : u));
-          writeUsersLocal(nextUsers);
-        }
-
-        const nextFeedback = feedback.filter((f) => {
-          if (item?.clientFeedbackId && f?.clientFeedbackId) {
-            return f.clientFeedbackId !== item.clientFeedbackId;
-          }
-          return f.id !== item.id;
-        });
-        setFeedback(nextFeedback);
-        localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
-        logAdminActivity('feedback_deleted', { id: item.id, dealerCode: item?.dealerCode || '' });
-      } catch {
-        pushToast('Unable to delete feedback.', 'error');
-      }
-    };
-
-    const updateFeedbackMeta = async (item, patch) => {
-      const nextFeedback = feedback.map((f) => (f.id === item.id ? { ...f, ...patch } : f));
-      setFeedback(nextFeedback);
-      localStorage.setItem('feedbackData', JSON.stringify(nextFeedback));
-      const nextOverrides = { ...feedbackMetaOverrides, [item.id]: { ...(feedbackMetaOverrides[item.id] || {}), ...patch } };
-      persistFeedbackMetaOverrides(nextOverrides);
-      try {
-        if (item?.id && item?.source !== 'userDoc' && !String(item.id).startsWith('userfb-')) {
-          await updateDoc(doc(db, 'feedback', item.id), { ...patch, updatedAt: serverTimestamp() });
-        }
-      } catch (e) { void e; }
-    };
-
-    const setFeedbackPriority = async (item, priority) => {
-      await updateFeedbackMeta(item, { priority });
-      logAdminActivity('feedback_priority', { id: item.id, priority });
-    };
-
-    const setFeedbackAssignee = async (item, assignee) => {
-      await updateFeedbackMeta(item, { assignee: String(assignee || '').trim() });
-      logAdminActivity('feedback_assignee_updated', { id: item.id, assignee: String(assignee || '').trim() });
-    };
-
-    const setFeedbackTags = async (item, tags) => {
-      const normalizedTags = toTagList(tags).join(', ');
-      await updateFeedbackMeta(item, { tags: normalizedTags });
-      logAdminActivity('feedback_tags_updated', { id: item.id, tags: normalizedTags });
-    };
-
-    const setFeedbackFollowUpDate = async (item, followUpDate) => {
-      await updateFeedbackMeta(item, { followUpDate: String(followUpDate || '').trim() });
-      logAdminActivity('feedback_followup_updated', { id: item.id, followUpDate: String(followUpDate || '').trim() });
-    };
-
-    const setFeedbackWorkflow = async (item, workflowState) => {
-      const nextState = String(workflowState || '').trim().toLowerCase();
-      const nextHistory = upsertStatusHistoryEntry(
-        buildFeedbackStatusHistory(item, feedbackReplies, feedbackMetaOverrides),
-        {
-          key: nextState,
-          label: nextState.replace(/-/g, ' '),
-          at: new Date().toISOString(),
-        },
-      );
-      await updateFeedbackMeta(item, { workflowState: nextState, statusHistory: nextHistory });
-      logAdminActivity('feedback_workflow_updated', { id: item.id, workflowState: nextState });
-    };
-
-    const toggleFeedbackResolved = async (item) => {
-      const resolved = !item?.resolved;
-      const history = resolved
-        ? upsertStatusHistoryEntry(buildFeedbackStatusHistory(item, feedbackReplies, feedbackMetaOverrides), {
-          key: 'resolved',
-          label: 'Resolved',
-          at: new Date().toISOString(),
-        })
-        : buildFeedbackStatusHistory(item, feedbackReplies, feedbackMetaOverrides).filter((entry) => entry?.key !== 'resolved');
-      await updateFeedbackMeta(item, {
-        resolved,
-        workflowState: resolved ? 'resolved' : 'awaiting-admin',
-        resolvedAt: resolved ? new Date().toISOString() : '',
-        statusHistory: history,
-      });
-      logAdminActivity('feedback_resolved', { id: item.id, resolved });
     };
 
     const openDetailView = async (user, type) => {
@@ -3350,7 +2985,7 @@ function App() {
         try {
           const fetched = await fetchAdminUserDetail(user.id);
           if (fetched) fullUser = fetched;
-        } catch (error) {
+        } catch {
           pushToast('Full user details Firebase se load nahi ho paayi; available data dikhaya gaya hai.', 'error');
         }
       }
@@ -3370,7 +3005,7 @@ function App() {
     };
 
     const pendingRegistrationRequests = requests.filter((r) => {
-      if ((r.status || 'pending') !== 'pending') return false;
+      if ((registrationStatusOverrides[r.id] || r.status || 'pending') !== 'pending') return false;
       // Agar user already create ho chuka hai aur active/disabled/expired hai, toh request hide karein
       const isAlreadyVerified = users.some((u) => String(u?.dealerCode || '').trim() === String(r?.dealerCode || '').trim() && u.status !== 'pending');
       if (isAlreadyVerified) return false;
@@ -3379,7 +3014,6 @@ function App() {
     const pendingCount = pendingRegistrationRequests.length;
     const activeUsers = users.filter((u) => u.status === 'active').length;
     const activeUsersList = users.filter((u) => u.status === 'active');
-    const unreadFeedbackCount = feedback.filter((item) => !item?.read).length;
     const approvalTypeCounts = combinedPendingApprovals.reduce((acc, item) => {
       const key = normalizeApprovalType(item?.type);
       acc[key] = (acc[key] || 0) + 1;
@@ -3391,22 +3025,6 @@ function App() {
       .filter((u) => u.remainingDays !== null && u.remainingDays >= 0 && u.remainingDays <= 7)
       .sort((a, b) => a.remainingDays - b.remainingDays);
     const activeAnnouncementCount = announcements.filter((item) => item?.active).length;
-    const getItemAgeDays = (value) => {
-      const date = new Date(value || '');
-      if (Number.isNaN(date.getTime())) return null;
-      return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
-    };
-    const getApprovalRaisedAt = (approval) => approval?.requestedAt || approval?.createdAt || approval?.updatedAt || '';
-    const registrationSlaSummary = {
-      today: pendingRegistrationRequests.filter((item) => (getItemAgeDays(item.createdAt) ?? 999) <= 1).length,
-      aged3: pendingRegistrationRequests.filter((item) => (getItemAgeDays(item.createdAt) ?? -1) >= 3).length,
-      aged7: pendingRegistrationRequests.filter((item) => (getItemAgeDays(item.createdAt) ?? -1) >= 7).length,
-    };
-    const approvalSlaSummary = {
-      today: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? 999) <= 1).length,
-      aged3: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? -1) >= 3).length,
-      aged7: nonDictionaryPendingApprovals.filter((item) => (getItemAgeDays(getApprovalRaisedAt(item)) ?? -1) >= 7).length,
-    };
     const searchLower = adminSearchTerm.trim().toLowerCase();
     const rangeDaysMap = { today: 0, '7d': 7, '30d': 30 };
     const matchesAdminSearch = (values) => {
@@ -3430,55 +3048,10 @@ function App() {
       start.setDate(start.getDate() - days);
       return date >= start && date <= today;
     };
-    const filteredFeedback = feedback.filter((f) => {
-      const priority = String(f.priority || 'medium').toLowerCase();
-      const feedbackState = f.resolved ? 'resolved' : (f.read ? 'read' : 'unread');
-      const workflowState = getFeedbackWorkflowState(f, feedbackReplies, feedbackMetaOverrides);
-      const assignee = String(f.assignee || feedbackMetaOverrides[f.id]?.assignee || '').toLowerCase();
-      const matchesSubFilter = adminSubFilter === 'all'
-        || adminSubFilter === priority
-        || adminSubFilter === feedbackState
-        || adminSubFilter === workflowState
-        || (adminSubFilter === 'assigned' && Boolean(assignee))
-        || (adminSubFilter === 'unassigned' && !assignee)
-        || (adminSubFilter === 'open' && !f.resolved);
-      return isWithinAdminDateRange(f.createdAt || f.date) &&
-        matchesSubFilter &&
-        matchesAdminSearch([
-          f.dealerCode,
-          f.dealerName,
-          f.mobile,
-          f.email,
-          f.text,
-          f.feedback,
-          feedbackReplies[f.id],
-          feedbackReplies[f.clientFeedbackId],
-          f.attachmentName,
-          f.createdAt,
-          f.date,
-          f.read ? 'read' : 'unread',
-          priority,
-          f.resolved ? 'resolved' : 'open',
-          workflowState,
-          assignee,
-          f.tags,
-          f.followUpDate,
-        ]);
-    });
-    const feedbackSlaSummary = {
-      today: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? 999) <= 1).length,
-      aged3: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? -1) >= 3).length,
-      aged7: filteredFeedback.filter((item) => !item?.resolved && (getItemAgeDays(item.createdAt || item.date) ?? -1) >= 7).length,
-    };
-    const getUserFeedbackCount = (user = {}) => feedback.filter((item) => (
-      item?.userId === user?.id
-      || String(item?.dealerCode || '').trim() === String(user?.dealerCode || '').trim()
-    )).length;
     const getDealerHealthSummary = (user = {}) => {
       const activities = readRecentActivitiesForDealer(user?.dealerCode);
       const uploadCount = activities.filter((item) => /uploaded/i.test(item?.message || '')).length;
       const printCount = activities.filter((item) => /(print|cashmemo)/i.test(item?.message || '')).length;
-      const supportCount = getUserFeedbackCount(user);
       const completionChecks = [
         Boolean(user?.profileData?.distributorName),
         Boolean(user?.bankDetailsData?.bankName),
@@ -3492,19 +3065,8 @@ function App() {
         : remainingDays !== null && remainingDays <= 7
           ? 'medium'
           : 'stable';
-      const score = Math.max(0, Math.min(100, 40 + (uploadCount * 6) + (printCount * 5) + Math.round(completionPercent * 0.3) - (supportCount * 4) - (risk === 'high' ? 20 : risk === 'medium' ? 10 : 0)));
-      return { uploadCount, printCount, supportCount, completionPercent, remainingDays, risk, score };
-    };
-    const getUserLifecycleRows = (user = {}) => {
-      const requestEntries = Object.entries(user?.approvalStatus || {});
-      return [
-        { label: 'Registered', value: formatDisplayDate(user?.createdAt) || 'Not recorded' },
-        { label: 'Current Status', value: user?.status || '-' },
-        { label: 'Package Valid Till', value: formatDisplayDate(user?.validTill) || '-' },
-        { label: 'Pending Approvals', value: requestEntries.filter(([, value]) => String(value || '').toLowerCase() === 'pending').length || 0 },
-        { label: 'Support Tickets', value: getUserFeedbackCount(user) },
-        { label: 'Feature Blocks', value: Object.entries(user?.featureBlocks || {}).filter(([, value]) => Boolean(value)).map(([key]) => key).join(', ') || 'None' },
-      ];
+      const score = Math.max(0, Math.min(100, 40 + (uploadCount * 6) + (printCount * 5) + Math.round(completionPercent * 0.3) - (risk === 'high' ? 20 : risk === 'medium' ? 10 : 0)));
+      return { uploadCount, printCount, completionPercent, remainingDays, risk, score };
     };
     const getUserLastUploadedDataRows = (user = {}) => readRecentActivitiesForDealer(user?.dealerCode)
       .filter((item) => /uploaded/i.test(item?.message || ''))
@@ -3538,9 +3100,6 @@ function App() {
         timeline: buildAdminRequestTimeline(entry),
       }))
     );
-    const getUserSupportRows = (user = {}) => feedback
-      .filter((item) => item?.userId === user?.id || String(item?.dealerCode || '').trim() === String(user?.dealerCode || '').trim())
-      .slice(0, 6);
     const getUserAdminActivityRows = (user = {}) => {
       const dealerCode = String(user?.dealerCode || '').trim().toLowerCase();
       const email = String(user?.email || '').trim().toLowerCase();
@@ -3573,13 +3132,6 @@ function App() {
       .map((user) => ({ user, health: getDealerHealthSummary(user) }))
       .sort((a, b) => b.health.score - a.health.score)
       .slice(0, 6);
-    const lifecycleWatchlist = users
-      .filter((user) => (
-        String(user?.status || '').toLowerCase() !== 'active'
-        || getUserFeedbackCount(user) > 0
-        || Object.values(user?.approvalStatus || {}).some((value) => String(value || '').toLowerCase() === 'pending')
-      ))
-      .slice(0, 6);
     const filteredPendingRegistrationRequests = pendingRegistrationRequests.filter((r) =>
       isWithinAdminDateRange(r.createdAt || r.approvedAt) &&
       (adminSubFilter === 'all' || String(r.package || '') === adminSubFilter) &&
@@ -3604,7 +3156,6 @@ function App() {
           serializeSearchData(u.approvalStatus),
           serializeSearchData(u.profileData),
           serializeSearchData(u.bankDetailsData),
-          serializeSearchData(u.feedbackEntries),
           ...normalizeLoginDevices(u.loginDevices).flatMap((device) => [
             device.deviceName,
             device.platform,
@@ -3639,8 +3190,6 @@ function App() {
       ? filteredPendingRegistrationRequests
       : activeAdminTab === 'approval'
         ? filteredApprovals
-        : activeAdminTab === 'feedback'
-          ? filteredFeedback
           : (activeAdminTab === 'active-user' || activeAdminTab === 'total-user')
             ? filteredUsersList
             : activeAdminTab === 'dictionary'
@@ -3657,16 +3206,14 @@ function App() {
     const pagedUsersList = paginateAdminRows(filteredUsersList, adminItemsPerPage, adminCurrentPage);
     const pagedApprovals = paginateAdminRows(filteredApprovals, adminItemsPerPage, adminCurrentPage);
     const pagedDictionaryApprovals = paginateAdminRows(filteredDictionaryApprovals, adminItemsPerPage, adminCurrentPage);
-    const pagedFeedback = paginateAdminRows(filteredFeedback, adminItemsPerPage, adminCurrentPage);
     const pagedAnnouncements = paginateAdminRows(announcements, adminItemsPerPage, adminCurrentPage);
     const pagedDeletedUsers = paginateAdminRows(deletedUsersBin, adminItemsPerPage, adminCurrentPage);
     const pagedAuditTrail = paginateAdminRows(auditTrail, adminItemsPerPage, adminCurrentPage);
-    const notifications = [
+    const adminNotifications = [
       pendingCount > 0 ? { id: 'pending-requests', text: `${pendingCount} registration requests pending`, tone: 'blue' } : null,
       nonDictionaryPendingApprovals.length > 0 ? { id: 'pending-approvals', text: `${nonDictionaryPendingApprovals.length} approval requests waiting`, tone: 'amber' } : null,
       dictionaryPendingApprovals.length > 0 ? { id: 'pending-dictionary', text: `${dictionaryPendingApprovals.length} dictionary requests waiting`, tone: 'blue' } : null,
       expiringUsers.length > 0 ? { id: 'expiring-users', text: `${expiringUsers.length} active users expiring within 7 days`, tone: 'rose' } : null,
-      unreadFeedbackCount > 0 ? { id: 'unread-feedback', text: `${unreadFeedbackCount} unread feedback messages`, tone: 'green' } : null,
     ].filter(Boolean);
     const exportRowsAsCsv = (filename, rows) => {
       if (!Array.isArray(rows) || rows.length === 0) {
@@ -3723,7 +3270,6 @@ function App() {
     const adminStats = [
       { label: 'Pending Registration', value: pendingCount, tone: 'blue' },
       { label: 'Pending Approval', value: nonDictionaryPendingApprovals.length, tone: 'amber' },
-      { label: 'Unread Feedback', value: unreadFeedbackCount, tone: 'rose' },
       { label: 'Expiring Users', value: expiringUsers.length, tone: 'amber' },
       { label: 'Rejected Requests', value: rejectedRequestCount, tone: 'rose' },
       { label: "Today's Activity", value: todayActivityCount, tone: 'green' },
@@ -3783,20 +3329,6 @@ function App() {
         { value: 'viewer', label: 'Viewer Role' },
         { value: 'expiring', label: 'Expiring Soon' },
       ],
-      'feedback': [
-        { value: 'all', label: 'All Feedback' },
-        { value: 'unread', label: 'Unread' },
-        { value: 'read', label: 'Read' },
-        { value: 'open', label: 'Open' },
-        { value: 'resolved', label: 'Resolved' },
-        { value: 'awaiting-admin', label: 'Awaiting Admin' },
-        { value: 'awaiting-user', label: 'Awaiting User' },
-        { value: 'assigned', label: 'Assigned' },
-        { value: 'unassigned', label: 'Unassigned' },
-        { value: 'high', label: 'High Priority' },
-        { value: 'medium', label: 'Medium Priority' },
-        { value: 'low', label: 'Low Priority' },
-      ],
       'announcements': [{ value: 'all', label: 'All announcements' }],
       'dictionary': [{ value: 'all', label: 'No extra filter' }],
       'create-user': [{ value: 'all', label: 'No extra filter' }],
@@ -3825,10 +3357,6 @@ function App() {
       'create-user': {
         title: 'Create User',
         subtitle: 'Manually add a distributor login with package and role.',
-      },
-      'feedback': {
-        title: 'Feedback Inbox',
-        subtitle: `${filteredFeedback.length} feedback entries currently visible`,
       },
       'announcements': {
         title: 'Global Announcement Center',
@@ -3974,9 +3502,12 @@ function App() {
       await runBulkAdminAction(
         'Approve dictionary requests',
         targets,
-        (item) => approveUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        (item) => approveUpdateRequest(item, { skipConfirm: true, skipAlert: true, skipRefresh: true }),
         {
-          onComplete: (failures) => {
+          onComplete: async (failures) => {
+            clearCompletedDictionaryRows();
+            await loadData();
+            flushDictionaryChanges();
             clearSelectedApprovalIds();
             pushToast(
               failures.length === 0 ? `${targets.length} dictionary requests approved.` : `${targets.length - failures.length} approved, ${failures.length} failed.`,
@@ -3993,9 +3524,12 @@ function App() {
       await runBulkAdminAction(
         'Reject dictionary requests',
         targets,
-        (item) => rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        (item) => rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true, skipRefresh: true }),
         {
-          onComplete: (failures) => {
+          onComplete: async (failures) => {
+            clearCompletedDictionaryRows();
+            await loadData();
+            flushDictionaryChanges();
             clearSelectedApprovalIds();
             pushToast(
               failures.length === 0 ? `${targets.length} dictionary requests rejected.` : `${targets.length - failures.length} rejected, ${failures.length} failed.`,
@@ -4011,9 +3545,12 @@ function App() {
       await runBulkAdminAction(
         'Approve API word requests',
         selectedApiWordApprovals,
-        (item) => approveUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        (item) => approveUpdateRequest(item, { skipConfirm: true, skipAlert: true, skipRefresh: true }),
         {
-          onComplete: (failures) => {
+          onComplete: async (failures) => {
+            clearCompletedDictionaryRows();
+            await loadData();
+            flushDictionaryChanges();
             clearSelectedApiWordApprovalIds();
             pushToast(
               failures.length === 0
@@ -4031,9 +3568,12 @@ function App() {
       await runBulkAdminAction(
         'Reject API word requests',
         selectedApiWordApprovals,
-        (item) => rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true }),
+        (item) => rejectUpdateRequest(item, { skipConfirm: true, skipAlert: true, skipRefresh: true }),
         {
-          onComplete: (failures) => {
+          onComplete: async (failures) => {
+            clearCompletedDictionaryRows();
+            await loadData();
+            flushDictionaryChanges();
             clearSelectedApiWordApprovalIds();
             pushToast(
               failures.length === 0
@@ -4185,11 +3725,6 @@ function App() {
     };
 
     useEffect(() => {
-      setAdminNotifications(notifications);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pendingCount, nonDictionaryPendingApprovals.length, dictionaryPendingApprovals.length, expiringUsers.length, unreadFeedbackCount]);
-
-    useEffect(() => {
       setAdminCurrentPage((prev) => Math.min(prev, adminTotalPages));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [adminTotalPages]);
@@ -4204,10 +3739,10 @@ function App() {
           <div className="admin-header-copy">
             <div className="admin-kicker">Control Center</div>
             <h2>Admin Panel</h2>
-            <p>Registrations, approvals, users, and feedback ko ek jagah se manage kijiye.</p>
+            <p>Registrations, approvals, and users ko ek jagah se manage kijiye.</p>
           </div>
           <div className="admin-header-actions">
-            <button className="admin-ghost-btn" onClick={loadData}>Refresh Data</button>
+            <button className="admin-ghost-btn" onClick={() => { retryDeniedFirestoreReads(); void loadData(); }}>Refresh Data</button>
             <button className="admin-logout-btn" onClick={onAdminLogout}>Log Out</button>
           </div>
         </div>
@@ -4359,9 +3894,6 @@ function App() {
             {activeAdminTab === 'dictionary' && (
               <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('dictionary-requests.csv', filteredDictionaryApprovals)}>Export CSV</button>
             )}
-            {activeAdminTab === 'feedback' && (
-              <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('feedback.csv', filteredFeedback)}>Export CSV</button>
-            )}
             {activeAdminTab === 'announcements' && (
               <button className="admin-ghost-btn" onClick={() => exportRowsAsCsv('announcements.csv', announcements)}>Export CSV</button>
             )}
@@ -4411,18 +3943,6 @@ function App() {
           <>
             <div className="admin-dashboard-grid">
               <div className="admin-section">
-                <h3>Registration Trend</h3>
-                <div className="admin-chart-bars">
-                  {dateSummaryCards.map((item) => (
-                    <div key={item.label} className="admin-chart-bar">
-                      <div className="admin-chart-bar-fill" style={{ height: `${Math.max(18, item.value * 8)}px` }} />
-                      <strong>{item.value}</strong>
-                      <span>{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="admin-section">
                 <h3>Package Mix</h3>
                 <div className="admin-list-grid">
                   {PACKAGE_OPTIONS.map((pkg) => {
@@ -4466,23 +3986,6 @@ function App() {
             </div>
             <div className="admin-dashboard-grid">
               <div className="admin-section">
-                <h3>Approval SLA Dashboard</h3>
-                <div className="admin-sla-grid">
-                  {[
-                    { label: 'Registrations', data: registrationSlaSummary },
-                    { label: 'Approvals', data: approvalSlaSummary },
-                    { label: 'Feedback', data: feedbackSlaSummary },
-                  ].map((item) => (
-                    <div key={item.label} className="admin-sla-card">
-                      <strong>{item.label}</strong>
-                      <span>0-1d: {item.data.today}</span>
-                      <span>3+d: {item.data.aged3}</span>
-                      <span>7+d: {item.data.aged7}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="admin-section">
                 <h3>Dealer Scorecard</h3>
                 <div className="admin-scorecard-list">
                   {dealerScorecards.map(({ user, health }) => (
@@ -4495,23 +3998,6 @@ function App() {
                       <strong>{user.dealerCode || '-'}</strong>
                       <span>{user.dealerName || '-'}</span>
                       <small>Score {health.score} | Uploads {health.uploadCount} | Prints {health.printCount}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="admin-section">
-                <h3>User Lifecycle View</h3>
-                <div className="admin-scorecard-list">
-                  {lifecycleWatchlist.map((user) => (
-                    <button
-                      key={`lifecycle-${user.id || user.dealerCode}`}
-                      type="button"
-                      className="admin-scorecard-item"
-                      onClick={() => setDetailView({ title: `User - ${user?.dealerCode || ''}`, data: user, noteKey: `user:${user?.id || user?.dealerCode}:general` })}
-                    >
-                      <strong>{user.dealerCode || '-'}</strong>
-                      <span>{user.dealerName || '-'}</span>
-                      <small>Status {user.status || '-'} | Pending {Object.values(user?.approvalStatus || {}).filter((value) => String(value || '').toLowerCase() === 'pending').length} | Support {getUserFeedbackCount(user)}</small>
                     </button>
                   ))}
                 </div>
@@ -4682,7 +4168,7 @@ function App() {
                                 <div key={device.deviceId} className="admin-device-row">
                                   <div className="admin-device-meta">
                                     <strong>{device.deviceName || 'Unknown device'}</strong>
-                                    <span>{device.platform || '-'} | Last: {formatDisplayDateTime(device.lastLoginAt)}</span>
+                                    <span>{[device.browser, device.platform].filter(Boolean).join(' | ')} | Last: {formatDisplayDateTime(device.lastLoginAt)}</span>
                                     <small title={device.deviceId}>{device.deviceId}</small>
                                   </div>
                                   <div className="admin-device-actions">
@@ -4906,215 +4392,6 @@ function App() {
                 </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {activeAdminTab === 'feedback' && (
-          <div className="admin-section">
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Feedback</th>
-                    <th>Workflow</th>
-                    <th>Owner</th>
-                    <th>Date</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedFeedback.length === 0 ? (
-                    <tr>
-                      <td colSpan="8" className="admin-empty-cell">No feedback entries match the current search.</td>
-                    </tr>
-                  ) : (
-                    pagedFeedback.map((f, index) => {
-                      const replyText = feedbackReplies[f.id] || feedbackReplies[f.clientFeedbackId];
-                      const workflowState = getFeedbackWorkflowState(f, feedbackReplies, feedbackMetaOverrides);
-                      const slaDays = getFeedbackSlaDaysValue(f);
-                      const feedbackTags = toTagList(f.tags);
-                      return (
-                        <tr key={f.id || index}>
-                          <td>{f.dealerCode || '-'}</td>
-                          <td>{f.dealerName || '-'}</td>
-                          <td>{f.email || '-'}</td>
-                          <td>
-                            <div>{f.text || '-'}</div>
-                            {f.attachmentDataUrl && (
-                              <a
-                                className="support-attachment-link"
-                                href={f.attachmentDataUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                Screenshot: {f.attachmentName || 'attachment'}
-                              </a>
-                            )}
-                            {feedbackTags.length > 0 && (
-                              <div className="admin-feedback-tags">
-                                {feedbackTags.map((tag) => (
-                                  <span key={`${f.id}-${tag}`} className="admin-status-chip admin-status-chip--info">{tag}</span>
-                                ))}
-                              </div>
-                            )}
-                            {replyText && (
-                              <div className="admin-feedback-chat mt-8">
-                                <div className="admin-feedback-chat-message user-message">
-                                  <strong>User:</strong>
-                                  <span>{f.text || '-'}</span>
-                                  <small>{f.read ? 'Read by admin' : 'Sent'}</small>
-                                  {f.attachmentDataUrl && (
-                                    <a
-                                      className="support-attachment-link"
-                                      href={f.attachmentDataUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      Screenshot: {f.attachmentName || 'attachment'}
-                                    </a>
-                                  )}
-                                </div>
-                                <div className="admin-feedback-chat-message admin-message">
-                                  <strong>Admin:</strong>
-                                  <span>{replyText}</span>
-                                  <small>Replied</small>
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                          <td>
-                            <div className="feedback-status-stack">
-                              <span className={f.read ? 'feedback-read' : 'feedback-unread'}>{f.read ? 'Read' : 'Unread'}</span>
-                              <span className={`admin-status-chip admin-status-chip--${getFeedbackSlaTone(slaDays, workflowState)}`}>{workflowState}</span>
-                              <span className={`admin-status-chip admin-status-chip--${getFeedbackSlaTone(slaDays, workflowState)}`}>SLA {slaDays}d</span>
-                              {f.followUpDate && <span className="admin-status-chip admin-status-chip--info">Follow-up {formatDisplayDate(f.followUpDate)}</span>}
-                            </div>
-                          </td>
-                          <td>
-                            <div className="feedback-status-stack">
-                              <span>{f.assignee || 'Unassigned'}</span>
-                              <span>{f.priority || 'medium'} priority</span>
-                            </div>
-                          </td>
-                          <td>{formatDisplayDate(f.createdAt || f.date)}</td>
-                          <td>
-                            <div className="admin-actions">
-                              <select className="form-input admin-inline-select" aria-label="Set priority" value={f.priority || 'medium'} onChange={(e) => setFeedbackPriority(f, e.target.value)} disabled={!canMutateAdminData}>
-                                <option value="high">High</option>
-                                <option value="medium">Medium</option>
-                                <option value="low">Low</option>
-                              </select>
-                              <select className="form-input admin-inline-select" aria-label="Set workflow state" value={workflowState} onChange={(e) => setFeedbackWorkflow(f, e.target.value)} disabled={!canMutateAdminData}>
-                                <option value="awaiting-admin">Awaiting Admin</option>
-                                <option value="awaiting-user">Awaiting User</option>
-                                <option value="resolved">Resolved</option>
-                              </select>
-                              <input className="form-input admin-inline-input" aria-label="Assignee" value={f.assignee || ''} onChange={(e) => setFeedbackAssignee(f, e.target.value)} placeholder="Assignee" disabled={!canMutateAdminData} />
-                              <input className="form-input admin-inline-input" aria-label="Tags" value={f.tags || ''} onChange={(e) => setFeedbackTags(f, e.target.value)} placeholder="tags, comma separated" disabled={!canMutateAdminData} />
-                              <input className="form-input admin-inline-input" aria-label="Follow-up date" type="date" value={String(f.followUpDate || '').slice(0, 10)} onChange={(e) => setFeedbackFollowUpDate(f, e.target.value)} disabled={!canMutateAdminData} />
-                              <button type="button" className="admin-ghost-btn" onClick={() => toggleFeedbackResolved(f)} disabled={!canMutateAdminData}>
-                                {f.resolved ? 'Reopen' : 'Resolve'}
-                              </button>
-                              <button type="button" className={f.read ? 'feedback-unread-btn' : 'feedback-read-btn'} onClick={() => toggleFeedbackRead(f)} disabled={!canMutateAdminData}>
-                                {f.read ? 'Mark Unread' : 'Mark Read'}
-                              </button>
-                              <button
-                                type="button"
-                                className="admin-ghost-btn"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  openAdminReplyPopup(f);
-                                }}
-                                disabled={!canMutateAdminData}
-                              >
-                                Feedback Reply
-                              </button>
-                              <button type="button" className="feedback-delete-btn" onClick={() => deleteFeedbackItem(f)} disabled={!canMutateAdminData}>
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {showAdminReplyPopup && (
-              <div className="admin-chat-popup-overlay" role="dialog" aria-modal="true">
-                <div className="admin-chat-popup">
-                  <div className="admin-chat-popup-header">
-                    <h3>Feedback Reply</h3>
-                    <button type="button" className="admin-chat-popup-close" onClick={closeAdminReplyPopup}>Close</button>
-                  </div>
-                  <div className="admin-chat-popup-body">
-                <div className="admin-chat-content w-100">
-                  <div className="admin-chat-conversation">
-                        <h4>Chat History</h4>
-                        {getConversationHistory(activeAdminFeedback).map((historyItem) => {
-                          const replyText = feedbackReplies?.[historyItem.id] || feedbackReplies?.[historyItem.clientFeedbackId];
-                          const isSelected = activeAdminFeedback && (historyItem.id === activeAdminFeedback.id || historyItem.clientFeedbackId === activeAdminFeedback.clientFeedbackId);
-                          return (
-                            <div key={historyItem.id || historyItem.clientFeedbackId || `${historyItem.dealerCode}-${historyItem.createdAt}`}
-                          className={`admin-feedback-chat ${isSelected ? 'admin-feedback-chat-selected' : ''}`}>
-                              <div className="admin-feedback-chat-message user-message">
-                                <strong>User:</strong>
-                                <span>{historyItem.text || historyItem.feedback || 'No message content.'}</span>
-                                <small>{formatDisplayDate(historyItem.createdAt || historyItem.date)}</small>
-                                <small>{historyItem.read ? 'Read by admin' : 'Sent'}</small>
-                                {historyItem.attachmentDataUrl && (
-                                  <a
-                                    className="support-attachment-link"
-                                    href={historyItem.attachmentDataUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    Screenshot: {historyItem.attachmentName || 'attachment'}
-                                  </a>
-                                )}
-                              </div>
-                              <div className="admin-feedback-chat-message admin-message">
-                                <strong>Admin:</strong>
-                                <span>{replyText || 'No reply yet.'}</span>
-                                {replyText && <small>Replied</small>}
-                              </div>
-                              <div className="mt-8">
-                                <button
-                                  type="button"
-                                  className="form-button admin-chat-history-select"
-                                  onClick={() => openAdminReplyPopup(historyItem)}
-                                  disabled={isSelected}
-                                >
-                                  {isSelected ? 'Selected' : 'Feedback Reply'}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <textarea
-                        className="form-input"
-                    aria-label="Feedback reply"
-                        rows="5"
-                        value={adminReplyDraft}
-                        onChange={(e) => setAdminReplyDraft(e.target.value)}
-                        placeholder="Type feedback reply here"
-                      />
-                      <div className="admin-chat-actions">
-                        <button type="button" className="form-button" onClick={submitAdminReply}>Send Feedback Reply</button>
-                        <button type="button" className="form-button secondary" onClick={closeAdminReplyPopup}>Cancel</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
           </div>
         )}
 
@@ -5500,7 +4777,6 @@ function App() {
                           <li key="score">Score: {health.score}</li>,
                           <li key="uploads">Uploads logged: {health.uploadCount}</li>,
                           <li key="prints">Print actions: {health.printCount}</li>,
-                          <li key="support">Support tickets: {health.supportCount}</li>,
                           <li key="completion">Profile completion: {health.completionPercent}%</li>,
                           <li key="risk">Expiry risk: {health.risk}</li>,
                         ];
@@ -5542,14 +4818,6 @@ function App() {
                     })()}
                   </div>
                   <div className="admin-drawer-section">
-                    <h4>User Lifecycle</h4>
-                    <ul>
-                      {getUserLifecycleRows(activeDrawerData).map((item) => (
-                        <li key={`${activeDrawer.noteKey}-${item.label}`}>{item.label}: {item.value}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="admin-drawer-section">
                     <h4>Last Uploaded Data</h4>
                     <ul>
                       {(() => {
@@ -5567,32 +4835,6 @@ function App() {
                     </ul>
                   </div>
                   <div className="admin-drawer-section">
-                    <h4>Support / Feedback</h4>
-                    {(() => {
-                      const supportRows = getUserSupportRows(activeDrawerData);
-                      return supportRows.length === 0 ? (
-                        <div className="admin-drawer-empty">No support tickets recorded.</div>
-                      ) : (
-                        <div className="admin-support-list">
-                          {supportRows.map((item) => {
-                            const replyText = feedbackReplies[item.id] || feedbackReplies[item.clientFeedbackId];
-                            return (
-                              <div key={`${activeDrawer.noteKey}-support-${item.id || item.clientFeedbackId}`} className="admin-support-row">
-                                <strong>{item.text || item.feedback || 'No message content.'}</strong>
-                                <span>{formatDisplayDateTime(item.createdAt || item.date)} | {replyText ? 'Replied' : item.read ? 'Read' : 'Sent'}</span>
-                                {item.attachmentDataUrl && (
-                                  <a className="support-attachment-link" href={item.attachmentDataUrl} target="_blank" rel="noopener noreferrer">
-                                    Screenshot: {item.attachmentName || 'attachment'}
-                                  </a>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <div className="admin-drawer-section">
                     <h4>Login Devices</h4>
                     <ul>
                       {normalizeLoginDevices(activeDrawerData?.loginDevices).length === 0 ? (
@@ -5600,7 +4842,7 @@ function App() {
                       ) : (
                         normalizeLoginDevices(activeDrawerData?.loginDevices).map((device) => (
                           <li key={`${activeDrawer.noteKey}-device-${device.deviceId}`}>
-                            {device.deviceName || device.platform || 'Device'}: {device.blocked ? 'Blocked' : 'Allowed'} | {formatDisplayDateTime(device.lastLoginAt || device.updatedAt)}
+                            {device.deviceName || device.platform || 'Device'}{device.browser ? ` (${device.browser})` : ''}: {device.blocked ? 'Blocked' : 'Allowed'} | {formatDisplayDateTime(device.lastLoginAt || device.updatedAt)}
                           </li>
                         ))
                       )}
@@ -5948,7 +5190,7 @@ function App() {
           </div>
         )}
 
-        {['pending-registration', 'approval', 'dictionary', 'active-user', 'total-user', 'feedback', 'announcements', 'recycle-bin', 'audit'].includes(activeAdminTab) && adminTotalPages > 1 && (
+        {['pending-registration', 'approval', 'dictionary', 'active-user', 'total-user', 'announcements', 'recycle-bin', 'audit'].includes(activeAdminTab) && adminTotalPages > 1 && (
           <div className="admin-pagination">
             <button className="admin-ghost-btn" onClick={() => setAdminCurrentPage((prev) => Math.max(1, prev - 1))} disabled={adminCurrentPage === 1}>Previous</button>
             <span>Page {adminCurrentPage} of {adminTotalPages}</span>
@@ -9082,10 +8324,6 @@ function App() {
     }
     runUserMenuItem(action)();
   };
-  const handleOpenRenewalHistory = () => {
-    setUserProfileInitialSection('history');
-    handleRequestHistoryOpen();
-  };
 
   const userMenuConfig = [
     {
@@ -9635,8 +8873,6 @@ function App() {
               <LazyContactSupportPanel
                 loggedInUser={loggedInUser}
                 pushToast={pushToast}
-                readFeedbackDataFromStorage={readFeedbackDataFromStorage}
-                readFeedbackRepliesFromStorage={readFeedbackRepliesFromStorage}
                 updateUserInFirebase={updateUserInFirebase}
                 updateUserInStore={updateUserInStore}
                 formatDisplayDateTime={formatDisplayDateTime}

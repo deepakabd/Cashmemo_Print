@@ -37,13 +37,6 @@ export const upsertStatusHistoryEntry = (history = [], entry = {}) => {
   return nextHistory;
 };
 
-export const getFeedbackSlaDaysValue = (item) => {
-  const createdAt = item?.createdAt || item?.date || '';
-  const createdDate = new Date(createdAt);
-  if (Number.isNaN(createdDate.getTime())) return 0;
-  return Math.max(0, Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24)));
-};
-
 export const getDrawerSummaryRows = ({
   drawer = {},
   users = [],
@@ -55,7 +48,6 @@ export const getDrawerSummaryRows = ({
     const pendingUpdates = Object.entries(data?.pendingUpdates || {})
       .filter(([, value]) => String(value?.status || '').toLowerCase() === 'pending')
       .length;
-    const feedbackEntries = Array.isArray(data?.feedbackEntries) ? data.feedbackEntries.length : 0;
     return [
       { label: 'Dealer Code', value: data?.dealerCode || '-' },
       { label: 'Role', value: data?.role || '-' },
@@ -64,7 +56,6 @@ export const getDrawerSummaryRows = ({
       { label: 'Valid Till', value: formatDisplayDate(data?.validTill) },
       { label: 'Pending Requests', value: pendingUpdates || 0 },
       { label: 'Dictionary Queue', value: Number(data?.dictionaryPendingCount || 0) },
-      { label: 'Support Messages', value: feedbackEntries },
     ];
   }
   if (drawer?.type === 'approval') {
@@ -167,13 +158,47 @@ const getCurrentDeviceId = () => {
   }
 };
 
-export const getCurrentDeviceInfo = () => {
+export const getLoginDeviceName = (device = {}) => {
+  const savedName = String(device.deviceName || device.name || '').trim();
+  if (savedName && savedName !== 'Unknown device' && !/ on /i.test(savedName)) return savedName;
+  if (device.model) return String(device.model).trim();
+  const ua = String(device.userAgent || '');
+  const platform = String(device.platform || '');
+  if (/iPad/i.test(ua) || (/Mac/i.test(platform) && device.maxTouchPoints > 1)) return 'iPad';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/Android/i.test(`${ua} ${platform}`)) {
+    const model = ua.match(/Android[^;)]*;\s*(?:[a-z]{2}[-_][A-Z]{2};\s*)?([^;)]+?)(?:\s+Build\/[^;)]*)?\)/)?.[1]?.trim();
+    if (model && model !== 'K') return model;
+    return /Mobile/i.test(ua) || device.mobile ? 'Android Phone' : 'Android Device';
+  }
+  if (/Win/i.test(`${ua} ${platform}`)) return 'Windows PC';
+  if (/CrOS/i.test(ua)) return 'Chromebook';
+  if (/Mac/i.test(`${ua} ${platform}`)) return 'Mac';
+  if (/Linux/i.test(`${ua} ${platform}`)) return 'Linux PC';
+  return savedName || 'Unknown device';
+};
+
+export const getCurrentDeviceInfo = async () => {
   const nav = typeof navigator !== 'undefined' ? navigator : {};
+  let hints = {};
+  let hintsTimeout;
+  try {
+    if (nav.userAgentData?.getHighEntropyValues) {
+      hints = await Promise.race([
+        nav.userAgentData.getHighEntropyValues(['model']),
+        new Promise((resolve) => { hintsTimeout = setTimeout(() => resolve({}), 700); }),
+      ]);
+    }
+  } catch {
+    // Fall back to the available platform when model hints are unavailable.
+  } finally {
+    clearTimeout(hintsTimeout);
+  }
   const screenInfo = typeof window !== 'undefined' && window.screen
     ? `${window.screen.width || 0}x${window.screen.height || 0}`
     : 'unknown-screen';
   const userAgent = String(nav.userAgent || 'Unknown browser');
-  const platform = String(nav.platform || 'Unknown platform');
+  const platform = String(hints.platform || nav.userAgentData?.platform || nav.platform || 'Unknown platform');
   const browserName = userAgent.includes('Edg/')
     ? 'Microsoft Edge'
     : userAgent.includes('Chrome/')
@@ -186,7 +211,8 @@ export const getCurrentDeviceInfo = () => {
 
   return {
     deviceId: getCurrentDeviceId(),
-    deviceName: `${browserName} on ${platform}`,
+    deviceName: getLoginDeviceName({ userAgent, platform, model: hints.model, mobile: nav.userAgentData?.mobile, maxTouchPoints: nav.maxTouchPoints }),
+    model: String(hints.model || ''),
     browser: browserName,
     platform,
     screen: screenInfo,
@@ -200,7 +226,8 @@ export const normalizeLoginDevices = (devices = []) => (
       .filter((device) => device && typeof device === 'object')
       .map((device) => ({
         deviceId: String(device.deviceId || device.id || '').trim(),
-        deviceName: String(device.deviceName || device.name || 'Unknown device').trim(),
+        deviceName: getLoginDeviceName(device),
+        model: String(device.model || '').trim(),
         browser: String(device.browser || '').trim(),
         platform: String(device.platform || '').trim(),
         screen: String(device.screen || '').trim(),

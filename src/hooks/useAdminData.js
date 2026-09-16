@@ -12,7 +12,6 @@ const readStorageValue = (key, fallback) => {
 export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } = {}) => {
   const [requests, setRequests] = useState([]);
   const [users, setUsers] = useState([]);
-  const [feedback, setFeedback] = useState([]);
   const [updateApprovals, setUpdateApprovals] = useState([]);
   const [activeAdminTabState, setActiveAdminTabState] = useState(() => {
     const savedTab = readStorageValue('activeAdminTab', 'dashboard');
@@ -31,14 +30,6 @@ export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } 
   });
   const [adminNotes, setAdminNotes] = useState(() => {
     const parsed = readStorageValue('adminNotes', {});
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  });
-  const [feedbackMetaOverrides, setFeedbackMetaOverrides] = useState(() => {
-    const parsed = readStorageValue('feedbackMetaOverrides', {});
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  });
-  const [feedbackReplies, setFeedbackReplies] = useState(() => {
-    const parsed = readStorageValue('feedbackReplies', {});
     return parsed && typeof parsed === 'object' ? parsed : {};
   });
   const [approvalReplies, setApprovalReplies] = useState(() => {
@@ -82,8 +73,6 @@ export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } 
     setRequests,
     users,
     setUsers,
-    feedback,
-    setFeedback,
     updateApprovals,
     setUpdateApprovals,
     activeAdminTab: activeAdminTabState,
@@ -106,10 +95,6 @@ export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } 
     setAuditTrail,
     adminNotes,
     setAdminNotes,
-    feedbackMetaOverrides,
-    setFeedbackMetaOverrides,
-    feedbackReplies,
-    setFeedbackReplies,
     approvalReplies,
     setApprovalReplies,
     savedAdminViews,

@@ -103,7 +103,7 @@ export const registerLoginDevice = async (firestoreUser) => {
   // aur naye deviceId se (localStorage clear) block bypass ho sakta hai.
   // Strong enforcement ke liye security rules / Cloud Function / App Check
   // chahiye. Yahan iska role sirf "abuse management convenience" hai.
-  const currentDeviceInfo = getCurrentDeviceInfo();
+  const currentDeviceInfo = await getCurrentDeviceInfo();
   const currentDevice = normalizeLoginDevices(firestoreUser.loginDevices).find(
     (device) => device.deviceId === currentDeviceInfo.deviceId,
   );
@@ -152,13 +152,13 @@ export const adminSignOut = () => signOut(auth);
 // Admin users fetch — scalable replacement for getDocs(collection(db,'users'))
 //
 // Old approach downloaded every user doc (including heavy nested payloads:
-// ratesData, loginDevices, profileData, feedbackEntries, ...) in a single
+// ratesData, loginDevices, profileData, ...) in a single
 // snapshot. That works for dozens of users but breaks down at thousands.
 //
 // New approach:
 //   1. Field projection — list pages only carry the columns the admin table
 //      renders (dealerCode, dealerName, package, status, role, validity,
-//      flags). Heavy payloads (ratesData, loginDevices, feedbackEntries,
+//      flags). Heavy payloads (ratesData, loginDevices,
 //      profileData, bankDetailsData, pendingUpdates...) are fetched lazily,
 //      per user, only when the admin opens the detail view or edits.
 //   2. Cursor pagination — each page is a bounded query (orderBy + limit +
@@ -199,7 +199,6 @@ const ADMIN_USER_DETAIL_FIELDS = [
   "deliveryAreaUpdates",
   "deliveryStaffUpdates",
   "loginDevices",
-  "feedbackEntries",
 ];
 
 const pickFields = (docData, fields) => {

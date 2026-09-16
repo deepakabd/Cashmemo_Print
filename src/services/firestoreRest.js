@@ -1,3 +1,9 @@
+import { auth } from '../firebase';
+
+let deniedReads = new WeakMap();
+const pendingReads = new WeakMap();
+export const retryDeniedFirestoreReads = () => { deniedReads = new WeakMap(); };
+
 const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
 
@@ -23,14 +29,45 @@ const baseUrl = () => {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 };
 
-const request = async (path) => {
-  const response = await fetch(`${baseUrl()}/${path}${path.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey)}`);
-  if (!response.ok) throw new Error(`Firestore REST request failed (${response.status}).`);
+const request = async (path, { pauseOnForbidden = false } = {}) => {
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user) throw new Error('Firebase sign-in required. Please log in again.');
+  if (!pauseOnForbidden) return sendRequest(path, user);
+  const denied = deniedReads.get(user)?.get(path);
+  if (denied) throw denied;
+  if (!pendingReads.has(user)) pendingReads.set(user, new Map());
+  const pending = pendingReads.get(user);
+  if (pending.has(path)) return pending.get(path);
+  const deniedForAttempt = deniedReads;
+  const operation = sendRequest(path, user).catch((error) => {
+    if (error.status === 403) {
+      if (!deniedForAttempt.has(user)) deniedForAttempt.set(user, new Map());
+      deniedForAttempt.get(user).set(path, error);
+    }
+    throw error;
+  }).finally(() => pending.delete(path));
+  pending.set(path, operation);
+  return operation;
+};
+
+const sendRequest = async (path, user) => {
+  const token = await user.getIdToken();
+  const response = await fetch(`${baseUrl()}/${path}${path.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const details = await response.json().catch(() => null);
+    const error = new Error(details?.error?.message || `Firestore REST request failed (${response.status}).`);
+    error.status = response.status;
+    error.code = details?.error?.status || 'UNKNOWN';
+    throw error;
+  }
   return response.json();
 };
 
-export const fetchFirestoreCollectionRest = async (collectionName, pageSize = 200) => {
-  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}`);
+export const fetchFirestoreCollectionRest = async (collectionName, pageSize = 200, options = {}) => {
+  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}`, options);
   return (data.documents || []).map((document) => ({
     id: document.name.split('/').pop(),
     ...decodeFields(document.fields),

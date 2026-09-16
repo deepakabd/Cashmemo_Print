@@ -15,7 +15,6 @@ import { db } from "../firebase";
 //
 // Collection docs (one doc per item):
 //   users/{uid}/devices/{deviceId}          -> loginDevices
-//   users/{uid}/feedback/{clientFeedbackId} -> feedbackEntries
 //   users/{uid}/dictionaryRequests/{requestId} -> pendingDictionaryRequests
 //
 // Migration strategy (non-breaking):
@@ -43,7 +42,6 @@ const SINGLETONS = {
 
 const COLLECTIONS = {
   loginDevices: "devices",
-  feedbackEntries: "feedback",
   pendingDictionaryRequests: "dictionaryRequests",
 };
 
@@ -64,7 +62,6 @@ const isFieldValueSentinel = (value) =>
 const stableItemId = (item, index) =>
   String(
     item?.deviceId ||
-      item?.clientFeedbackId ||
       item?.requestId ||
       item?.approvalId ||
       item?.id ||
@@ -157,7 +154,7 @@ const readItemCollection = async (uid, key) => {
  */
 export const readUserSubcollections = async (uid) => {
   if (!uid) return {};
-  const [singletons, loginDevices, feedbackEntries, pendingDictionaryRequests] =
+  const [singletons, loginDevices, pendingDictionaryRequests] =
     await Promise.all([
       Promise.all(
         Object.keys(SINGLETONS).map(async (key) => [
@@ -166,7 +163,6 @@ export const readUserSubcollections = async (uid) => {
         ]),
       ),
       readItemCollection(uid, "loginDevices"),
-      readItemCollection(uid, "feedbackEntries"),
       readItemCollection(uid, "pendingDictionaryRequests"),
     ]);
   const out = {};
@@ -174,7 +170,6 @@ export const readUserSubcollections = async (uid) => {
     if (value !== undefined) out[key] = value;
   });
   if (loginDevices.length > 0) out.loginDevices = loginDevices;
-  if (feedbackEntries.length > 0) out.feedbackEntries = feedbackEntries;
   if (pendingDictionaryRequests.length > 0)
     out.pendingDictionaryRequests = pendingDictionaryRequests;
   return out;
