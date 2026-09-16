@@ -1838,36 +1838,6 @@
   text-decoration: underline;
 }
 
-.admin-feedback-chat {
-  margin-top: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.admin-feedback-chat-message {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  font-size: 0.92rem;
-}
-
-.admin-feedback-chat-message strong {
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.admin-feedback-chat-message.user-message {
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
-}
-
-.admin-feedback-chat-message.admin-message {
-  background: #f8fafc;
-  border: 1px solid #d1d5db;
-}
-
 .dictionary-approved-empty {
   color: #5a6270;
   font-size: 13px;
@@ -2595,8 +2565,6 @@
     0 34px 90px rgba(12, 28, 52, 0.32),
     0 8px 24px rgba(87, 59, 27, 0.08);
   animation: consumerDetailPop 240ms ease-out;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(96, 112, 132, 0.55) transparent;
 }
 
 .consumer-detail-modal::-webkit-scrollbar {
@@ -6207,28 +6175,6 @@
   font-size: 12px;
 }
 
-.feedback-read {
-  color: #15803d;
-  font-weight: 700;
-}
-
-.feedback-unread {
-  color: #b91c1c;
-  font-weight: 700;
-}
-
-.feedback-read-btn {
-  background: #15803d !important;
-}
-
-.feedback-unread-btn {
-  background: #b91c1c !important;
-}
-
-.feedback-delete-btn {
-  background: #374151 !important;
-}
-
 .admin-table-wrap {
   overflow-x: auto;
   border: 1px solid #d5deea;
@@ -6261,14 +6207,7 @@
 }
 
 .admin-panel--compact .admin-ghost-btn,
-.admin-panel--compact .feedback-read-btn,
-.admin-panel--compact .feedback-unread-btn,
-.admin-panel--compact .feedback-delete-btn {
-  padding: 6px 8px;
-  font-size: 11px;
-}
-
-.admin-table thead th {
+.admin-panel--compact .admin-table thead th {
   background: linear-gradient(180deg, #eff5ff 0%, #e6efff 100%);
   color: #0f3f9f;
   position: sticky;
@@ -6576,19 +6515,6 @@
 .admin-status-chip--rose {
   background: #ffe4e6;
   color: #a1122a;
-}
-
-.feedback-status-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.admin-feedback-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 8px;
 }
 
 .admin-empty-cell {
@@ -8005,3 +7931,4 @@
     grid-column: auto;
   }
 }
+

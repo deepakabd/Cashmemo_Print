@@ -470,20 +470,12 @@ export const upsertStatusHistoryEntry = (history = [], entry = {}) => {
   return nextHistory;
 };
 
-export const getFeedbackSlaDaysValue = (item) => {
-  const createdAt = item?.createdAt || item?.date || '';
-  const createdDate = new Date(createdAt);
-  if (Number.isNaN(createdDate.getTime())) return 0;
-  return Math.max(0, Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24)));
-};
-
 export const getDrawerSummaryRows = (drawer = {}, users = []) => {
   const data = drawer?.data || {};
   if (drawer?.type === 'detail' && /^User - /.test(drawer?.title || '')) {
     const pendingUpdates = Object.entries(data?.pendingUpdates || {})
       .filter(([, value]) => String(value?.status || '').toLowerCase() === 'pending')
       .length;
-    const feedbackEntries = Array.isArray(data?.feedbackEntries) ? data.feedbackEntries.length : 0;
     return [
       { label: 'Dealer Code', value: data?.dealerCode || '-' },
       { label: 'Role', value: data?.role || '-' },
@@ -492,7 +484,6 @@ export const getDrawerSummaryRows = (drawer = {}, users = []) => {
       { label: 'Valid Till', value: formatDisplayDate(data?.validTill) },
       { label: 'Pending Requests', value: pendingUpdates || 0 },
       { label: 'Dictionary Queue', value: Number(data?.dictionaryPendingCount || 0) },
-      { label: 'Support Messages', value: feedbackEntries },
     ];
   }
   if (drawer?.type === 'approval') {
@@ -625,5 +616,5 @@ export const ADMIN_ROLE_PERMISSIONS = {
   'super-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
   'approval-admin': { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'announcements'], mutate: true },
   'support-admin': { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'announcements'], mutate: true },
-  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'feedback'], mutate: false },
+  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user'], mutate: false },
 };
