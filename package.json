@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "firebase": "^12.4.0",
+    "firebase-admin": "^14.4.0",
     "html2canvas": "^1.4.1",
     "papaparse": "^5.5.3",
     "react": "^19.2.0",
@@ -37,8 +38,5 @@
   },
   "overrides": {
     "vite": "^8.0.0-beta.13"
-  },
-  "optionalDependencies": {
-    "firebase-admin": "^14.4.0"
   }
 }
