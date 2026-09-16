@@ -42,10 +42,9 @@ const getAdmin = async () => {
   if (adminInitError) throw adminInitError;
 
   try {
-    // Built at runtime so a bundler never tries to statically resolve the
-    // optional `firebase-admin` dependency into the client build.
-    const loadAdmin = (subpath) => import(/* @vite-ignore */ subpath);
-    const { initializeApp, getApps, cert, applicationDefault } = await loadAdmin('firebase-admin/app');
+    // Literal imports let serverless dependency tracing include the Admin SDK.
+    // This module is server-only and must not be imported by client code.
+    const { initializeApp, getApps, cert, applicationDefault } = await import('firebase-admin/app');
 
     const inline = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (!inline && !process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.GOOGLE_CLOUD_PROJECT) {
@@ -59,8 +58,8 @@ const getAdmin = async () => {
       projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
     });
 
-    const { getAuth } = await loadAdmin('firebase-admin/auth');
-    const { getFirestore } = await loadAdmin('firebase-admin/firestore');
+    const { getAuth } = await import('firebase-admin/auth');
+    const { getFirestore } = await import('firebase-admin/firestore');
 
     adminApp = { app, auth: getAuth(app), firestore: getFirestore(app) };
     return adminApp;
@@ -68,8 +67,8 @@ const getAdmin = async () => {
     // Distinguish "not installed" / "no credentials" from "credentials rejected",
     // because the fix is different in each case.
     const reason = String(error?.message || error?.code || error);
-    const detail = /Cannot find module|ERR_MODULE_NOT_FOUND/i.test(reason)
-      ? 'firebase-admin is not installed. Run: npm install firebase-admin --save-optional'
+    const detail = /Cannot find module|Cannot find package|ERR_MODULE_NOT_FOUND/i.test(reason)
+      ? 'firebase-admin is missing from the server deployment. Install production dependencies and redeploy.'
       : /invalid_grant|invalid-credential|Could not load the default credentials|metadata/i.test(reason)
         ? 'Server credentials are missing or expired. Set GOOGLE_APPLICATION_CREDENTIALS to a service account JSON for this Firebase project.'
         : `Admin SDK init failed: ${reason}`;
