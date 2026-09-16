@@ -99,7 +99,6 @@ import {
 import {
   isHindiEnterprisePackage,
   computeValidityDates,
-  isUserExpired,
   formatPackageNameForNavbar,
 } from './utils/packageHelpers';
 import {
@@ -146,13 +145,14 @@ import {
 import {
   lookupDealerByCode,
   registerLoginDevice,
-  fetchAdminUsersPage,
   fetchAdminUserDetail,
   markUserExpiredIfDue,
   buildPinWritePatch,
 } from './auth/userAuth';
 import { mirrorUserPatchToSubcollections } from './services/userSubcollections';
-import { fetchFirestoreCollectionRest, retryDeniedFirestoreReads } from './services/firestoreRest';
+import { fetchFirestoreCollectionRest, retryDeniedFirestoreReads, retryFirestoreRequest } from './services/firestoreRest';
+import { fetchAllAdminUsers, getAdminUserStatistics } from './services/adminUserRepository';
+import { getUserAccountStatus } from './utils/userAccountStatus';
 import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
 import {
   readUsersCache as readUsersData,
@@ -271,9 +271,6 @@ function App() {
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
   const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
   const [adminFlashMessage, setAdminFlashMessage] = useState(null);
-  const [adminUsersCursor, setAdminUsersCursor] = useState(null);
-  const [adminUsersHasMore, setAdminUsersHasMore] = useState(false);
-  const [adminUsersLoadingMore, setAdminUsersLoadingMore] = useState(false);
   const [showOnboardingTour, setShowOnboardingTour] = useState(false);
   const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
   const [translationObservability, setTranslationObservability] = useState({
@@ -908,13 +905,13 @@ function App() {
       return;
     }
 
-    if (firestoreUser.status === 'pending') {
+    if (getUserAccountStatus(firestoreUser) === 'pending') {
       pushToast('Your registration is pending with admin approval.', 'info');
       setIsUserLoginSubmitting(false);
       return;
     }
 
-    if (firestoreUser.status === 'disabled') {
+    if (getUserAccountStatus(firestoreUser) === 'disabled') {
       pushToast('Your account is disabled. Please contact admin.', 'error');
       setIsUserLoginSubmitting(false);
       return;
@@ -943,7 +940,7 @@ function App() {
     setUserDealerCode('');
     setUserPin('');
     setUserPinVisible(false);
-    if (String(localUser.status || '').toLowerCase() === 'expired') {
+    if (getUserAccountStatus(localUser) === 'expired') {
       const replyMap = readApprovalRepliesFromStorage();
       const pendingPlanUpgrade = localUser?.pendingUpdates?.planUpgrade || {};
       const storedReplyKey = getPlanUpgradeReplyStorageKey({
@@ -1190,7 +1187,7 @@ function App() {
 
         const restoredUser = {
           ...matchedUser,
-          status: isUserExpired(matchedUser) ? 'expired' : matchedUser.status,
+          status: getUserAccountStatus(matchedUser),
           cashMemoLabelSettings: mergeCashMemoLabelSettings(matchedUser.cashMemoLabelSettings || {}),
           deliveryAreaUpdates: Array.isArray(matchedUser.deliveryAreaUpdates) ? matchedUser.deliveryAreaUpdates : [],
           deliveryStaffUpdates: Array.isArray(matchedUser.deliveryStaffUpdates) ? matchedUser.deliveryStaffUpdates : [],
@@ -1774,33 +1771,17 @@ function App() {
         const fetchErrors = {};
 
         try {
-          firebaseRequests = await fetchFirestoreCollectionRest('registrationRequests');
+          firebaseRequests = await retryFirestoreRequest(() => fetchFirestoreCollectionRest('registrationRequests'), 3);
           fetchOk.requests = true;
         } catch (e) {
-          try {
-            firebaseRequests = await fetchFirestoreCollectionRest('registrationRequests');
-            fetchOk.requests = true;
-            fetchErrors.requests = 'Loaded with REST fallback.';
-          } catch {
-            fetchErrors.requests = e?.message || 'Registration requests could not be read.';
-          }
+          fetchErrors.requests = e?.message || 'Registration requests could not be read.';
         }
 
         try {
-          firebaseUsers = await fetchFirestoreCollectionRest('users');
-          setAdminUsersCursor(null);
-          setAdminUsersHasMore(false);
+          firebaseUsers = await fetchAllAdminUsers();
           fetchOk.users = true;
         } catch (e) {
-          try {
-            firebaseUsers = await fetchFirestoreCollectionRest('users');
-            setAdminUsersCursor(null);
-            setAdminUsersHasMore(false);
-            fetchOk.users = true;
-            fetchErrors.users = 'Loaded with REST fallback.';
-          } catch {
-            fetchErrors.users = e?.message || 'Users could not be read.';
-          }
+          fetchErrors.users = e?.message || 'Users could not be read.';
         }
 
         try {
@@ -1923,26 +1904,6 @@ function App() {
     const writeUsersLocal = (nextUsers) => {
       setUsers(nextUsers);
       localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(nextUsers)));
-    };
-
-    const loadMoreAdminUsers = async () => {
-      if (!adminUsersHasMore || !adminUsersCursor || adminUsersLoadingMore) return;
-      setAdminUsersLoadingMore(true);
-      try {
-        const nextPage = await fetchAdminUsersPage({ cursor: adminUsersCursor });
-        setUsers((prev) => {
-          const next = [...prev, ...nextPage.users];
-          localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(next)));
-          return next;
-        });
-        setAdminUsersCursor(nextPage.cursor);
-        setAdminUsersHasMore(nextPage.hasMore);
-      } catch (e) {
-        void e;
-        pushToast('Users page load nahi ho payi. Dobara try karein.', 'error');
-      } finally {
-        setAdminUsersLoadingMore(false);
-      }
     };
 
     const toDateInputValue = (value) => {
@@ -2388,7 +2349,7 @@ function App() {
         ? userOrId
         : users.find((u) => u.id === userOrId);
       if (!target) return { ok: false, reason: 'User not found.' };
-      const nextStatus = target.status === 'active' ? 'disabled' : 'active';
+      const nextStatus = getUserAccountStatus(target) === 'active' ? 'disabled' : 'active';
       if (!options.skipConfirm && !(await confirmAdminAction(`${nextStatus === 'disabled' ? 'Disable' : 'Enable'} ${target.dealerCode || 'this user'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         if (target.id) {
@@ -2466,7 +2427,7 @@ function App() {
         // this blank keeps the existing PIN untouched on save.
         pin: '',
         role: source.role || 'operator',
-        status: source.status || 'active',
+        status: getUserAccountStatus(source),
         profileData: {
           ...(source.profileData || {}),
           distributorCode: source.profileData?.distributorCode || '',
@@ -3040,20 +3001,21 @@ function App() {
     const pendingRegistrationRequests = requests.filter((r) => {
       if ((registrationStatusOverrides[r.id] || r.status || 'pending') !== 'pending') return false;
       // Agar user already create ho chuka hai aur active/disabled/expired hai, toh request hide karein
-      const isAlreadyVerified = users.some((u) => String(u?.dealerCode || '').trim() === String(r?.dealerCode || '').trim() && u.status !== 'pending');
+      const isAlreadyVerified = users.some((u) => String(u?.dealerCode || '').trim() === String(r?.dealerCode || '').trim() && getUserAccountStatus(u) !== 'pending');
       if (isAlreadyVerified) return false;
       return true;
     });
     const pendingCount = pendingRegistrationRequests.length;
-    const activeUsers = users.filter((u) => u.status === 'active').length;
-    const activeUsersList = users.filter((u) => u.status === 'active');
+    const userStatistics = getAdminUserStatistics(users);
+    const activeUsers = userStatistics.byStatus.active || 0;
+    const activeUsersList = users.filter((u) => getUserAccountStatus(u) === 'active');
     const approvalTypeCounts = combinedPendingApprovals.reduce((acc, item) => {
       const key = normalizeApprovalType(item?.type);
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
     const expiringUsers = users
-      .filter((u) => u.status === 'active')
+      .filter((u) => getUserAccountStatus(u) === 'active')
       .map((u) => ({ ...u, remainingDays: getRemainingDays(u.validTill) }))
       .filter((u) => u.remainingDays !== null && u.remainingDays >= 0 && u.remainingDays <= 7)
       .sort((a, b) => a.remainingDays - b.remainingDays);
@@ -3173,7 +3135,7 @@ function App() {
     const filteredUsersList = (activeAdminTab === 'active-user' ? activeUsersList : users).filter((u) => {
       const matchesSubFilter = adminSubFilter === 'all'
         || (adminSubFilter === 'expiring' && getRemainingDays(u.validTill) !== null && getRemainingDays(u.validTill) >= 0 && getRemainingDays(u.validTill) <= 7)
-        || String(u.status || '').toLowerCase() === adminSubFilter
+        || getUserAccountStatus(u) === adminSubFilter
         || String(u.role || '').toLowerCase() === adminSubFilter;
       return isWithinAdminDateRange(u.createdAt || u.approvedAt || u.updatedAt)
         && matchesSubFilter
@@ -3183,7 +3145,7 @@ function App() {
           u.mobile,
           u.email,
           u.package,
-          u.status,
+          getUserAccountStatus(u),
           u.role,
           serializeSearchData(u.pendingUpdates),
           serializeSearchData(u.approvalStatus),
@@ -3307,7 +3269,7 @@ function App() {
       { label: 'Rejected Requests', value: rejectedRequestCount, tone: 'rose' },
       { label: "Today's Activity", value: todayActivityCount, tone: 'green' },
       { label: 'Active Users', value: activeUsers, tone: 'green' },
-      { label: 'Total Users', value: users.length, tone: 'navy' },
+      { label: 'Total Users', value: userStatistics.total, tone: 'navy' },
     ];
     const dateSummaryCards = [
       { label: 'Today', value: countItemsInDays(requests, (item) => item.createdAt || item.approvedAt, 0) },
@@ -3319,8 +3281,8 @@ function App() {
       { key: 'dictionary', label: 'Dictionary', count: dictionaryPendingApprovals.length },
       { key: 'pending-registration', label: 'Pending Registration', count: pendingCount },
       { key: 'approval', label: 'Approval', count: nonDictionaryPendingApprovals.length },
-      { key: 'active-user', label: 'Active User', count: activeUsersList.length },
-      { key: 'total-user', label: 'Total User', count: users.length },
+      { key: 'active-user', label: 'Active User', count: activeUsers },
+      { key: 'total-user', label: 'Total User', count: userStatistics.total },
       { key: 'create-user', label: 'Create User', count: null },
       { key: 'announcements', label: 'Announcements', count: activeAnnouncementCount },
       { key: 'recycle-bin', label: 'Recycle Bin', count: deletedUsersBin.length },
@@ -4181,8 +4143,8 @@ function App() {
                         <td>{u.email || '-'}</td>
                         <td><span className="admin-status-chip admin-status-chip--info">{u.package || '-'}</span></td>
                         <td>
-                          <span className={`admin-status-chip admin-status-chip--${String(u.status || '').toLowerCase() || 'info'}`}>
-                            {u.status || '-'}
+                          <span className={`admin-status-chip admin-status-chip--${getUserAccountStatus(u)}`}>
+                            {getUserAccountStatus(u)}
                           </span>{' '}
                           {formatDisplayDate(u.validTill)}
                           {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
@@ -4228,7 +4190,7 @@ function App() {
                             }}>View</button>
                             <button onClick={() => startEditUser(u)} disabled={!canMutateAdminData}>Edit</button>
                             <button onClick={() => toggleUserStatus(u)} disabled={!canMutateAdminData}>
-                              {u.status === 'active' ? 'Disable' : 'Enable'}
+                              {getUserAccountStatus(u) === 'active' ? 'Disable' : 'Enable'}
                             </button>
                             <button onClick={() => deleteUser(u)} disabled={!canMutateAdminData}>Delete</button>
                           </div>
@@ -4240,13 +4202,7 @@ function App() {
               </tbody>
             </table>
           </div>
-          {adminUsersHasMore && (
-            <div className="admin-section" style={{ textAlign: 'center' }}>
-              <button type="button" onClick={loadMoreAdminUsers} disabled={adminUsersLoadingMore}>
-                {adminUsersLoadingMore ? 'Loading…' : `Load more users (${users.length} loaded)`}
-              </button>
-            </div>
-          )}
+
         </div>
         )}
 
@@ -5128,7 +5084,7 @@ function App() {
                           <div className="admin-recycle-user">
                             <strong>{user.dealerName || '-'}</strong>
                             <span>{user.mobile || user.email || '-'}</span>
-                            <span>{user.package || '-'} | {user.status || '-'}</span>
+                            <span>{user.package || '-'} | {getUserAccountStatus(user)}</span>
                           </div>
                         </td>
                         <td>{formatDisplayDateTime(user.deletedAt)}</td>
@@ -7823,7 +7779,7 @@ function App() {
     || approvalReplyMap[planUpgradeReplyKey]
     || ''
   ).trim();
-  const userMenuStatusText = isPlanExpired ? 'Expired' : (loggedInUser?.status || 'Active');
+  const userMenuStatusText = getUserAccountStatus(loggedInUser);
   const menuDisabledReason = isPlanExpired ? 'Available after plan renewal' : '';
   const pendingRequestCount = pendingUserApprovalTypes.length;
   const pendingDictionaryCount = getPendingDictionaryRequestCount(loggedInUser);
@@ -8290,7 +8246,7 @@ function App() {
     { label: 'Dealer Code', value: loggedInUser?.dealerCode || 'N/A' },
     { label: 'Dealer Name', value: loggedInUser?.dealerName || 'N/A' },
     { label: 'Active Package', value: activePackageStatus },
-    { label: 'Account Status', value: loggedInUser?.status || 'N/A' },
+    { label: 'Account Status', value: getUserAccountStatus(loggedInUser) },
   ];
   const visibleAnnouncements = announcements.filter((item) => {
     if (!item?.active) return false;
@@ -8300,7 +8256,7 @@ function App() {
     }
     const targetScope = String(item?.targetScope || 'all').toLowerCase();
     if (targetScope === 'all') return true;
-    if (targetScope === 'active') return String(loggedInUser?.status || '').toLowerCase() === 'active';
+    if (targetScope === 'active') return getUserAccountStatus(loggedInUser) === 'active';
     if (targetScope === 'expiring') {
       const days = getRemainingDays(loggedInUser?.validTill);
       return days !== null && days >= 0 && days <= 7;

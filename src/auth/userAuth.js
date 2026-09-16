@@ -4,11 +4,8 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
-  orderBy,
   query,
   serverTimestamp,
-  startAfter,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -23,9 +20,9 @@ import {
   normalizeLoginDevices,
   upsertLoginDevice,
 } from "../utils/adminUiHelpers";
-import { isUserExpired } from "../utils/packageHelpers";
+import { getUserAccountStatus } from '../utils/userAccountStatus';
 import { mergeCashMemoLabelSettings } from "../utils/cashmemoHelpers";
-import { fetchFirestoreCollectionRest, fetchFirestoreDocumentRest } from "../services/firestoreRest";
+import { fetchFirestoreDocumentRest } from "../services/firestoreRest";
 
 export const mapFirestoreUserDoc = (docId, docData, dealerCode) => ({
   id: docId,
@@ -39,7 +36,7 @@ export const mapFirestoreUserDoc = (docId, docData, dealerCode) => ({
   validTill: docData.validTill || "",
   // PIN intentionally omitted — must never live in runtime state, cache, or session.
   role: docData.role || "operator",
-  status: docData.status || "active",
+  status: getUserAccountStatus(docData),
   approvalStatus: docData.approvalStatus || {},
   pendingUpdates: docData.pendingUpdates || {},
   dictionaryPendingCount: Number(docData.dictionaryPendingCount || 0),
@@ -67,7 +64,7 @@ export const lookupDealerByCode = async (dealerCode, pin) => {
 
   if (!snap.empty) {
     const docData = snap.docs[0].data();
-    const status = String(docData?.status || "active").toLowerCase();
+    const status = getUserAccountStatus(docData);
     const dealerLookupStatus =
       status === "pending"
         ? "pending"
@@ -136,7 +133,7 @@ export const registerLoginDevice = async (firestoreUser) => {
 };
 
 export const markUserExpiredIfDue = async (firestoreUser) => {
-  if (!isUserExpired(firestoreUser)) return false;
+  if (getUserAccountStatus(firestoreUser) !== 'expired') return false;
   try {
     await updateDoc(doc(db, "users", firestoreUser.id), {
       status: "expired",
@@ -154,26 +151,8 @@ export const adminSignIn = (loginId, password) =>
 
 export const adminSignOut = () => signOut(auth);
 
-// ---------------------------------------------------------------------------
-// Admin users fetch — scalable replacement for getDocs(collection(db,'users'))
-//
-// Old approach downloaded every user doc (including heavy nested payloads:
-// ratesData, loginDevices, profileData, ...) in a single
-// snapshot. That works for dozens of users but breaks down at thousands.
-//
-// New approach:
-//   1. Field projection — list pages only carry the columns the admin table
-//      renders (dealerCode, dealerName, package, status, role, validity,
-//      flags). Heavy payloads (ratesData, loginDevices,
-//      profileData, bankDetailsData, pendingUpdates...) are fetched lazily,
-//      per user, only when the admin opens the detail view or edits.
-//   2. Cursor pagination — each page is a bounded query (orderBy + limit +
-//      startAfter), so memory/network cost per page stays constant no matter
-//      how large the collection grows.
-// ---------------------------------------------------------------------------
-
-// Columns needed by the admin users table, search box, dashboard counters and
-// package-breakdown chips. Heavy nested payloads are intentionally excluded.
+// Admin collection loading and statistics live in adminUserRepository.
+// These field lists apply to the SDK fallback for a single user detail read.
 const ADMIN_USER_LIST_FIELDS = [
   "dealerCode",
   "dealerName",
@@ -220,51 +199,8 @@ const pickFields = (docData, fields) => {
 const mapAdminUserDoc = (docSnap, fields) => ({
   id: docSnap.id,
   ...pickFields(docSnap.data(), fields),
+  status: getUserAccountStatus(docSnap.data()),
 });
-
-export const ADMIN_USERS_PAGE_SIZE = 200;
-
-/**
- * Fetch one page of users for the admin table, ordered by dealerCode.
- * Pass `cursor` (a doc snapshot value from the previous page) for the next page.
- * Returns { users, cursor, hasMore }.
- */
-export const fetchAdminUsersPage = async ({ pageSize = ADMIN_USERS_PAGE_SIZE, cursor = null } = {}) => {
-  const usersRef = collection(db, "users");
-  const constraints = [orderBy("dealerCode"), limit(pageSize + 1)];
-  if (cursor) constraints.push(startAfter(cursor));
-  let snap;
-  let usedFallback = false;
-  try {
-    snap = await getDocs(query(usersRef, ...constraints));
-  } catch (queryError) {
-    // Older Firestore rule sets can allow a collection read while rejecting
-    // an ordered query.  Keep the admin usable in that case instead of
-    // silently rendering every count as zero.
-    if (cursor) throw queryError;
-    try {
-      snap = await getDocs(usersRef);
-      usedFallback = true;
-    } catch (collectionError) {
-      try {
-        const users = await fetchFirestoreCollectionRest('users', pageSize);
-        return { users, cursor: null, hasMore: false, usedFallback: true };
-      } catch {
-        const message = collectionError?.message || queryError?.message || "Unable to read users from Firestore.";
-        throw new Error(message);
-      }
-    }
-  }
-
-  const docs = usedFallback
-    ? [...snap.docs].sort((a, b) => String(a.data()?.dealerCode || "").localeCompare(String(b.data()?.dealerCode || "")))
-    : snap.docs;
-  const hasMore = docs.length > pageSize;
-  const pageDocs = hasMore ? docs.slice(0, pageSize) : docs;
-  const users = pageDocs.map((docSnap) => mapAdminUserDoc(docSnap, ADMIN_USER_LIST_FIELDS));
-  const nextCursor = pageDocs.length > 0 ? pageDocs[pageDocs.length - 1] : null;
-  return { users, cursor: nextCursor, hasMore, usedFallback };
-};
 
 /**
  * Fetch the FULL document of a single user (all admin-relevant fields,

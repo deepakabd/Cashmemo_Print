@@ -1,3 +1,4 @@
+import { getUserAccountStatus } from './userAccountStatus';
 export const excelSerialDateToJSDate = (serial) => {
   if (typeof serial !== 'number' || Number.isNaN(serial)) {
     return null;
@@ -340,13 +341,7 @@ export const computeValidityDates = (packageName = '', baseDate = new Date()) =>
   };
 };
 
-export const isUserExpired = (user) => {
-  const validTillRaw = user?.validTill;
-  if (!validTillRaw) return false;
-  const validTillDate = new Date(validTillRaw);
-  if (Number.isNaN(validTillDate.getTime())) return false;
-  return new Date().getTime() > validTillDate.getTime();
-};
+export const isUserExpired = (user) => getUserAccountStatus(user) === 'expired';
 
 export const formatDisplayDate = (value) => {
   if (!value) return '-';

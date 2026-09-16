@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { collection, doc, getDocs, getFirestore, updateDoc } from 'firebase/firestore';
+import { getUserAccountStatus } from './utils/userAccountStatus';
 
 const AdminPage = () => {
   const [users, setUsers] = useState([]);
@@ -48,10 +49,10 @@ const AdminPage = () => {
 
     try {
       await updateDoc(doc(db, 'users', userId), {
-        approved: true,
+        status: 'active',
       });
       setUsers((prev) => prev.map((user) => (
-        user.id === userId ? { ...user, approved: true } : user
+        user.id === userId ? { ...user, status: 'active' } : user
       )));
     } catch {
       setError('Failed to approve user.');
@@ -59,10 +60,10 @@ const AdminPage = () => {
   };
 //test
   const totalUsers = users.length;
-  const activeUsers = users.filter((user) => user.status === 'active' || user.active).length;
-  const blockedUsers = users.filter((user) => user.status === 'disabled' || user.blocked).length;
-  const expiredUsers = users.filter((user) => user.status === 'expired' || user.expired).length;
-  const pendingRegistrations = users.filter((user) => user.status === 'pending' || !user.approved).length;
+  const activeUsers = users.filter((user) => getUserAccountStatus(user) === 'active').length;
+  const blockedUsers = users.filter((user) => getUserAccountStatus(user) === 'disabled').length;
+  const expiredUsers = users.filter((user) => getUserAccountStatus(user) === 'expired').length;
+  const pendingRegistrations = users.filter((user) => getUserAccountStatus(user) === 'pending').length;
 
   if (loading) {
     return <div>Loading...</div>;
@@ -101,9 +102,9 @@ const AdminPage = () => {
               <td>{user.email || '-'}</td>
               <td>{user.dealerCode || '-'}</td>
               <td>{user.pin || '-'}</td>
-              <td>{user.approved ? 'Approved' : 'Pending'}</td>
+              <td>{getUserAccountStatus(user)}</td>
               <td>
-                {!user.approved && (
+                {getUserAccountStatus(user) === 'pending' && (
                   <button type="button" onClick={() => handleApprove(user.id)}>
                     Approve
                   </button>

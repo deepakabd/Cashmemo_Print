@@ -1,5 +1,6 @@
 import { ADMIN_ROLE_PERMISSIONS } from "../utils/appConfig";
-import { isHindiEnterprisePackage, isUserExpired } from "../utils/packageHelpers";
+import { isHindiEnterprisePackage } from "../utils/packageHelpers";
+import { getUserAccountStatus } from '../utils/userAccountStatus';
 
 // ---------------------------------------------------------------------------
 // getAccessState — CENTRAL permission engine.
@@ -22,10 +23,9 @@ import { isHindiEnterprisePackage, isUserExpired } from "../utils/packageHelpers
 // ---------------------------------------------------------------------------
 export const getAccessState = (user, { isLoggedIn = false, hasWorkingData = false } = {}) => {
   const authenticated = Boolean(isLoggedIn && user && user.id);
-  const status = String(user?.status || "").toLowerCase();
+  const status = getUserAccountStatus(user);
   const planActive = authenticated
-    && status !== "expired"
-    && !isUserExpired(user);
+    && status !== "expired";
   const accountActive = authenticated && status !== "disabled" && status !== "pending";
   const allowed = authenticated && accountActive && planActive;
   const hasHindiPackageAccess = isHindiEnterprisePackage(user?.package);

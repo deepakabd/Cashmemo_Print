@@ -3,6 +3,7 @@ import { auth, db } from "./firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
+import { getUserAccountStatus } from './utils/userAccountStatus';
 //login
 const Login = ({ onLogin }) => {
   const [email, setEmail] = React.useState("");
@@ -16,7 +17,7 @@ const Login = ({ onLogin }) => {
       const user = userCredential.user;
 
       const userDoc = await getDoc(doc(db, "users", user.uid));
-      if (userDoc.exists() && userDoc.data().approved) {
+      if (userDoc.exists() && ['active', 'expired'].includes(getUserAccountStatus(userDoc.data()))) {
         console.log("Login successful");
         navigate("/user-page"); // Redirect to user page
       } else {
