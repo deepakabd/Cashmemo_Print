@@ -1,4 +1,4 @@
-import { signInWithCustomToken, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   collection,
   doc,
@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   startAfter,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import {
@@ -57,123 +58,49 @@ export const mapFirestoreUserDoc = (docId, docData, dealerCode) => ({
   loginDevices: normalizeLoginDevices(docData.loginDevices),
 });
 
-// ---------------------------------------------------------------------------
-// Dealer login — SERVER-VERIFIED.
-//
-// The PIN is no longer compared in the browser against a plaintext Firestore
-// field. `POST /api/login` verifies it against a scrypt hash on the trusted
-// layer and returns a Firebase custom token; we exchange that for a real Auth
-// session so Firestore Security Rules can be enforced.
-// ---------------------------------------------------------------------------
-const LOGIN_ENDPOINT = '/api/login';
-
-// Maps the server's error code to the outcome strings the UI already handles.
-const NOT_FOUND_OUTCOMES = new Set(['not-found', 'bad-credentials']);
-
 export const lookupDealerByCode = async (dealerCode, pin) => {
-  let response;
-  try {
-    response = await fetch(LOGIN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dealerCode: String(dealerCode ?? '').trim(), pin: String(pin ?? '') }),
-    });
-  } catch {
-    // Network failure — surface as a hard error so the caller shows a retry
-    // message instead of a misleading "wrong PIN".
-    throw new Error('Cannot reach the login server. Check your connection and that the dev server is running.');
-  }
+  const usersRef = collection(db, "users");
+  const q = query(usersRef, where("dealerCode", "==", dealerCode));
+  const snap = await getDocs(q);
 
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    const code = payload?.code || 'server-error';
+  if (snap.size > 1) return { outcome: "duplicate" };
 
-    if (code === 'duplicate') return { outcome: 'duplicate' };
-    if (code === 'server-not-configured') {
-      // The server's message states the actual fix (missing/expired service
-      // account), so surface it rather than a generic failure.
-      throw new Error(payload?.error || 'Login service is not configured.');
+  if (!snap.empty) {
+    const docData = snap.docs[0].data();
+    const status = String(docData?.status || "active").toLowerCase();
+    const dealerLookupStatus =
+      status === "pending"
+        ? "pending"
+        : status === "disabled"
+          ? "disabled"
+          : "dealer-found";
+    if (String(docData?.pin || "") === pin) {
+      const firestoreUser = mapFirestoreUserDoc(
+        snap.docs[0].id,
+        docData,
+        dealerCode,
+      );
+      // Login par bhi poora user object chahiye — heavy structures
+      // subcollections se merge karo (top-level fallback ke saath).
+      try {
+        const sub = await readUserSubcollections(snap.docs[0].id);
+        mergeUserDocWithSubcollections(firestoreUser, sub);
+      } catch {
+        // subcollection read fail ho toh top-level data hi kaafi hai
+      }
+      if (status !== "active") firestoreUser.status = status;
+      return { outcome: "ok", firestoreUser, dealerLookupStatus };
     }
-    if (code === 'pending') return { outcome: 'not-found', dealerLookupStatus: 'pending' };
-    if (code === 'disabled') return { outcome: 'not-found', dealerLookupStatus: 'disabled' };
-    if (NOT_FOUND_OUTCOMES.has(code)) {
-      // A wrong PIN on an existing code must not reveal whether the account
-      // exists, so mirror the previous generic lookup status.
-      return { outcome: 'not-found', dealerLookupStatus: code === 'not-found' ? 'not-found' : 'dealer-found' };
-    }
-    if (code === 'rate-limited') throw new Error('login-rate-limited');
-    throw new Error(`Login server returned HTTP ${response.status}. Check the server terminal for the login error.`);
+    return { outcome: "not-found", dealerLookupStatus };
   }
 
-  const payload = await response.json().catch(() => null);
-  const token = payload?.token;
-  if (typeof token !== 'string' || !token) {
-    throw new Error('Login server returned an invalid response (missing sign-in token). Check that this page is connected to the correct API server.');
-  }
-
-  // Exchange the custom token for a real Firebase Auth session.
-  const credential = await signInWithCustomToken(auth, token);
-
-  const firestoreUser = await fetchOwnUserProfile(credential.user.uid);
-  if (!firestoreUser) return { outcome: 'not-found', dealerLookupStatus: 'not-found' };
-
-  return { outcome: 'ok', firestoreUser, dealerLookupStatus: 'dealer-found' };
+  return { outcome: "not-found", dealerLookupStatus: "not-found" };
 };
 
-// ---------------------------------------------------------------------------
-// PIN writes — server-hashed.
-//
-// Hashing in the browser would be pointless: the client could skip it and write
-// anything. So the plaintext PIN is sent once to the login service, which
-// returns the `pinHash`/`pin: null` patch to persist. When the service is
-// unavailable the PIN is dropped rather than stored in the clear.
-// ---------------------------------------------------------------------------
-const PIN_HASH_ENDPOINT = '/api/pin-hash';
-
+// Legacy PIN writes accompany the browser-based login flow.
 export const buildPinWritePatch = async (pin) => {
-  const plaintext = String(pin ?? '').trim();
-  if (!plaintext) return {};
-
-  try {
-    const response = await fetch(PIN_HASH_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: plaintext }),
-    });
-    if (!response.ok) throw new Error('pin-hash-failed');
-
-    const patch = await response.json();
-    return {
-      pinHash: patch.pinHash,
-      pin: null,
-      pinUpdatedAt: patch.pinUpdatedAt,
-    };
-  } catch {
-    // Never fall back to writing plaintext. The account keeps its previous PIN
-    // (or none) and an admin can re-set it once the service is reachable.
-    return {};
-  }
-};
-
-/** Reads the signed-in user's own document (allowed by Security Rules). */
-const fetchOwnUserProfile = async (uid) => {
-  const snap = await getDoc(doc(db, "users", uid));
-  if (!snap.exists()) return null;
-
-  const docData = snap.data();
-  const status = String(docData?.status || "active").toLowerCase();
-  const firestoreUser = mapFirestoreUserDoc(snap.id, docData, docData?.dealerCode || '');
-
-  // Heavy structures (rates, label settings, ...) live in subcollections.
-  try {
-    const sub = await readUserSubcollections(snap.id);
-    mergeUserDocWithSubcollections(firestoreUser, sub);
-  } catch {
-    // Subcollection read failure: the top-level document is still sufficient.
-  }
-
-  if (status !== "active") firestoreUser.status = status;
-  return firestoreUser;
+  const value = String(pin ?? '').trim();
+  return value ? { pin: value, pinHash: null, pinUpdatedAt: new Date().toISOString() } : {};
 };
 
 export const registerLoginDevice = async (firestoreUser) => {
