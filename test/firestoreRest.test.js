@@ -61,6 +61,42 @@ const loadService = async () => {
 };
 
 describe('authenticated Firestore REST requests', () => {
+  it('loads 450 admin users through real REST decoding, including a short intermediate page', async () => {
+    auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('test-token') };
+    auth.authStateReady.mockResolvedValue(undefined);
+    const documents = Array.from({ length: 450 }, (_, index) => ({
+      name: `projects/test-project/databases/(default)/documents/users/user-${index}`,
+      fields: { dealerCode: { stringValue: String(index).padStart(6, '0') }, status: { stringValue: 'active' } },
+    }));
+    const pages = [
+      { documents: documents.slice(0, 200), nextPageToken: 'page 2+/' },
+      { documents: documents.slice(200, 201), nextPageToken: 'page-3' },
+      { documents: documents.slice(201, 401), nextPageToken: 'page-4' },
+      { documents: documents.slice(401) },
+    ];
+    const fetchMock = vi.fn();
+    for (const page of pages) fetchMock.mockResolvedValueOnce({ ok: true, json: async () => page });
+    vi.stubGlobal('fetch', fetchMock);
+    await loadService();
+    const { fetchAllAdminUsers } = await import('../src/services/adminUserRepository.js');
+    const users = await fetchAllAdminUsers();
+    expect(users).toHaveLength(450);
+    expect(new Set(users.map((user) => user.id)).size).toBe(450);
+    expect(users[449]).toMatchObject({ id: 'user-449', dealerCode: '000449' });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[1][0]).toContain('pageToken=page%202%2B%2F');
+    expect(fetchMock.mock.calls[2][0]).toContain('pageToken=page-3');
+    expect(fetchMock.mock.calls[3][0]).toContain('pageToken=page-4');
+    const mask = new URL(fetchMock.mock.calls[0][0]).searchParams.getAll('mask.fieldPaths');
+    expect(mask).toContain('dealerCode');
+    expect(mask).not.toContain('ratesData');
+    expect(mask).not.toContain('profileData');
+    for (const [url] of fetchMock.mock.calls) {
+      expect(url).toContain('pageSize=200');
+      expect(new URL(url).searchParams.getAll('mask.fieldPaths')).toEqual(mask);
+    }
+  });
+
   it('encodes continuation tokens and preserves the next page token', async () => {
     auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('test-token') };
     auth.authStateReady.mockResolvedValue(undefined);

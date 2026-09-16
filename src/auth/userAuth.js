@@ -2,7 +2,6 @@ import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -22,7 +21,6 @@ import {
 } from "../utils/adminUiHelpers";
 import { getUserAccountStatus } from '../utils/userAccountStatus';
 import { mergeCashMemoLabelSettings } from "../utils/cashmemoHelpers";
-import { fetchFirestoreDocumentRest } from "../services/firestoreRest";
 
 export const mapFirestoreUserDoc = (docId, docData, dealerCode) => ({
   id: docId,
@@ -150,73 +148,3 @@ export const adminSignIn = (loginId, password) =>
   signInWithEmailAndPassword(auth, loginId, password);
 
 export const adminSignOut = () => signOut(auth);
-
-// Admin collection loading and statistics live in adminUserRepository.
-// These field lists apply to the SDK fallback for a single user detail read.
-const ADMIN_USER_LIST_FIELDS = [
-  "dealerCode",
-  "dealerName",
-  "mobile",
-  "email",
-  "package",
-  "packageDays",
-  "validFrom",
-  "validTill",
-  "role",
-  "status",
-  "createdAt",
-  "approvedAt",
-  "updatedAt",
-  "lastLoginAt",
-  "dictionaryPendingCount",
-  "cashMemoLabelSettings",
-];
-
-// Full payloads — only fetched when a single user's detail view is opened.
-const ADMIN_USER_DETAIL_FIELDS = [
-  ...ADMIN_USER_LIST_FIELDS,
-  "profileData",
-  "bankDetailsData",
-  "ratesData",
-  "hindiHeaderData",
-  "approvalStatus",
-  "pendingUpdates",
-  "deliveryAreaUpdates",
-  "deliveryStaffUpdates",
-  "loginDevices",
-];
-
-const pickFields = (docData, fields) => {
-  const out = {};
-  fields.forEach((f) => {
-    if (docData && Object.prototype.hasOwnProperty.call(docData, f)) {
-      out[f] = docData[f];
-    }
-  });
-  return out;
-};
-
-const mapAdminUserDoc = (docSnap, fields) => ({
-  id: docSnap.id,
-  ...pickFields(docSnap.data(), fields),
-  status: getUserAccountStatus(docSnap.data()),
-});
-
-/**
- * Fetch the FULL document of a single user (all admin-relevant fields,
- * including heavy payloads). Used when opening the detail view or editing.
- */
-export const fetchAdminUserDetail = async (userId) => {
-  if (!userId) return null;
-  let detail;
-  try {
-    const fallback = await fetchFirestoreDocumentRest('users', userId);
-    if (!fallback) return null;
-    detail = mapFirestoreUserDoc(fallback.id, fallback, fallback.dealerCode || '');
-  } catch {
-    const snap = await getDoc(doc(db, "users", userId));
-    if (!snap.exists()) return null;
-    detail = mapAdminUserDoc(snap, ADMIN_USER_DETAIL_FIELDS);
-  }
-  return detail;
-};

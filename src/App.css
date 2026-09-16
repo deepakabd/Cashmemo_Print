@@ -7932,3 +7932,26 @@
   }
 }
 
+.admin-data-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 14px 18px;
+  margin: 14px 0;
+  border: 1px solid #e7c370;
+  border-radius: 12px;
+  background: #fff8e5;
+  color: #714c06;
+}
+
+.admin-data-status--live {
+  border-color: #9dcdb2;
+  background: #edf8f1;
+  color: #205b38;
+}
+
+.admin-data-status--unavailable {
+  border-color: #e6a3a3;
+  background: #fff0f0;
+  color: #8c2626;
+}

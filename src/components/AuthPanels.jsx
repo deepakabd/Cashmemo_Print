@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import { buildPinWritePatch } from '../auth/userAuth';
 import BrandMark from './BrandMark';
+import { clearLegacyRegistrationStorage, writeRegistrationRequestsCache } from '../utils/registrationStorage';
 
 export const RegisterPanel = ({
   packageOptions,
@@ -14,6 +15,7 @@ export const RegisterPanel = ({
   onClose,
   onLogin,
 }) => {
+  useEffect(() => { clearLegacyRegistrationStorage(); }, []);
   const [form, setForm] = useState({
     package: '',
     dealerCode: '',
@@ -58,7 +60,6 @@ export const RegisterPanel = ({
       dealerName: form.dealerName,
       mobile: form.mobile,
       email: form.email,
-      pin: form.pin,
       utr: form.utr,
       date: form.date,
       status: 'pending',
@@ -73,12 +74,11 @@ export const RegisterPanel = ({
       // plaintext PIN field it used to contain). Duplicate detection is now the
       // admin's job at approval time, where the request is already reviewed.
       //
-      // The PIN is hashed server-side, so no readable credential is written.
+      // Build the credential separately; it must never enter the browser cache.
       const pinPatch = await buildPinWritePatch(form.pin);
 
       requestRef = await addDoc(collection(db, 'registrationRequests'), {
         ...request,
-        // Never store the plaintext PIN on the request document either.
         pin: null,
         ...pinPatch,
         createdAt: serverTimestamp(),
@@ -95,12 +95,13 @@ export const RegisterPanel = ({
       const arr = existing ? JSON.parse(existing) : [];
       const next = Array.isArray(arr) ? arr : [];
       next.push(requestToStore);
-      localStorage.setItem('registrationRequests', JSON.stringify(next));
+      writeRegistrationRequestsCache(next);
     } catch {
-      localStorage.setItem('registrationRequests', JSON.stringify([requestToStore]));
+      writeRegistrationRequestsCache([requestToStore]);
     }
 
-    localStorage.setItem('registrationData', JSON.stringify(form));
+    clearLegacyRegistrationStorage();
+    setForm((prev) => ({ ...prev, pin: '', confirmPin: '' }));
     pushToast('Registration request submitted!', 'success');
     logRecentActivity('Submitted registration request', form.dealerCode);
     setIsSubmitting(false);

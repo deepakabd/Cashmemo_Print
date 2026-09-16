@@ -1,3 +1,6 @@
+import { loadAdminSnapshot } from './services/adminDataRepository';
+import AdminDataStatus from './components/AdminDataStatus';
+import { clearLegacyRegistrationStorage, writeRegistrationRequestsCache } from './utils/registrationStorage';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Suspense, useCallback } from 'react';
@@ -6,7 +9,7 @@ import CashMemoEnglish from './CashMemoEnglish';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet, getLayoutPrintStyles } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { auth, db } from './firebase';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, runTransaction, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 //TEST
 import './App.css';
 import {
@@ -104,7 +107,6 @@ import {
 import {
   USER_SESSION_STORAGE_KEY,
   APPROVAL_REPLIES_STORAGE_KEY,
-  ADMIN_AUDIT_COLLECTION,
   FILTER_PRESET_STORAGE_KEY_PREFIX,
   RECENT_ACTIVITY_STORAGE_KEY_PREFIX,
   USER_LAST_UPLOADED_DATA_LIMIT,
@@ -118,7 +120,6 @@ import {
   getAnnouncementScopeLabel,
   sanitizeFilenamePart,
   normalizeDealerCode,
-  findUsersByDealerCode,
   readImageFileAsDataUrl,
 } from './utils/storageHelpers';
 import {
@@ -145,13 +146,12 @@ import {
 import {
   lookupDealerByCode,
   registerLoginDevice,
-  fetchAdminUserDetail,
   markUserExpiredIfDue,
   buildPinWritePatch,
 } from './auth/userAuth';
 import { mirrorUserPatchToSubcollections } from './services/userSubcollections';
-import { fetchFirestoreCollectionRest, retryDeniedFirestoreReads, retryFirestoreRequest } from './services/firestoreRest';
-import { fetchAllAdminUsers, getAdminUserStatistics } from './services/adminUserRepository';
+import { retryDeniedFirestoreReads } from './services/firestoreRest';
+import { fetchAdminUserDetail, getAdminUserStatistics, saveAdminUser, patchAdminUser, deleteAdminUser, completeAdminDictionaryRequest } from './services/adminUserRepository';
 import { getUserAccountStatus } from './utils/userAccountStatus';
 import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
 import {
@@ -196,6 +196,7 @@ import {
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 
 function App() {
+  useEffect(() => { clearLegacyRegistrationStorage(); }, []);
   const fileInputRef = useRef(null);
   const translationMemoryCacheRef = useRef(new Map());
   const [translationDictionary, setTranslationDictionary] = useState(() => {
@@ -1429,6 +1430,16 @@ function App() {
 
 
   const AdminPanel = ({ onAdminLogout }) => {
+    const [adminUserDetails, setAdminUserDetails] = useState({});
+    const loadAdminUserDetail = async (userId) => {
+      const detail = await fetchAdminUserDetail(userId);
+      if (!detail) throw new Error('User detail no longer exists.');
+      setAdminUserDetails((previous) => ({ ...previous, [userId]: detail }));
+      return detail;
+    };
+    const adminSnapshotRef = useRef(null);
+    const adminLoadRef = useRef(null);
+    const adminHealthRef = useRef({ source: 'unknown' });
     const adminImportRef = useRef(null);
     const dictionaryImportRef = useRef(null);
     const [adminItemsPerPage] = useState(30);
@@ -1587,6 +1598,7 @@ function App() {
     };
 
     const runBulkAdminAction = async (label, items, runner, { onComplete } = {}) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       const targets = Array.isArray(items) ? items : [];
       if (targets.length === 0) return;
       setBulkActionState({ active: true, label, processed: 0, total: targets.length, failures: [] });
@@ -1688,6 +1700,7 @@ function App() {
     };
 
     const submitApprovalReply = async () => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       if (!activeApprovalReply) return;
       if (!approvalReplyDraft.trim()) {
         pushToast('Please enter a reply before saving.', 'error');
@@ -1730,7 +1743,7 @@ function App() {
         const approvalType = normalizeApprovalType(activeApprovalReply.type);
         if (targetUser?.id && approvalType !== 'dictionary') {
           try {
-            await updateDoc(doc(db, 'users', targetUser.id), {
+            await patchAdminUser(targetUser.id, {
               [`pendingUpdates.${approvalType}.adminReply`]: replyMessage,
               [`pendingUpdates.${approvalType}.adminReplyAt`]: replyTimestamp,
               updatedAt: serverTimestamp(),
@@ -1749,161 +1762,54 @@ function App() {
       closeApprovalReplyPopup();
     };
 //test check
-    const loadData = async () => {
-      // The admin panel must never remain on the initial "unknown" state
-      // forever when Firestore's WebChannel is stalled by a network, rule, or
-      // browser-cache issue.
-      if (!auth.currentUser) {
-        setAdminDataHealth({
-          source: 'unavailable',
-          lastSyncAt: new Date().toISOString(),
-          firebaseReachable: false,
-          error: 'No Firebase Authentication session. Log out, then sign in again with the Firebase admin account.',
-        });
-        return;
-      }
-      try {
-        let firebaseRequests = [];
-        let firebaseUsers = [];
-        let firebaseApprovals = [];
-        let firebaseAuditTrail = [];
-        const fetchOk = { requests: false, users: false };
-        const fetchErrors = {};
-
-        try {
-          firebaseRequests = await retryFirestoreRequest(() => fetchFirestoreCollectionRest('registrationRequests'), 3);
-          fetchOk.requests = true;
-        } catch (e) {
-          fetchErrors.requests = e?.message || 'Registration requests could not be read.';
+    const loadData = () => {
+      if (adminLoadRef.current) return adminLoadRef.current;
+      const previous = adminSnapshotRef.current ? { ...adminSnapshotRef.current,
+        requests, users, approvals: updateApprovals, audit: auditTrail } : null;
+      const syncingHealth = { source: 'syncing', lastSyncAt: previous?.lastSyncAt || '', firebaseReachable: false, error: '' };
+      adminHealthRef.current = syncingHealth;
+      setAdminDataHealth(syncingHealth);
+      const operation = (async () => {
+        if (!auth.currentUser) {
+          const health = { ...syncingHealth, source: 'unavailable', error: 'Admin sign-in required.' };
+          adminHealthRef.current = health;
+          setAdminDataHealth(health);
+          return;
         }
-
-        try {
-          firebaseUsers = await fetchAllAdminUsers();
-          fetchOk.users = true;
-        } catch (e) {
-          fetchErrors.users = e?.message || 'Users could not be read.';
-        }
-
-        try {
-          firebaseApprovals = await fetchFirestoreCollectionRest('updateApprovals');
-        } catch (e) {
-          void e;
-        }
-
-        try {
-          firebaseAuditTrail = (await fetchFirestoreCollectionRest(ADMIN_AUDIT_COLLECTION, 200, { pauseOnForbidden: true }))
-            .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
-            .slice(0, 150);
-        } catch (error) {
-          const detail = `Audit history: ${error.code || error.status || 'read failed'} — ${error.message || 'Unable to load audit history.'}`;
-          fetchErrors.audit = detail;
-          setAuditSyncState({
-            source: 'local fallback',
-            lastSyncAt: '',
-            detail,
-          });
-        }
-
-        // Firebase is the single source of truth when reachable. An empty
-        // Firestore collection is legitimate data (e.g. all requests
-        // processed), so never overlay stale localStorage mirrors here —
-        // that was the source of Firebase/browser mismatches. Local cache
-        // is only read in the offline catch branch below.
-        if (!fetchOk.requests && !fetchOk.users) {
-          // Every collection read failed — Firebase is unreachable or rules
-          // deny everything. Fall through to the offline cache branch so the
-          // admin still sees last-known data instead of an empty UI.
-          throw new Error('all-admin-collections-unreachable');
-        }
-        const reqWithOverrides = firebaseRequests.map((r) => {
-          const overriddenStatus = registrationStatusOverridesRef.current[r.id];
-          return overriddenStatus ? { ...r, status: overriddenStatus } : r;
-        });
-
-        // Only apply/commit data that actually came from a successful fetch.
-        // A failed read leaves its slice untouched in both state and cache,
-        // so a permission error or network blip can never wipe newer data.
-        if (fetchOk.requests) {
-          setRequests(reqWithOverrides);
-          localStorage.setItem('registrationRequests', JSON.stringify(reqWithOverrides));
-        }
-        if (fetchOk.users) {
-          setUsers(firebaseUsers);
-          localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(firebaseUsers)));
-        }
-        setUpdateApprovals(firebaseApprovals);
-        if (firebaseAuditTrail.length > 0) {
-          setAuditTrail(firebaseAuditTrail);
-          localStorage.setItem('adminAuditTrail', JSON.stringify(firebaseAuditTrail));
-          setAuditSyncState({
-            source: 'firebase',
-            lastSyncAt: new Date().toISOString(),
-            detail: 'Firestore audit active',
-          });
-        }
-        if (firebaseAuditTrail.length === 0 && !fetchErrors.audit) {
-          setAuditSyncState((prev) => ({
-            source: prev.source === 'firebase' ? prev.source : 'local fallback',
-            lastSyncAt: prev.lastSyncAt || new Date().toISOString(),
-            detail: prev.detail || 'Using browser audit history',
-          }));
-        }
-        setAdminDataHealth({
-          source: fetchOk.requests || fetchOk.users || firebaseApprovals.length > 0 ? 'firebase+local' : 'local',
-          lastSyncAt: new Date().toISOString(),
-          firebaseReachable: true,
-          error: Object.values(fetchErrors).filter(Boolean).join(' '),
-        });
-      } catch (error) {
-        try {
-          const reqRaw = localStorage.getItem('registrationRequests');
-          const reqList = reqRaw ? JSON.parse(reqRaw) : [];
-          const usersRaw = localStorage.getItem('usersData');
-          const userList = usersRaw ? JSON.parse(usersRaw) : [];
-          const auditRaw = localStorage.getItem('adminAuditTrail');
-          const auditList = auditRaw ? JSON.parse(auditRaw) : [];
-          const reqArray = Array.isArray(reqList) ? reqList : [];
-          const reqWithOverrides = reqArray.map((r) => {
-            const overriddenStatus = registrationStatusOverridesRef.current[r.id];
-            return overriddenStatus ? { ...r, status: overriddenStatus } : r;
-          });
-          setRequests(reqWithOverrides);
-          setUsers(Array.isArray(userList) ? userList : []);
-          setUpdateApprovals([]);
-          setAuditTrail(Array.isArray(auditList) ? auditList : []);
-          setAuditSyncState({
-            source: 'local fallback',
-            lastSyncAt: new Date().toISOString(),
-            detail: 'Using browser audit history',
-          });
-          setAdminDataHealth({
-            source: 'local',
-            lastSyncAt: new Date().toISOString(),
-            firebaseReachable: false,
-            error: error?.message || 'Firestore data could not be read. Check Firebase rules and admin login.',
-          });
-        } catch {
+        const { snapshot, health } = await loadAdminSnapshot(previous);
+        if (snapshot) {
+          adminSnapshotRef.current = snapshot;
+          setRequests(snapshot.requests);
+          setUsers(snapshot.users);
+          setUpdateApprovals(snapshot.approvals);
+          setAuditTrail(snapshot.audit);
+        } else {
           setRequests([]);
           setUsers([]);
           setUpdateApprovals([]);
-          setAuditSyncState({
-            source: 'unavailable',
-            lastSyncAt: new Date().toISOString(),
-            detail: 'Admin data sync unavailable.',
-          });
-          setAdminDataHealth({
-            source: 'unavailable',
-            lastSyncAt: new Date().toISOString(),
-            firebaseReachable: false,
-            error: error?.message || 'Admin data sync unavailable.',
-          });
+          setAuditTrail([]);
         }
-      }
+        if (health.source === 'live') {
+          setAdminUserDetails({});
+          setAuditSyncDisabled(false);
+          // Confirmed Firebase statuses supersede local action overrides.
+          registrationStatusOverridesRef.current = {};
+          setRegistrationStatusOverrides({});
+          try { localStorage.removeItem('registrationStatusOverrides'); } catch { /* Optional cache. */ }
+        }
+        setAuditSyncState({ source: health.source === 'live' ? 'firebase' : health.source,
+          lastSyncAt: health.lastSyncAt, detail: health.error });
+        adminHealthRef.current = health;
+        setAdminDataHealth(health);
+      })().finally(() => { adminLoadRef.current = null; });
+      adminLoadRef.current = operation;
+      return operation;
     };
 
-    const writeUsersLocal = (nextUsers) => {
-      setUsers(nextUsers);
-      localStorage.setItem('usersData', JSON.stringify(sanitizeUsersForCache(nextUsers)));
+    const requireLiveAdminData = () => {
+      if (adminHealthRef.current.source === 'live') return true;
+      pushToast('Admin changes require a successful live Firebase sync. Refresh Data first.', 'error');
+      return false;
     };
 
     const toDateInputValue = (value) => {
@@ -1922,35 +1828,26 @@ function App() {
 
     const logAdminActivity = (action, details = {}) => {
       const entry = buildAuditEntry(action, details, activeAdminEmail || 'admin');
-      setAuditTrail((prev) => {
-        const next = [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 150);
-        writeLocalAuditTrail(next);
-        return next;
+      // Local audit events stay separate from the verified history on screen.
+      try { writeLocalAuditTrail([entry, ...auditTrail].slice(0, 150)); } catch { /* Optional cache. */ }
+      const reportPendingAudit = () => setAuditSyncState({
+        source: 'pending local event', lastSyncAt: adminSnapshotRef.current?.lastSyncAt || '',
+        detail: 'Audit event saved locally; verified Firebase history is unchanged.',
       });
-      if (auditSyncDisabled) {
-        setAuditSyncState({
-          source: 'local fallback',
-          lastSyncAt: new Date().toISOString(),
-          detail: 'Firestore audit unavailable, saving locally',
-        });
+      if (auditSyncDisabled || adminHealthRef.current.source !== 'live') {
+        reportPendingAudit();
         return;
       }
       void (async () => {
         try {
           await writeFirestoreAuditEntry(action, details, activeAdminEmail || 'admin');
-          setAuditSyncState({
-            source: 'firebase',
-            lastSyncAt: new Date().toISOString(),
-            detail: 'Firestore audit active',
-          });
-        } catch (error) {
-          void error;
+          if (adminHealthRef.current.source === 'live') {
+            setAuditTrail((prev) => [entry, ...prev].slice(0, 150));
+          }
+          setAuditSyncState({ source: 'firebase', lastSyncAt: new Date().toISOString(), detail: 'Firestore audit active' });
+        } catch {
           setAuditSyncDisabled(true);
-          setAuditSyncState({
-            source: 'local fallback',
-            lastSyncAt: new Date().toISOString(),
-            detail: 'Firestore audit unavailable, saving locally',
-          });
+          reportPendingAudit();
         }
       })();
     };
@@ -2017,6 +1914,7 @@ function App() {
     };
 
     const handleAdminImport = async (event) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       const file = event.target.files?.[0];
       if (!file) return;
       try {
@@ -2027,7 +1925,7 @@ function App() {
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json(worksheet);
-          const seenDealerCodes = new Set(users.map((user) => String(user?.dealerCode || '').trim().toLowerCase()).filter(Boolean));
+          const seenDealerCodes = new Set();
           const validationFailures = [];
           // Hash every row's PIN up front, so nothing plaintext is ever carried
           // into local storage. Failed hashes simply omit the patch (PIN unset).
@@ -2076,21 +1974,29 @@ function App() {
             acc.push({ ...rest, ...pinPatches.get(index) });
             return acc;
           }, []);
-          const nextUsers = [...users, ...importedUsers];
-          writeUsersLocal(nextUsers);
-          logAdminActivity('bulk_users_imported', { count: importedUsers.length });
+          const acceptedUsers = [];
+          for (const candidate of importedUsers) {
+            try {
+              const saved = await saveAdminUser(candidate);
+              acceptedUsers.push({ ...candidate, id: saved.id });
+            } catch (error) {
+              validationFailures.push({ dealerCode: candidate.dealerCode, reason: error?.message || 'Import failed.' });
+            }
+          }
+          await loadData();
+          logAdminActivity('bulk_users_imported', { count: acceptedUsers.length });
           if (validationFailures.length > 0) {
             setBulkActionState({
               active: false,
               label: 'Import validation',
-              processed: importedUsers.length,
+              processed: acceptedUsers.length,
               total: rows.length,
               failures: validationFailures,
             });
-            pushToast(`${importedUsers.length} users imported. ${validationFailures.length} rows skipped.`, importedUsers.length > 0 ? 'info' : 'error');
+            pushToast(`${acceptedUsers.length} users imported. ${validationFailures.length} rows skipped.`, acceptedUsers.length > 0 ? 'info' : 'error');
           } else {
             resetBulkActionState();
-            pushToast(`${importedUsers.length} users imported locally.`, 'success');
+            pushToast(`${acceptedUsers.length} users imported.`, 'success');
           }
         };
         reader.readAsArrayBuffer(file);
@@ -2112,7 +2018,8 @@ function App() {
     // session (`auth.currentUser`). Without that session the engine falls back
     // to view-only, so a stale `showAdminPanel` flag cannot grant write access.
     const adminRole = auth?.currentUser ? 'admin' : undefined;
-    const { canAccessTab, canMutateAdminData } = getAdminTabAccess(adminRole);
+    const { canAccessTab, canMutateAdminData: roleCanMutate } = getAdminTabAccess(adminRole);
+    const canMutateAdminData = roleCanMutate && adminDataHealth.source === 'live';
 
     const registrationStatusOverridesRef = useRef(registrationStatusOverrides);
     const setRegistrationOverride = (id, status) => {
@@ -2163,6 +2070,7 @@ function App() {
     }, [activeAdminTab]);
 
     const approveRequest = async (id, options = {}) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       const req = requests.find((r) => r.id === id);
       if (!req) return { ok: false, reason: 'Registration request not found.' };
       if (!options.skipConfirm && !(await confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
@@ -2172,46 +2080,18 @@ function App() {
         const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
         let requestStatusUpdated = false;
         const normalizedDealerCode = normalizeDealerCode(req?.dealerCode);
-        const existingUsers = findUsersByDealerCode(users, normalizedDealerCode);
-        if (existingUsers.length > 1) {
-          pushToast(`Duplicate dealer code ${normalizedDealerCode} found. Resolve duplicates before approval.`, 'error');
-          return { ok: false, reason: `Duplicate dealer code ${normalizedDealerCode} found.` };
-        }
-        const existingUser = existingUsers[0];
-        if (existingUser?.id) {
-          await updateDoc(doc(db, 'users', existingUser.id), {
-            dealerCode: normalizedDealerCode,
-            dealerName: req.dealerName || '',
-            mobile: req.mobile || '',
-            email: req.email || '',
-            package: req.package || '',
-            packageDays: validity.packageDays,
-            validFrom: validity.validFrom,
-            validTill: validity.validTill,
-            ...(await buildPinWritePatch(req.pin)),
-            status: 'active',
-            role: existingUser.role || 'operator',
-            approvedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          await addDoc(collection(db, 'users'), {
-            dealerCode: normalizedDealerCode,
-            dealerName: req.dealerName || '',
-            mobile: req.mobile || '',
-            email: req.email || '',
-            package: req.package || '',
-            packageDays: validity.packageDays,
-            validFrom: validity.validFrom,
-            validTill: validity.validTill,
-            ...(await buildPinWritePatch(req.pin)),
-            role: 'operator',
-            status: 'active',
-            approvalStatus: {},
-            createdAt: serverTimestamp(),
-            approvedAt: serverTimestamp(),
-          });
-        }
+        await saveAdminUser({
+          dealerCode: normalizedDealerCode,
+          dealerName: req.dealerName || '',
+          mobile: req.mobile || '',
+          email: req.email || '',
+          package: req.package || '',
+          packageDays: validity.packageDays,
+          validFrom: validity.validFrom,
+          validTill: validity.validTill,
+          ...(await buildPinWritePatch(req.pin)),
+          status: 'active',
+        }, { mode: 'approve' });
         setRegistrationOverride(id, 'approved');
         if (!isLocalOnlyRequest) {
           try {
@@ -2225,11 +2105,11 @@ function App() {
           }
           const nextLocal = requests.map((r) => (r.id === id ? { ...r, status: 'approved', approvedAt: new Date().toISOString() } : r));
           setRequests(nextLocal);
-          localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
+          writeRegistrationRequestsCache(nextLocal);
         } else {
           const nextLocal = requests.filter((r) => r.id !== id);
           setRequests(nextLocal);
-          localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
+          writeRegistrationRequestsCache(nextLocal);
         }
         await loadData();
         logAdminActivity('registration_approved', { id, dealerCode: req.dealerCode || '' });
@@ -2237,13 +2117,15 @@ function App() {
           setRequests((prev) => prev.filter((r) => r.id !== id));
         }
         return { ok: true };
-      } catch {
-        pushToast('Approve failed. Firestore rules/permission check karo.', 'error');
-        return { ok: false, reason: 'Approve failed. Firestore rules/permission check karo.' };
+      } catch (error) {
+        const reason = error?.message || 'Approve failed. Check server configuration.';
+        pushToast(reason, 'error');
+        return { ok: false, reason };
       }
     };
 
     const rejectRequest = async (id, options = {}) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       const req = requests.find((r) => r.id === id);
       if (!req) return { ok: false, reason: 'Registration request not found.' };
       if (!options.skipConfirm && !(await confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
@@ -2258,7 +2140,7 @@ function App() {
         } else {
           const nextLocal = requests.map((r) => (r.id === id ? { ...r, status: 'rejected' } : r));
           setRequests(nextLocal);
-          localStorage.setItem('registrationRequests', JSON.stringify(nextLocal));
+          writeRegistrationRequestsCache(nextLocal);
         }
         setRegistrationOverride(id, 'rejected');
         await loadData();
@@ -2271,20 +2153,17 @@ function App() {
     };
 
     const addManualUser = async () => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       if (!newUser.dealerCode || !newUser.dealerName || !newUser.pin || !newUser.package) {
         pushToast('Dealer code, dealer name, package and PIN required.', 'error');
         return;
       }
       const normalizedDealerCode = normalizeDealerCode(newUser.dealerCode);
       if (!(await confirmAdminAction(`Create manual user ${normalizedDealerCode}?`))) return;
+      if (!requireLiveAdminData()) return;
       try {
-        const matchingUsers = findUsersByDealerCode(users, normalizedDealerCode);
-        if (matchingUsers.length > 0) {
-          pushToast(`Dealer code ${normalizedDealerCode} already exists. Existing user ko edit kijiye, naya duplicate create mat kijiye.`, 'error');
-          return;
-        }
         const validity = computeValidityDates(newUser.package);
-        await addDoc(collection(db, 'users'), {
+        await saveAdminUser({
           dealerCode: normalizedDealerCode,
           dealerName: newUser.dealerName.trim(),
           mobile: newUser.mobile.trim(),
@@ -2293,7 +2172,6 @@ function App() {
           packageDays: validity.packageDays,
           validFrom: validity.validFrom,
           validTill: validity.validTill,
-          // PIN is hashed server-side; the plaintext never reaches Firestore.
           ...(await buildPinWritePatch(newUser.pin)),
           role: newUser.role,
           status: 'active',
@@ -2310,8 +2188,8 @@ function App() {
         });
         await loadData();
         logAdminActivity('manual_user_created', { dealerCode: normalizedDealerCode });
-      } catch {
-        pushToast('Create user failed.', 'error');
+      } catch (error) {
+        pushToast(error?.message || 'Create user failed.', 'error');
       }
     };
 
@@ -2345,6 +2223,7 @@ function App() {
     };
 
     const toggleUserStatus = async (userOrId, options = {}) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       const target = typeof userOrId === 'object'
         ? userOrId
         : users.find((u) => u.id === userOrId);
@@ -2353,7 +2232,7 @@ function App() {
       if (!options.skipConfirm && !(await confirmAdminAction(`${nextStatus === 'disabled' ? 'Disable' : 'Enable'} ${target.dealerCode || 'this user'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         if (target.id) {
-          await updateDoc(doc(db, 'users', target.id), {
+          await patchAdminUser(target.id, {
             status: nextStatus,
             updatedAt: serverTimestamp(),
           });
@@ -2362,17 +2241,15 @@ function App() {
           return { ok: true };
         }
         throw new Error('LOCAL_ONLY_USER');
-      } catch {
-        const token = resolveEditToken(target);
-        const nextUsers = users.map((u) => (isSameUserByToken(u, token) ? { ...u, status: nextStatus } : u));
-        writeUsersLocal(nextUsers);
-        logAdminActivity('user_status_changed_local', { dealerCode: target.dealerCode || '', status: nextStatus });
-        pushToast('Status updated locally.', 'info');
-        return { ok: true, reason: 'Updated locally.' };
+      } catch (error) {
+        const reason = error?.message || 'Status update failed.';
+        pushToast(reason, 'error');
+        return { ok: false, reason };
       }
     };
 
     const deleteUser = async (userOrId) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       const target = typeof userOrId === 'object'
         ? userOrId
         : users.find((u) => u.id === userOrId);
@@ -2382,28 +2259,27 @@ function App() {
         message: `Enter a delete reason for ${target.dealerCode || 'this user'}.`,
         submitLabel: 'Delete User',
         onSubmit: async (deleteReason) => {
+          if (!requireLiveAdminData()) return false;
           try {
-            persistDeletedUsersBin([{
-              ...target,
+            const fullUser = await loadAdminUserDetail(target.id);
+            const nextDeletedUsersBin = [{
+              ...fullUser,
               deletedAt: new Date().toISOString(),
               deletedBy: activeAdminEmail || 'admin',
               deleteReason,
               restoreCount: Number(target?.restoreCount || 0),
-            }, ...deletedUsersBin].slice(0, 200));
+            }, ...deletedUsersBin].slice(0, 200);
             if (target.id) {
-              await deleteDoc(doc(db, 'users', target.id));
+              await deleteAdminUser(target.id);
+              persistDeletedUsersBin(nextDeletedUsersBin);
               await loadData();
               logAdminActivity('user_deleted', { dealerCode: target.dealerCode || '', deleteReason });
               return true;
             }
             throw new Error('LOCAL_ONLY_USER');
-          } catch {
-            const token = resolveEditToken(target);
-            const nextUsers = users.filter((u) => !isSameUserByToken(u, token));
-            writeUsersLocal(nextUsers);
-            logAdminActivity('user_deleted_local', { dealerCode: target.dealerCode || '', deleteReason });
-            pushToast('User deleted locally.', 'info');
-            return true;
+          } catch (error) {
+            pushToast(error?.message || 'User delete failed.', 'error');
+            return false;
           }
         },
       });
@@ -2412,8 +2288,11 @@ function App() {
     const startEditUser = async (u) => {
       // List pages skip heavy payloads; fetch the full doc before editing so
       // profile/bank fields don't get blanked out on save.
-      const full = u?.id ? await fetchAdminUserDetail(u.id).catch(() => null) : null;
-      const source = full || u;
+      let source;
+      try { source = await loadAdminUserDetail(u.id); } catch (error) {
+        pushToast(error?.message || 'User detail could not be read.', 'error');
+        return;
+      }
       setEditingUserId(resolveEditToken(source));
       setEditUser({
         dealerCode: source.dealerCode || '',
@@ -2450,6 +2329,7 @@ function App() {
     };
 
     const saveEditedUser = async () => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       if (!editingUserId) return;
       const targetUser = users.find((u) => isSameUserByToken(u, editingUserId));
       if (!targetUser) {
@@ -2457,6 +2337,7 @@ function App() {
         return;
       }
       if (!(await confirmAdminAction(`Save changes for ${targetUser.dealerCode || 'this user'}?`))) return;
+      if (!requireLiveAdminData()) return;
       try {
         const fallbackValidity = computeValidityDates(editUser.package);
         const validFromIso = toIsoDate(editUser.validFrom) || fallbackValidity.validFrom;
@@ -2465,7 +2346,7 @@ function App() {
         if (!targetUser.id) {
           throw new Error('LOCAL_ONLY_USER');
         }
-        await updateDoc(doc(db, 'users', targetUser.id), {
+        const savedUser = await saveAdminUser({
           dealerCode: editUser.dealerCode.trim(),
           dealerName: editUser.dealerName.trim(),
           mobile: editUser.mobile.trim(),
@@ -2480,12 +2361,12 @@ function App() {
           profileData: { ...editUser.profileData },
           bankDetailsData: { ...editUser.bankDetailsData },
           updatedAt: serverTimestamp(),
-        });
+        }, { mode: 'update', userId: targetUser.id });
         setLoggedInUser((currentUser) => {
           if (!currentUser || (currentUser.id !== targetUser.id && String(currentUser.dealerCode || '').trim() !== String(targetUser.dealerCode || '').trim())) return currentUser;
         const safeCurrentUser = sanitizeUserForCache({
           ...currentUser,
-          dealerCode: editUser.dealerCode.trim(),
+          dealerCode: savedUser.dealerCode,
           dealerName: editUser.dealerName.trim(),
           mobile: editUser.mobile.trim(),
           email: editUser.email.trim(),
@@ -2503,44 +2384,8 @@ function App() {
         setEditingUserId('');
         await loadData();
         logAdminActivity('user_updated', { dealerCode: targetUser.dealerCode || '' });
-      } catch {
-        const fallbackValidity = computeValidityDates(editUser.package);
-        const validFromIso = toIsoDate(editUser.validFrom) || fallbackValidity.validFrom;
-        const validTillIso = toIsoDate(editUser.validTill) || fallbackValidity.validTill;
-        const diffDays = Math.max(0, Math.ceil((new Date(validTillIso).getTime() - new Date(validFromIso).getTime()) / (1000 * 60 * 60 * 24)));
-        const nextUsers = users.map((u) => (
-          isSameUserByToken(u, editingUserId)
-            ? {
-              ...u,
-              dealerCode: editUser.dealerCode.trim(),
-              dealerName: editUser.dealerName.trim(),
-              mobile: editUser.mobile.trim(),
-              email: editUser.email.trim(),
-              package: editUser.package,
-              packageDays: Number.isFinite(diffDays) ? diffDays : fallbackValidity.packageDays,
-              validFrom: validFromIso,
-              validTill: validTillIso,
-              // PIN is never mirrored into local cache.
-              role: editUser.role,
-              status: editUser.status,
-              profileData: { ...editUser.profileData },
-              bankDetailsData: { ...editUser.bankDetailsData },
-            }
-            : u
-        ));
-        writeUsersLocal(nextUsers);
-        const nextEditedUser = nextUsers.find((u) => isSameUserByToken(u, editingUserId));
-        if (nextEditedUser) {
-          const safeNextEditedUser = sanitizeUserForCache(nextEditedUser);
-          setLoggedInUser((currentUser) => (
-            currentUser && (currentUser.id === nextEditedUser.id || String(currentUser.dealerCode || '').trim() === String(nextEditedUser.dealerCode || '').trim())
-              ? safeNextEditedUser
-              : currentUser
-          ));
-        }
-        setEditingUserId('');
-        logAdminActivity('user_updated_local', { dealerCode: targetUser.dealerCode || '' });
-        pushToast('User updated locally. Firebase permission denied.', 'info');
+      } catch (error) {
+        pushToast(error?.message || 'User update failed.', 'error');
       }
     };
 
@@ -2705,29 +2550,11 @@ function App() {
       const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
       const targetUser = users.find((user) => user.id === approval.userId
         || (approval.dealerCode && user.dealerCode === approval.dealerCode));
-      await runTransaction(db, async (transaction) => {
-        const userRef = targetUser?.id ? doc(db, 'users', targetUser.id) : null;
-        const snapshot = userRef ? await transaction.get(userRef) : null;
-        if (snapshot?.exists()) {
-          const pending = Array.isArray(snapshot.data().pendingDictionaryRequests) ? snapshot.data().pendingDictionaryRequests : [];
-          const remaining = pending.filter((request) => !isMatchingDictionaryRequest(request, approval, targetUser.id));
-          transaction.update(userRef, {
-            pendingDictionaryRequests: remaining,
-            dictionaryPendingCount: remaining.length,
-            ...(approval.id === `userdoc-${targetUser.id}-${approval.type}` ? {
-              [`pendingUpdates.${approval.type}.status`]: status,
-            } : {}),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        if (approvalDocId) {
-          transaction.update(doc(db, 'updateApprovals', approvalDocId), {
-            status,
-            updatedAt: serverTimestamp(),
-          });
-        }
-      });
+      await completeAdminDictionaryRequest(targetUser?.id, approvalDocId,
+        (request) => isMatchingDictionaryRequest(request, approval, targetUser.id), status,
+        approval.id === `userdoc-${targetUser?.id}-${approval.type}` ? approval.type : null);
     };
+
     const flushDictionaryChanges = () => {
       const changes = dictionaryChangesRef.current;
       dictionaryChangesRef.current = {};
@@ -2737,6 +2564,7 @@ function App() {
     };
 
     const approveUpdateRequest = async (approval, options = {}) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       if (!approval?.id) return { ok: false, reason: 'Approval request missing.' };
       const approvalType = normalizeApprovalType(approval.type);
       const fieldByType = {
@@ -2754,7 +2582,8 @@ function App() {
       }
       if (!options.skipConfirm && !(await confirmAdminAction(`Approve ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
-        const targetUser = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
+        const targetSummary = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
+        const targetUser = targetSummary?.id ? await loadAdminUserDetail(targetSummary.id) : null;
         if (approvalType !== 'dictionary' && !targetUser?.id) {
           pushToast('User not found for approval.', 'error');
           return { ok: false, reason: 'User not found for approval.' };
@@ -2809,7 +2638,7 @@ function App() {
             return { ok: false, reason: 'Plan upgrade request has no selected package.' };
           }
           const validity = computeValidityDates(nextPackage);
-          await updateDoc(doc(db, 'users', targetUser.id), {
+          await patchAdminUser(targetUser.id, {
             package: nextPackage,
             packageDays: validity.packageDays,
             validFrom: validity.validFrom,
@@ -2837,7 +2666,7 @@ function App() {
             }
           });
 
-          await updateDoc(doc(db, 'users', targetUser.id), {
+          await patchAdminUser(targetUser.id, {
             [targetField]: nextUpdates,
             approvalStatus: nextStatus,
             [`pendingUpdates.${approvalType}.status`]: 'approved',
@@ -2851,7 +2680,7 @@ function App() {
             notifySuccess: false,
           });
         } else {
-          await updateDoc(doc(db, 'users', targetUser.id), {
+          await patchAdminUser(targetUser.id, {
             [targetField]: approvedTargetValue,
             approvalStatus: nextStatus,
             [`pendingUpdates.${approvalType}.status`]: 'approved',
@@ -2917,6 +2746,7 @@ function App() {
     };
 
     const rejectUpdateRequest = async (approval, options = {}) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       if (!approval?.id) return { ok: false, reason: 'Approval request missing.' };
       const approvalType = normalizeApprovalType(approval.type);
       if (!options.skipConfirm && !(await confirmAdminAction(`Reject ${approval.type || 'update'} request for ${approval.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
@@ -2938,7 +2768,7 @@ function App() {
             nextStatus.hindiHeaderData = 'rejected';
           }
           if (approvalType !== 'dictionary') {
-            await updateDoc(doc(db, 'users', targetUser.id), {
+            await patchAdminUser(targetUser.id, {
               approvalStatus: nextStatus,
               [`pendingUpdates.${approvalType}.status`]: 'rejected',
               [`pendingUpdates.${approvalType}.rejectedAt`]: new Date().toISOString(),
@@ -2977,7 +2807,7 @@ function App() {
       let fullUser = user;
       if (user?.id) {
         try {
-          const fetched = await fetchAdminUserDetail(user.id);
+          const fetched = await loadAdminUserDetail(user.id);
           if (fetched) fullUser = fetched;
         } catch {
           pushToast('Full user details Firebase se load nahi ho paayi; available data dikhaya gaya hai.', 'error');
@@ -3050,7 +2880,7 @@ function App() {
       const completionChecks = [
         Boolean(user?.profileData?.distributorName),
         Boolean(user?.bankDetailsData?.bankName),
-        Array.isArray(user?.ratesData) && user.ratesData.length > 0,
+        ...(Number.isFinite(user?.ratesDataCount) ? [user.ratesDataCount > 0] : []),
         Boolean(user?.hindiHeaderData?.distributorName),
       ];
       const completionPercent = Math.round((completionChecks.filter(Boolean).length / completionChecks.length) * 100);
@@ -3601,6 +3431,7 @@ function App() {
     };
 
     const toggleUserDeviceBlock = async (user, deviceId) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       if (!user || !deviceId) return;
       const devices = normalizeLoginDevices(user.loginDevices);
       const targetDevice = devices.find((device) => device.deviceId === deviceId);
@@ -3618,6 +3449,7 @@ function App() {
       }))) {
         return;
       }
+      if (!requireLiveAdminData()) return;
       const updatedAt = new Date().toISOString();
       const loginDevices = devices.map((device) => (
         device.deviceId === deviceId
@@ -3629,17 +3461,9 @@ function App() {
           }
           : device
       ));
-      const nextUsers = users.map((item) => (
-        resolveEditToken(item) === resolveEditToken(user)
-          ? { ...item, loginDevices, updatedAt }
-          : item
-      ));
-
-      setUsers(nextUsers);
-      writeUsersData(nextUsers);
-
       try {
-        await updateUserInFirebase(user.id, { loginDevices }, user.dealerCode);
+        await patchAdminUser(user.id, { loginDevices });
+        setAdminUserDetails((previous) => ({ ...previous, [user.id]: { ...user, loginDevices, updatedAt } }));
         logAdminActivity(shouldBlock ? 'device_blocked' : 'device_unblocked', {
           dealerCode: user.dealerCode || '',
           deviceId,
@@ -3695,6 +3519,7 @@ function App() {
     };
 
     const handleDictionaryImport = async (event) => {
+      if (!requireLiveAdminData()) return { ok: false, reason: 'Live Firebase sync required.' };
       const file = event.target.files?.[0];
       if (!file) return;
       try {
@@ -3741,6 +3566,8 @@ function App() {
             <button className="admin-logout-btn" onClick={onAdminLogout}>Log Out</button>
           </div>
         </div>
+
+        <AdminDataStatus health={adminDataHealth} />
 
         <div className="admin-notification-strip">
           {adminNotifications.length === 0 ? (
@@ -3960,11 +3787,11 @@ function App() {
                   </div>
                   <div className="admin-health-card">
                     <span>Firebase</span>
-                    <strong>{adminDataHealth.firebaseReachable ? 'Connected' : 'Fallback'}</strong>
+                    <strong>{adminDataHealth.source === 'live' ? 'Live' : 'Not live'}</strong>
                   </div>
                   <div className="admin-health-card">
                     <span>Last Sync</span>
-                    <strong>{formatDisplayDate(adminDataHealth.lastSyncAt)}</strong>
+                    <strong>{adminDataHealth.lastSyncAt ? formatDisplayDateTime(adminDataHealth.lastSyncAt) : 'Unknown'}</strong>
                   </div>
                   <div className="admin-health-card">
                     <span>Audit Sync</span>
@@ -4007,8 +3834,8 @@ function App() {
             <span>{selectedRequestIds.length} selected</span>
             <div className="admin-bulk-actions">
               <button className="admin-ghost-btn" onClick={() => setSelectedRequestIds(filteredPendingRegistrationRequests.map((r) => r.id))}>Select All</button>
-              <button className="admin-ghost-btn" onClick={bulkApproveRegistrations}>Bulk Approve</button>
-              <button className="admin-ghost-btn" onClick={bulkRejectRegistrations}>Bulk Reject</button>
+              <button className="admin-ghost-btn" onClick={bulkApproveRegistrations} disabled={!canMutateAdminData}>Bulk Approve</button>
+              <button className="admin-ghost-btn" onClick={bulkRejectRegistrations} disabled={!canMutateAdminData}>Bulk Reject</button>
             </div>
           </div>
           <div className="admin-table-wrap">
@@ -4059,7 +3886,7 @@ function App() {
           <div className="admin-bulk-bar">
             <span>Bulk Import Users</span>
             <div className="admin-bulk-actions">
-              <button className="admin-ghost-btn" onClick={() => adminImportRef.current?.click()}>Import CSV/XLSX</button>
+              <button className="admin-ghost-btn" onClick={() => adminImportRef.current?.click()} disabled={!canMutateAdminData}>Import CSV/XLSX</button>
               <input ref={adminImportRef} type="file" accept=".csv,.xlsx" className="hidden-file-input" onChange={handleAdminImport} />
             </div>
           </div>
@@ -4103,7 +3930,7 @@ function App() {
             <span>{selectedUserTokens.length} selected</span>
             <div className="admin-bulk-actions">
               <button className="admin-ghost-btn" onClick={() => setSelectedUserTokens(filteredUsersList.map((u) => resolveEditToken(u)))}>Select All</button>
-              <button className="admin-ghost-btn" onClick={bulkToggleUsers}>Bulk Toggle Status</button>
+              <button className="admin-ghost-btn" onClick={bulkToggleUsers} disabled={!canMutateAdminData}>Bulk Toggle Status</button>
             </div>
           </div>
           <div className="admin-table-wrap">
@@ -4133,7 +3960,8 @@ function App() {
                   </tr>
                 ) : (
                   pagedUsersList.map((u, idx) => {
-                    const loginDevices = normalizeLoginDevices(u.loginDevices);
+                    const deviceDetail = adminUserDetails[u.id];
+                    const loginDevices = normalizeLoginDevices(deviceDetail?.loginDevices);
                     return (
                       <tr key={u.id || `${u.dealerCode || 'user'}-${idx}`}>
                         <td><input type="checkbox" checked={selectedUserTokens.includes(resolveEditToken(u))} onChange={() => toggleUserSelection(resolveEditToken(u))} /></td>
@@ -4155,7 +3983,11 @@ function App() {
                         <td><button type="button" onClick={() => { void openDetailView(u, 'rates'); }}>View</button></td>
                         <td><button type="button" onClick={() => { void openDetailView(u, 'header'); }}>View</button></td>
                         <td>
-                          {loginDevices.length === 0 ? (
+                          {!deviceDetail ? (
+                            <button type="button" onClick={() => {
+                              void loadAdminUserDetail(u.id).catch((error) => pushToast(error.message, 'error'));
+                            }}>Load devices</button>
+                          ) : loginDevices.length === 0 ? (
                             <span className="admin-empty-device">No login yet</span>
                           ) : (
                             <div className="admin-device-list">
@@ -4171,7 +4003,7 @@ function App() {
                                     <button
                                       type="button"
                                       className="admin-ghost-btn"
-                                      onClick={() => toggleUserDeviceBlock(u, device.deviceId)}
+                                      onClick={() => toggleUserDeviceBlock(deviceDetail, device.deviceId)}
                                       disabled={!canMutateAdminData}
                                     >
                                       {device.blocked ? 'Unblock' : 'Block'}
@@ -4185,7 +4017,7 @@ function App() {
                         <td>
                           <div className="admin-actions">
                             <button onClick={async () => {
-                              const detail = await fetchAdminUserDetail(u.id).catch(() => null);
+                              const detail = await loadAdminUserDetail(u.id).catch(() => null);
                               setDetailView({ title: `User - ${u?.dealerCode || ''}`, data: detail || u, noteKey: `user:${u?.id || u?.dealerCode}:general` });
                             }}>View</button>
                             <button onClick={() => startEditUser(u)} disabled={!canMutateAdminData}>Edit</button>
@@ -4278,8 +4110,8 @@ function App() {
               <span>{selectedApprovalIds.length} selected</span>
               <div className="admin-bulk-actions">
                 <button className="admin-ghost-btn" onClick={() => setSelectedApprovalIds(filteredApprovals.map((a) => a.id))}>Select All</button>
-                <button className="admin-ghost-btn" onClick={bulkApproveUpdates}>Bulk Approve</button>
-                <button className="admin-ghost-btn" onClick={bulkRejectUpdates}>Bulk Reject</button>
+                <button className="admin-ghost-btn" onClick={bulkApproveUpdates} disabled={!canMutateAdminData}>Bulk Approve</button>
+                <button className="admin-ghost-btn" onClick={bulkRejectUpdates} disabled={!canMutateAdminData}>Bulk Reject</button>
               </div>
             </div>
             <div className="admin-table-wrap">
@@ -4375,7 +4207,7 @@ function App() {
                     placeholder="Type approval reply here"
                   />
                   <div className="admin-chat-actions">
-                    <button type="button" className="form-button" onClick={submitApprovalReply}>Send Approval Reply</button>
+                    <button type="button" className="form-button" onClick={submitApprovalReply} disabled={!canMutateAdminData}>Send Approval Reply</button>
                     <button type="button" className="form-button secondary" onClick={closeApprovalReplyPopup}>Cancel</button>
                   </div>
                 </div>
@@ -4455,14 +4287,14 @@ function App() {
                   </button>
                   <button
                     className="admin-ghost-btn"
-                    onClick={bulkApproveApiWords}
+                    onClick={bulkApproveApiWords} disabled={!canMutateAdminData}
                     disabled={!canMutateAdminData || selectedApiWordApprovals.length === 0}
                   >
                     Bulk Approve
                   </button>
                   <button
                     className="admin-ghost-btn"
-                    onClick={bulkRejectApiWords}
+                    onClick={bulkRejectApiWords} disabled={!canMutateAdminData}
                     disabled={!canMutateAdminData || selectedApiWordApprovals.length === 0}
                   >
                     Bulk Reject
@@ -5006,7 +4838,7 @@ function App() {
                 defaultValue={announcementDraft.message}
                 onChange={(e) => { announcementDraftRef.current = { ...announcementDraftRef.current, message: e.target.value }; }}
               />
-              <button onClick={handleCreateAnnouncement} disabled={!canMutateAdminData}>Publish</button>
+              <button onClick={() => { if (requireLiveAdminData()) handleCreateAnnouncement(); }} disabled={!canMutateAdminData}>Publish</button>
             </div>
             <div className="admin-table-wrap" style={{ marginTop: '14px' }}>
               <table className="admin-table">
@@ -5041,10 +4873,10 @@ function App() {
                         <td>{item.message || '-'}</td>
                         <td>
                           <div className="admin-actions">
-                            <button onClick={() => toggleAnnouncementStatus(item.id)} disabled={!canMutateAdminData}>
+                            <button onClick={() => { if (requireLiveAdminData()) toggleAnnouncementStatus(item.id); }} disabled={!canMutateAdminData}>
                               {item.active ? 'Pause' : 'Activate'}
                             </button>
-                            <button onClick={() => deleteAnnouncement(item.id)} disabled={!canMutateAdminData}>Delete</button>
+                            <button onClick={() => { if (requireLiveAdminData()) deleteAnnouncement(item.id); }} disabled={!canMutateAdminData}>Delete</button>
                           </div>
                         </td>
                       </tr>
@@ -5102,12 +4934,11 @@ function App() {
                                   value: '',
                                   submitLabel: 'Restore User',
                                   onSubmit: async (restoreReason) => {
+                                    if (!requireLiveAdminData()) return;
                                     await restoreDeletedUser(
                                       user,
                                       confirmAdminAction,
                                       deletedUsersBin,
-                                      users,
-                                      writeUsersLocal,
                                       persistDeletedUsersBin,
                                       logAdminActivity,
                                       loadData,
@@ -6708,8 +6539,6 @@ function App() {
       item,
       confirmFn,
       currentDeletedUsersBin,
-      currentUsers,
-      writeUsersLocalFn,
       persistDeletedUsersBinFn,
       logAdminActivityFn,
       loadDataFn,
@@ -6748,38 +6577,19 @@ function App() {
         const userData = { ...restoredUser };
         delete userData.id;
 
-        if (item.id) {
-          await setDoc(doc(db, 'users', item.id), {
-            ...userData,
-            restoredAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          await addDoc(collection(db, 'users'), {
-            ...userData,
-            restoredAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
+        await saveAdminUser(userData, { mode: 'restore', userId: item.id || undefined });
 
         if (typeof loadDataFn === 'function') {
           await loadDataFn();
         }
       } catch (error) {
-        console.error('Restore failed, falling back to local restore:', error);
-        const nextUsers = item.id
-          ? [...(Array.isArray(currentUsers) ? currentUsers.filter((u) => u.id !== item.id) : []), restoredUser]
-          : [...(Array.isArray(currentUsers) ? currentUsers : []), restoredUser];
-        if (typeof writeUsersLocalFn === 'function') {
-          writeUsersLocalFn(nextUsers);
-        }
         if (typeof notifyFn === 'function') {
-          notifyFn(`Restore failed in Firestore, restored locally for ${item.dealerCode || 'user'}.`, 'info');
+          notifyFn(error?.message || 'Restore failed.', 'error');
         }
-      } finally {
-        if (typeof persistDeletedUsersBinFn === 'function') {
-          persistDeletedUsersBinFn(nextBin);
-        }
+        return;
+      }
+      if (typeof persistDeletedUsersBinFn === 'function') {
+        persistDeletedUsersBinFn(nextBin);
       }
 
       if (typeof logAdminActivityFn === 'function') {
@@ -6824,7 +6634,7 @@ function App() {
       );
       try {
         if (item.id) {
-          await deleteDoc(doc(db, 'users', item.id));
+          await deleteAdminUser(item.id);
         }
       } catch (error) {
         console.error('Permanent delete failed for Firestore user:', error);

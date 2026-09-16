@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, doc, getDocs, getFirestore, updateDoc } from 'firebase/firestore';
+import { fetchAllAdminUsers, patchAdminUser } from './services/adminUserRepository';
 import { getUserAccountStatus } from './utils/userAccountStatus';
 
 const AdminPage = () => {
@@ -11,16 +11,11 @@ const AdminPage = () => {
     let cancelled = false;
 
     const fetchUsers = async () => {
-      const db = getFirestore();
       setLoading(true);
       setError('');
 
       try {
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        const usersList = usersSnapshot.docs.map((userDoc) => ({
-          id: userDoc.id,
-          ...userDoc.data(),
-        }));
+        const usersList = await fetchAllAdminUsers();
 
         if (!cancelled) {
           setUsers(usersList);
@@ -44,11 +39,10 @@ const AdminPage = () => {
   }, []);
 
   const handleApprove = async (userId) => {
-    const db = getFirestore();
     setError('');
 
     try {
-      await updateDoc(doc(db, 'users', userId), {
+      await patchAdminUser(userId, {
         status: 'active',
       });
       setUsers((prev) => prev.map((user) => (

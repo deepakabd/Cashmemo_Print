@@ -74,21 +74,25 @@ service cloud.firestore {
 
       // Dealers cannot create their own user document; registration goes
       // through `registrationRequests` and is actioned by an admin.
-      allow create, delete: if isAdmin();
+      // Creation and dealer-code changes go through the trusted transaction
+      // endpoint, which enforces uniqueness against legacy and new users.
+      allow create: if false;
+      allow delete: if isAdmin();
 
       // Update is a single rule covering both cases (Firestore ORs multiple
       // `allow update` statements, so a careless second rule would grant more
       // than intended):
-      //   * an admin may update anything;
+      //   * an admin may update fields other than dealerCode directly;
       //   * a dealer may update only their own doc, only while their account is
       //     active, and never the credential/privilege fields.
-      allow update: if (isAdmin() && pinFieldsSafe())
+      allow update: if (isAdmin() && pinFieldsSafe()
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerCode']))
         || (
           (isSelf(userId) || isOwnDealerDoc())
           && isActiveAccount()
           && pinFieldsSafe()
           && !request.resource.data.diff(resource.data).affectedKeys()
-               .hasAny(['role', 'status', 'package', 'packageDays', 'validFrom', 'validTill', 'pinHash', 'pin', 'authUid', 'approvalStatus'])
+               .hasAny(['dealerCode', 'role', 'status', 'package', 'packageDays', 'validFrom', 'validTill', 'pinHash', 'pin', 'authUid', 'approvalStatus'])
         );
     }
 

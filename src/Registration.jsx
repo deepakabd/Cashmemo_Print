@@ -26,7 +26,7 @@ const Registration = () => {
       await setDoc(doc(db, 'users', user.uid), {
         name: name,
         email: email,
-        approved: false, // Add an 'approved' field
+        status: 'pending',
         dealerCode: null,
         pin: null,
       });
