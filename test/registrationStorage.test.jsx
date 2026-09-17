@@ -13,6 +13,28 @@ vi.mock('../src/auth/userAuth', () => ({ buildPinWritePatch: async (pin) => ({ p
 beforeEach(() => { addDoc.mockReset(); });
 
 describe('registration browser storage', () => {
+  it('starts empty despite a complete legacy form and stays empty when reopened after abandoned input', () => {
+    const oldForm = { package: 'Premium', dealerCode: '41012345', dealerName: 'Previous dealer',
+      mobile: '9876543210', email: 'previous@example.com', pin: '9876', confirmPin: '9876',
+      utr: 'old-payment', date: '2026-09-16' };
+    localStorage.setItem('registrationData', JSON.stringify(oldForm));
+    localStorage.setItem('registrationRequests', JSON.stringify([{ ...oldForm, id: 'old-request' }]));
+    const props = { packageOptions: ['Premium'], packagePricing: {}, paymentUpiId: 'test@upi',
+      pushToast: vi.fn(), logRecentActivity: vi.fn(), onClose: vi.fn(), onLogin: vi.fn() };
+    const first = render(<RegisterPanel {...props} />);
+    for (const name of Object.keys(oldForm)) expect(first.container.querySelector(`[name="${name}"]`).value).toBe('');
+    expect(localStorage.getItem('registrationData')).toBeNull();
+    fireEvent.change(first.container.querySelector('[name="dealerName"]'), { target: { value: 'New dealer' } });
+    fireEvent.change(first.container.querySelector('[name="pin"]'), { target: { value: '1234' } });
+    first.unmount();
+    const reopened = render(<RegisterPanel {...props} />);
+    for (const name of Object.keys(oldForm)) expect(reopened.container.querySelector(`[name="${name}"]`).value).toBe('');
+    expect(localStorage.getItem('registrationData')).toBeNull();
+    const cached = JSON.parse(localStorage.getItem('registrationRequests'));
+    expect(cached[0]).not.toHaveProperty('pin');
+    expect(cached[0]).not.toHaveProperty('confirmPin');
+  });
+
   it('removes old form data and cached credentials while retaining request metadata', () => {
     localStorage.setItem('registrationData', JSON.stringify({ pin: '1234', confirmPin: '1234' }));
     localStorage.setItem('registrationRequests', JSON.stringify([

@@ -158,32 +158,32 @@ export const RegisterPanel = ({
             </div>
             <div>
               <label className="auth-field-label">Dealer Code</label>
-              <input name="dealerCode" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="Dealer code (8 digits)" value={form.dealerCode} onChange={onChange} maxLength={8} />
+              <input name="dealerCode" autoComplete="off" className={`form-input${errors.dealerCode ? ' form-input--error' : ''}`} placeholder="Dealer code (8 digits)" value={form.dealerCode} onChange={onChange} maxLength={8} />
               {errors.dealerCode && <div className="form-error">{errors.dealerCode}</div>}
             </div>
             <div>
               <label className="auth-field-label">Dealer Name</label>
-              <input name="dealerName" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="Dealer name" value={form.dealerName} onChange={onChange} />
+              <input name="dealerName" autoComplete="off" className={`form-input${errors.dealerName ? ' form-input--error' : ''}`} placeholder="Dealer name" value={form.dealerName} onChange={onChange} />
               {errors.dealerName && <div className="form-error">{errors.dealerName}</div>}
             </div>
             <div>
               <label className="auth-field-label">Mobile Number</label>
-              <input name="mobile" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="Mobile number (10 digits)" value={form.mobile} onChange={onChange} maxLength={10} />
+              <input name="mobile" autoComplete="off" className={`form-input${errors.mobile ? ' form-input--error' : ''}`} placeholder="Mobile number (10 digits)" value={form.mobile} onChange={onChange} maxLength={10} />
               {errors.mobile && <div className="form-error">{errors.mobile}</div>}
             </div>
             <div>
               <label className="auth-field-label">Email ID</label>
-              <input name="email" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="Email ID" type="email" value={form.email} onChange={onChange} />
+              <input name="email" autoComplete="off" className={`form-input${errors.email ? ' form-input--error' : ''}`} placeholder="Email ID" type="email" value={form.email} onChange={onChange} />
               {errors.email && <div className="form-error">{errors.email}</div>}
             </div>
             <div>
               <label className="auth-field-label">PIN</label>
-              <input name="pin" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="PIN (4 digits)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
+              <input name="pin" autoComplete="new-password" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="PIN (4 digits)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
               {errors.pin && <div className="form-error">{errors.pin}</div>}
             </div>
             <div>
               <label className="auth-field-label">Confirm PIN</label>
-              <input name="confirmPin" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="Confirm PIN" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
+              <input name="confirmPin" autoComplete="new-password" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="Confirm PIN" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
               {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
             </div>
             <div>

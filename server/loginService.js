@@ -103,7 +103,7 @@ const findUserByDealerCode = async (firestore, dealerCode) => {
  * Verifies dealer code + PIN and returns a Firebase custom token.
  *
  * @param {{ dealerCode: string, pin: string }} credentials
- * @returns {Promise<{ token: string, dealerCode: string, uid: string }>}
+ * @returns {Promise<{ token: string, dealerCode: string, uid: string, userId: string }>}
  */
 export const verifyDealerLogin = async ({ dealerCode, pin }) => {
   const code = String(dealerCode ?? '').trim();
@@ -196,7 +196,7 @@ export const verifyDealerLogin = async ({ dealerCode, pin }) => {
     }
   }
 
-  return { token, dealerCode: code, uid };
+  return { token, dealerCode: code, uid, userId: user.id };
 };
 
 /** Exported for tests / tooling. */

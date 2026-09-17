@@ -60,7 +60,23 @@ service cloud.firestore {
     // A user may only ever touch their own credential material in a document
     // they are otherwise allowed to write. Plaintext `pin` is rejected outright.
     function pinFieldsSafe() {
-      return !request.resource.data.keys().hasAny(['pin']);
+      return request.resource.data.get('pin', null) == null;
+    }
+
+    function singletonMatches(userId, field, group, item) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field])
+        || getAfter(/databases/$(database)/documents/users/$(userId)/$(group)/$(item)).data.value
+          == request.resource.data[field];
+    }
+
+    function configCopiesMatch(userId) {
+      return singletonMatches(userId, 'profileData', 'profile', 'main')
+        && singletonMatches(userId, 'bankDetailsData', 'bank', 'details')
+        && singletonMatches(userId, 'cashMemoLabelSettings', 'settings', 'cashmemo')
+        && singletonMatches(userId, 'ratesData', 'rates', 'current')
+        && singletonMatches(userId, 'hindiHeaderData', 'header', 'current')
+        && singletonMatches(userId, 'deliveryAreaUpdates', 'deliveryArea', 'updates')
+        && singletonMatches(userId, 'deliveryStaffUpdates', 'deliveryStaff', 'updates');
     }
 
     // ---- users -------------------------------------------------------------
@@ -85,7 +101,7 @@ service cloud.firestore {
       //   * an admin may update fields other than dealerCode directly;
       //   * a dealer may update only their own doc, only while their account is
       //     active, and never the credential/privilege fields.
-      allow update: if (isAdmin() && pinFieldsSafe()
+      allow update: if configCopiesMatch(userId) && ((isAdmin() && pinFieldsSafe()
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerCode']))
         || (
           (isSelf(userId) || isOwnDealerDoc())
@@ -93,7 +109,29 @@ service cloud.firestore {
           && pinFieldsSafe()
           && !request.resource.data.diff(resource.data).affectedKeys()
                .hasAny(['dealerCode', 'role', 'status', 'package', 'packageDays', 'validFrom', 'validTill', 'pinHash', 'pin', 'authUid', 'approvalStatus'])
-        );
+        ));
+
+      match /{group}/{item} {
+        function configField() {
+          return group == 'profile' && item == 'main' ? 'profileData'
+            : group == 'bank' && item == 'details' ? 'bankDetailsData'
+            : group == 'settings' && item == 'cashmemo' ? 'cashMemoLabelSettings'
+            : group == 'rates' && item == 'current' ? 'ratesData'
+            : group == 'header' && item == 'current' ? 'hindiHeaderData'
+            : group == 'deliveryArea' && item == 'updates' ? 'deliveryAreaUpdates'
+            : group == 'deliveryStaff' && item == 'updates' ? 'deliveryStaffUpdates' : '';
+        }
+        function ownsParent() {
+          return isSignedIn() && (isSelf(userId)
+            || request.auth.token.dealerCode == get(/databases/$(database)/documents/users/$(userId)).data.dealerCode);
+        }
+        allow read: if configField() != '' && (isAdmin() || ownsParent());
+        allow create, update: if configField() != ''
+          && (isAdmin() || (ownsParent() && isActiveAccount()))
+          && request.resource.data.keys().hasOnly(['value', 'updatedAt'])
+          && request.resource.data.value
+            == getAfter(/databases/$(database)/documents/users/$(userId)).data[configField()];
+      }
     }
 
     // ---- registration requests --------------------------------------------

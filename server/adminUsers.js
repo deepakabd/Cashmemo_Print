@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import { getAdmin, LoginError } from './loginService.js';
+import { buildAdminUserRestoreData } from '../src/utils/adminUserRestore.js';
+import { isHashedPin } from './pinCredentials.js';
+import { USER_SINGLETON_PATHS } from '../src/utils/userDataSchema.js';
 
 const normalizeCode = (value) => String(value || '').trim().toUpperCase();
 const guardId = (code) => createHash('sha256').update(code).digest('hex');
@@ -8,17 +11,21 @@ const duplicate = (code) => new LoginError('duplicate-dealer-code', `Dealer code
 
 // Admin SDK transactions support query reads, including legacy documents
 // created before reservations existed. The shared guard serializes new writes.
-export const saveAdminUserTransaction = async (firestore, { mode = 'create', userId, data } = {}, timestamp) => {
+export const saveAdminUserTransaction = async (firestore, { mode = 'create', userId, requestId, data } = {}, timestamp, actor = 'admin') => {
   if (!['create', 'update', 'approve', 'restore'].includes(mode)
     || !data || typeof data !== 'object' || Array.isArray(data)) {
     throw new LoginError('invalid-input', 'Invalid user write.', 400);
   }
   const code = normalizeCode(data.dealerCode);
   if (!code || code.length > 128 || (userId != null && !validId(userId))
-    || (mode === 'update' && !userId)) {
+    || (mode === 'update' && !userId) || (mode === 'approve' && !validId(requestId))) {
     throw new LoginError('invalid-input', 'Valid dealer code and user ID required.', 400);
   }
-  const patch = { ...data, dealerCode: code, updatedAt: timestamp };
+  const patch = { ...(mode === 'restore' ? buildAdminUserRestoreData(data) : data), dealerCode: code, updatedAt: timestamp };
+  if (mode === 'restore') {
+    if (!isHashedPin(patch.pinHash)) delete patch.pinHash;
+    patch.approvalStatus = {};
+  }
   if (Array.isArray(patch.ratesData)) patch.ratesDataCount = patch.ratesData.length;
   delete patch.id;
   delete patch.approved;
@@ -29,6 +36,28 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
   const candidateRef = userId ? users.doc(userId) : users.doc();
 
   return firestore.runTransaction(async (tx) => {
+    const requestRef = mode === 'approve' ? firestore.collection('registrationRequests').doc(requestId) : null;
+    const request = requestRef ? await tx.get(requestRef) : null;
+    if (requestRef && !request.exists) {
+      throw new LoginError('request-not-found', 'Registration request no longer exists.', 404);
+    }
+    if (request && normalizeCode(request.data().dealerCode) !== code) {
+      throw new LoginError('request-mismatch', 'Registration dealer code changed. Refresh and retry.', 409);
+    }
+    if (request && !['pending', 'approved'].includes(request.data().status || 'pending')) {
+      throw new LoginError('request-not-pending', 'Registration request is no longer pending.', 409);
+    }
+    if (request?.data().status === 'approved') {
+      const approvedUserId = request.data().approvedUserId;
+      if (!validId(approvedUserId)) {
+        throw new LoginError('approval-inconsistent', 'Previous approval has no linked user. Admin reconciliation required.', 409);
+      }
+      const approvedUser = await tx.get(users.doc(approvedUserId));
+      if (!approvedUser.exists || normalizeCode(approvedUser.data().dealerCode) !== code) {
+        throw new LoginError('approval-inconsistent', 'Previously approved user is missing or changed. Admin reconciliation required.', 409);
+      }
+      return { id: approvedUserId, dealerCode: code, alreadyApproved: true };
+    }
     const guardRef = guards.doc(guardId(code));
     const guard = await tx.get(guardRef);
     const matches = await tx.get(users.where('dealerCode', '==', code).limit(2));
@@ -38,6 +67,9 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
     if (existing && mode !== 'approve' && existing.id !== candidateRef.id) throw duplicate(code);
     const targetRef = mode === 'approve' && existing ? existing.ref : candidateRef;
     const current = await tx.get(targetRef);
+    if (mode === 'restore' && current.exists) {
+      throw new LoginError('user-already-exists', 'User already exists. Refresh the list instead of restoring over it.', 409);
+    }
     if (mode === 'update' && !current.exists) {
       throw new LoginError('user-not-found', 'User no longer exists.', 404);
     }
@@ -72,7 +104,21 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
       next.approvedAt = timestamp;
     }
     if (mode === 'restore') next.restoredAt = timestamp;
-    tx.set(targetRef, next, { merge: true });
+    for (const [field, path] of Object.entries(USER_SINGLETON_PATHS)) {
+      if (Object.hasOwn(next, field) || mode === 'restore') {
+        tx.set(users.doc(`${targetRef.id}/${path}`), { value: next[field] ?? null, updatedAt: timestamp });
+      }
+    }
+    // Replace patched maps as complete values, matching their singleton copies.
+    tx.set(targetRef, next, mode === 'restore' ? { merge: false } : { mergeFields: Object.keys(next) });
+    if (requestRef) {
+      tx.set(requestRef, { status: 'approved', approvedUserId: targetRef.id,
+        approvedAt: timestamp, approvedBy: actor }, { merge: true });
+      tx.set(firestore.collection('adminAuditTrail').doc(`registration-approved-${guardId(requestId)}`), {
+        action: 'registration_approved', actor, createdAt: timestamp,
+        details: { id: requestId, dealerCode: code, userId: targetRef.id },
+      });
+    }
     return { id: targetRef.id, dealerCode: code };
   });
 };
@@ -87,5 +133,5 @@ export const saveAdminUser = async (authorization, body) => {
   }
   if (claims.role !== 'admin') throw new LoginError('forbidden', 'Admin role required.', 403);
   const { FieldValue } = await import('firebase-admin/firestore');
-  return saveAdminUserTransaction(firestore, body, FieldValue.serverTimestamp());
+  return saveAdminUserTransaction(firestore, body, FieldValue.serverTimestamp(), claims.email || claims.uid || 'admin');
 };

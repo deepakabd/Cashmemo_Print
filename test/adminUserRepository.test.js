@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchAllAdminUsers, fetchAdminUserDetail, fetchAdminPendingUserApprovals, getAdminUserStatistics } from '../src/services/adminUserRepository';
 import { fetchFirestoreCollectionPageRest, fetchFirestoreDocumentRest } from '../src/services/firestoreRest';
 import { getDoc } from 'firebase/firestore';
+import { readUserSubcollections } from '../src/services/userSubcollections';
 
 vi.mock('../src/firebase', () => ({ auth: {}, db: {} }));
-vi.mock('../src/services/userSubcollections', () => ({ mirrorUserPatchToSubcollections: () => [] }));
+vi.mock('../src/services/userSubcollections', () => ({
+  updateUserData: vi.fn(), readUserSubcollections: vi.fn().mockResolvedValue({}),
+  mergeUserDocWithSubcollections: (user, sub) => ({ ...user, ...sub }),
+}));
 vi.mock('firebase/firestore', () => ({
   doc: vi.fn((db, collection, id) => ({ id })), getDoc: vi.fn(),
   deleteDoc: vi.fn(), updateDoc: vi.fn(), runTransaction: vi.fn(), serverTimestamp: vi.fn(),
@@ -18,6 +22,14 @@ vi.mock('../src/services/firestoreRest', async (importOriginal) => ({
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
 
 describe('complete admin user repository', () => {
+  it('uses authoritative configuration for admin details and rejects unconfirmed configuration', async () => {
+    fetchFirestoreDocumentRest.mockResolvedValueOnce({ id: 'u', profileData: { distributorName: 'Old' }, status: 'active' });
+    readUserSubcollections.mockResolvedValueOnce({ profileData: { distributorName: 'New' }, ratesData: [] });
+    expect(await fetchAdminUserDetail('u')).toMatchObject({ profileData: { distributorName: 'New' }, ratesData: [] });
+    fetchFirestoreDocumentRest.mockResolvedValueOnce({ id: 'u', status: 'active' });
+    readUserSubcollections.mockRejectedValueOnce(new Error('config unavailable'));
+    await expect(fetchAdminUserDetail('u')).rejects.toThrow('config unavailable');
+  });
   it('projects list reads on every page and never returns heavy details or credentials', async () => {
     fetchFirestoreCollectionPageRest.mockResolvedValueOnce({ documents: [{
       id: 'projected', status: 'active', pin: 'secret', pinHash: 'hash', confirmPin: 'secret',

@@ -3,7 +3,6 @@ import { addDoc, arrayUnion, collection, doc, serverTimestamp, updateDoc } from 
 
 import { db } from '../firebase';
 import { getAccessState } from '../app/permissions';
-import { mirrorUserPatchToSubcollections } from '../services/userSubcollections';
 import { getDictionaryTranslation, getExistingDictionaryEntry } from '../utils/dictionaryWorkflow';
 
 export const ProfileUpdatePanel = ({
@@ -760,7 +759,6 @@ export const DictionaryRequestPanel = ({
           pendingDictionaryRequests: arrayUnion(...pendingRequests),
           updatedAt: serverTimestamp(),
         });
-        mirrorUserPatchToSubcollections(loggedInUser.id, { pendingDictionaryRequests: pendingRequests }).forEach((p) => { void p.catch(() => {}); });
       } catch {
         if (!approvalSavedCount) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
       }
