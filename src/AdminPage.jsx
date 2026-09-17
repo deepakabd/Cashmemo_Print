@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchAllAdminUsers, patchAdminUser } from './services/adminUserRepository';
+import { fetchAllAdminUsers, getAdminUserStatistics, patchAdminUser } from './services/adminUserRepository';
 import { getUserAccountStatus } from './utils/userAccountStatus';
 
 const AdminPage = () => {
@@ -53,11 +53,12 @@ const AdminPage = () => {
     }
   };
 //test
-  const totalUsers = users.length;
-  const activeUsers = users.filter((user) => getUserAccountStatus(user) === 'active').length;
-  const blockedUsers = users.filter((user) => getUserAccountStatus(user) === 'disabled').length;
-  const expiredUsers = users.filter((user) => getUserAccountStatus(user) === 'expired').length;
-  const pendingRegistrations = users.filter((user) => getUserAccountStatus(user) === 'pending').length;
+  const statistics = getAdminUserStatistics(users);
+  const totalUsers = statistics.total;
+  const activeUsers = statistics.byStatus.active || 0;
+  const blockedUsers = statistics.byStatus.disabled || 0;
+  const expiredUsers = statistics.byStatus.expired || 0;
+  const pendingAccounts = statistics.byStatus.pending || 0;
 
   if (loading) {
     return <div>Loading...</div>;
@@ -75,7 +76,7 @@ const AdminPage = () => {
         <div>Active Users: {activeUsers}</div>
         <div>Blocked Users: {blockedUsers}</div>
         <div>Expired Users: {expiredUsers}</div>
-        <div>Pending Registrations: {pendingRegistrations}</div>
+        <div>Pending Accounts: {pendingAccounts}</div>
       </div>
 
       <table className="user-table">

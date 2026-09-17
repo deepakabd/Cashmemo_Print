@@ -6,7 +6,7 @@ import { LoginError, verifyDealerLogin } from "../server/loginService.js";
  * POST /api/login
  *
  * Body: { dealerCode: string, pin: string }
- * 200:  { token, dealerCode, uid }
+ * 200:  { token, dealerCode, uid, userId }
  *
  * The PIN is verified server-side against a scrypt hash; the client never sees
  * a stored credential. The returned Firebase custom token is exchanged for a

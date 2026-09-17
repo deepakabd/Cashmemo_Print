@@ -11,6 +11,7 @@ vi.mock('../src/firebase.js', () => ({
 }));
 
 vi.mock('firebase/auth', () => ({
+  signInWithCustomToken: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
   signOut: vi.fn(),
 }));

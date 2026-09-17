@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { saveAdminUserTransaction, saveAdminUser } from '../server/adminUsers.js';
+import { hashPin } from '../server/pinCredentials.js';
 
 const sdk = vi.hoisted(() => ({ verifyIdToken: vi.fn(), firestore: null }));
 vi.mock('../server/loginService.js', async (original) => ({
@@ -9,7 +10,7 @@ vi.mock('firebase-admin/firestore', () => ({ FieldValue: { serverTimestamp: () =
 
 // Optimistic transaction harness: concurrent writes to a read document retry
 // the callback and only successful commits publish their staged writes.
-const database = (initial = {}) => {
+const database = (initial = {}, failCommitFor = '') => {
   const records = new Map(Object.entries(initial));
   const versions = new Map();
   let nextId = 0;
@@ -44,9 +45,12 @@ const database = (initial = {}) => {
       };
       const result = await callback(tx);
       if ([...reads].some(([path, version]) => (versions.get(path) || 0) !== version)) continue;
+      if (failCommitFor && writes.some(({ target }) => target.path.startsWith(failCommitFor))) {
+        throw new Error('Commit failed');
+      }
       for (const { target, data, options, remove } of writes) {
         if (remove) records.delete(target.path);
-        else records.set(target.path, options?.merge ? { ...records.get(target.path), ...data } : data);
+        else records.set(target.path, options?.merge || options?.mergeFields ? { ...records.get(target.path), ...data } : data);
         versions.set(target.path, (versions.get(target.path) || 0) + 1);
       }
       return result;
@@ -56,9 +60,106 @@ const database = (initial = {}) => {
   return { firestore, records };
 };
 const create = (firestore, code, mode = 'create', userId) => saveAdminUserTransaction(firestore,
-  { mode, userId, data: { dealerCode: code, dealerName: 'Test', status: 'active' } }, 'timestamp');
+  { mode, userId, ...(mode === 'approve' ? { requestId: 'request' } : {}),
+    data: { dealerCode: code, dealerName: 'Test', status: 'active' } }, 'timestamp');
 
 describe('server dealer code uniqueness', () => {
+  it('commits activation, request completion and one audit together, and replays without rewriting the user', async () => {
+    const { firestore, records } = database({
+      'registrationRequests/request': { dealerCode: '123', status: 'pending' },
+    });
+    const first = await create(firestore, '123', 'approve');
+    expect(records.get(`users/${first.id}`).status).toBe('active');
+    expect(records.get('registrationRequests/request')).toMatchObject({
+      status: 'approved', approvedUserId: first.id, approvedAt: 'timestamp', approvedBy: 'admin',
+    });
+    const before = [...records.entries()];
+    expect(await saveAdminUserTransaction(firestore, { mode: 'approve', requestId: 'request',
+      data: { dealerCode: '123', package: 'different', validTill: '2999-01-01' } }, 'later'))
+      .toEqual({ id: first.id, dealerCode: '123', alreadyApproved: true });
+    expect([...records.entries()]).toEqual(before);
+    expect([...records.keys()].filter((path) => path.startsWith('adminAuditTrail/'))).toHaveLength(1);
+  });
+
+  it.each(['registrationRequests/', 'adminAuditTrail/'])('publishes no activation when the transaction cannot commit %s', async (failedPath) => {
+    const initial = { 'registrationRequests/request': { dealerCode: '123', status: 'pending' },
+      'users/old': { dealerCode: '123', status: 'pending' } };
+    const { firestore, records } = database(initial, failedPath);
+    await expect(create(firestore, '123', 'approve')).rejects.toThrow('Commit failed');
+    expect([...records.entries()]).toEqual(Object.entries(initial));
+  });
+
+  it('serializes simultaneous approvals of the same request with one user and one audit', async () => {
+    const { firestore, records } = database({ 'registrationRequests/request': { dealerCode: '123', status: 'pending' } });
+    const results = await Promise.all([create(firestore, '123', 'approve'), create(firestore, '123', 'approve')]);
+    expect(results[0].id).toBe(results[1].id);
+    expect(results.filter((result) => result.alreadyApproved)).toHaveLength(1);
+    expect([...records.keys()].filter((path) => /^users\/[^/]+$/.test(path))).toHaveLength(1);
+    expect([...records.keys()].filter((path) => path.startsWith('adminAuditTrail/'))).toHaveLength(1);
+  });
+
+  it('refuses missing, rejected, mismatched or inconsistent previously approved requests without any writes', async () => {
+    for (const request of [null, { dealerCode: '123', status: 'rejected' },
+      { dealerCode: '456', status: 'pending' }, { dealerCode: '123', status: 'approved' },
+      { dealerCode: '123', status: 'approved', approvedUserId: 'missing' }]) {
+      const initial = request ? { 'registrationRequests/request': request } : {};
+      const { firestore, records } = database(initial);
+      await expect(create(firestore, '123', 'approve')).rejects.toBeInstanceOf(Error);
+      expect([...records.entries()]).toEqual(Object.entries(initial));
+    }
+    await expect(saveAdminUserTransaction(database().firestore, { mode: 'approve', data: { dealerCode: '123' } }, 'timestamp'))
+      .rejects.toMatchObject({ status: 400 });
+  });
+
+  it('updates server-owned configuration and its singleton in the same transaction', async () => {
+    const { firestore, records } = database({ 'users/a': {
+      dealerCode: '123', role: 'manager', profileData: { distributorName: 'Old', obsolete: true },
+    }, 'users/a/profile/main': { value: { distributorName: 'Old' } } });
+    await saveAdminUserTransaction(firestore, { mode: 'update', userId: 'a', data: {
+      dealerCode: '123', profileData: { distributorName: 'Current' }, ratesData: [],
+    } }, 'timestamp');
+    expect(records.get('users/a')).toMatchObject({ role: 'manager',
+      profileData: { distributorName: 'Current' }, ratesData: [], ratesDataCount: 0 });
+    expect(records.get('users/a').profileData).not.toHaveProperty('obsolete');
+    expect(records.get('users/a/profile/main')).toEqual({ value: { distributorName: 'Current' }, updatedAt: 'timestamp' });
+    expect(records.get('users/a/rates/current')).toEqual({ value: [], updatedAt: 'timestamp' });
+  });
+  it('restores only supported account data, retaining a hash without reviving legacy access or workflows', async () => {
+    const { firestore, records } = database();
+    const pinHash = await hashPin('1234');
+    await saveAdminUserTransaction(firestore, { mode: 'restore', userId: 'deleted', data: {
+      dealerCode: '123', dealerName: 'Dealer', package: 'gold', status: 'active',
+      profileData: { distributorName: 'Dealer' }, ratesData: [{ rate: 10 }], pinHash,
+      pin: '1234', confirmPin: '1234', approved: false, blocked: true, expired: true,
+      authUid: 'old-auth', uid: 'old', loginDevices: [{ deviceId: 'old' }],
+      pendingUpdates: { rates: { status: 'pending' } }, approvalStatus: { profile: 'pending' },
+      pendingDictionaryRequests: [{ id: 'old' }], dictionaryPendingCount: 99,
+      deletedAt: 'yesterday', deletedBy: 'admin', deleteReason: 'old', obsoleteSchemaField: 'old',
+      createdAt: 'old', restoredBy: 'admin', restoreCount: 1,
+    } }, 'timestamp');
+    const restored = records.get('users/deleted');
+    expect(restored).toEqual({ dealerCode: '123', dealerName: 'Dealer', package: 'gold', status: 'active',
+      profileData: { distributorName: 'Dealer' }, ratesData: [{ rate: 10 }], ratesDataCount: 1, pinHash,
+      role: 'operator', approvalStatus: {}, restoredBy: 'admin', restoreCount: 1,
+      createdAt: 'timestamp', updatedAt: 'timestamp', approvedAt: 'timestamp', restoredAt: 'timestamp',
+    });
+    expect(records.get('users/deleted/profile/main')).toEqual({ value: { distributorName: 'Dealer' }, updatedAt: 'timestamp' });
+    expect(records.get('users/deleted/rates/current')).toEqual({ value: [{ rate: 10 }], updatedAt: 'timestamp' });
+    expect(records.get('users/deleted/bank/details')).toEqual({ value: null, updatedAt: 'timestamp' });
+  });
+
+  it('drops invalid credential hashes and refuses to overwrite a user that already exists', async () => {
+    const { firestore, records } = database();
+    await saveAdminUserTransaction(firestore, { mode: 'restore', userId: 'deleted',
+      data: { dealerCode: '123', pinHash: 'plaintext' } }, 'timestamp');
+    expect(records.get('users/deleted')).not.toHaveProperty('pinHash');
+    const before = [...records.entries()];
+    await expect(create(firestore, '123', 'restore', 'deleted')).rejects.toMatchObject({
+      status: 409, code: 'user-already-exists',
+    });
+    expect([...records.entries()]).toEqual(before);
+  });
+
   it('rejects a legacy Firestore user without relying on UI state or an existing guard', async () => {
     const { firestore, records } = database({ 'users/old': { dealerCode: '41012345' } });
     await expect(create(firestore, '41012345')).rejects.toMatchObject({ status: 409, code: 'duplicate-dealer-code' });
@@ -75,16 +176,18 @@ describe('server dealer code uniqueness', () => {
   });
 
   it('finds the actual existing user during approval and preserves their role', async () => {
-    const { firestore, records } = database({ 'users/old': { dealerCode: '123', role: 'manager' } });
+    const { firestore, records } = database({ 'users/old': { dealerCode: '123', role: 'manager' },
+      'registrationRequests/request': { dealerCode: '123', status: 'pending' } });
     expect(await create(firestore, '123', 'approve')).toMatchObject({ id: 'old' });
     expect(records.get('users/old')).toMatchObject({ status: 'active', role: 'manager' });
     expect([...records.keys()].filter((path) => path.startsWith('users/'))).toHaveLength(1);
   });
 
   it('rejects approval when legacy duplicates already exist', async () => {
-    const { firestore, records } = database({ 'users/a': { dealerCode: '123' }, 'users/b': { dealerCode: '123' } });
+    const { firestore, records } = database({ 'users/a': { dealerCode: '123' }, 'users/b': { dealerCode: '123' },
+      'registrationRequests/request': { dealerCode: '123', status: 'pending' } });
     await expect(create(firestore, '123', 'approve')).rejects.toMatchObject({ status: 409 });
-    expect(records.size).toBe(2);
+    expect(records.size).toBe(3);
   });
 
   it('rejects editing or restoring another user onto an occupied code', async () => {

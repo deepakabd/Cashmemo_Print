@@ -1,4 +1,5 @@
 import { loadAdminSnapshot } from './services/adminDataRepository';
+import { buildAdminUserRestoreData } from './utils/adminUserRestore';
 import AdminDataStatus from './components/AdminDataStatus';
 import { clearLegacyRegistrationStorage, writeRegistrationRequestsCache } from './utils/registrationStorage';
 
@@ -149,9 +150,9 @@ import {
   markUserExpiredIfDue,
   buildPinWritePatch,
 } from './auth/userAuth';
-import { mirrorUserPatchToSubcollections } from './services/userSubcollections';
+import { updateUserData } from './services/userSubcollections';
 import { retryDeniedFirestoreReads } from './services/firestoreRest';
-import { fetchAdminUserDetail, getAdminUserStatistics, saveAdminUser, patchAdminUser, deleteAdminUser, completeAdminDictionaryRequest } from './services/adminUserRepository';
+import { fetchAdminUserDetail, getAdminUserStatistics, saveAdminUser, patchAdminUser, deleteAdminUser, completeAdminDictionaryRequest, saveAdminApprovalReply } from './services/adminUserRepository';
 import { getUserAccountStatus } from './utils/userAccountStatus';
 import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
 import {
@@ -732,10 +733,7 @@ function App() {
 
     if (userId) {
       try {
-        await updateDoc(doc(db, 'users', userId), payload);
-        // Dual-write: heavy structures subcollections me mirror karo so the
-        // users/{uid} doc eventually shrinks. Non-blocking.
-        mirrorUserPatchToSubcollections(userId, patch).forEach((p) => { void p.catch(() => {}); });
+        await updateUserData(userId, payload);
         return userId;
       } catch (e) { void e; }
     }
@@ -744,8 +742,7 @@ function App() {
       const snap = await getDocs(query(collection(db, 'users'), where('dealerCode', '==', String(dealerCode).trim())));
       if (!snap.empty) {
         const resolvedId = snap.docs[0].id;
-        await updateDoc(doc(db, 'users', resolvedId), payload);
-        mirrorUserPatchToSubcollections(resolvedId, patch).forEach((p) => { void p.catch(() => {}); });
+        await updateUserData(resolvedId, payload);
         return resolvedId;
       }
     }
@@ -871,9 +868,9 @@ function App() {
     } catch (loginError) {
       const reason = loginError instanceof Error ? loginError.message : '';
       pushToast(
-        reason === 'login-rate-limited'
+        loginError?.code === 'rate-limited' || reason === 'login-rate-limited'
           ? 'Bahut zyada login attempts. Kuch minute baad dobara koshish karein.'
-          : reason === 'login-not-configured'
+          : loginError?.code === 'server-not-configured' || reason === 'login-not-configured'
             ? 'Login service server par configure nahi hai. Admin se contact kijiye.'
             // Server returned a specific, actionable setup error — show it.
             : reason && !reason.startsWith('login-')
@@ -893,7 +890,7 @@ function App() {
       } else if (dealerLookupStatus === 'dealer-found') {
         pushToast('Dealer Code mil gaya, lekin PIN sahi nahi hai.', 'error');
       } else {
-        pushToast('Dealer Code nahi mila. Please check code ya register first.', 'error');
+        pushToast('Dealer Code ya PIN sahi nahi hai. Please check and try again.', 'error');
       }
       setIsUserLoginSubmitting(false);
       return;
@@ -904,6 +901,9 @@ function App() {
       pushToast('Is device par login blocked hai. Admin se unblock karwaiye.', 'error');
       setIsUserLoginSubmitting(false);
       return;
+    }
+    if (deviceResult.outcome === 'save-failed') {
+      pushToast('Login device could not be saved to Firestore. Device history was not updated.', 'warning');
     }
 
     if (getUserAccountStatus(firestoreUser) === 'pending') {
@@ -918,8 +918,9 @@ function App() {
       return;
     }
 
-    if (await markUserExpiredIfDue(firestoreUser)) {
-      firestoreUser.status = 'expired';
+    const expiryResult = await markUserExpiredIfDue(firestoreUser);
+    if (!expiryResult.ok) {
+      pushToast('Expiry status could not be saved to Firestore. Please retry. Plan validity still applies.', 'warning');
     }
 
     const localUser = mergeDealerIntoCache(firestoreUser);
@@ -1712,54 +1713,40 @@ function App() {
         ...approvalReplies,
         [key]: replyMessage,
       };
-      const replyTimestamp = new Date().toISOString();
-
       try {
         const approvalDocId = activeApprovalReply.source === 'userDoc'
           ? activeApprovalReply.approvalId
           : activeApprovalReply.id;
-        if (approvalDocId) {
-          try {
-            const approvalRef = doc(db, 'updateApprovals', approvalDocId);
-            const existingPayload = activeApprovalReply.payload || {};
-            await updateDoc(approvalRef, {
-              payload: {
-                ...existingPayload,
-                adminReply: replyMessage,
-                adminReplyAt: replyTimestamp,
-              },
-              updatedAt: serverTimestamp(),
-            });
-          } catch (error) {
-            void error;
-          }
-        }
-
         const targetUser = users.find((u) => (
           u.id === activeApprovalReply.userId
           || String(u?.dealerCode || '').trim() === String(activeApprovalReply?.dealerCode || '').trim()
         ));
 
         const approvalType = normalizeApprovalType(activeApprovalReply.type);
-        if (targetUser?.id && approvalType !== 'dictionary') {
-          try {
-            await patchAdminUser(targetUser.id, {
-              [`pendingUpdates.${approvalType}.adminReply`]: replyMessage,
-              [`pendingUpdates.${approvalType}.adminReplyAt`]: replyTimestamp,
-              updatedAt: serverTimestamp(),
-            });
-          } catch (error) {
-            void error;
-          }
-        }
+        if (approvalType !== 'dictionary' && !targetUser?.id) throw new Error('User not found for reply.');
+        await saveAdminApprovalReply({ approvalDocId, userId: targetUser?.id, type: approvalType,
+          pendingType: activeApprovalReply.type, source: activeApprovalReply.source, message: replyMessage,
+          matchesDictionaryRequest: (request) => isMatchingDictionaryRequest(request, activeApprovalReply, targetUser?.id),
+        });
       } catch (error) {
-        void error;
+        const reason = error?.message || 'Reply could not be saved to Firestore. Please retry.';
+        pushToast(`Reply save failed. ${reason}`, 'error');
+        return { ok: false, reason };
       }
-
-      persistApprovalReplies(nextReplies);
+      try {
+        persistApprovalReplies(nextReplies);
+      } catch {
+        pushToast('Reply saved in Firestore, but its browser cache could not be updated.', 'warning');
+      }
       logAdminActivity('approval_reply_saved', { id: key, dealerCode: activeApprovalReply.dealerCode || '' });
-      await loadData();
       closeApprovalReplyPopup();
+      pushToast('Reply saved in Firestore.', 'success');
+      try {
+        await loadData();
+      } catch {
+        pushToast('Reply saved, but the dashboard could not refresh. Please refresh.', 'warning');
+      }
+      return { ok: true };
     };
 //test check
     const loadData = () => {
@@ -2076,9 +2063,6 @@ function App() {
       if (!options.skipConfirm && !(await confirmAdminAction(`Approve registration request for ${req.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
         const validity = computeValidityDates(req.package || '');
-        const requestId = String(id || '');
-        const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
-        let requestStatusUpdated = false;
         const normalizedDealerCode = normalizeDealerCode(req?.dealerCode);
         await saveAdminUser({
           dealerCode: normalizedDealerCode,
@@ -2091,37 +2075,22 @@ function App() {
           validTill: validity.validTill,
           ...(await buildPinWritePatch(req.pin)),
           status: 'active',
-        }, { mode: 'approve' });
-        setRegistrationOverride(id, 'approved');
-        if (!isLocalOnlyRequest) {
-          try {
-            await updateDoc(doc(db, 'registrationRequests', id), {
-              status: 'approved',
-              approvedAt: serverTimestamp(),
-            });
-            requestStatusUpdated = true;
-          } catch {
-            // If request document update is blocked by rules, keep user activation successful.
-          }
-          const nextLocal = requests.map((r) => (r.id === id ? { ...r, status: 'approved', approvedAt: new Date().toISOString() } : r));
-          setRequests(nextLocal);
-          writeRegistrationRequestsCache(nextLocal);
-        } else {
-          const nextLocal = requests.filter((r) => r.id !== id);
-          setRequests(nextLocal);
-          writeRegistrationRequestsCache(nextLocal);
-        }
-        await loadData();
-        logAdminActivity('registration_approved', { id, dealerCode: req.dealerCode || '' });
-        if (!isLocalOnlyRequest && !requestStatusUpdated) {
-          setRequests((prev) => prev.filter((r) => r.id !== id));
-        }
-        return { ok: true };
+        }, { mode: 'approve', requestId: id });
       } catch (error) {
         const reason = error?.message || 'Approve failed. Check server configuration.';
         pushToast(reason, 'error');
         return { ok: false, reason };
       }
+      // Approval and its audit are already committed. Cache/refresh failures
+      // must not turn a confirmed approval into a reported write failure.
+      setRequests((prev) => prev.map((request) => request.id === id ? { ...request, status: 'approved' } : request));
+      setSelectedRequestIds((prev) => prev.filter((requestId) => requestId !== id));
+      try {
+        await loadData();
+      } catch {
+        pushToast('Registration approved in Firestore, but the dashboard could not refresh. Please refresh.', 'warning');
+      }
+      return { ok: true };
     };
 
     const rejectRequest = async (id, options = {}) => {
@@ -2828,13 +2797,10 @@ function App() {
       setDetailView({ title: `Rates - ${fullUser?.dealerCode || ''}`, data: fullUser?.ratesData || [], noteKey: `user:${fullUser?.id || fullUser?.dealerCode}:rates` });
     };
 
-    const pendingRegistrationRequests = requests.filter((r) => {
-      if ((registrationStatusOverrides[r.id] || r.status || 'pending') !== 'pending') return false;
-      // Agar user already create ho chuka hai aur active/disabled/expired hai, toh request hide karein
-      const isAlreadyVerified = users.some((u) => String(u?.dealerCode || '').trim() === String(r?.dealerCode || '').trim() && getUserAccountStatus(u) !== 'pending');
-      if (isAlreadyVerified) return false;
-      return true;
-    });
+    // Registration workflow state is independent of account state. Legacy
+    // partial approvals must remain visible for review rather than disappear.
+    const pendingRegistrationRequests = requests.filter((request) =>
+      String(request.status || 'pending').trim().toLowerCase() === 'pending');
     const pendingCount = pendingRegistrationRequests.length;
     const userStatistics = getAdminUserStatistics(users);
     const activeUsers = userStatistics.byStatus.active || 0;
@@ -4934,8 +4900,8 @@ function App() {
                                   value: '',
                                   submitLabel: 'Restore User',
                                   onSubmit: async (restoreReason) => {
-                                    if (!requireLiveAdminData()) return;
-                                    await restoreDeletedUser(
+                                    if (!requireLiveAdminData()) return false;
+                                    return await restoreDeletedUser(
                                       user,
                                       confirmAdminAction,
                                       deletedUsersBin,
@@ -6559,34 +6525,27 @@ function App() {
           `Reason: ${item.deleteReason || '-'}`,
         ],
       });
-      if (!confirmed) return;
+      if (!confirmed) return false;
 
       const nextBin = (Array.isArray(currentDeletedUsersBin) ? currentDeletedUsersBin : []).filter(
         (user) => !(user.id === item.id && user.dealerCode === item.dealerCode),
       );
       const restoredUser = {
-        ...item,
+        ...buildAdminUserRestoreData(item),
         status: item.status || 'active',
         restoreCount: Number(item?.restoreCount || 0) + 1,
         restoredBy: String(auth?.currentUser?.email || '').trim().toLowerCase() || 'admin',
         restoreReason: String(restoreReason || '').trim(),
       };
-      delete restoredUser.deletedAt;
 
       try {
-        const userData = { ...restoredUser };
-        delete userData.id;
+        await saveAdminUser(restoredUser, { mode: 'restore', userId: item.id || undefined });
 
-        await saveAdminUser(userData, { mode: 'restore', userId: item.id || undefined });
-
-        if (typeof loadDataFn === 'function') {
-          await loadDataFn();
-        }
       } catch (error) {
         if (typeof notifyFn === 'function') {
-          notifyFn(error?.message || 'Restore failed.', 'error');
+          notifyFn(`Restore failed. Recycle-bin entry kept. Retry.${error?.message ? ` ${error.message}` : ''}`, 'error');
         }
-        return;
+        return false;
       }
       if (typeof persistDeletedUsersBinFn === 'function') {
         persistDeletedUsersBinFn(nextBin);
@@ -6602,6 +6561,16 @@ function App() {
       if (typeof notifyFn === 'function') {
         notifyFn(`${item.dealerCode || 'User'} restored from recycle bin.`, 'success');
       }
+      if (typeof loadDataFn === 'function') {
+        try {
+          await loadDataFn();
+        } catch {
+          if (typeof notifyFn === 'function') {
+            notifyFn('User restored in Firestore, but the list could not refresh. Refresh the list.', 'warning');
+          }
+        }
+      }
+      return true;
     };
 
     const permanentlyDeleteBinItem = async (

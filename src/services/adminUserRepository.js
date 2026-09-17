@@ -1,8 +1,9 @@
 import { fetchFirestoreCollectionPageRest, fetchFirestoreDocumentRest, retryFirestoreRequest } from './firestoreRest';
 import { getUserAccountStatus } from '../utils/userAccountStatus';
+import { buildAdminUserRestoreData } from '../utils/adminUserRestore';
 import { auth, db } from '../firebase';
-import { deleteDoc, doc, getDoc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { mirrorUserPatchToSubcollections } from './userSubcollections';
+import { deleteDoc, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { updateUserData, readUserSubcollections, mergeUserDocWithSubcollections } from './userSubcollections';
 
 const APPROVAL_TYPES = ['profile', 'profileData', 'bank', 'bankDetailsData', 'rates', 'rate', 'ratesData',
   'header', 'hindiHeaderData', 'deliveryArea', 'deliveryStaff', 'planUpgrade', 'dictionary'];
@@ -63,13 +64,16 @@ export const fetchAllAdminUsers = async () => {
 
 export const fetchAdminUserDetail = async (userId) => {
   if (!userId) return null;
+  let user;
   try {
-    return mapAdminUserDetail(await retryFirestoreRequest(() => fetchFirestoreDocumentRest('users', userId)));
+    user = await retryFirestoreRequest(() => fetchFirestoreDocumentRest('users', userId));
   } catch (error) {
     const snapshot = await getDoc(doc(db, 'users', userId));
     if (snapshot.metadata?.fromCache) throw error;
-    return snapshot.exists() ? mapAdminUserDetail({ ...snapshot.data(), id: snapshot.id }) : null;
+    if (!snapshot.exists()) return null;
+    user = { ...snapshot.data(), id: snapshot.id };
   }
+  return mapAdminUserDetail(mergeUserDocWithSubcollections(user, await readUserSubcollections(userId)));
 };
 
 export const fetchAdminPendingUserApprovals = async (users) => {
@@ -95,15 +99,15 @@ export const fetchAdminPendingUserApprovals = async (users) => {
   return approvals.flat();
 };
 
-export const saveAdminUser = async (data, { mode = 'create', userId } = {}) => {
+export const saveAdminUser = async (data, { mode = 'create', userId, requestId } = {}) => {
   await auth.authStateReady();
   if (!auth.currentUser) throw new Error('Admin sign-in required.');
   const token = await auth.currentUser.getIdToken();
-  const payload = { ...data };
+  const payload = mode === 'restore' ? buildAdminUserRestoreData(data) : { ...data };
   for (const key of ['createdAt', 'updatedAt', 'approvedAt', 'restoredAt']) delete payload[key];
   const response = await fetch('/api/admin-users', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ mode, userId, data: payload }),
+    body: JSON.stringify({ mode, userId, requestId, data: payload }),
   });
   const result = await response.json();
   if (!response.ok) {
@@ -119,12 +123,59 @@ export const patchAdminUser = async (userId, patch) => {
   const fields = { ...patch, updatedAt: serverTimestamp(),
     ...(Array.isArray(patch.ratesData) ? { ratesDataCount: patch.ratesData.length } : {}),
   };
-  await updateDoc(doc(db, 'users', userId), fields);
-  // Preserve the existing migration mirrors without turning an optional
-  // subcollection write failure into failure of the authoritative write.
-  mirrorUserPatchToSubcollections(userId, fields).forEach((operation) => { void operation.catch(() => {}); });
+  await updateUserData(userId, fields);
 };
 export const deleteAdminUser = (userId) => deleteDoc(doc(db, 'users', userId));
+
+export const saveAdminApprovalReply = async ({ approvalDocId, userId, type, pendingType = type, source, message, matchesDictionaryRequest }) => {
+  const reply = String(message || '').trim();
+  if (!reply || (!approvalDocId && !userId) || !APPROVAL_TYPES.includes(type)) {
+    throw new Error('Reply needs a valid request and message.');
+  }
+  const replyAt = new Date().toISOString();
+  return runTransaction(db, async (transaction) => {
+    const approvalRef = approvalDocId ? doc(db, 'updateApprovals', approvalDocId) : null;
+    const userRef = userId ? doc(db, 'users', userId) : null;
+    const approval = approvalRef ? await transaction.get(approvalRef) : null;
+    const user = userRef ? await transaction.get(userRef) : null;
+    if (approvalRef && !approval.exists()) throw new Error('Approval request no longer exists.');
+    if (userRef && !user.exists()) throw new Error('User no longer exists.');
+    const userPatch = { updatedAt: serverTimestamp() };
+    if (userRef && type === 'dictionary') {
+      const requests = user.data().pendingDictionaryRequests || [];
+      let matched = false;
+      userPatch.pendingDictionaryRequests = requests.map((request) => {
+        if (!matchesDictionaryRequest?.(request)) return request;
+        matched = true;
+        const payload = request.payload;
+        return { ...request, adminReply: reply, adminReplyAt: replyAt,
+          ...(payload && typeof payload === 'object' && !Array.isArray(payload)
+            ? { payload: { ...payload, adminReply: reply, adminReplyAt: replyAt } } : {}),
+        };
+      });
+      if (source === 'userDoc' && !matched) throw new Error('Dictionary request no longer exists.');
+      if (!matched) delete userPatch.pendingDictionaryRequests;
+    } else if (userRef) {
+      const pending = user.data().pendingUpdates || {};
+      const key = APPROVAL_TYPES.includes(pendingType) && pending[pendingType] ? pendingType : type;
+      if (source === 'userDoc' && !pending[key]) throw new Error('User approval request no longer exists.');
+      userPatch[`pendingUpdates.${key}.adminReply`] = reply;
+      userPatch[`pendingUpdates.${key}.adminReplyAt`] = replyAt;
+    }
+    // Read fresh documents and write every required destination together.
+    if (approvalRef) {
+      const patch = { adminReply: reply, adminReplyAt: replyAt, updatedAt: serverTimestamp() };
+      const payload = approval.data().payload;
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        patch['payload.adminReply'] = reply;
+        patch['payload.adminReplyAt'] = replyAt;
+      }
+      transaction.update(approvalRef, patch);
+    }
+    if (userRef) transaction.update(userRef, userPatch);
+    return { message: reply, replyAt };
+  });
+};
 
 export const completeAdminDictionaryRequest = async (userId, approvalDocId, matches, status, pendingType) => {
   return runTransaction(db, async (transaction) => {
