@@ -145,9 +145,74 @@ export const invoiceWorkspace = async (authorization, body) => {
     || getUserAccountStatus(user.data()) !== 'active') fail('Billing access is not allowed for this account.', 403);
   if ((claims.role === 'viewer' || user.data().role === 'viewer') && body.mode !== 'load') fail('This account has read-only billing access.', 403);
   const root = firestore.collection('users').doc(body.userId);
+  if (body.mode === 'permanentDeleteBin') {
+    const collections = { Consumer: 'consumers', Invoice: 'invoices', 'Register Entry': 'inventoryRegister' };
+    if (!validId(body.id) || !Object.hasOwn(collections, body.kind)) fail('Valid Bin record required.');
+    const ref = root.collection(collections[body.kind]).doc(body.id);
+    return firestore.runTransaction(async (tx) => {
+      const existing = await tx.get(ref);
+      if (!existing.exists) return { id: body.id, permanentlyDeleted: true };
+      const record = existing.data();
+      if (!(body.kind === 'Register Entry' ? record.deleted : record.trashed)) fail('Only records in Bin can be permanently deleted.', 409);
+      if (body.kind === 'Register Entry' && body.version !== (record.version || 0)) fail('Entry changed. Sync Data and try again.', 409);
+      tx.delete(ref);
+      return { id: body.id, permanentlyDeleted: true };
+    });
+  }
   if (body.mode === 'load') {
-    const [invoices, consumers, adjustments] = await Promise.all([root.collection('invoices').get(), root.collection('consumers').get(), root.collection('billingAdjustments').get()]);
-    return { invoices: invoices.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((record) => !record.archived), consumers: consumers.docs.map((doc) => ({ ...doc.data(), id: doc.id })), adjustments: adjustments.docs.map((doc) => ({ ...doc.data(), id: doc.id })) };
+    const [invoices, consumers, adjustments, inventory] = await Promise.all([root.collection('invoices').get(), root.collection('consumers').get(), root.collection('billingAdjustments').get(), root.collection('inventoryRegister').get()]);
+    return { invoices: invoices.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((record) => !record.archived), consumers: consumers.docs.map((doc) => ({ ...doc.data(), id: doc.id })), adjustments: adjustments.docs.map((doc) => ({ ...doc.data(), id: doc.id })), inventoryEntries: inventory.docs.map((doc) => ({ ...doc.data(), id: doc.id })) };
+  }
+  if (['inventoryDelete', 'inventoryRestore', 'inventoryPaid', 'inventoryUnpaid'].includes(body.mode)) {
+    if (!validId(body.id)) fail('Valid register ID required.');
+    const ref = root.collection('inventoryRegister').doc(body.id);
+    return firestore.runTransaction(async (tx) => {
+      const existing = await tx.get(ref);
+      if (!existing.exists || (existing.data().deleted && body.mode !== 'inventoryRestore')) fail('Register entry not found.', 404);
+      const record = existing.data();
+      if (body.version !== (record.version || 0)) fail('Entry changed. Sync Data and try again.', 409);
+      const next = { ...record, version: (record.version || 0) + 1, updatedAt: new Date().toISOString(), updatedBy: claims.email || claims.uid || body.userId };
+      if (body.mode === 'inventoryDelete') { next.deleted = true; next.deletedAt = next.updatedAt; next.deletedBy = next.updatedBy; }
+      else if (body.mode === 'inventoryRestore') { next.deleted = false; next.restoredAt = next.updatedAt; }
+      else { next.paidAmount = body.mode === 'inventoryPaid' ? record.totalAmount : 0; next.duesAmount = Math.round((record.totalAmount - next.paidAmount) * 100) / 100; }
+      tx.update(ref, next); return next;
+    });
+  }
+  if (body.mode === 'inventoryEntry' || body.mode === 'inventoryEdit') {
+    const entry = body.entry;
+    if (!validId(entry?.id) || !validDate(entry.date) || entry.date > indiaDate()) fail('Valid register ID and entry date required.');
+    const next = { id: entry.id, date: entry.date };
+    for (const key of ['name', 'village', 'contact', 'remark']) next[key] = String(entry[key] || '').trim().slice(0, 500);
+    if (!next.name || (next.contact && !/^\d{10}$/.test(next.contact))) fail('Name and valid 10-digit contact required.');
+    for (const key of ['filledGoes14', 'emptyIn14', 'filledGoes19', 'emptyIn19']) {
+      if (!Number.isInteger(entry[key]) || entry[key] < 0 || entry[key] > 1000000) fail('Cylinder quantities must be non-negative whole numbers.');
+      next[key] = entry[key];
+    }
+    for (const key of ['rate14', 'rate19', 'paidAmount']) {
+      if (!Number.isFinite(entry[key]) || entry[key] < 0 || entry[key] > 100000000 || Math.abs(entry[key] * 100 - Math.round(entry[key] * 100)) > 0.00001) fail('Valid register amounts with up to two decimals required.');
+      next[key] = entry[key];
+    }
+    next.totalAmount = Math.round((next.filledGoes14 * Math.round(next.rate14 * 100) + next.filledGoes19 * Math.round(next.rate19 * 100))) / 100;
+    if (next.totalAmount > 100000000) fail('Register total cannot exceed 100000000.');
+    if (next.paidAmount > next.totalAmount) fail('Paid amount cannot exceed total amount.');
+    next.duesAmount = Math.round((next.totalAmount - next.paidAmount) * 100) / 100;
+    const ref = root.collection('inventoryRegister').doc(next.id);
+    return firestore.runTransaction(async (tx) => {
+      const existing = await tx.get(ref);
+      if (body.mode === 'inventoryEdit') {
+        if (!existing.exists || existing.data().deleted) fail('Register entry not found.', 404);
+        if (body.version !== (existing.data().version || 0)) fail('Entry changed. Sync Data and try again.', 409);
+        const saved = { ...existing.data(), ...next, version: (existing.data().version || 0) + 1, updatedAt: new Date().toISOString(), updatedBy: claims.email || claims.uid || body.userId };
+        tx.update(ref, saved); return saved;
+      }
+      if (existing.exists) {
+        if (existing.data().deleted) fail('This register entry was deleted.', 409);
+        if (Object.keys(next).some((key) => existing.data()[key] !== next[key])) fail('Register entry ID already used with different details.', 409);
+        return existing.data();
+      }
+      const saved = { ...next, recordedBy: claims.email || claims.uid || body.userId, recordedAt: new Date().toISOString() };
+      tx.set(ref, saved); return saved;
+    });
   }
   if (body.mode === 'trashConsumer' || body.mode === 'restoreConsumer') {
     if (!validId(body.id)) fail('Valid consumer ID required.');
@@ -230,3 +295,4 @@ export const invoiceWorkspace = async (authorization, body) => {
   }
   return mutateInvoice(firestore, body.userId, body, claims.email || claims.uid);
 };
+

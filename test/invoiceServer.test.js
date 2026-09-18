@@ -14,8 +14,8 @@ const database = (initial = {}) => {
   const firestore = { collection, runTransaction: (callback) => {
     const operation = queue.then(async () => {
       const writes = [];
-      const result = await callback({ get: async (target) => { expect(writes).toHaveLength(0); return snapshot(target.path); }, set: (target, data) => writes.push([target.path, data]), update: (target, data) => writes.push([target.path, { ...records.get(target.path), ...data }]) });
-      for (const [path, data] of writes) records.set(path, data);
+      const result = await callback({ get: async (target) => { expect(writes).toHaveLength(0); return snapshot(target.path); }, set: (target, data) => writes.push([target.path, data]), update: (target, data) => writes.push([target.path, { ...records.get(target.path), ...data }]), delete: (target) => writes.push([target.path, null]) });
+      for (const [path, data] of writes) { if (data === null) records.delete(path); else records.set(path, data); }
       return result;
     });
     queue = operation.catch(() => {}); return operation;
@@ -24,6 +24,46 @@ const database = (initial = {}) => {
 };
 const create = (id, date = '2026-04-01', total = 1000) => ({ mode: 'create', id, record: { title: id, draft: { billToDate: date, billToName: 'Ravi', billToConsumerNo: '101', summary: { payableTotal: total } } } });
 const payment = (id, amount) => ({ mode: 'payment', id: 'bill', payment: { id, amount, date: '2026-04-02', mode: 'UPI', reference: 'ref' } });
+it.each([['Consumer', 'consumers', 'trashed'], ['Invoice', 'invoices', 'trashed'], ['Register Entry', 'inventoryRegister', 'deleted']])('permanently deletes only Bin records for %s', async (kind, collection, field) => {
+  const { firestore, records } = database({ 'users/u1': { dealerCode: 'D001', status: 'active' }, [`users/u1/${collection}/active`]: { [field]: false }, [`users/u1/${collection}/bin`]: { [field]: true } });
+  sdk.firestore = firestore;
+  sdk.auth.verifyIdToken.mockResolvedValue({ uid: 'u1', dealerCode: 'D001', accountActive: true, planActive: true });
+  const body = { userId: 'u1', mode: 'permanentDeleteBin', kind, version: 0 };
+  await expect(invoiceWorkspace('Bearer token', { ...body, id: 'active' })).rejects.toThrow('Only records in Bin');
+  await invoiceWorkspace('Bearer token', { ...body, id: 'bin' });
+  expect(records.has(`users/u1/${collection}/bin`)).toBe(false);
+  expect(records.has(`users/u1/${collection}/active`)).toBe(true);
+});
+
+it('persists register entries, computes dues and safely retries saves', async () => {
+  sdk.firestore = database({ 'users/u1': { dealerCode: 'D001', status: 'active' } }).firestore;
+  sdk.auth.verifyIdToken.mockResolvedValue({ uid: 'u1', dealerCode: 'D001', accountActive: true, planActive: true });
+  const body = { userId: 'u1', mode: 'inventoryEntry', entry: { id: 'register1', date: '2026-04-01', name: 'SUNIL', contact: '9876543210', village: 'GARGATTA', remark: '', filledGoes14: 6, emptyIn14: 1, filledGoes19: 0, emptyIn19: 0, rate14: 771, rate19: 0, totalAmount: 1, paidAmount: 2000 } };
+  const saved = await invoiceWorkspace('Bearer token', body);
+  expect(saved.duesAmount).toBe(2626);
+  expect(saved.totalAmount).toBe(4626);
+  const mixed = await invoiceWorkspace('Bearer token', { ...body, entry: { ...body.entry, id: 'mixed-register', filledGoes19: 2, rate19: 1500.25 } });
+  expect(mixed.totalAmount).toBe(7626.5);
+  expect(mixed.duesAmount).toBe(5626.5);
+  expect(await invoiceWorkspace('Bearer token', body)).toEqual(saved);
+  expect((await invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'load' })).inventoryEntries).toEqual([saved, mixed]);
+  await expect(invoiceWorkspace('Bearer token', { ...body, entry: { ...body.entry, paidAmount: 5000 } })).rejects.toThrow('cannot exceed');
+  await expect(invoiceWorkspace('Bearer token', { ...body, entry: { ...body.entry, filledGoes14: 1.5 } })).rejects.toThrow('whole numbers');
+  const paid = await invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'inventoryPaid', id: saved.id, version: 0 });
+  expect(paid.paidAmount).toBe(4626); expect(paid.duesAmount).toBe(0);
+  await expect(invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'inventoryUnpaid', id: saved.id, version: 0 })).rejects.toThrow('Entry changed');
+  const unpaid = await invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'inventoryUnpaid', id: saved.id, version: paid.version });
+  expect(unpaid.paidAmount).toBe(0); expect(unpaid.duesAmount).toBe(4626);
+  const edited = await invoiceWorkspace('Bearer token', { ...body, mode: 'inventoryEdit', version: unpaid.version, entry: { ...body.entry, filledGoes14: 7 } });
+  expect(edited.totalAmount).toBe(5397); expect(edited.duesAmount).toBe(3397);
+  const deleted = await invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'inventoryDelete', id: saved.id, version: edited.version });
+  expect(deleted.deleted).toBe(true);
+  expect(deleted.deletedAt).toBeTruthy();
+  await expect(invoiceWorkspace('Bearer token', { ...body, mode: 'inventoryEdit', version: deleted.version })).rejects.toThrow('not found');
+  const restored = await invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'inventoryRestore', id: saved.id, version: deleted.version });
+  expect(restored.deleted).toBe(false); expect(restored.restoredAt).toBeTruthy();
+  expect(restored.totalAmount).toBe(edited.totalAmount); expect(restored.paidAmount).toBe(edited.paidAmount);
+});
 
 it('allocates distinct financial-year numbers and replays the same creation safely', async () => {
   const { firestore } = database();

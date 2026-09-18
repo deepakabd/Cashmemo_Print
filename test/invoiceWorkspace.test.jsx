@@ -22,6 +22,32 @@ vi.mock('../src/services/invoiceRepository', () => ({ invoiceRequest: vi.fn(asyn
 beforeEach(() => { cloud.invoices.clear(); cloud.consumers = []; cloud.fail = false; });
 
 const dealer = { id: 'u1', dealerCode: 'D001', dealerName: 'Test Agency', ratesData: [{ Item: 'LPG Cylinder', BasicPrice: 900, RSP: 1100 }] };
+it('saves Show/Hide preferences and applies them after reopening the workspace', async () => {
+  const first = render(<InvoicePage loggedInUser={dealer} />);
+  await screen.findByText('Cloud billing connected');
+  fireEvent.click(screen.getByRole('button', { name: 'Setting' }));
+  expect(screen.getAllByRole('switch').every((toggle) => !toggle.checked)).toBe(true);
+  for (const name of ['Register Report: Actions', 'Register Report: Print Bill', ...['Code', 'HSN', 'Basic Price', 'SGST', 'CGST'].map((column) => `Product: ${column}`)]) {
+    fireEvent.click(screen.getByRole('switch', { name }));
+    expect(screen.getByRole('switch', { name }).checked).toBe(true);
+    fireEvent.click(screen.getByRole('switch', { name }));
+  }
+  expect(JSON.parse(localStorage.getItem('cashmemoCommands_D001'))).toMatchObject({ registerActions: false, registerPrintBill: false });
+  first.unmount();
+  render(<InvoicePage loggedInUser={dealer} />);
+  await screen.findByText('Cloud billing connected');
+  fireEvent.click(screen.getByRole('button', { name: 'Inventory & Cash Register Report' }));
+  expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
+  expect(screen.queryByRole('columnheader', { name: 'Print Bill' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Product' }));
+  for (const column of ['Code', 'HSN', 'Basic Price', 'SGST', 'CGST']) expect(screen.queryByRole('columnheader', { name: column, exact: true })).toBeNull();
+  expect(screen.getByRole('columnheader', { name: 'Product' })).toBeTruthy();
+  expect(screen.getByRole('columnheader', { name: 'RSP' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Setting' }));
+  fireEvent.click(screen.getByRole('switch', { name: 'Product: Code' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Product' }));
+  expect(screen.getByRole('columnheader', { name: 'Code' })).toBeTruthy();
+});
 
 it('shows saved invoice totals on the dashboard and updates them after recording payment', { timeout: 20000 }, async () => {
   localStorage.setItem('cashmemoSavedInvoices_D001', JSON.stringify([
