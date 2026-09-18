@@ -114,13 +114,15 @@ export const buildPinWritePatch = async (pin) => {
   return value ? { pin: value, pinHash: null, pinUpdatedAt: new Date().toISOString() } : {};
 };
 
-export const registerLoginDevice = async (firestoreUser, { deferSave = false } = {}) => {
+export const registerLoginDevice = async (firestoreUser, { deferSave = false, deviceUserName = '' } = {}) => {
   // NOTE: ye client-side convenience check hai, security boundary nahi.
   // blocked flag client ke apne fetch kiye loginDevices par decide hota hai,
   // aur naye deviceId se (localStorage clear) block bypass ho sakta hai.
   // Strong enforcement ke liye security rules / Cloud Function / App Check
   // chahiye. Yahan iska role sirf "abuse management convenience" hai.
-  const currentDeviceInfo = await getCurrentDeviceInfo();
+  const currentDeviceInfo = await getCurrentDeviceInfo({ deviceUserName });
+  const accountName = String(firestoreUser.dealerName || firestoreUser.name || firestoreUser.profileData?.distributorName || '').trim();
+  if (accountName) currentDeviceInfo.accountName = accountName;
   const currentDevice = normalizeLoginDevices(firestoreUser.loginDevices).find(
     (device) => device.deviceId === currentDeviceInfo.deviceId,
   );

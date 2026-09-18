@@ -6461,6 +6461,39 @@
   justify-content: flex-end;
 }
 
+.admin-device-details {
+  font-size: 11px;
+  color: #345474;
+}
+
+.admin-device-details summary {
+  cursor: pointer;
+  color: #175aaa;
+  padding: 4px 0;
+}
+
+.admin-device-details dl {
+  margin: 6px 0 0;
+}
+
+.admin-device-details dl > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #e5edf7;
+}
+
+.admin-device-details dt {
+  font-weight: 600;
+}
+
+.admin-device-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .admin-inline-select {
   min-width: 88px;
   min-height: 30px;

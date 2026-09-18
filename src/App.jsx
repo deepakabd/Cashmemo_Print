@@ -1,6 +1,7 @@
 import { loadAdminSnapshot } from './services/adminDataRepository';
 import { buildAdminUserRestoreData } from './utils/adminUserRestore';
 import AdminDataStatus from './components/AdminDataStatus';
+import LoginDeviceDetails from './components/LoginDeviceDetails';
 import { clearLegacyRegistrationStorage } from './utils/registrationStorage';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -34,6 +35,8 @@ import {
   getDrawerDetailSections,
   getDrawerSummaryRows,
   normalizeLoginDevices,
+  readDeviceUserName,
+  rememberDeviceUserName,
   sanitizeUserForCache,
   sanitizeUsersForCache,
 } from './utils/adminUiHelpers';
@@ -194,1258 +197,29 @@ import {
 
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 
-function App() {
-  useEffect(() => { clearLegacyRegistrationStorage(); }, []);
-  const fileInputRef = useRef(null);
-  const translationMemoryCacheRef = useRef(new Map());
-  const [translationDictionary, setTranslationDictionary] = useState(() => {
-    try {
-      const raw = localStorage.getItem('translationDictionaryCache');
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  });
-  const [toastItems, setToastItems] = useState([]);
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [savedFilterPresets, setSavedFilterPresets] = useState([]);
-  const [userPinVisible, setUserPinVisible] = useState(false);
-  const [recentActivities, setRecentActivities] = useState([]);
-  const [compactWorkspaceMode, setCompactWorkspaceMode] = useState(false);
-  const [reportViewMode, setReportViewMode] = useState('filtered');
-  const [announcements, setAnnouncements] = useState(() => {
-    try {
-      const raw = localStorage.getItem(ANNOUNCEMENTS_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
-  const [announcementDraft, setAnnouncementDraft] = useState(createDefaultAnnouncementDraft);
-  const announcementDraftRef = useRef(announcementDraft);
-  const [announcementDraftFormKey, setAnnouncementDraftFormKey] = useState(0);
-  const [isUserLoginSubmitting, setIsUserLoginSubmitting] = useState(false);
-  const [isAdminLoginSubmitting, setIsAdminLoginSubmitting] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showMainMenu, setShowMainMenu] = useState(false);
-  const [showLogoUpdates, setShowLogoUpdates] = useState(false);
-  const [showProfileUpdate, setShowProfileUpdate] = useState(false);
-  const [showRateUpdate, setShowRateUpdate] = useState(false);
-  const [showBankDetails, setShowBankDetails] = useState(false);
-  const [showRegisterForm, setShowRegisterForm] = useState(false);
-  const [showUserProfile, setShowUserProfile] = useState(false);
-  const [userProfileInitialSection, setUserProfileInitialSection] = useState('overview');
-  const [showContactForm, setShowContactForm] = useState(false);
-  const [showDictionaryForm, setShowDictionaryForm] = useState(false);
-  const [dictionaryFormMode, setDictionaryFormMode] = useState('default');
-  const [showHomeInfo, setShowHomeInfo] = useState(false);
-  const [showAboutInfo, setShowAboutInfo] = useState(true);
-  const [showInvoicePage, setShowInvoicePage] = useState(false);
-  const [showLabelUpdate, setShowLabelUpdate] = useState(false);
-  const [showHeaderUpdate, setShowHeaderUpdate] = useState(false);
-  const [showCashmemoLayout, setShowCashmemoLayout] = useState(false);
-  const [showCashmemoPrintGuide, setShowCashmemoPrintGuide] = useState(false);
-  const [showAttendance, setShowAttendance] = useState(false);
-  const [showIdCard, setShowIdCard] = useState(false);
-  const [showEmployeeProfile, setShowEmployeeProfile] = useState(false);
-  const [showEmployeeProfileCreate, setShowEmployeeProfileCreate] = useState(false);
-  const [showSalarySlipPage, setShowSalarySlipPage] = useState(false);
-  const [salarySlipEmployeeId, setSalarySlipEmployeeId] = useState('');
-  const [showAttendanceReportPage, setShowAttendanceReportPage] = useState(false);
-  const [showEmployeeReportPage, setShowEmployeeReportPage] = useState(false);
-  const [showStockRegister, setShowStockRegister] = useState(false);
-  const [showUpgradePlan, setShowUpgradePlan] = useState(false);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [showUserLogin, setShowUserLogin] = useState(false);
-  const [adminLoginId, setAdminLoginId] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [userDealerCode, setUserDealerCode] = useState('');
-  const [userPin, setUserPin] = useState('');
-  const [loggedInUser, setLoggedInUser] = useState(null);
-  const loginAttemptRef = useRef(0);
-  const [dealerWelcome, setDealerWelcome] = useState('');
-  const [sampleDataLoaded, setSampleDataLoaded] = useState(false);
-  const [sampleDataLoading, setSampleDataLoading] = useState(false);
-  const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
-  const [adminFlashMessage, setAdminFlashMessage] = useState(null);
-  const [showOnboardingTour, setShowOnboardingTour] = useState(false);
-  const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
-  const [translationObservability, setTranslationObservability] = useState({
-    apiCount: 0,
-    dictionaryCount: 0,
-    transliterationCount: 0,
-    queuedCount: 0,
-    lastUpdatedAt: '',
-    apiWords: [],
-  });
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
-  const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
-  const onboardingAutoOpenedRef = useRef(false);
-//test the
-  const pushToast = useCallback((message, tone = 'info') => {
-    if (!message) return;
-    const toastId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setToastItems((prev) => [...prev, { id: toastId, message, tone }]);
-    window.setTimeout(() => {
-      setToastItems((prev) => prev.filter((item) => item.id !== toastId));
-    }, 3600);
-  }, []);
-
-  const openConfirmDialog = useCallback((config = {}) => {
-    setConfirmDialog({
-      open: true,
-      title: config.title || 'Please Confirm',
-      message: config.message || '',
-      confirmLabel: config.confirmLabel || 'Confirm',
-      cancelLabel: config.cancelLabel || 'Cancel',
-      onConfirm: typeof config.onConfirm === 'function' ? config.onConfirm : null,
-      onCancel: typeof config.onCancel === 'function' ? config.onCancel : null,
-      previewItems: Array.isArray(config.previewItems) ? config.previewItems : [],
-      previewTitle: config.previewTitle || '',
-      previewMoreText: config.previewMoreText || '',
-      dangerNote: config.dangerNote || '',
-    });
-  }, []);
-
-  const closeConfirmDialog = useCallback(() => {
-    const callback = confirmDialog.onCancel;
-    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
-    if (typeof callback === 'function') {
-      callback();
-    }
-  }, [confirmDialog.onCancel]);
-
-  const resetConfirmDialog = useCallback(() => {
-    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
-  }, []);
-
-  const handleConfirmDialogSubmit = useCallback(() => {
-    const callback = confirmDialog.onConfirm;
-    resetConfirmDialog();
-    if (typeof callback === 'function') {
-      callback();
-    }
-  }, [confirmDialog.onConfirm, resetConfirmDialog]);
-
-  const confirmAdminActionWithDialog = useCallback((config) => new Promise((resolve) => {
-    const normalizedConfig = typeof config === 'string' ? { message: config } : (config || {});
-    openConfirmDialog({
-      title: normalizedConfig.title || 'Admin Confirmation',
-      message: normalizedConfig.message || 'Continue with this admin action?',
-      confirmLabel: normalizedConfig.confirmLabel || 'Confirm',
-      previewItems: normalizedConfig.previewItems,
-      previewTitle: normalizedConfig.previewTitle,
-      previewMoreText: normalizedConfig.previewMoreText,
-      dangerNote: normalizedConfig.dangerNote,
-      onConfirm: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  }), [openConfirmDialog]);
-
-  const openInputDialog = useCallback((config = {}) => {
-    setInputDialog({
-      open: true,
-      title: config.title || 'Enter Value',
-      message: config.message || '',
-      value: config.value || '',
-      submitLabel: config.submitLabel || 'Save',
-      onSubmit: typeof config.onSubmit === 'function' ? config.onSubmit : null,
-    });
-  }, []);
-
-  const closeInputDialog = useCallback(() => {
-    setInputDialog({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
-  }, []);
-
-  const handleInputDialogSubmit = useCallback(() => {
-    const callback = inputDialog.onSubmit;
-    const value = String(inputDialog.value || '').trim();
-    if (!value) {
-      pushToast('Please enter a valid value.', 'error');
-      return;
-    }
-    closeInputDialog();
-    if (typeof callback === 'function') {
-      callback(value);
-    }
-  }, [closeInputDialog, inputDialog.onSubmit, inputDialog.value, pushToast]);
-
-  const handleReUploadClick = () => {
-    if (String(loggedInUser?.dealerCode || '').trim() === '41099999') return;
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const getRecentActivityStorageKey = (dealerCode = '') => (
-    `${RECENT_ACTIVITY_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
-  );
-  const readRecentActivitiesForDealer = useCallback((dealerCode = '') => {
-    try {
-      const storageKey = getRecentActivityStorageKey(dealerCode);
-      const raw = localStorage.getItem(storageKey);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, []);
-  const logRecentActivity = useCallback((message, dealerCodeOverride = '') => {
-    if (!message) return;
-    const dealerCode = String(dealerCodeOverride || loggedInUser?.dealerCode || 'guest').trim() || 'guest';
-    const nextEntry = {
-      id: `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      message,
-      createdAt: new Date().toISOString(),
-    };
-    setRecentActivities((prev) => {
-      const next = [nextEntry, ...prev].slice(0, 50);
-      try {
-        localStorage.setItem(getRecentActivityStorageKey(dealerCode), JSON.stringify(next));
-      } catch {
-        void 0;
-      }
-      return next;
-    });
-  }, [loggedInUser?.dealerCode]);
-
-  // Demo/test user: PIN verification already happened at login, so the
-  // dealerCode check alone is sufficient (PIN never stored in runtime state).
-  const isTestUser = String(loggedInUser?.dealerCode || '').trim() === '41099999';
-
-  // Support-reply inbox has been retired with the removed feature. Keep
-  // neutral empty values for the surrounding menu/dashboard layout.
-  const contactReplyItems = [];
-  const contactReplyCount = 0;
-  const markUserContactRepliesAsRead = () => {};
-
-  const getPendingDictionaryRequestCount = (user) => (
-    Array.isArray(user?.pendingDictionaryRequests)
-      ? user.pendingDictionaryRequests.filter((req) => String(req?.status || 'pending').toLowerCase() === 'pending').length
-      : 0
-  );
-
-  const readApprovalRepliesFromStorage = () => {
-    try {
-      const raw = localStorage.getItem(APPROVAL_REPLIES_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-  const ADMIN_CONTACTS = {
-    email: 'deepak.youvi@gmail.com',
-    whatsapp: 'https://wa.me/918789358400',
-  };
-
-  const userMenuRef = useRef(null);
-  const userMenuButtonRef = useRef(null);
-  const firstUserMenuActionRef = useRef(null);
-  const mainMenuRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
-        setShowUserMenu(false);
-      }
-      if (mainMenuRef.current && !mainMenuRef.current.contains(event.target)) {
-        setShowMainMenu(false);
-      }
-    };
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setShowUserMenu(false);
-        setShowMainMenu(false);
-        window.requestAnimationFrame(() => {
-          userMenuButtonRef.current?.focus();
-        });
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (showUserMenu) {
-      firstUserMenuActionRef.current?.focus({ preventScroll: true });
-    }
-  }, [showUserMenu]);
-
-  useEffect(() => {
-    const loadDict = async () => {
-      if (!isLoggedIn && !showAdminPanel) return;
-      try {
-        // Fast path: previously-synced dictionary from localStorage so the app
-        // works instantly even when Firestore is unreachable.
-        let nextDictionary = {};
-        try {
-          const cached = localStorage.getItem('translationDictionaryCache');
-          const parsed = cached ? JSON.parse(cached) : {};
-          if (parsed && typeof parsed === 'object') nextDictionary = parsed;
-        } catch {
-          // Corrupt cache — ignore and fetch fresh.
-        }
-        if (Object.keys(nextDictionary).length > 0) {
-          setTranslationDictionary(nextDictionary);
-        }
-        const withTimeout = (promise, ms) => Promise.race([
-          promise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timeout — using cached dictionary')), ms)),
-        ]);
-        try {
-          const docSnap = await withTimeout(getDoc(doc(db, 'settings', 'translationDictionary')), 8000);
-          if (docSnap.exists()) {
-            nextDictionary = { ...nextDictionary, ...(docSnap.data() || {}) };
-          }
-        } catch {
-          // Backend unreachable — try the persistent Firestore cache before giving up.
-          try {
-            const cachedSnap = await getDocFromCache(doc(db, 'settings', 'translationDictionary'));
-            if (cachedSnap.exists()) {
-              nextDictionary = { ...nextDictionary, ...(cachedSnap.data() || {}) };
-            }
-          } catch {
-            // No cached document yet — keep whatever we have (localStorage / empty).
-          }
-        }
-        try {
-          const dictRowsSnap = await withTimeout(getDocs(collection(db, 'translationDictionary')), 8000);
-          dictRowsSnap.docs.forEach((item) => {
-            const data = item.data() || {};
-            const englishWord = String(data.englishWord || '').trim();
-            const hindiTranslation = String(data.hindiTranslation || '').trim();
-            if (englishWord && hindiTranslation) {
-              nextDictionary[englishWord] = hindiTranslation;
-            }
-          });
-        } catch {
-          // Per-row collection is best-effort; offline cache fallback:
-          try {
-            const cachedRows = await getDocsFromCache(collection(db, 'translationDictionary'));
-            cachedRows.docs.forEach((item) => {
-              const data = item.data() || {};
-              const englishWord = String(data.englishWord || '').trim();
-              const hindiTranslation = String(data.hindiTranslation || '').trim();
-              if (englishWord && hindiTranslation) {
-                nextDictionary[englishWord] = hindiTranslation;
-              }
-            });
-          } catch {
-            // User-document fallback below still lets admin see the request.
-          }
-        }
-        setTranslationDictionary(nextDictionary);
-        try {
-          localStorage.setItem('translationDictionaryCache', JSON.stringify(nextDictionary));
-        } catch {
-          // Storage full / private mode — dictionary still works in memory.
-        }
-      } catch (err) {
-        // Offline / flaky network: app keeps running on the cached dictionary
-        // instead of spamming the console on every load.
-        if (String(err?.code || '') !== 'unavailable' && !/offline|timeout/i.test(String(err?.message || ''))) {
-          console.error('Failed to load dictionary', err);
-        }
-      }
-    };
-    loadDict();
-  }, [isLoggedIn, showAdminPanel]);
-
-  useEffect(() => {
-    setHindiRuntimeDictionary(translationDictionary);
-  }, [translationDictionary]);
-
-  const persistDictionaryRowsToFirebase = useCallback(async (rows, options = {}) => {
-    const entries = buildDictionaryEntriesForSave(rows);
-    if (entries.length === 0) {
-      if (options.notifyEmpty) {
-        pushToast('No valid dictionary rows found. Use columns like English Word and Hindi Translation.', 'error');
-      }
-      return [];
-    }
-
-    const changedEntries = filterChangedDictionaryEntries(translationDictionary, entries);
-
-    if (changedEntries.length === 0) {
-      if (options.notifySuccess) {
-        pushToast('All dictionary words are already saved in Firebase.', 'info');
-      }
-      return [];
-    }
-
-    const nextDict = mergeDictionaryWithEntries(translationDictionary, changedEntries);
-    await setDoc(doc(db, 'settings', 'translationDictionary'), nextDict);
-    await Promise.all(changedEntries.map((item) => setDoc(
-      doc(db, 'translationDictionary', getDictionaryDocId(item.englishWord)),
-      {
-        englishWord: item.englishWord,
-        hindiTranslation: item.hindiTranslation,
-        source: options.source || 'app',
-        status: options.status || 'approved',
-        autoGenerated: Boolean(options.autoGenerated),
-        updatedAt: serverTimestamp(),
-        ...(options.metadata || {}),
-      },
-      { merge: true },
-    )));
-    setTranslationDictionary(nextDict);
-
-    if (options.notifySuccess) {
-      pushToast(`${changedEntries.length} dictionary words saved to Firebase.`, 'success');
-    }
-
-    return changedEntries;
-  }, [pushToast, translationDictionary]);
-
-  const createDictionaryApprovalRecords = useCallback(async (rows, options = {}) => {
-    const entries = buildDictionaryEntriesForSave(rows, { dedupeByPhraseKind: true });
-    if (entries.length === 0) return [];
-
-    const normalizedPendingWords = new Set();
-    const existingPendingApprovalsByWord = new Map();
-    if (options.skipExistingApprovals) {
-      try {
-        const existingApprovalsSnap = await getDocs(collection(db, 'updateApprovals'));
-        existingApprovalsSnap.docs.forEach((approvalDoc) => {
-          const data = approvalDoc.data() || {};
-          if (String(data.status || 'pending').toLowerCase() !== 'pending') return;
-          const approvalType = String(data.type || '').trim().toLowerCase();
-          if (!['dictionary', 'dict', 'translationdictionary'].includes(approvalType)) return;
-          const englishWord = String(data?.payload?.englishWord || data?.payload?.eng || '').trim().toLowerCase();
-          if (englishWord) {
-            normalizedPendingWords.add(englishWord);
-            existingPendingApprovalsByWord.set(englishWord, {
-              id: approvalDoc.id,
-              ...data,
-            });
-          }
-        });
-      } catch (error) {
-        void error;
-      }
-    }
-
-    const filteredEntries = entries.filter((entry) => {
-      const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
-      if (!normalizedWord) return false;
-      if (options.skipExistingStored && getExistingDictionaryEntry(translationDictionary, entry.englishWord)) return false;
-      if (options.skipExistingApprovals && normalizedPendingWords.has(normalizedWord)) return false;
-      return true;
-    });
-
-    if (filteredEntries.length === 0) {
-      if (!options.skipExistingApprovals) return [];
-      return entries
-        .map((entry) => {
-          const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
-          const existingApproval = existingPendingApprovalsByWord.get(normalizedWord);
-          if (!existingApproval) return null;
-          return {
-            id: existingApproval.id,
-            ...existingApproval,
-          };
-        })
-        .filter(Boolean);
-    }
-
-    const approvalDocs = await Promise.all(filteredEntries.map((entry, index) => addDoc(collection(db, 'updateApprovals'), {
-      userId: options.userId || '',
-      dealerCode: options.dealerCode || 'ADMIN-IMPORT',
-      dealerName: options.dealerName || 'Admin Bulk Import',
-      type: 'dictionary',
-      payload: buildDictionaryApprovalPayload(entry, {
-        ...options,
-        matchedExistingEntry: options.matchedExistingEntry
-          || getExistingDictionaryEntry(translationDictionary, entry.englishWord)?.hindiTranslation
-          || '',
-      }, index),
-      status: 'pending',
-      requestedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      source: options.source || 'admin-import',
-    })));
-
-    const createdApprovals = approvalDocs.map((docRef, index) => ({
-      id: docRef.id,
-      ...filteredEntries[index],
-    }));
-
-    if (!options.skipExistingApprovals) {
-      return createdApprovals;
-    }
-
-    const reusedApprovals = entries
-      .map((entry) => {
-        const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
-        const existingApproval = existingPendingApprovalsByWord.get(normalizedWord);
-        if (!existingApproval) return null;
-        return {
-          id: existingApproval.id,
-          ...existingApproval,
-        };
-      })
-      .filter(Boolean);
-
-    const mergedApprovals = new Map();
-    [...createdApprovals, ...reusedApprovals].forEach((approval) => {
-      mergedApprovals.set(String(approval.id || ''), approval);
-    });
-
-    return Array.from(mergedApprovals.values());
-  }, [translationDictionary]);
-
-  // users cache & session persistence now live in src/services/storage.js
-
-  const updateUserInStore = (userId, updater, dealerCode = '') => {
-    if (!userId && !dealerCode) return null;
-    const users = readUsersData();
-    let idx = users.findIndex((u) => u.id === userId);
-    if (idx < 0 && dealerCode) {
-      idx = users.findIndex((u) => String(u?.dealerCode || '').trim() === String(dealerCode).trim());
-    }
-    if (idx < 0) return null;
-    const nextUser = updater(users[idx]);
-    const nextUsers = [...users];
-    nextUsers[idx] = nextUser;
-    writeUsersData(nextUsers);
-    const safeNextUser = sanitizeUserForCache(nextUser);
-    setLoggedInUser((prev) => {
-      if (!prev) return prev;
-      if (prev?.id === userId) return safeNextUser;
-      if (dealerCode && String(prev?.dealerCode || '').trim() === String(dealerCode).trim()) return safeNextUser;
-      return prev;
-    });
-    return nextUser;
-  };
-
-  const updateUserInFirebase = async (userId, patch, dealerCode = '') => {
-    const payload = { ...patch, updatedAt: serverTimestamp() };
-
-    if (userId) {
-      try {
-        await updateUserData(userId, payload);
-        return userId;
-      } catch (e) { void e; }
-    }
-
-    if (dealerCode) {
-      const snap = await getDocs(query(collection(db, 'users'), where('dealerCode', '==', String(dealerCode).trim())));
-      if (!snap.empty) {
-        const resolvedId = snap.docs[0].id;
-        await updateUserData(resolvedId, payload);
-        return resolvedId;
-      }
-    }
-
-    throw new Error('USER_DOC_NOT_FOUND');
-  };
-
-  const submitUpdateApprovalRequest = async ({ type, payload, localKey, successMessage }) => {
-    if (!loggedInUser?.id) {
-      pushToast('Please login first.', 'error');
-      return false;
-    }
-    if (localKey) {
-      localStorage.setItem(localKey, JSON.stringify(payload));
-    }
-    try {
-      const nextApprovalStatus = { ...(loggedInUser.approvalStatus || {}), [type]: 'pending' };
-      const batch = writeBatch(db);
-
-        const approvalsSnap = await getDocs(query(collection(db, 'updateApprovals'), where('userId', '==', loggedInUser.id)));
-        const existingPending = approvalsSnap.docs.find((d) => d.data()?.type === type && d.data()?.status === 'pending');
-        if (existingPending) {
-          batch.update(doc(db, 'updateApprovals', existingPending.id), {
-            payload,
-            dealerCode: loggedInUser.dealerCode || '',
-            dealerName: loggedInUser.dealerName || '',
-            status: 'pending',
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          batch.set(doc(collection(db, 'updateApprovals')), {
-            userId: loggedInUser.id,
-            dealerCode: loggedInUser.dealerCode || '',
-            dealerName: loggedInUser.dealerName || '',
-            type,
-            payload,
-            status: 'pending',
-            requestedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-    const pendingUpdatePatch = {
-      approvalStatus: nextApprovalStatus,
-      [`pendingUpdates.${type}`]: {
-        status: 'pending',
-        payload,
-        requestedAt: new Date().toISOString(),
-        adminReply: '',
-        adminReplyAt: '',
-      },
-      lastApprovalStorage: 'collection',
-    };
-      batch.update(doc(db, 'users', loggedInUser.id), { ...pendingUpdatePatch, updatedAt: serverTimestamp() });
-      await batch.commit();
-      const resolvedId = loggedInUser.id;
-      updateUserInStore(
-        resolvedId,
-        (u) => ({
-          ...u,
-          approvalStatus: nextApprovalStatus,
-          pendingUpdates: {
-            ...(u.pendingUpdates || {}),
-            [type]: {
-              status: 'pending',
-              payload,
-              requestedAt: new Date().toISOString(),
-              adminReply: '',
-              adminReplyAt: '',
-            },
-          },
-          id: resolvedId,
-        }),
-        loggedInUser.dealerCode
-      );
-      pushToast(successMessage || 'Your request is pending with admin for approval.', 'success');
-      return true;
-    } catch {
-      pushToast('Request submit failed. Check Firebase permissions.', 'error');
-      return false;
-    }
-  };
-
-
-  // Placeholder Component for Rate Update
-  // const RateUpdatePlaceholder = () => (
-  //   <div className="placeholder-container">
-  //     <h2>Rate Update Section</h2>
-  //     <p>This is where the rate update functionality will be implemented.</p>
-  //     <button onClick={() => setShowRateUpdate(false)}>Close</button>
-  //   </div>
-  // );
-
-  const handleLogin = () => {
-    hideAllViews();
-    setShowUserLogin(true);
-    setShowUserMenu(false);
-  };
-
-  const handleUserLoginSubmit = async () => {
-    const dealerCode = userDealerCode.trim();
-    const pin = userPin.trim();
-    if (!dealerCode || !pin) {
-      pushToast('Dealer Code aur PIN required hai.', 'error');
-      return;
-    }
-
-    setIsUserLoginSubmitting(true);
-    const loginAttempt = ++loginAttemptRef.current;
-    let firestoreUser = null;
-    let dealerLookupStatus = 'not-found';
-    try {
-      const lookup = await lookupDealerByCode(dealerCode, pin);
-      dealerLookupStatus = lookup.dealerLookupStatus || 'not-found';
-      if (lookup.outcome === 'duplicate') {
-        pushToast('Is dealer code par multiple accounts mil rahe hain. Login block kiya gaya hai, admin se contact kijiye.', 'error');
-        setIsUserLoginSubmitting(false);
-        return;
-      }
-      if (lookup.outcome === 'ok') {
-        firestoreUser = lookup.firestoreUser;
-      }
-    } catch (loginError) {
-      const reason = loginError instanceof Error ? loginError.message : '';
-      pushToast(
-        loginError?.code === 'rate-limited' || reason === 'login-rate-limited'
-          ? 'Bahut zyada login attempts. Kuch minute baad dobara koshish karein.'
-          : loginError?.code === 'server-not-configured' || reason === 'login-not-configured'
-            ? 'Login service server par configure nahi hai. Admin se contact kijiye.'
-            // Server returned a specific, actionable setup error — show it.
-            : reason && !reason.startsWith('login-')
-              ? reason
-              : 'Firebase login check failed. Please try again.',
-        'error',
-      );
-      setIsUserLoginSubmitting(false);
-      return;
-    }
-//Ok
-    if (!firestoreUser) {
-      if (dealerLookupStatus === 'pending') {
-        pushToast('Aapka account admin approval ke liye pending hai.', 'info');
-      } else if (dealerLookupStatus === 'disabled') {
-        pushToast('Aapka account disabled hai. Admin se contact kijiye.', 'error');
-      } else if (dealerLookupStatus === 'dealer-found') {
-        pushToast('Dealer Code mil gaya, lekin PIN sahi nahi hai.', 'error');
-      } else {
-        pushToast('Dealer Code ya PIN sahi nahi hai. Please check and try again.', 'error');
-      }
-      setIsUserLoginSubmitting(false);
-      return;
-    }
-
-    const deviceResult = await registerLoginDevice(firestoreUser, { deferSave: true });
-    if (deviceResult.outcome === 'blocked') {
-      pushToast('Is device par login blocked hai. Admin se unblock karwaiye.', 'error');
-      setIsUserLoginSubmitting(false);
-      return;
-    }
-    if (deviceResult.outcome === 'save-failed') {
-      pushToast('Login device could not be saved to Firestore. Device history was not updated.', 'warning');
-    }
-
-    if (getUserAccountStatus(firestoreUser) === 'pending') {
-      pushToast('Your registration is pending with admin approval.', 'info');
-      setIsUserLoginSubmitting(false);
-      return;
-    }
-
-    if (getUserAccountStatus(firestoreUser) === 'disabled') {
-      pushToast('Your account is disabled. Please contact admin.', 'error');
-      setIsUserLoginSubmitting(false);
-      return;
-    }
-
-    const expiryResult = await markUserExpiredIfDue(firestoreUser);
-    if (!expiryResult.ok) {
-      pushToast('Expiry status could not be saved to Firestore. Please retry. Plan validity still applies.', 'warning');
-    }
-
-    const localUser = mergeDealerIntoCache(firestoreUser);
-
-    const userLabelSettings = mergeDealerLabelSettings(
-      { ...firestoreUser, cashMemoLabelSettings: localUser.cashMemoLabelSettings },
-      setCashMemoLabelSettings,
-    );
-    localUser.cashMemoLabelSettings = userLabelSettings;
-    setLabelDraftSettings(mergeCashMemoLabelSettings(userLabelSettings));
-    setLoggedInUser(localUser);
-    setIsLoggedIn(true);
-    setSampleDataLoaded(false);
-    setSampleDataLoading(false);
-    setSampleDataAttempted(false);
-    persistUserSession(localUser);
-    setShowUserLogin(false);
-    setShowHomeInfo(true);
-    setUserDealerCode('');
-    setUserPin('');
-    setUserPinVisible(false);
-    if (getUserAccountStatus(localUser) === 'expired') {
-      const replyMap = readApprovalRepliesFromStorage();
-      const pendingPlanUpgrade = localUser?.pendingUpdates?.planUpgrade || {};
-      const storedReplyKey = getPlanUpgradeReplyStorageKey({
-        userId: localUser?.id,
-        dealerCode: localUser?.dealerCode,
-        dealerName: localUser?.dealerName,
-      });
-      const latestReply = String(
-        pendingPlanUpgrade?.adminReply
-        || replyMap[storedReplyKey]
-        || ''
-      ).trim();
-      if (latestReply) {
-        setAdminFlashMessage({
-          message: latestReply,
-          approvalId: storedReplyKey,
-        });
-      } else {
-        setAdminFlashMessage(null);
-      }
-      pushToast('Logged in successfully. Plan expired, please contact admin or renew plan.', 'info');
-    } else {
-      setAdminFlashMessage(null);
-      pushToast('Logged in successfully!', 'success');
-    }
-    logRecentActivity('Logged in successfully', localUser?.dealerCode);
-    setIsUserLoginSubmitting(false);
-    if (deviceResult.outcome === 'ready') {
-      const signedInUser = auth.currentUser;
-      void deviceResult.save().then((result) => {
-        if (auth.currentUser !== signedInUser || loginAttemptRef.current !== loginAttempt) return;
-        if (result.outcome === 'save-failed') {
-          pushToast('Login device could not be saved to Firestore. Device history was not updated.', 'warning');
-        } else if (result.outcome === 'ok') {
-          setLoggedInUser((current) => current?.id === localUser.id
-            ? { ...current, loginDevices: result.loginDevices } : current);
-        }
-      }).catch(() => {
-        if (auth.currentUser === signedInUser && loginAttemptRef.current === loginAttempt) {
-          pushToast('Login device history could not be saved.', 'warning');
-        }
-      });
-    }
-  };
-
-  const handleLogout = () => {
-    loginAttemptRef.current += 1;
-    hideAllViews();
-    clearUserSession();
-    onboardingAutoOpenedRef.current = false;
-    setShowOnboardingTour(false);
-    setOnboardingStepIndex(0);
-    setIsLoggedIn(false);
-    setShowUserMenu(false);
-    setLoggedInUser(null);
-    setSampleDataLoaded(false);
-    setSampleDataLoading(false);
-    setSampleDataAttempted(false);
-    setShowAboutInfo(true);
-    pushToast('Logged out successfully!', 'success');
-    logRecentActivity('Logged out');
-  };
-
-  const handleLogoutWithConfirm = () => {
-    openConfirmDialog({
-      title: 'Log Out',
-      message: 'Are you sure you want to log out from this account?',
-      confirmLabel: 'Log Out',
-      onConfirm: handleLogout,
-    });
-  };
-
-  const hideAllViews = () => {
-    setShowHomeInfo(false);
-    setShowAboutInfo(false);
-    setShowInvoicePage(false);
-    setShowLabelUpdate(false);
-    setShowHeaderUpdate(false);
-    setShowCashmemoLayout(false);
-    setShowCashmemoPrintGuide(false);
-    setShowAttendance(false);
-    setShowIdCard(false);
-    setShowEmployeeProfile(false);
-    setShowEmployeeProfileCreate(false);
-    setShowSalarySlipPage(false);
-    setSalarySlipEmployeeId('');
-    setShowAttendanceReportPage(false);
-    setShowEmployeeReportPage(false);
-    setShowStockRegister(false);
-    setShowUpgradePlan(false);
-    setShowDictionaryForm(false);
-    setShowContactForm(false);
-    setShowUserProfile(false);
-    setShowRegisterForm(false);
-    setShowProfileUpdate(false);
-    setShowRateUpdate(false);
-    setShowBankDetails(false);
-    setShowParsedData(false);
-    setShowAdminPanel(false);
-    setShowAdminLogin(false);
-    setShowUserLogin(false);
-  };
-
-  const navigateToHome = () => {
-    hideAllViews();
-    setShowHomeInfo(true);
-    setShowUserMenu(false);
-  };
-
-  const handleProfileUpdate = () => {
-    hideAllViews();
-    setShowProfileUpdate(true);
-    setShowUserMenu(false);
-  };
-
-  const handleRateUpdate = () => {
-    hideAllViews();
-    setShowRateUpdate(true);
-    setShowUserMenu(false);
-  };
-  const handleLabelUpdate = () => {
-    hideAllViews();
-    setLabelDraftSettings(mergeCashMemoLabelSettings(cashMemoLabelSettings));
-    setShowLabelUpdate(true);
-    setShowUserMenu(false);
-  };
-  const handleHeaderUpdate = () => {
-    hideAllViews();
-    setShowHeaderUpdate(true);
-    setShowUserMenu(false);
-  };
-  const handleCashmemoLayoutOpen = () => {
-    hideAllViews();
-    setShowCashmemoLayout(true);
-    setShowUserMenu(false);
-  };
-  const handleCashmemoPrintGuideOpen = () => {
-    hideAllViews();
-    setShowCashmemoPrintGuide(true);
-    setShowUserMenu(false);
-  };
-  const handleAttendanceOpen = () => {
-    hideAllViews();
-    setShowAttendance(true);
-    setShowUserMenu(false);
-  };
-  const handleStockRegisterOpen = () => {
-    hideAllViews();
-    setShowStockRegister(true);
-    setShowUserMenu(false);
-  };
-  const handleIdCardOpen = () => {
-    hideAllViews();
-    setShowIdCard(true);
-    setShowUserMenu(false);
-  };
-  const handleIdCardClose = () => {
-    hideAllViews();
-    setShowAttendance(true);
-  };
-  const handleEmployeeProfileOpen = () => {
-    hideAllViews();
-    setShowEmployeeProfile(true);
-    setShowEmployeeProfileCreate(false);
-    setShowUserMenu(false);
-  };
-  const handleEmployeeAddOpen = () => {
-    hideAllViews();
-    setShowEmployeeProfile(true);
-    setShowEmployeeProfileCreate(true);
-    setShowUserMenu(false);
-  };
-  const handleEmployeeProfileClose = () => {
-    hideAllViews();
-    setShowAttendance(true);
-  };
-  const handleSalarySlipOpen = () => {
-    hideAllViews();
-    setSalarySlipEmployeeId('');
-    setShowSalarySlipPage(true);
-    setShowUserMenu(false);
-  };
-  const handleSalarySlipForEmployee = (employeeId) => {
-    hideAllViews();
-    setSalarySlipEmployeeId(employeeId || '');
-    setShowSalarySlipPage(true);
-    setShowUserMenu(false);
-  };
-  const handleSalarySlipClose = () => {
-    hideAllViews();
-    setSalarySlipEmployeeId('');
-    setShowAttendance(true);
-  };
-  const handleAttendanceReportOpen = () => {
-    hideAllViews();
-    setShowAttendanceReportPage(true);
-    setShowUserMenu(false);
-  };
-  const handleAttendanceReportClose = () => {
-    hideAllViews();
-    setShowAttendance(true);
-  };
-  const handleEmployeeReportOpen = () => {
-    hideAllViews();
-    setShowEmployeeReportPage(true);
-    setShowUserMenu(false);
-  };
-  const handleEmployeeReportClose = () => {
-    hideAllViews();
-    setShowAttendance(true);
-  };
-  const handleBankDetails = () => {
-    hideAllViews();
-    setShowBankDetails(true);
-    setShowUserMenu(false);
-  };
-  const handleRegister = () => {
-    hideAllViews();
-    setShowRegisterForm(true);
-    setShowUserMenu(false);
-  };
-  const handleUserProfile = () => {
-    hideAllViews();
-    setUserProfileInitialSection('overview');
-    setShowUserProfile(true);
-    setShowUserMenu(false);
-  };
-
-  const handleRequestHistoryOpen = () => {
-    hideAllViews();
-    setUserProfileInitialSection('history');
-    setShowUserProfile(true);
-    setShowUserMenu(false);
-  };
-
-  const handleShowData = () => {
-    if (!showParsedData) {
-      hideAllViews();
-      setShowParsedData(true);
-    } else {
-      navigateToHome();
-    }
-  };
-
-  useEffect(() => {
-    try {
-      const rawSession = localStorage.getItem(USER_SESSION_STORAGE_KEY);
-      if (!rawSession) return;
-
-      const session = JSON.parse(rawSession);
-      const users = readUsersData();
-      const matchedUser = users.find((user) =>
-        (session?.id && user?.id === session.id) ||
-        (session?.dealerCode && String(user?.dealerCode || '').trim() === String(session.dealerCode).trim())
-      );
-
-      if (!matchedUser) {
-        clearUserSession();
-        return;
-      }
-
-        const restoredUser = {
-          ...matchedUser,
-          status: getUserAccountStatus(matchedUser),
-          cashMemoLabelSettings: mergeCashMemoLabelSettings(matchedUser.cashMemoLabelSettings || {}),
-          deliveryAreaUpdates: Array.isArray(matchedUser.deliveryAreaUpdates) ? matchedUser.deliveryAreaUpdates : [],
-          deliveryStaffUpdates: Array.isArray(matchedUser.deliveryStaffUpdates) ? matchedUser.deliveryStaffUpdates : [],
-        };
-
-      setLoggedInUser(sanitizeUserForCache(restoredUser));
-      setCashMemoLabelSettings(restoredUser.cashMemoLabelSettings);
-      setLabelDraftSettings(mergeCashMemoLabelSettings(restoredUser.cashMemoLabelSettings));
-      setIsLoggedIn(true);
-      setShowAboutInfo(false);
-      setShowHomeInfo(true);
-    } catch {
-      clearUserSession();
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isLoggedIn) {
-      let text = '';
-      const userName = loggedInUser?.dealerName || '';
-      const userCode = loggedInUser?.dealerCode || '';
-      if (userName || userCode) {
-        text = userName && userCode ? `${userName} (${userCode})` : (userName || userCode);
-      }
-      setDealerWelcome(text || '');
-    } else {
-      setDealerWelcome('');
-    }
-  }, [isLoggedIn, showProfileUpdate, loggedInUser]);
-
-  useEffect(() => {
-    if (!isLoggedIn || !loggedInUser || onboardingAutoOpenedRef.current) return;
-    const onboardingUserKey = String(
-      loggedInUser?.dealerCode
-      || loggedInUser?.profileData?.distributorCode
-      || loggedInUser?.id
-      || 'guest'
-    ).trim();
-    try {
-      const raw = localStorage.getItem(getOnboardingTourStorageKey(onboardingUserKey));
-      if (raw) {
-        onboardingAutoOpenedRef.current = true;
-        return;
-      }
-    } catch {
-      void 0;
-    }
-    onboardingAutoOpenedRef.current = true;
-    setOnboardingStepIndex(0);
-    setShowOnboardingTour(true);
-  }, [isLoggedIn, loggedInUser]);
-
-  const handleHomeOpen = () => {
-    navigateToHome();
-  };
-
-  const handleAboutOpen = () => {
-    hideAllViews();
-    setShowAboutInfo(true);
-    setShowUserMenu(false);
-  };
-
-  const handleInvoiceOpen = () => {
-    hideAllViews();
-    setShowInvoicePage(true);
-    setShowUserMenu(false);
-  };
-
-  const handleContactOpen = () => {
-    hideAllViews();
-    markUserContactRepliesAsRead();
-    setShowContactForm(true);
-    setShowUserMenu(false);
-  };
-
-  const handleDictionaryOpen = () => {
-    hideAllViews();
-    setDictionaryFormMode('default');
-    setShowDictionaryForm(true);
-    setShowUserMenu(false);
-  };
-
-  const handleDeliveryAreaUpdate = () => {
-    hideAllViews();
-    setDictionaryFormMode('deliveryArea');
-    setShowDictionaryForm(true);
-    setShowUserMenu(false);
-  };
-
-  const handleDeliveryStaffUpdate = () => {
-    hideAllViews();
-    setDictionaryFormMode('deliveryStaff');
-    setShowDictionaryForm(true);
-    setShowUserMenu(false);
-  };
-
-  const handleUpgradePlanOpen = () => {
-    hideAllViews();
-    setShowUpgradePlan(true);
-    setShowUserMenu(false);
-  };
-
-  const handleAdminLoginOpen = () => {
-    openConfirmDialog({
-      title: 'Admin Access',
-      message: 'Are you admin?, if Yes then login',
-      confirmLabel: 'Yes, Login as Admin',
-      cancelLabel: 'No, Go to User Login',
-      onConfirm: () => {
-        hideAllViews();
-        setShowAdminLogin(true);
-        setShowUserMenu(false);
-      },
-      onCancel: handleLogin,
-    });
-  };
-
-  const onboardingSteps = [
-    {
-      id: 'upload',
-      title: 'Upload Data',
-      description: 'Yahin se aap cDCMS ka latest Pending Booking file upload karke kaam start karte ho.',
-      hint: 'CSV ya XLSX upload ke baad filters, print aur quick profile sab active ho jaate hain.',
-      actionLabel: 'Open Data Upload',
-      action: () => {
-        if (!showParsedData) {
-          handleShowData();
-        }
-      },
-    },
-    {
-      id: 'invoice',
-      title: 'Invoice Page',
-      description: 'Invoice page par customer invoice bana, save, aur duplicate karke fast billing kar sakte ho.',
-      hint: 'Quick profile se bhi invoice directly open ho sakta hai.',
-      actionLabel: 'Open Invoice',
-      action: handleInvoiceOpen,
-    },
-    {
-      id: 'support',
-      title: 'Approval Reply & Support',
-      description: 'Yahan admin replies, support messages, aur pending follow-up dekh sakte ho.',
-      hint: 'Agar upload ya plan me issue aaye to sabse pehle isi section ko check karo.',
-      actionLabel: 'Open Support',
-      action: handleContactOpen,
-    },
-    {
-      id: 'dictionary',
-      title: 'Dictionary & Delivery Updates',
-      description: 'Dictionary, delivery area, aur delivery staff requests isi flow se manage hote hain.',
-      hint: 'Hindi print aur local naming consistency ke liye ye section important hai.',
-      actionLabel: 'Open Dictionary',
-      action: handleDictionaryOpen,
-    },
-  ];
-
-  const activeOnboardingStep = onboardingSteps[onboardingStepIndex] || onboardingSteps[0];
-
-  const markOnboardingTourSeen = useCallback((dealerCode = '') => {
-    try {
-      localStorage.setItem(getOnboardingTourStorageKey(dealerCode), JSON.stringify({
-        completedAt: new Date().toISOString(),
-      }));
-    } catch {
-      void 0;
-    }
-  }, []);
-
-  const openOnboardingTour = useCallback((stepIndex = 0) => {
-    setOnboardingStepIndex(Math.max(0, Math.min(stepIndex, onboardingSteps.length - 1)));
-    setShowOnboardingTour(true);
-  }, [onboardingSteps.length]);
-
-  const closeOnboardingTour = useCallback((markSeen = true) => {
-    if (markSeen) {
-      const onboardingUserKey = String(
-        loggedInUser?.dealerCode
-        || loggedInUser?.profileData?.distributorCode
-        || loggedInUser?.id
-        || 'guest'
-      ).trim();
-      markOnboardingTourSeen(onboardingUserKey);
-    }
-    setShowOnboardingTour(false);
-  }, [loggedInUser, markOnboardingTourSeen]);
-
-  const handleOnboardingNext = useCallback(() => {
-    setOnboardingStepIndex((prev) => {
-      if (prev >= onboardingSteps.length - 1) {
-        closeOnboardingTour(true);
-        return prev;
-      }
-      return prev + 1;
-    });
-  }, [closeOnboardingTour, onboardingSteps.length]);
-
-  const handleOnboardingBack = useCallback(() => {
-    setOnboardingStepIndex((prev) => Math.max(0, prev - 1));
-  }, []);
-
-  const handleOnboardingAction = useCallback(() => {
-    activeOnboardingStep?.action?.();
-  }, [activeOnboardingStep]);
-
-  const handleAdminLogout = async () => {
-    try {
-      await adminSignOut();
-    } catch (e) { void e; }
-    hideAllViews();
-    setShowAboutInfo(true);
-    setAdminLoginId('');
-    setAdminPassword('');
-    pushToast('Admin logged out successfully!', 'success');
-  };
-
-  const handleAdminLoginSubmit = async () => {
-    const { loginId, password, valid } = validateAdminCredentials(adminLoginId, adminPassword);
-    if (!valid) {
-      pushToast('Admin Email and Password required.', 'error');
-      return;
-    }
-    setIsAdminLoginSubmitting(true);
-    try {
-      await adminSignIn(loginId, password);
-      setShowAdminLogin(false);
-      setShowAdminPanel(true);
-      setAdminLoginId('');
-      setAdminPassword('');
-      pushToast('Admin login successful.', 'success');
-    } catch (error) {
-      pushToast(error?.code === 'auth/network-request-failed'
-        ? 'Firebase se connection nahi ho pa raha. Internet/DNS check karein ya mobile hotspot se dobara login karein.'
-        : error?.code === 'auth/admin-role-required'
-          ? error.message
-          : 'Admin login failed. Check Firebase Authentication credentials.', 'error');
-    }
-    setIsAdminLoginSubmitting(false);
-  };
-
-
-  const AdminPanel = ({ onAdminLogout }) => {
+export const AdminPanel = ({
+  onAdminLogout,
+  announcementDraft,
+  announcementDraftFormKey,
+  announcementDraftRef,
+  announcements,
+  confirmAdminActionWithDialog,
+  createDictionaryApprovalRecords,
+  deleteAnnouncement,
+  handleCreateAnnouncement,
+  openInputDialog,
+  permanentlyDeleteBinItem,
+  persistDictionaryRowsToFirebase,
+  pushToast,
+  readRecentActivitiesForDealer,
+  restoreDeletedUser,
+  setLoggedInUser,
+  setTranslationDictionary,
+  toggleAnnouncementStatus,
+  translationDictionary,
+  translationObservability,
+  updateUserInStore,
+}) => {
     const [adminUserDetails, setAdminUserDetails] = useState({});
     const loadAdminUserDetail = async (userId) => {
       const detail = await fetchAdminUserDetail(userId);
@@ -3919,11 +2693,7 @@ function App() {
                             <div className="admin-device-list">
                               {loginDevices.map((device) => (
                                 <div key={device.deviceId} className="admin-device-row">
-                                  <div className="admin-device-meta">
-                                    <strong>{device.deviceName || 'Unknown device'}</strong>
-                                    <span>{[device.browser, device.platform].filter(Boolean).join(' | ')} | Last: {formatDisplayDateTime(device.lastLoginAt)}</span>
-                                    <small title={device.deviceId}>{device.deviceId}</small>
-                                  </div>
+                                  <LoginDeviceDetails device={device} accountName={deviceDetail.dealerName || deviceDetail.name} />
                                   <div className="admin-device-actions">
                                     <span className={`admin-status-chip admin-status-chip--${device.blocked ? 'disabled' : 'active'}`}>{getDeviceStatusLabel(device)}</span>
                                     <button
@@ -4589,7 +3359,8 @@ function App() {
                       ) : (
                         normalizeLoginDevices(activeDrawerData?.loginDevices).map((device) => (
                           <li key={`${activeDrawer.noteKey}-device-${device.deviceId}`}>
-                            {device.deviceName || device.platform || 'Device'}{device.browser ? ` (${device.browser})` : ''}: {device.blocked ? 'Blocked' : 'Allowed'} | {formatDisplayDateTime(device.lastLoginAt || device.updatedAt)}
+                            <span>{getDeviceStatusLabel(device)}</span>
+                            <LoginDeviceDetails device={device} accountName={activeDrawerData.dealerName || activeDrawerData.name} />
                           </li>
                         ))
                       )}
@@ -4947,6 +3718,1260 @@ function App() {
       </div>
     );
   };
+
+function App() {
+  useEffect(() => { clearLegacyRegistrationStorage(); }, []);
+  const fileInputRef = useRef(null);
+  const translationMemoryCacheRef = useRef(new Map());
+  const [translationDictionary, setTranslationDictionary] = useState(() => {
+    try {
+      const raw = localStorage.getItem('translationDictionaryCache');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+  const [toastItems, setToastItems] = useState([]);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [savedFilterPresets, setSavedFilterPresets] = useState([]);
+  const [userPinVisible, setUserPinVisible] = useState(false);
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [compactWorkspaceMode, setCompactWorkspaceMode] = useState(false);
+  const [reportViewMode, setReportViewMode] = useState('filtered');
+  const [announcements, setAnnouncements] = useState(() => {
+    try {
+      const raw = localStorage.getItem(ANNOUNCEMENTS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const [announcementDraft, setAnnouncementDraft] = useState(createDefaultAnnouncementDraft);
+  const announcementDraftRef = useRef(announcementDraft);
+  const [announcementDraftFormKey, setAnnouncementDraftFormKey] = useState(0);
+  const [isUserLoginSubmitting, setIsUserLoginSubmitting] = useState(false);
+  const [isAdminLoginSubmitting, setIsAdminLoginSubmitting] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [showLogoUpdates, setShowLogoUpdates] = useState(false);
+  const [showProfileUpdate, setShowProfileUpdate] = useState(false);
+  const [showRateUpdate, setShowRateUpdate] = useState(false);
+  const [showBankDetails, setShowBankDetails] = useState(false);
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [showUserProfile, setShowUserProfile] = useState(false);
+  const [userProfileInitialSection, setUserProfileInitialSection] = useState('overview');
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [showDictionaryForm, setShowDictionaryForm] = useState(false);
+  const [dictionaryFormMode, setDictionaryFormMode] = useState('default');
+  const [showHomeInfo, setShowHomeInfo] = useState(false);
+  const [showAboutInfo, setShowAboutInfo] = useState(true);
+  const [showInvoicePage, setShowInvoicePage] = useState(false);
+  const [showLabelUpdate, setShowLabelUpdate] = useState(false);
+  const [showHeaderUpdate, setShowHeaderUpdate] = useState(false);
+  const [showCashmemoLayout, setShowCashmemoLayout] = useState(false);
+  const [showCashmemoPrintGuide, setShowCashmemoPrintGuide] = useState(false);
+  const [showAttendance, setShowAttendance] = useState(false);
+  const [showIdCard, setShowIdCard] = useState(false);
+  const [showEmployeeProfile, setShowEmployeeProfile] = useState(false);
+  const [showEmployeeProfileCreate, setShowEmployeeProfileCreate] = useState(false);
+  const [showSalarySlipPage, setShowSalarySlipPage] = useState(false);
+  const [salarySlipEmployeeId, setSalarySlipEmployeeId] = useState('');
+  const [showAttendanceReportPage, setShowAttendanceReportPage] = useState(false);
+  const [showEmployeeReportPage, setShowEmployeeReportPage] = useState(false);
+  const [showStockRegister, setShowStockRegister] = useState(false);
+  const [showUpgradePlan, setShowUpgradePlan] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showUserLogin, setShowUserLogin] = useState(false);
+  const [adminLoginId, setAdminLoginId] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [userDealerCode, setUserDealerCode] = useState('');
+  const [userPin, setUserPin] = useState('');
+  const [userDeviceUserName, setUserDeviceUserName] = useState(readDeviceUserName);
+  const [loggedInUser, setLoggedInUser] = useState(null);
+  const loginAttemptRef = useRef(0);
+  const [dealerWelcome, setDealerWelcome] = useState('');
+  const [sampleDataLoaded, setSampleDataLoaded] = useState(false);
+  const [sampleDataLoading, setSampleDataLoading] = useState(false);
+  const [sampleDataAttempted, setSampleDataAttempted] = useState(false);
+  const [adminFlashMessage, setAdminFlashMessage] = useState(null);
+  const [showOnboardingTour, setShowOnboardingTour] = useState(false);
+  const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
+  const [translationObservability, setTranslationObservability] = useState({
+    apiCount: 0,
+    dictionaryCount: 0,
+    transliterationCount: 0,
+    queuedCount: 0,
+    lastUpdatedAt: '',
+    apiWords: [],
+  });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
+  const [inputDialog, setInputDialog] = useState({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
+  const onboardingAutoOpenedRef = useRef(false);
+//test the
+  const pushToast = useCallback((message, tone = 'info') => {
+    if (!message) return;
+    const toastId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToastItems((prev) => [...prev, { id: toastId, message, tone }]);
+    window.setTimeout(() => {
+      setToastItems((prev) => prev.filter((item) => item.id !== toastId));
+    }, 3600);
+  }, []);
+
+  const openConfirmDialog = useCallback((config = {}) => {
+    setConfirmDialog({
+      open: true,
+      title: config.title || 'Please Confirm',
+      message: config.message || '',
+      confirmLabel: config.confirmLabel || 'Confirm',
+      cancelLabel: config.cancelLabel || 'Cancel',
+      onConfirm: typeof config.onConfirm === 'function' ? config.onConfirm : null,
+      onCancel: typeof config.onCancel === 'function' ? config.onCancel : null,
+      previewItems: Array.isArray(config.previewItems) ? config.previewItems : [],
+      previewTitle: config.previewTitle || '',
+      previewMoreText: config.previewMoreText || '',
+      dangerNote: config.dangerNote || '',
+    });
+  }, []);
+
+  const closeConfirmDialog = useCallback(() => {
+    const callback = confirmDialog.onCancel;
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
+    if (typeof callback === 'function') {
+      callback();
+    }
+  }, [confirmDialog.onCancel]);
+
+  const resetConfirmDialog = useCallback(() => {
+    setConfirmDialog({ open: false, title: '', message: '', onConfirm: null, onCancel: null, confirmLabel: 'Confirm', cancelLabel: 'Cancel', previewItems: [], previewTitle: '', previewMoreText: '', dangerNote: '' });
+  }, []);
+
+  const handleConfirmDialogSubmit = useCallback(() => {
+    const callback = confirmDialog.onConfirm;
+    resetConfirmDialog();
+    if (typeof callback === 'function') {
+      callback();
+    }
+  }, [confirmDialog.onConfirm, resetConfirmDialog]);
+
+  const confirmAdminActionWithDialog = useCallback((config) => new Promise((resolve) => {
+    const normalizedConfig = typeof config === 'string' ? { message: config } : (config || {});
+    openConfirmDialog({
+      title: normalizedConfig.title || 'Admin Confirmation',
+      message: normalizedConfig.message || 'Continue with this admin action?',
+      confirmLabel: normalizedConfig.confirmLabel || 'Confirm',
+      previewItems: normalizedConfig.previewItems,
+      previewTitle: normalizedConfig.previewTitle,
+      previewMoreText: normalizedConfig.previewMoreText,
+      dangerNote: normalizedConfig.dangerNote,
+      onConfirm: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  }), [openConfirmDialog]);
+
+  const openInputDialog = useCallback((config = {}) => {
+    setInputDialog({
+      open: true,
+      title: config.title || 'Enter Value',
+      message: config.message || '',
+      value: config.value || '',
+      submitLabel: config.submitLabel || 'Save',
+      onSubmit: typeof config.onSubmit === 'function' ? config.onSubmit : null,
+    });
+  }, []);
+
+  const closeInputDialog = useCallback(() => {
+    setInputDialog({ open: false, title: '', message: '', value: '', onSubmit: null, submitLabel: 'Save' });
+  }, []);
+
+  const handleInputDialogSubmit = useCallback(() => {
+    const callback = inputDialog.onSubmit;
+    const value = String(inputDialog.value || '').trim();
+    if (!value) {
+      pushToast('Please enter a valid value.', 'error');
+      return;
+    }
+    closeInputDialog();
+    if (typeof callback === 'function') {
+      callback(value);
+    }
+  }, [closeInputDialog, inputDialog.onSubmit, inputDialog.value, pushToast]);
+
+  const handleReUploadClick = () => {
+    if (String(loggedInUser?.dealerCode || '').trim() === '41099999') return;
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const getRecentActivityStorageKey = (dealerCode = '') => (
+    `${RECENT_ACTIVITY_STORAGE_KEY_PREFIX}${String(dealerCode || 'guest').trim() || 'guest'}`
+  );
+  const readRecentActivitiesForDealer = useCallback((dealerCode = '') => {
+    try {
+      const storageKey = getRecentActivityStorageKey(dealerCode);
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
+  const logRecentActivity = useCallback((message, dealerCodeOverride = '') => {
+    if (!message) return;
+    const dealerCode = String(dealerCodeOverride || loggedInUser?.dealerCode || 'guest').trim() || 'guest';
+    const nextEntry = {
+      id: `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      message,
+      createdAt: new Date().toISOString(),
+    };
+    setRecentActivities((prev) => {
+      const next = [nextEntry, ...prev].slice(0, 50);
+      try {
+        localStorage.setItem(getRecentActivityStorageKey(dealerCode), JSON.stringify(next));
+      } catch {
+        void 0;
+      }
+      return next;
+    });
+  }, [loggedInUser?.dealerCode]);
+
+  // Demo/test user: PIN verification already happened at login, so the
+  // dealerCode check alone is sufficient (PIN never stored in runtime state).
+  const isTestUser = String(loggedInUser?.dealerCode || '').trim() === '41099999';
+
+  // Support-reply inbox has been retired with the removed feature. Keep
+  // neutral empty values for the surrounding menu/dashboard layout.
+  const contactReplyItems = [];
+  const contactReplyCount = 0;
+  const markUserContactRepliesAsRead = () => {};
+
+  const getPendingDictionaryRequestCount = (user) => (
+    Array.isArray(user?.pendingDictionaryRequests)
+      ? user.pendingDictionaryRequests.filter((req) => String(req?.status || 'pending').toLowerCase() === 'pending').length
+      : 0
+  );
+
+  const readApprovalRepliesFromStorage = () => {
+    try {
+      const raw = localStorage.getItem(APPROVAL_REPLIES_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+  const ADMIN_CONTACTS = {
+    email: 'deepak.youvi@gmail.com',
+    whatsapp: 'https://wa.me/918789358400',
+  };
+
+  const userMenuRef = useRef(null);
+  const userMenuButtonRef = useRef(null);
+  const firstUserMenuActionRef = useRef(null);
+  const mainMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setShowUserMenu(false);
+      }
+      if (mainMenuRef.current && !mainMenuRef.current.contains(event.target)) {
+        setShowMainMenu(false);
+      }
+    };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setShowUserMenu(false);
+        setShowMainMenu(false);
+        window.requestAnimationFrame(() => {
+          userMenuButtonRef.current?.focus();
+        });
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (showUserMenu) {
+      firstUserMenuActionRef.current?.focus({ preventScroll: true });
+    }
+  }, [showUserMenu]);
+
+  useEffect(() => {
+    const loadDict = async () => {
+      if (!isLoggedIn && !showAdminPanel) return;
+      try {
+        // Fast path: previously-synced dictionary from localStorage so the app
+        // works instantly even when Firestore is unreachable.
+        let nextDictionary = {};
+        try {
+          const cached = localStorage.getItem('translationDictionaryCache');
+          const parsed = cached ? JSON.parse(cached) : {};
+          if (parsed && typeof parsed === 'object') nextDictionary = parsed;
+        } catch {
+          // Corrupt cache — ignore and fetch fresh.
+        }
+        if (Object.keys(nextDictionary).length > 0) {
+          setTranslationDictionary(nextDictionary);
+        }
+        const withTimeout = (promise, ms) => Promise.race([
+          promise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timeout — using cached dictionary')), ms)),
+        ]);
+        try {
+          const docSnap = await withTimeout(getDoc(doc(db, 'settings', 'translationDictionary')), 8000);
+          if (docSnap.exists()) {
+            nextDictionary = { ...nextDictionary, ...(docSnap.data() || {}) };
+          }
+        } catch {
+          // Backend unreachable — try the persistent Firestore cache before giving up.
+          try {
+            const cachedSnap = await getDocFromCache(doc(db, 'settings', 'translationDictionary'));
+            if (cachedSnap.exists()) {
+              nextDictionary = { ...nextDictionary, ...(cachedSnap.data() || {}) };
+            }
+          } catch {
+            // No cached document yet — keep whatever we have (localStorage / empty).
+          }
+        }
+        try {
+          const dictRowsSnap = await withTimeout(getDocs(collection(db, 'translationDictionary')), 8000);
+          dictRowsSnap.docs.forEach((item) => {
+            const data = item.data() || {};
+            const englishWord = String(data.englishWord || '').trim();
+            const hindiTranslation = String(data.hindiTranslation || '').trim();
+            if (englishWord && hindiTranslation) {
+              nextDictionary[englishWord] = hindiTranslation;
+            }
+          });
+        } catch {
+          // Per-row collection is best-effort; offline cache fallback:
+          try {
+            const cachedRows = await getDocsFromCache(collection(db, 'translationDictionary'));
+            cachedRows.docs.forEach((item) => {
+              const data = item.data() || {};
+              const englishWord = String(data.englishWord || '').trim();
+              const hindiTranslation = String(data.hindiTranslation || '').trim();
+              if (englishWord && hindiTranslation) {
+                nextDictionary[englishWord] = hindiTranslation;
+              }
+            });
+          } catch {
+            // User-document fallback below still lets admin see the request.
+          }
+        }
+        setTranslationDictionary(nextDictionary);
+        try {
+          localStorage.setItem('translationDictionaryCache', JSON.stringify(nextDictionary));
+        } catch {
+          // Storage full / private mode — dictionary still works in memory.
+        }
+      } catch (err) {
+        // Offline / flaky network: app keeps running on the cached dictionary
+        // instead of spamming the console on every load.
+        if (String(err?.code || '') !== 'unavailable' && !/offline|timeout/i.test(String(err?.message || ''))) {
+          console.error('Failed to load dictionary', err);
+        }
+      }
+    };
+    loadDict();
+  }, [isLoggedIn, showAdminPanel]);
+
+  useEffect(() => {
+    setHindiRuntimeDictionary(translationDictionary);
+  }, [translationDictionary]);
+
+  const persistDictionaryRowsToFirebase = useCallback(async (rows, options = {}) => {
+    const entries = buildDictionaryEntriesForSave(rows);
+    if (entries.length === 0) {
+      if (options.notifyEmpty) {
+        pushToast('No valid dictionary rows found. Use columns like English Word and Hindi Translation.', 'error');
+      }
+      return [];
+    }
+
+    const changedEntries = filterChangedDictionaryEntries(translationDictionary, entries);
+
+    if (changedEntries.length === 0) {
+      if (options.notifySuccess) {
+        pushToast('All dictionary words are already saved in Firebase.', 'info');
+      }
+      return [];
+    }
+
+    const nextDict = mergeDictionaryWithEntries(translationDictionary, changedEntries);
+    await setDoc(doc(db, 'settings', 'translationDictionary'), nextDict);
+    await Promise.all(changedEntries.map((item) => setDoc(
+      doc(db, 'translationDictionary', getDictionaryDocId(item.englishWord)),
+      {
+        englishWord: item.englishWord,
+        hindiTranslation: item.hindiTranslation,
+        source: options.source || 'app',
+        status: options.status || 'approved',
+        autoGenerated: Boolean(options.autoGenerated),
+        updatedAt: serverTimestamp(),
+        ...(options.metadata || {}),
+      },
+      { merge: true },
+    )));
+    setTranslationDictionary(nextDict);
+
+    if (options.notifySuccess) {
+      pushToast(`${changedEntries.length} dictionary words saved to Firebase.`, 'success');
+    }
+
+    return changedEntries;
+  }, [pushToast, translationDictionary]);
+
+  const createDictionaryApprovalRecords = useCallback(async (rows, options = {}) => {
+    const entries = buildDictionaryEntriesForSave(rows, { dedupeByPhraseKind: true });
+    if (entries.length === 0) return [];
+
+    const normalizedPendingWords = new Set();
+    const existingPendingApprovalsByWord = new Map();
+    if (options.skipExistingApprovals) {
+      try {
+        const existingApprovalsSnap = await getDocs(collection(db, 'updateApprovals'));
+        existingApprovalsSnap.docs.forEach((approvalDoc) => {
+          const data = approvalDoc.data() || {};
+          if (String(data.status || 'pending').toLowerCase() !== 'pending') return;
+          const approvalType = String(data.type || '').trim().toLowerCase();
+          if (!['dictionary', 'dict', 'translationdictionary'].includes(approvalType)) return;
+          const englishWord = String(data?.payload?.englishWord || data?.payload?.eng || '').trim().toLowerCase();
+          if (englishWord) {
+            normalizedPendingWords.add(englishWord);
+            existingPendingApprovalsByWord.set(englishWord, {
+              id: approvalDoc.id,
+              ...data,
+            });
+          }
+        });
+      } catch (error) {
+        void error;
+      }
+    }
+
+    const filteredEntries = entries.filter((entry) => {
+      const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
+      if (!normalizedWord) return false;
+      if (options.skipExistingStored && getExistingDictionaryEntry(translationDictionary, entry.englishWord)) return false;
+      if (options.skipExistingApprovals && normalizedPendingWords.has(normalizedWord)) return false;
+      return true;
+    });
+
+    if (filteredEntries.length === 0) {
+      if (!options.skipExistingApprovals) return [];
+      return entries
+        .map((entry) => {
+          const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
+          const existingApproval = existingPendingApprovalsByWord.get(normalizedWord);
+          if (!existingApproval) return null;
+          return {
+            id: existingApproval.id,
+            ...existingApproval,
+          };
+        })
+        .filter(Boolean);
+    }
+
+    const approvalDocs = await Promise.all(filteredEntries.map((entry, index) => addDoc(collection(db, 'updateApprovals'), {
+      userId: options.userId || '',
+      dealerCode: options.dealerCode || 'ADMIN-IMPORT',
+      dealerName: options.dealerName || 'Admin Bulk Import',
+      type: 'dictionary',
+      payload: buildDictionaryApprovalPayload(entry, {
+        ...options,
+        matchedExistingEntry: options.matchedExistingEntry
+          || getExistingDictionaryEntry(translationDictionary, entry.englishWord)?.hindiTranslation
+          || '',
+      }, index),
+      status: 'pending',
+      requestedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      source: options.source || 'admin-import',
+    })));
+
+    const createdApprovals = approvalDocs.map((docRef, index) => ({
+      id: docRef.id,
+      ...filteredEntries[index],
+    }));
+
+    if (!options.skipExistingApprovals) {
+      return createdApprovals;
+    }
+
+    const reusedApprovals = entries
+      .map((entry) => {
+        const normalizedWord = String(entry.englishWord || '').trim().toLowerCase();
+        const existingApproval = existingPendingApprovalsByWord.get(normalizedWord);
+        if (!existingApproval) return null;
+        return {
+          id: existingApproval.id,
+          ...existingApproval,
+        };
+      })
+      .filter(Boolean);
+
+    const mergedApprovals = new Map();
+    [...createdApprovals, ...reusedApprovals].forEach((approval) => {
+      mergedApprovals.set(String(approval.id || ''), approval);
+    });
+
+    return Array.from(mergedApprovals.values());
+  }, [translationDictionary]);
+
+  // users cache & session persistence now live in src/services/storage.js
+
+  const updateUserInStore = (userId, updater, dealerCode = '') => {
+    if (!userId && !dealerCode) return null;
+    const users = readUsersData();
+    let idx = users.findIndex((u) => u.id === userId);
+    if (idx < 0 && dealerCode) {
+      idx = users.findIndex((u) => String(u?.dealerCode || '').trim() === String(dealerCode).trim());
+    }
+    if (idx < 0) return null;
+    const nextUser = updater(users[idx]);
+    const nextUsers = [...users];
+    nextUsers[idx] = nextUser;
+    writeUsersData(nextUsers);
+    const safeNextUser = sanitizeUserForCache(nextUser);
+    setLoggedInUser((prev) => {
+      if (!prev) return prev;
+      if (prev?.id === userId) return safeNextUser;
+      if (dealerCode && String(prev?.dealerCode || '').trim() === String(dealerCode).trim()) return safeNextUser;
+      return prev;
+    });
+    return nextUser;
+  };
+
+  const updateUserInFirebase = async (userId, patch, dealerCode = '') => {
+    const payload = { ...patch, updatedAt: serverTimestamp() };
+
+    if (userId) {
+      try {
+        await updateUserData(userId, payload);
+        return userId;
+      } catch (e) { void e; }
+    }
+
+    if (dealerCode) {
+      const snap = await getDocs(query(collection(db, 'users'), where('dealerCode', '==', String(dealerCode).trim())));
+      if (!snap.empty) {
+        const resolvedId = snap.docs[0].id;
+        await updateUserData(resolvedId, payload);
+        return resolvedId;
+      }
+    }
+
+    throw new Error('USER_DOC_NOT_FOUND');
+  };
+
+  const submitUpdateApprovalRequest = async ({ type, payload, localKey, successMessage }) => {
+    if (!loggedInUser?.id) {
+      pushToast('Please login first.', 'error');
+      return false;
+    }
+    if (localKey) {
+      localStorage.setItem(localKey, JSON.stringify(payload));
+    }
+    try {
+      const nextApprovalStatus = { ...(loggedInUser.approvalStatus || {}), [type]: 'pending' };
+      const batch = writeBatch(db);
+
+        const approvalsSnap = await getDocs(query(collection(db, 'updateApprovals'), where('userId', '==', loggedInUser.id)));
+        const existingPending = approvalsSnap.docs.find((d) => d.data()?.type === type && d.data()?.status === 'pending');
+        if (existingPending) {
+          batch.update(doc(db, 'updateApprovals', existingPending.id), {
+            payload,
+            dealerCode: loggedInUser.dealerCode || '',
+            dealerName: loggedInUser.dealerName || '',
+            status: 'pending',
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          batch.set(doc(collection(db, 'updateApprovals')), {
+            userId: loggedInUser.id,
+            dealerCode: loggedInUser.dealerCode || '',
+            dealerName: loggedInUser.dealerName || '',
+            type,
+            payload,
+            status: 'pending',
+            requestedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+    const pendingUpdatePatch = {
+      approvalStatus: nextApprovalStatus,
+      [`pendingUpdates.${type}`]: {
+        status: 'pending',
+        payload,
+        requestedAt: new Date().toISOString(),
+        adminReply: '',
+        adminReplyAt: '',
+      },
+      lastApprovalStorage: 'collection',
+    };
+      batch.update(doc(db, 'users', loggedInUser.id), { ...pendingUpdatePatch, updatedAt: serverTimestamp() });
+      await batch.commit();
+      const resolvedId = loggedInUser.id;
+      updateUserInStore(
+        resolvedId,
+        (u) => ({
+          ...u,
+          approvalStatus: nextApprovalStatus,
+          pendingUpdates: {
+            ...(u.pendingUpdates || {}),
+            [type]: {
+              status: 'pending',
+              payload,
+              requestedAt: new Date().toISOString(),
+              adminReply: '',
+              adminReplyAt: '',
+            },
+          },
+          id: resolvedId,
+        }),
+        loggedInUser.dealerCode
+      );
+      pushToast(successMessage || 'Your request is pending with admin for approval.', 'success');
+      return true;
+    } catch {
+      pushToast('Request submit failed. Check Firebase permissions.', 'error');
+      return false;
+    }
+  };
+
+
+  // Placeholder Component for Rate Update
+  // const RateUpdatePlaceholder = () => (
+  //   <div className="placeholder-container">
+  //     <h2>Rate Update Section</h2>
+  //     <p>This is where the rate update functionality will be implemented.</p>
+  //     <button onClick={() => setShowRateUpdate(false)}>Close</button>
+  //   </div>
+  // );
+
+  const handleLogin = () => {
+    hideAllViews();
+    setShowUserLogin(true);
+    setShowUserMenu(false);
+  };
+
+  const handleUserLoginSubmit = async () => {
+    const dealerCode = userDealerCode.trim();
+    const pin = userPin.trim();
+    if (!dealerCode || !pin) {
+      pushToast('Dealer Code aur PIN required hai.', 'error');
+      return;
+    }
+
+    setIsUserLoginSubmitting(true);
+    const loginAttempt = ++loginAttemptRef.current;
+    let firestoreUser = null;
+    let dealerLookupStatus = 'not-found';
+    try {
+      const lookup = await lookupDealerByCode(dealerCode, pin);
+      dealerLookupStatus = lookup.dealerLookupStatus || 'not-found';
+      if (lookup.outcome === 'duplicate') {
+        pushToast('Is dealer code par multiple accounts mil rahe hain. Login block kiya gaya hai, admin se contact kijiye.', 'error');
+        setIsUserLoginSubmitting(false);
+        return;
+      }
+      if (lookup.outcome === 'ok') {
+        firestoreUser = lookup.firestoreUser;
+      }
+    } catch (loginError) {
+      const reason = loginError instanceof Error ? loginError.message : '';
+      pushToast(
+        loginError?.code === 'rate-limited' || reason === 'login-rate-limited'
+          ? 'Bahut zyada login attempts. Kuch minute baad dobara koshish karein.'
+          : loginError?.code === 'server-not-configured' || reason === 'login-not-configured'
+            ? 'Login service server par configure nahi hai. Admin se contact kijiye.'
+            // Server returned a specific, actionable setup error — show it.
+            : reason && !reason.startsWith('login-')
+              ? reason
+              : 'Firebase login check failed. Please try again.',
+        'error',
+      );
+      setIsUserLoginSubmitting(false);
+      return;
+    }
+//Ok
+    if (!firestoreUser) {
+      if (dealerLookupStatus === 'pending') {
+        pushToast('Aapka account admin approval ke liye pending hai.', 'info');
+      } else if (dealerLookupStatus === 'disabled') {
+        pushToast('Aapka account disabled hai. Admin se contact kijiye.', 'error');
+      } else if (dealerLookupStatus === 'dealer-found') {
+        pushToast('Dealer Code mil gaya, lekin PIN sahi nahi hai.', 'error');
+      } else {
+        pushToast('Dealer Code ya PIN sahi nahi hai. Please check and try again.', 'error');
+      }
+      setIsUserLoginSubmitting(false);
+      return;
+    }
+
+    const deviceResult = await registerLoginDevice(firestoreUser, { deferSave: true, deviceUserName: userDeviceUserName });
+    if (deviceResult.outcome === 'blocked') {
+      pushToast('Is device par login blocked hai. Admin se unblock karwaiye.', 'error');
+      setIsUserLoginSubmitting(false);
+      return;
+    }
+    if (deviceResult.outcome === 'save-failed') {
+      pushToast('Login device could not be saved to Firestore. Device history was not updated.', 'warning');
+    }
+
+    if (getUserAccountStatus(firestoreUser) === 'pending') {
+      pushToast('Your registration is pending with admin approval.', 'info');
+      setIsUserLoginSubmitting(false);
+      return;
+    }
+
+    if (getUserAccountStatus(firestoreUser) === 'disabled') {
+      pushToast('Your account is disabled. Please contact admin.', 'error');
+      setIsUserLoginSubmitting(false);
+      return;
+    }
+
+    const expiryResult = await markUserExpiredIfDue(firestoreUser);
+    if (!expiryResult.ok) {
+      pushToast('Expiry status could not be saved to Firestore. Please retry. Plan validity still applies.', 'warning');
+    }
+
+    const localUser = mergeDealerIntoCache(firestoreUser);
+
+    const userLabelSettings = mergeDealerLabelSettings(
+      { ...firestoreUser, cashMemoLabelSettings: localUser.cashMemoLabelSettings },
+      setCashMemoLabelSettings,
+    );
+    localUser.cashMemoLabelSettings = userLabelSettings;
+    setLabelDraftSettings(mergeCashMemoLabelSettings(userLabelSettings));
+    setLoggedInUser(localUser);
+    setIsLoggedIn(true);
+    setSampleDataLoaded(false);
+    setSampleDataLoading(false);
+    setSampleDataAttempted(false);
+    persistUserSession(localUser);
+    setShowUserLogin(false);
+    setShowHomeInfo(true);
+    setUserDealerCode('');
+    setUserPin('');
+    setUserPinVisible(false);
+    if (getUserAccountStatus(localUser) === 'expired') {
+      const replyMap = readApprovalRepliesFromStorage();
+      const pendingPlanUpgrade = localUser?.pendingUpdates?.planUpgrade || {};
+      const storedReplyKey = getPlanUpgradeReplyStorageKey({
+        userId: localUser?.id,
+        dealerCode: localUser?.dealerCode,
+        dealerName: localUser?.dealerName,
+      });
+      const latestReply = String(
+        pendingPlanUpgrade?.adminReply
+        || replyMap[storedReplyKey]
+        || ''
+      ).trim();
+      if (latestReply) {
+        setAdminFlashMessage({
+          message: latestReply,
+          approvalId: storedReplyKey,
+        });
+      } else {
+        setAdminFlashMessage(null);
+      }
+      pushToast('Logged in successfully. Plan expired, please contact admin or renew plan.', 'info');
+    } else {
+      setAdminFlashMessage(null);
+      pushToast('Logged in successfully!', 'success');
+    }
+    logRecentActivity('Logged in successfully', localUser?.dealerCode);
+    setIsUserLoginSubmitting(false);
+    if (deviceResult.outcome === 'ready') {
+      const signedInUser = auth.currentUser;
+      void deviceResult.save().then((result) => {
+        if (auth.currentUser !== signedInUser || loginAttemptRef.current !== loginAttempt) return;
+        if (result.outcome === 'save-failed') {
+          pushToast('Login device could not be saved to Firestore. Device history was not updated.', 'warning');
+        } else if (result.outcome === 'ok') {
+          rememberDeviceUserName(userDeviceUserName);
+          setLoggedInUser((current) => current?.id === localUser.id
+            ? { ...current, loginDevices: result.loginDevices } : current);
+        }
+      }).catch(() => {
+        if (auth.currentUser === signedInUser && loginAttemptRef.current === loginAttempt) {
+          pushToast('Login device history could not be saved.', 'warning');
+        }
+      });
+    }
+  };
+
+  const handleLogout = () => {
+    loginAttemptRef.current += 1;
+    hideAllViews();
+    clearUserSession();
+    onboardingAutoOpenedRef.current = false;
+    setShowOnboardingTour(false);
+    setOnboardingStepIndex(0);
+    setIsLoggedIn(false);
+    setShowUserMenu(false);
+    setLoggedInUser(null);
+    setSampleDataLoaded(false);
+    setSampleDataLoading(false);
+    setSampleDataAttempted(false);
+    setShowAboutInfo(true);
+    pushToast('Logged out successfully!', 'success');
+    logRecentActivity('Logged out');
+  };
+
+  const handleLogoutWithConfirm = () => {
+    openConfirmDialog({
+      title: 'Log Out',
+      message: 'Are you sure you want to log out from this account?',
+      confirmLabel: 'Log Out',
+      onConfirm: handleLogout,
+    });
+  };
+
+  const hideAllViews = () => {
+    setShowHomeInfo(false);
+    setShowAboutInfo(false);
+    setShowInvoicePage(false);
+    setShowLabelUpdate(false);
+    setShowHeaderUpdate(false);
+    setShowCashmemoLayout(false);
+    setShowCashmemoPrintGuide(false);
+    setShowAttendance(false);
+    setShowIdCard(false);
+    setShowEmployeeProfile(false);
+    setShowEmployeeProfileCreate(false);
+    setShowSalarySlipPage(false);
+    setSalarySlipEmployeeId('');
+    setShowAttendanceReportPage(false);
+    setShowEmployeeReportPage(false);
+    setShowStockRegister(false);
+    setShowUpgradePlan(false);
+    setShowDictionaryForm(false);
+    setShowContactForm(false);
+    setShowUserProfile(false);
+    setShowRegisterForm(false);
+    setShowProfileUpdate(false);
+    setShowRateUpdate(false);
+    setShowBankDetails(false);
+    setShowParsedData(false);
+    setShowAdminPanel(false);
+    setShowAdminLogin(false);
+    setShowUserLogin(false);
+  };
+
+  const navigateToHome = () => {
+    hideAllViews();
+    setShowHomeInfo(true);
+    setShowUserMenu(false);
+  };
+
+  const handleProfileUpdate = () => {
+    hideAllViews();
+    setShowProfileUpdate(true);
+    setShowUserMenu(false);
+  };
+
+  const handleRateUpdate = () => {
+    hideAllViews();
+    setShowRateUpdate(true);
+    setShowUserMenu(false);
+  };
+  const handleLabelUpdate = () => {
+    hideAllViews();
+    setLabelDraftSettings(mergeCashMemoLabelSettings(cashMemoLabelSettings));
+    setShowLabelUpdate(true);
+    setShowUserMenu(false);
+  };
+  const handleHeaderUpdate = () => {
+    hideAllViews();
+    setShowHeaderUpdate(true);
+    setShowUserMenu(false);
+  };
+  const handleCashmemoLayoutOpen = () => {
+    hideAllViews();
+    setShowCashmemoLayout(true);
+    setShowUserMenu(false);
+  };
+  const handleCashmemoPrintGuideOpen = () => {
+    hideAllViews();
+    setShowCashmemoPrintGuide(true);
+    setShowUserMenu(false);
+  };
+  const handleAttendanceOpen = () => {
+    hideAllViews();
+    setShowAttendance(true);
+    setShowUserMenu(false);
+  };
+  const handleStockRegisterOpen = () => {
+    hideAllViews();
+    setShowStockRegister(true);
+    setShowUserMenu(false);
+  };
+  const handleIdCardOpen = () => {
+    hideAllViews();
+    setShowIdCard(true);
+    setShowUserMenu(false);
+  };
+  const handleIdCardClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
+  const handleEmployeeProfileOpen = () => {
+    hideAllViews();
+    setShowEmployeeProfile(true);
+    setShowEmployeeProfileCreate(false);
+    setShowUserMenu(false);
+  };
+  const handleEmployeeAddOpen = () => {
+    hideAllViews();
+    setShowEmployeeProfile(true);
+    setShowEmployeeProfileCreate(true);
+    setShowUserMenu(false);
+  };
+  const handleEmployeeProfileClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
+  const handleSalarySlipOpen = () => {
+    hideAllViews();
+    setSalarySlipEmployeeId('');
+    setShowSalarySlipPage(true);
+    setShowUserMenu(false);
+  };
+  const handleSalarySlipForEmployee = (employeeId) => {
+    hideAllViews();
+    setSalarySlipEmployeeId(employeeId || '');
+    setShowSalarySlipPage(true);
+    setShowUserMenu(false);
+  };
+  const handleSalarySlipClose = () => {
+    hideAllViews();
+    setSalarySlipEmployeeId('');
+    setShowAttendance(true);
+  };
+  const handleAttendanceReportOpen = () => {
+    hideAllViews();
+    setShowAttendanceReportPage(true);
+    setShowUserMenu(false);
+  };
+  const handleAttendanceReportClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
+  const handleEmployeeReportOpen = () => {
+    hideAllViews();
+    setShowEmployeeReportPage(true);
+    setShowUserMenu(false);
+  };
+  const handleEmployeeReportClose = () => {
+    hideAllViews();
+    setShowAttendance(true);
+  };
+  const handleBankDetails = () => {
+    hideAllViews();
+    setShowBankDetails(true);
+    setShowUserMenu(false);
+  };
+  const handleRegister = () => {
+    hideAllViews();
+    setShowRegisterForm(true);
+    setShowUserMenu(false);
+  };
+  const handleUserProfile = () => {
+    hideAllViews();
+    setUserProfileInitialSection('overview');
+    setShowUserProfile(true);
+    setShowUserMenu(false);
+  };
+
+  const handleRequestHistoryOpen = () => {
+    hideAllViews();
+    setUserProfileInitialSection('history');
+    setShowUserProfile(true);
+    setShowUserMenu(false);
+  };
+
+  const handleShowData = () => {
+    if (!showParsedData) {
+      hideAllViews();
+      setShowParsedData(true);
+    } else {
+      navigateToHome();
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const rawSession = localStorage.getItem(USER_SESSION_STORAGE_KEY);
+      if (!rawSession) return;
+
+      const session = JSON.parse(rawSession);
+      const users = readUsersData();
+      const matchedUser = users.find((user) =>
+        (session?.id && user?.id === session.id) ||
+        (session?.dealerCode && String(user?.dealerCode || '').trim() === String(session.dealerCode).trim())
+      );
+
+      if (!matchedUser) {
+        clearUserSession();
+        return;
+      }
+
+        const restoredUser = {
+          ...matchedUser,
+          status: getUserAccountStatus(matchedUser),
+          cashMemoLabelSettings: mergeCashMemoLabelSettings(matchedUser.cashMemoLabelSettings || {}),
+          deliveryAreaUpdates: Array.isArray(matchedUser.deliveryAreaUpdates) ? matchedUser.deliveryAreaUpdates : [],
+          deliveryStaffUpdates: Array.isArray(matchedUser.deliveryStaffUpdates) ? matchedUser.deliveryStaffUpdates : [],
+        };
+
+      setLoggedInUser(sanitizeUserForCache(restoredUser));
+      setCashMemoLabelSettings(restoredUser.cashMemoLabelSettings);
+      setLabelDraftSettings(mergeCashMemoLabelSettings(restoredUser.cashMemoLabelSettings));
+      setIsLoggedIn(true);
+      setShowAboutInfo(false);
+      setShowHomeInfo(true);
+    } catch {
+      clearUserSession();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      let text = '';
+      const userName = loggedInUser?.dealerName || '';
+      const userCode = loggedInUser?.dealerCode || '';
+      if (userName || userCode) {
+        text = userName && userCode ? `${userName} (${userCode})` : (userName || userCode);
+      }
+      setDealerWelcome(text || '');
+    } else {
+      setDealerWelcome('');
+    }
+  }, [isLoggedIn, showProfileUpdate, loggedInUser]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !loggedInUser || onboardingAutoOpenedRef.current) return;
+    const onboardingUserKey = String(
+      loggedInUser?.dealerCode
+      || loggedInUser?.profileData?.distributorCode
+      || loggedInUser?.id
+      || 'guest'
+    ).trim();
+    try {
+      const raw = localStorage.getItem(getOnboardingTourStorageKey(onboardingUserKey));
+      if (raw) {
+        onboardingAutoOpenedRef.current = true;
+        return;
+      }
+    } catch {
+      void 0;
+    }
+    onboardingAutoOpenedRef.current = true;
+    setOnboardingStepIndex(0);
+    setShowOnboardingTour(true);
+  }, [isLoggedIn, loggedInUser]);
+
+  const handleHomeOpen = () => {
+    navigateToHome();
+  };
+
+  const handleAboutOpen = () => {
+    hideAllViews();
+    setShowAboutInfo(true);
+    setShowUserMenu(false);
+  };
+
+  const handleInvoiceOpen = () => {
+    hideAllViews();
+    setShowInvoicePage(true);
+    setShowUserMenu(false);
+  };
+
+  const handleContactOpen = () => {
+    hideAllViews();
+    markUserContactRepliesAsRead();
+    setShowContactForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleDictionaryOpen = () => {
+    hideAllViews();
+    setDictionaryFormMode('default');
+    setShowDictionaryForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleDeliveryAreaUpdate = () => {
+    hideAllViews();
+    setDictionaryFormMode('deliveryArea');
+    setShowDictionaryForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleDeliveryStaffUpdate = () => {
+    hideAllViews();
+    setDictionaryFormMode('deliveryStaff');
+    setShowDictionaryForm(true);
+    setShowUserMenu(false);
+  };
+
+  const handleUpgradePlanOpen = () => {
+    hideAllViews();
+    setShowUpgradePlan(true);
+    setShowUserMenu(false);
+  };
+
+  const handleAdminLoginOpen = () => {
+    openConfirmDialog({
+      title: 'Admin Access',
+      message: 'Are you admin?, if Yes then login',
+      confirmLabel: 'Yes, Login as Admin',
+      cancelLabel: 'No, Go to User Login',
+      onConfirm: () => {
+        hideAllViews();
+        setShowAdminLogin(true);
+        setShowUserMenu(false);
+      },
+      onCancel: handleLogin,
+    });
+  };
+
+  const onboardingSteps = [
+    {
+      id: 'upload',
+      title: 'Upload Data',
+      description: 'Yahin se aap cDCMS ka latest Pending Booking file upload karke kaam start karte ho.',
+      hint: 'CSV ya XLSX upload ke baad filters, print aur quick profile sab active ho jaate hain.',
+      actionLabel: 'Open Data Upload',
+      action: () => {
+        if (!showParsedData) {
+          handleShowData();
+        }
+      },
+    },
+    {
+      id: 'invoice',
+      title: 'Invoice Page',
+      description: 'Invoice page par customer invoice bana, save, aur duplicate karke fast billing kar sakte ho.',
+      hint: 'Quick profile se bhi invoice directly open ho sakta hai.',
+      actionLabel: 'Open Invoice',
+      action: handleInvoiceOpen,
+    },
+    {
+      id: 'support',
+      title: 'Approval Reply & Support',
+      description: 'Yahan admin replies, support messages, aur pending follow-up dekh sakte ho.',
+      hint: 'Agar upload ya plan me issue aaye to sabse pehle isi section ko check karo.',
+      actionLabel: 'Open Support',
+      action: handleContactOpen,
+    },
+    {
+      id: 'dictionary',
+      title: 'Dictionary & Delivery Updates',
+      description: 'Dictionary, delivery area, aur delivery staff requests isi flow se manage hote hain.',
+      hint: 'Hindi print aur local naming consistency ke liye ye section important hai.',
+      actionLabel: 'Open Dictionary',
+      action: handleDictionaryOpen,
+    },
+  ];
+
+  const activeOnboardingStep = onboardingSteps[onboardingStepIndex] || onboardingSteps[0];
+
+  const markOnboardingTourSeen = useCallback((dealerCode = '') => {
+    try {
+      localStorage.setItem(getOnboardingTourStorageKey(dealerCode), JSON.stringify({
+        completedAt: new Date().toISOString(),
+      }));
+    } catch {
+      void 0;
+    }
+  }, []);
+
+  const openOnboardingTour = useCallback((stepIndex = 0) => {
+    setOnboardingStepIndex(Math.max(0, Math.min(stepIndex, onboardingSteps.length - 1)));
+    setShowOnboardingTour(true);
+  }, [onboardingSteps.length]);
+
+  const closeOnboardingTour = useCallback((markSeen = true) => {
+    if (markSeen) {
+      const onboardingUserKey = String(
+        loggedInUser?.dealerCode
+        || loggedInUser?.profileData?.distributorCode
+        || loggedInUser?.id
+        || 'guest'
+      ).trim();
+      markOnboardingTourSeen(onboardingUserKey);
+    }
+    setShowOnboardingTour(false);
+  }, [loggedInUser, markOnboardingTourSeen]);
+
+  const handleOnboardingNext = useCallback(() => {
+    setOnboardingStepIndex((prev) => {
+      if (prev >= onboardingSteps.length - 1) {
+        closeOnboardingTour(true);
+        return prev;
+      }
+      return prev + 1;
+    });
+  }, [closeOnboardingTour, onboardingSteps.length]);
+
+  const handleOnboardingBack = useCallback(() => {
+    setOnboardingStepIndex((prev) => Math.max(0, prev - 1));
+  }, []);
+
+  const handleOnboardingAction = useCallback(() => {
+    activeOnboardingStep?.action?.();
+  }, [activeOnboardingStep]);
+
+  const handleAdminLogout = async () => {
+    try {
+      await adminSignOut();
+    } catch (e) { void e; }
+    hideAllViews();
+    setShowAboutInfo(true);
+    setAdminLoginId('');
+    setAdminPassword('');
+    pushToast('Admin logged out successfully!', 'success');
+  };
+
+  const handleAdminLoginSubmit = async () => {
+    const { loginId, password, valid } = validateAdminCredentials(adminLoginId, adminPassword);
+    if (!valid) {
+      pushToast('Admin Email and Password required.', 'error');
+      return;
+    }
+    setIsAdminLoginSubmitting(true);
+    try {
+      await adminSignIn(loginId, password);
+      setShowAdminLogin(false);
+      setShowAdminPanel(true);
+      setAdminLoginId('');
+      setAdminPassword('');
+      pushToast('Admin login successful.', 'success');
+    } catch (error) {
+      pushToast(error?.code === 'auth/network-request-failed'
+        ? 'Firebase se connection nahi ho pa raha. Internet/DNS check karein ya mobile hotspot se dobara login karein.'
+        : error?.code === 'auth/admin-role-required'
+          ? error.message
+          : 'Admin login failed. Check Firebase Authentication credentials.', 'error');
+    }
+    setIsAdminLoginSubmitting(false);
+  };
+
+
 
   const [labelUpdatePageType, setLabelUpdatePageType] = useState('3 Cashmemo/Page');
   const [cashMemoLabelSettings, setCashMemoLabelSettings] = useState(() => {
@@ -8511,7 +8536,28 @@ function App() {
               logRecentActivity={logRecentActivity}
             />
           )}
-          {showAdminPanel && <AdminPanel onClose={navigateToHome} onAdminLogout={handleAdminLogout} />}
+          {showAdminPanel && <AdminPanel onAdminLogout={handleAdminLogout} {...{
+            announcementDraft,
+            announcementDraftFormKey,
+            announcementDraftRef,
+            announcements,
+            confirmAdminActionWithDialog,
+            createDictionaryApprovalRecords,
+            deleteAnnouncement,
+            handleCreateAnnouncement,
+            openInputDialog,
+            permanentlyDeleteBinItem,
+            persistDictionaryRowsToFirebase,
+            pushToast,
+            readRecentActivitiesForDealer,
+            restoreDeletedUser,
+            setLoggedInUser,
+            setTranslationDictionary,
+            toggleAnnouncementStatus,
+            translationDictionary,
+            translationObservability,
+            updateUserInStore,
+          }} />}
           {showAdminLogin && (
             <Suspense fallback={<div className="placeholder-container">Loading admin login...</div>}>
               <LazyAdminLoginPanel
@@ -8534,6 +8580,8 @@ function App() {
                 setUserPinVisible={setUserPinVisible}
                 userPin={userPin}
                 setUserPin={setUserPin}
+                deviceUserName={userDeviceUserName}
+                setDeviceUserName={setUserDeviceUserName}
                 isUserLoginSubmitting={isUserLoginSubmitting}
                 handleUserLoginSubmit={handleUserLoginSubmit}
                 navigateToHome={navigateToHome}

@@ -11,11 +11,20 @@ vi.mock('../src/services/userSubcollections', () => ({
   mergeUserDocWithSubcollections: vi.fn(), readUserSubcollections: vi.fn(),
 }));
 vi.mock('../src/utils/adminUiHelpers', () => ({
-  getCurrentDeviceInfo: async () => ({ deviceId: 'current' }),
+  getCurrentDeviceInfo: async ({ deviceUserName } = {}) => ({ deviceId: 'current', ...(deviceUserName ? { deviceUserName } : {}) }),
   normalizeLoginDevices: (devices) => devices || [],
   upsertLoginDevice: (devices, device) => [...devices, device],
 }));
 afterEach(() => vi.resetAllMocks());
+
+it('persists the entered device user and account name with the current login record', async () => {
+  updateDoc.mockResolvedValue(undefined);
+  const user = { id: 'u', dealerName: 'HP Agency', loginDevices: [] };
+  expect(await registerLoginDevice(user, { deviceUserName: 'Deepak' })).toMatchObject({ outcome: 'ok' });
+  expect(updateDoc).toHaveBeenCalledWith('users/u', expect.objectContaining({
+    loginDevices: [{ deviceId: 'current', deviceUserName: 'Deepak', accountName: 'HP Agency' }],
+  }));
+});
 
 it('reports an expiry write failure without changing the runtime status', async () => {
   updateDoc.mockRejectedValue(Object.assign(new Error('Denied'), { code: 'permission-denied' }));
