@@ -160,3 +160,20 @@ it('persists consumer bin state, blocks editing until restoration and preserves 
   const modified = await call({ mode: 'consumer', editId: saved.id, consumer: { ...consumer, consumerName: 'Ravi Updated' } });
   expect(modified.trashed).toBe(false); expect(modified.consumerName).toBe('Ravi Updated');
 });
+
+it('imports consumers atomically, rejects existing numbers and replays an identical file safely', async () => {
+  const { firestore, records } = database({ 'users/u1': { dealerCode: 'D001', status: 'active' } });
+  sdk.firestore = firestore;
+  sdk.auth.verifyIdToken.mockResolvedValue({ uid: 'u1', dealerCode: 'D001', accountActive: true, planActive: true });
+  const call = (consumers) => invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'bulkConsumers', consumers });
+  const first = { consumerName: 'Ravi', consumerNo: '001', mobileNo: '9876543210' };
+  const second = { ...first, consumerNo: '002', consumerName: 'Mohan' };
+  const saved = await call([first, second]);
+  expect(saved.consumers).toHaveLength(2);
+  expect(await call([first, second])).toEqual(saved);
+  const before = JSON.stringify([...records]);
+  await expect(call([first, { ...second, consumerNo: '003' }])).rejects.toThrow('already exists');
+  expect(JSON.stringify([...records])).toBe(before);
+  await expect(call([{ ...first, consumerNo: '004' }, { ...second, consumerNo: '005', mobileNo: 'bad' }])).rejects.toThrow('Row 3');
+  expect(JSON.stringify([...records])).toBe(before);
+});

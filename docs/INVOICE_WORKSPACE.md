@@ -31,3 +31,8 @@ Outstanding Ageing groups positive balances by days past the due date (invoice d
 Bin and modification
 
 Consumer List offers Modify Consumer and Delete Consumer; Generated Invoice offers Modify Invoice and Delete Invoice. Delete moves the record into a cloud-persisted Bin using a `trashed` flag, deletion time and actor. Restore clears that flag and retains the original ID and invoice number. Normal lists exclude trashed records; trashed consumer master records suppress consumers inferred from invoice history. Trashed invoices are excluded from active dashboard totals, records, ledger, statements and ageing. Their original transactions remain stored in Bin for restoration. Trashed consumers are excluded from consumer records, counts, ledger and statement selectors; independently stored invoices are not cascade-deleted. Trashed records reject edit/payment operations until restored. Paid or corrected invoices keep existing edit restrictions; use notes for financial corrections. No permanent deletion is provided.
+
+
+Bulk Consumer Import
+
+The sidebar menu below Add Consumer accepts Excel .xlsx/.xls up to 5 MB. Download Template supplies Consumer Name, Consumer Number, Mobile Number, Address and GSTIN. Preview validates name/number/mobile and in-file duplicate numbers. Imports contain 1?400 consumers and save through one authenticated Firestore transaction; existing consumer numbers, including Bin records, reject the complete import. An identical complete import replays safely. Consumer number is read as formatted text to preserve leading zeros. Center Number has been removed from consumer forms, runtime invoice drafts and printable invoices; legacy cloud fields are not migrated or deleted.

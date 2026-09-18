@@ -185,6 +185,26 @@ export const invoiceWorkspace = async (authorization, body) => {
       tx.set(ref, next); return next;
     });
   }
+  if (body.mode === 'bulkConsumers') {
+    if (!Array.isArray(body.consumers) || !body.consumers.length || body.consumers.length > 400) fail('Import 1?400 consumers per file.');
+    const seen = new Set();
+    const consumers = body.consumers.map((input, index) => {
+      const next = Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin'].map((key) => [key, String(input?.[key] || '').trim().slice(0, 500)]));
+      if (!next.consumerName || !next.consumerNo || !/^\d{10}$/.test(next.mobileNo)) fail(`Row ${index + 2}: valid name, consumer number and mobile required.`);
+      const id = hashId(next.consumerNo.toUpperCase());
+      if (seen.has(id)) fail(`Duplicate consumer number ${next.consumerNo}.`, 409);
+      seen.add(id); return { ...next, id };
+    });
+    return firestore.runTransaction(async (tx) => {
+      const refs = consumers.map((consumer) => root.collection('consumers').doc(consumer.id));
+      const snapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
+      const same = (record, input) => ['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin'].every((key) => String(record[key] || '') === input[key]);
+      if (snapshots.every((snapshot, index) => snapshot.exists && !snapshot.data().trashed && same(snapshot.data(), consumers[index]))) return { consumers: snapshots.map((snapshot, index) => ({ ...snapshot.data(), id: consumers[index].id })) };
+      if (snapshots.some((snapshot) => snapshot.exists)) fail('A consumer number already exists (including Bin). No consumers imported.', 409);
+      consumers.forEach((consumer, index) => tx.set(refs[index], consumer));
+      return { consumers };
+    });
+  }
   if (body.mode === 'consumer') {
     const input = body.consumer;
     if (typeof input?.consumerName !== 'string' || !input.consumerName.trim()
@@ -198,13 +218,13 @@ export const invoiceWorkspace = async (authorization, body) => {
         if (body.migrate === true) return { ...existing.data(), id };
         if (body.editId === id) {
           if (existing.data().trashed) fail('Restore this consumer from Bin before editing.', 409);
-          const next = Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin', 'centerNo'].map((key) => [key, String(input[key] || '').trim().slice(0, 500)]));
+          const next = Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin'].map((key) => [key, String(input[key] || '').trim().slice(0, 500)]));
           tx.update(ref, { ...next, updatedAt: new Date().toISOString() }); return { ...existing.data(), ...next, id };
         }
         fail('This consumer number already exists.', 409);
       }
       if (body.editId) fail('Consumer no longer exists. The consumer number cannot be changed.', 409);
-      const next = Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin', 'centerNo'].map((key) => [key, String(input[key] || '').trim().slice(0, 500)]));
+      const next = Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin'].map((key) => [key, String(input[key] || '').trim().slice(0, 500)]));
       tx.set(ref, next); return { ...next, id };
     });
   }

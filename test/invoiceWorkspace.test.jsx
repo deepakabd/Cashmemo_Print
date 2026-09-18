@@ -51,6 +51,7 @@ it('opens billing from the sidebar and preserves its draft across navigation', (
   expect(billing.hidden).toBe(true);
   fireEvent.click(within(navigation).getByRole('button', { name: 'Billing' }));
   expect(billing.hidden).toBe(false);
+  expect(screen.queryByPlaceholderText('Center No')).toBeNull();
   fireEvent.change(screen.getByPlaceholderText('Consumer Name'), { target: { value: 'Ravi' } });
   fireEvent.click(within(navigation).getByRole('button', { name: 'Product' }));
   expect(billing.hidden).toBe(true);
@@ -63,6 +64,7 @@ it('saves a consumer and transfers details into billing', { timeout: 20000 }, as
   render(<InvoicePage loggedInUser={dealer} />);
   await screen.findByText('Cloud billing connected');
   fireEvent.click(screen.getByRole('button', { name: 'Add Consumer' }));
+  expect(screen.queryByLabelText('Center Number')).toBeNull();
   fireEvent.change(screen.getByLabelText('Consumer Name'), { target: { value: 'Ravi' } });
   fireEvent.change(screen.getByLabelText('Consumer Number'), { target: { value: '12345' } });
   fireEvent.change(screen.getByLabelText('Mobile Number'), { target: { value: '9876543210' } });

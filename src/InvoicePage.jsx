@@ -1,3 +1,4 @@
+import BulkConsumerImport from './components/BulkConsumerImport';
 import InvoiceCorrections from './components/InvoiceCorrections';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Papa from 'papaparse';
@@ -16,7 +17,6 @@ const BULK_IMPORT_TEMPLATE_HEADERS = [
   'Quantity',
   'Rate',
   'GSTIN',
-  'Center No',
 ];
 
 const BULK_IMPORT_TEMPLATE_SAMPLE = [
@@ -30,7 +30,6 @@ const BULK_IMPORT_TEMPLATE_SAMPLE = [
     Quantity: 1,
     Rate: 1100,
     GSTIN: '',
-    'Center No': 'CTR-01',
   },
 ];
 
@@ -107,7 +106,7 @@ const normalizeSavedInvoiceRecord = (item = {}, fallbackIndex = 0) => {
 
 function InvoiceWorkspace({ loggedInUser }) {
   const [activeView, setActiveView] = useState('Dashboard');
-  const [consumerDraft, setConsumerDraft] = useState({ consumerName: '', consumerNo: '', mobileNo: '', address: '', gstin: '', centerNo: '' });
+  const [consumerDraft, setConsumerDraft] = useState({ consumerName: '', consumerNo: '', mobileNo: '', address: '', gstin: '' });
   const [consumerError, setConsumerError] = useState('');
   const [consumerEditId, setConsumerEditId] = useState('');
   const [editingInvoiceId, setEditingInvoiceId] = useState('');
@@ -185,7 +184,6 @@ function InvoiceWorkspace({ loggedInUser }) {
   const [billToName, setBillToName] = useState('');
   const [billToConsumerNo, setBillToConsumerNo] = useState('');
   const [billToMobileNo, setBillToMobileNo] = useState('');
-  const [billToCenterNo, setBillToCenterNo] = useState('');
   const [billToDate, setBillToDate] = useState(indiaDate());
   const [billDueDate, setBillDueDate] = useState('');
   const [billToAddress, setBillToAddress] = useState('');
@@ -421,7 +419,6 @@ function InvoiceWorkspace({ loggedInUser }) {
     setBillToName('');
     setBillToConsumerNo('');
     setBillToMobileNo('');
-    setBillToCenterNo('');
     setBillToAddress('');
     setBillToGstin('');
     setBillToDate(indiaDate()); setBillDueDate('');
@@ -432,7 +429,6 @@ function InvoiceWorkspace({ loggedInUser }) {
     billToName,
     billToConsumerNo,
     billToMobileNo,
-    billToCenterNo,
     billToDate,
     billDueDate,
     billToAddress,
@@ -457,7 +453,6 @@ function InvoiceWorkspace({ loggedInUser }) {
     setBillToName(String(draft?.billToName || ''));
     setBillToConsumerNo(String(draft?.billToConsumerNo || ''));
     setBillToMobileNo(String(draft?.billToMobileNo || ''));
-    setBillToCenterNo(String(draft?.billToCenterNo || ''));
     setBillToDate(String(draft?.billToDate || indiaDate())); setBillDueDate(String(draft?.billDueDate || ''));
     setBillToAddress(String(draft?.billToAddress || ''));
     setBillToGstin(String(draft?.billToGstin || ''));
@@ -562,7 +557,6 @@ function InvoiceWorkspace({ loggedInUser }) {
       billToName: consumerName,
       billToConsumerNo: consumerNo,
       billToMobileNo: mobileNo,
-      billToCenterNo: String(customer.centerNo || customer['Center No'] || ''),
       billToDate: orderDate ? String(new Date(orderDate).toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10),
       billToAddress: address,
       billToGstin: gstin,
@@ -598,7 +592,6 @@ function InvoiceWorkspace({ loggedInUser }) {
       setBillToMobileNo(String(suggestion.mobileNo || suggestion['Mobile No.'] || suggestion.billToMobileNo || ''));
       setBillToAddress(String(suggestion.address || suggestion.Address || suggestion.billToAddress || ''));
       setBillToGstin(String(suggestion.GSTIN || suggestion.gstin || suggestion.billToGstin || ''));
-      setBillToCenterNo(String(suggestion.centerNo || suggestion['Center No'] || suggestion.billToCenterNo || ''));
     } else {
       setBillToName(name);
     }
@@ -640,7 +633,6 @@ function InvoiceWorkspace({ loggedInUser }) {
       const quantity = row['Quantity'] || row['quantity'] || row['Qty'] || row['qty'] || 1;
       const rate = String(row['Rate'] || row['rate'] || row['Unit Rate'] || row['unit rate'] || row['Price'] || row['price'] || row['Total Amount'] || row['Amount'] || '').trim();
       const gstin = String(row['GSTIN'] || row['gstin'] || row['Gstn'] || '').trim();
-      const centerNo = String(row['Center No'] || row['center no'] || '').trim();
       const quantityValue = Number(quantity) || 1;
 
       if (!consumerName || !mobileNo || !address) {
@@ -667,7 +659,6 @@ function InvoiceWorkspace({ loggedInUser }) {
         quantity: quantityValue,
         rate,
         gstin,
-        centerNo,
         status: 'Imported',
       });
     });
@@ -1122,7 +1113,6 @@ function InvoiceWorkspace({ loggedInUser }) {
       const fieldValue = (fieldEl.value || '').trim();
       const isOptionalBillToField =
         fieldEl.classList.contains('billto-consumerno') ||
-        fieldEl.classList.contains('billto-centerno') ||
         fieldEl.classList.contains('billto-gstin');
       const isBillToDateField = fieldEl.classList.contains('billto-date');
 
@@ -1482,7 +1472,7 @@ function InvoiceWorkspace({ loggedInUser }) {
     const stored = customer.id ? customer : await cloudMutation({ mode: 'consumer', consumer: customer, migrate: true });
     if (!stored) return;
     setConsumerEditId(stored.id);
-    setConsumerDraft(Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin', 'centerNo'].map((field) => [field, stored[field] || ''])));
+    setConsumerDraft(Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin'].map((field) => [field, stored[field] || ''])));
     setActiveView('Add Consumer');
   };
   const query = workspaceSearch.trim().toLowerCase();
@@ -1516,7 +1506,7 @@ function InvoiceWorkspace({ loggedInUser }) {
   const lockedInvoice = Boolean(editingInvoiceId && (selectedInvoice?.status === 'Cancelled' || invoicePaid(selectedInvoice || {}) > 0 || selectedInvoice?.notes?.length || selectedInvoice?.refunds?.length));
   const startConsumerInvoice = (customer) => {
     draftIdRef.current = crypto.randomUUID(); savedDraftSignatureRef.current = ''; setCurrentInvoiceNumber(''); setEditingInvoiceId('');
-    setBillToName(customer.consumerName || ''); setBillToConsumerNo(customer.consumerNo || ''); setBillToMobileNo(customer.mobileNo || ''); setBillToAddress(customer.address || ''); setBillToGstin(customer.gstin || ''); setBillToCenterNo(customer.centerNo || ''); setActiveView('Billing');
+    setBillToName(customer.consumerName || ''); setBillToConsumerNo(customer.consumerNo || ''); setBillToMobileNo(customer.mobileNo || ''); setBillToAddress(customer.address || ''); setBillToGstin(customer.gstin || ''); setActiveView('Billing');
   };
   const shareInvoice = async (record) => {
     const text = `${record.invoiceNumber || record.title}\nConsumer: ${record.draft?.billToName || record.header?.name || ''}\nInvoice total: ${formatMoney(resolveInvoiceAmount(record))}\nPaid: ${formatMoney(invoicePaid(record))}\nBalance due: ${formatMoney(invoiceDue(record))}`;
@@ -1533,7 +1523,7 @@ function InvoiceWorkspace({ loggedInUser }) {
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
     // Draft fields determine whether a browser exit would lose current edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, billToName, billToConsumerNo, billToMobileNo, billToAddress, billToDate, billDueDate, billToGstin, billToCenterNo, invoiceRows]);
+  }, [activeView, billToName, billToConsumerNo, billToMobileNo, billToAddress, billToDate, billDueDate, billToGstin, invoiceRows]);
 
   return (
     <div className="invoice-workspace">
@@ -1541,7 +1531,7 @@ function InvoiceWorkspace({ loggedInUser }) {
         <div className="invoice-workspace__brand"><img src="/branding.png" alt="LPG CashMemo" /><span>Invoice Workspace</span></div>
         <span className="invoice-workspace__nav-label">WORKSPACE</span>
         <nav aria-label="Invoice navigation">
-          {['Dashboard', 'Add Consumer', 'List of Consumer', 'Product', 'Billing', 'Generated Invoice', 'Ledger', 'Credit / Debit', 'Adjustments', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing', 'Bin', 'Setting'].map((view, index) => (
+          {['Dashboard', 'Add Consumer', 'Bulk Consumer Import', 'List of Consumer', 'Product', 'Billing', 'Generated Invoice', 'Ledger', 'Credit / Debit', 'Adjustments', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing', 'Bin', 'Setting'].map((view, index) => (
             <button key={view} type="button" className={activeView === view ? 'is-active' : ''}
               aria-current={activeView === view ? 'page' : undefined} onClick={() => setActiveView(view)}>
               <span aria-hidden="true">{['◫', '＋', '♙', '◇', '▤', '▧', '≡', '⇄', '±', '▣', '⚙'][index]}</span>{view}
@@ -1562,6 +1552,7 @@ function InvoiceWorkspace({ loggedInUser }) {
         <div className={`invoice-cloud-status invoice-cloud-status--${cloudStatus}`} role="status"><strong>{cloudStatus === 'live' ? 'Cloud billing connected' : cloudStatus === 'syncing' ? 'Syncing cloud billing…' : 'Offline — displaying cached data'}</strong><span>{cloudStatus !== 'live' ? 'Saving and payments are disabled until sync succeeds.' : 'Invoices and consumers are saved to your dealer account.'}</span><button type="button" disabled={cloudStatus === 'syncing' || billingBusy} onClick={() => void syncCloud()}>Sync Data</button></div>
         {billingError && <div className="invoice-billing-error" role="alert">{billingError}</div>}
         {['Notes / Refunds', 'Outstanding Ageing'].includes(activeView) && <InvoiceCorrections view={activeView} records={savedInvoices} disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(record) => cacheRecords(invoiceRecords.map((item) => item.id === record.id ? normalizeSavedInvoiceRecord(record) : item))} />}
+        {activeView === 'Bulk Consumer Import' && <BulkConsumerImport disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(consumers) => { const ids = new Set(consumers.map((item) => item.id)); const next = [...consumerRecords.filter((item) => !ids.has(item.id)), ...consumers]; setBulkCustomers(next); try { localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(next)); } catch { /* Optional cache. */ } }} />}
         {activeView === 'Bin' && <section className="invoice-workspace__card"><h3>Bin</h3><p>Deleted records can be restored. Invoice numbers, receipts and ledger history are retained.</p><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Type</th><th>Record</th><th>Deleted on</th><th>Action</th></tr></thead><tbody>{[...consumerRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Consumer', record })), ...invoiceRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Invoice', record }))].map(({ kind, record }) => <tr key={`${kind}-${record.id}`}><td>{kind}</td><td>{record.invoiceNumber || record.consumerName} ? {record.consumerNo || record.header?.name}</td><td>{record.deletedAt ? new Date(record.deletedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '?'}</td><td><button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin(kind, record, true)}>Restore {kind}</button></td></tr>)}</tbody></table></div>{!consumerRecords.some((item) => item.trashed) && !invoiceRecords.some((item) => item.trashed) && <p>Bin is empty.</p>}</section>}
         {activeView === 'Adjustments' && <section className="invoice-workspace__card"><h3>Opening Balance / Credit–Debit Adjustment</h3><p>Debit increases the consumer balance; credit reduces it. Entries remain in transaction history.</p><form onSubmit={async (event) => { event.preventDefault(); const entry = await cloudMutation({ mode: 'adjustment', entry: { ...adjustmentDraft, id: adjustmentIdRef.current, amount: Number(adjustmentDraft.amount) } }); if (entry) { setAdjustments((previous) => [...previous.filter((item) => item.id !== entry.id), entry]); adjustmentIdRef.current = crypto.randomUUID(); setAdjustmentDraft((draft) => ({ ...draft, amount: '', reason: '' })); } }}><div className="invoice-workspace__form-grid"><label>Adjustment consumer<select required value={adjustmentDraft.consumerId} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, consumerId: event.target.value }))}><option value="">Choose consumer</option>{bulkCustomers.filter((consumer) => !consumer.trashed).map((consumer) => <option key={consumer.id} value={consumer.id}>{consumer.consumerName} · {consumer.consumerNo || consumer.mobileNo}</option>)}</select></label><label>Entry type<select value={adjustmentDraft.type} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, type: event.target.value }))}>{['OpeningDebit', 'OpeningCredit', 'Debit', 'Credit'].map((type) => <option key={type}>{type}</option>)}</select></label><label>Adjustment amount<input required type="number" min="0.01" step="0.01" value={adjustmentDraft.amount} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, amount: event.target.value }))} /></label><label>Adjustment date<input required type="date" max={indiaDate()} value={adjustmentDraft.date} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, date: event.target.value }))} /></label><label>Adjustment reason<input required maxLength={500} value={adjustmentDraft.reason} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, reason: event.target.value }))} /></label></div><button className="invoice-workspace__primary" type="submit" disabled={billingBusy || cloudStatus !== 'live'}>Save Adjustment</button></form><h4>Saved Adjustments</h4>{adjustments.filter((entry) => !deletedConsumerKeys.has(String(entry.consumerKey).trim().toLowerCase())).map((entry) => <p key={entry.id}>{entry.date} · {entry.consumer} · {entry.type} · {formatMoney(entry.amount)} · {entry.reason}</p>)}</section>}
         {activeView === 'Consumer Statement' && <section className="invoice-workspace__card"><h3>Consumer Statement</h3><div className="invoice-workspace__form-grid"><label>Statement consumer<select value={statementConsumer} onChange={(event) => setStatementConsumer(event.target.value)}><option value="">Choose consumer</option>{statementConsumers.map(([key, name]) => <option key={key} value={key}>{name} · {key}</option>)}</select></label><label>Statement from<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>Statement to<input type="date" min={dateFrom} value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><p>Opening: {formatMoney(statement.opening)} · Debit: {formatMoney(statement.debit)} · Credit: {formatMoney(statement.credit)} · Closing: {formatMoney(statement.closing)}</p><button type="button" disabled={!statementConsumer} onClick={exportStatement}>Download Statement CSV</button><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Date</th><th>Invoice</th><th>Details</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>{statement.transactions.map((row) => <tr key={`${row.invoiceNumber}-${row.id}`}><td>{row.date}</td><td>{row.invoiceNumber}</td><td>{row.detail}</td><td>{formatMoney(row.debit)}</td><td>{formatMoney(row.credit)}</td><td>{formatMoney(row.balance)}</td></tr>)}</tbody></table></div></section>}
@@ -1636,16 +1627,16 @@ function InvoiceWorkspace({ loggedInUser }) {
             if (!customer.consumerName || !/^\d{10}$/.test(customer.mobileNo)) { setConsumerError('Enter consumer name and a valid 10-digit mobile number.'); return; }
             const saved = await cloudMutation({ mode: 'consumer', consumer: customer, editId: consumerEditId || undefined });
             if (!saved) return;
+            setBillToName(saved.consumerName || ''); setBillToConsumerNo(saved.consumerNo || ''); setBillToMobileNo(saved.mobileNo || ''); setBillToAddress(saved.address || ''); setBillToGstin(saved.gstin || '');
             const nextCustomers = [...consumerRecords.filter((item) => item.id !== saved.id), saved];
             setBulkCustomers(nextCustomers);
             try { localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(nextCustomers)); } catch { /* Optional cache. */ }
             draftIdRef.current = crypto.randomUUID();
             savedDraftSignatureRef.current = ''; setCurrentInvoiceNumber('');
             setEditingInvoiceId(''); setConsumerEditId('');
-            setBillToName(customer.consumerName); setBillToConsumerNo(customer.consumerNo); setBillToMobileNo(customer.mobileNo); setBillToAddress(customer.address); setBillToGstin(customer.gstin); setBillToCenterNo(customer.centerNo);
-            setConsumerDraft({ consumerName: '', consumerNo: '', mobileNo: '', address: '', gstin: '', centerNo: '' }); setConsumerError(''); setActiveView('Billing');
+            setConsumerDraft({ consumerName: '', consumerNo: '', mobileNo: '', address: '', gstin: '' }); setConsumerError(''); setActiveView('Billing');
           }}>
-            <div className="invoice-workspace__form-grid">{Object.entries({ consumerName: 'Consumer Name', consumerNo: 'Consumer Number', mobileNo: 'Mobile Number', address: 'Address', gstin: 'GSTIN', centerNo: 'Center Number' }).map(([key, label]) => <label key={key}>{label}<input className="form-input" value={consumerDraft[key]} readOnly={key === 'consumerNo' && Boolean(consumerEditId)} required={key === 'consumerName' || key === 'consumerNo' || key === 'mobileNo'} onChange={(event) => setConsumerDraft((previous) => ({ ...previous, [key]: event.target.value }))} /></label>)}</div>
+            <div className="invoice-workspace__form-grid">{Object.entries({ consumerName: 'Consumer Name', consumerNo: 'Consumer Number', mobileNo: 'Mobile Number', address: 'Address', gstin: 'GSTIN' }).map(([key, label]) => <label key={key}>{label}<input className="form-input" value={consumerDraft[key]} readOnly={key === 'consumerNo' && Boolean(consumerEditId)} required={key === 'consumerName' || key === 'consumerNo' || key === 'mobileNo'} onChange={(event) => setConsumerDraft((previous) => ({ ...previous, [key]: event.target.value }))} /></label>)}</div>
             {consumerError && <p role="alert">{consumerError}</p>}<button className="invoice-workspace__primary" type="submit" disabled={billingBusy || cloudStatus !== 'live'}>{billingBusy ? 'Saving…' : 'Save Consumer & Bill'}</button>
           </form>
         </section>}
@@ -1712,10 +1703,6 @@ function InvoiceWorkspace({ loggedInUser }) {
                 <div className="billto-field">
                   <label>Mobile No</label>
                   <input className="invoice-input billto-mobile" placeholder="Mobile No" value={billToMobileNo} onChange={(e) => setBillToMobileNo(toUpperValue(e.target.value))} />
-                </div>
-                <div className="billto-field">
-                  <label>Center No</label>
-                  <input className="invoice-input billto-centerno" placeholder="Center No" value={billToCenterNo} onChange={(e) => setBillToCenterNo(toUpperValue(e.target.value))} />
                 </div>
               </div>
               <div className="billto-field billto-address">
