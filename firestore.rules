@@ -126,6 +126,19 @@ service cloud.firestore {
           && request.resource.data.value
             == getAfter(/databases/$(database)/documents/users/$(userId)).data[configField()];
       }
+      match /invoices/{invoiceId} {
+        allow read: if isAdmin() || (isSignedIn() && request.auth.token.dealerCode == get(/databases/$(database)/documents/users/$(userId)).data.dealerCode);
+        allow write: if false;
+      }
+      match /consumers/{consumerId} {
+        allow read: if isAdmin() || (isSignedIn() && request.auth.token.dealerCode == get(/databases/$(database)/documents/users/$(userId)).data.dealerCode);
+        allow write: if false;
+      }
+      match /billingCounters/{year} { allow read, write: if false; }
+      match /billingAdjustments/{entryId} {
+        allow read: if isAdmin() || (isSignedIn() && request.auth.token.dealerCode == get(/databases/$(database)/documents/users/$(userId)).data.dealerCode);
+        allow write: if false;
+      }
     }
 
     // ---- registration requests --------------------------------------------

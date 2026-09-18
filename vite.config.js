@@ -8,6 +8,7 @@ import { validateLoginInput, LOGIN_RATE_LIMIT } from './api/login.js'
 import { buildPinHashPatch } from './server/pinAdmin.js'
 import { checkLoginServiceConfig } from './server/loginConfigCheck.js'
 import adminUsersHandler from './api/admin-users.js'
+import invoiceWorkspaceHandler from './api/invoice-workspace.js'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -85,6 +86,7 @@ export default defineConfig(({ mode }) => {
         name: 'login-api-dev-route',
         configureServer(server) {
           server.middlewares.use('/api/admin-users', adminUsersHandler);
+          server.middlewares.use('/api/invoice-workspace', invoiceWorkspaceHandler);
           // Warn at boot, not just at the first failed login.
           checkLoginServiceConfig();
 
