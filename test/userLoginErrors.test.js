@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-it('authenticates and refreshes the token before reading a user, with no client PIN comparison or anonymous query', async () => {
+it('authenticates before reading a user without an extra forced token refresh or anonymous query', async () => {
   let confirmSignIn;
   signInWithCustomToken.mockImplementation(() => new Promise((resolve) => { confirmSignIn = resolve; }));
   const pending = lookupDealerByCode('123', '1234');
@@ -30,7 +30,7 @@ it('authenticates and refreshes the token before reading a user, with no client 
   const getIdToken = vi.fn().mockResolvedValue('fresh-token');
   confirmSignIn({ user: { getIdToken } });
   const result = await pending;
-  expect(getIdToken).toHaveBeenCalledWith(true);
+  expect(getIdToken).toHaveBeenCalledWith();
   expect(result.outcome).toBe('ok');
   expect(result.firestoreUser.id).toBe('dealer-doc');
   expect(result.firestoreUser.pin).toBeUndefined();

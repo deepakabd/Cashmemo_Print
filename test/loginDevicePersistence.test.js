@@ -73,3 +73,17 @@ it('does not write a blocked device', async () => {
     .toEqual({ outcome: 'blocked' });
   expect(updateDoc).not.toHaveBeenCalled();
 });
+
+it('checks blocking before deferring the device write until after login', async () => {
+  const user = { id: 'u', loginDevices: [] };
+  const result = await registerLoginDevice(user, { deferSave: true });
+  expect(result.outcome).toBe('ready');
+  expect(updateDoc).not.toHaveBeenCalled();
+  expect(user.loginDevices).toEqual([]);
+  updateDoc.mockResolvedValue();
+  expect(await result.save()).toMatchObject({ outcome: 'ok' });
+  expect(updateDoc).toHaveBeenCalledOnce();
+  expect(await registerLoginDevice({ id: 'u', loginDevices: [{ deviceId: 'current', blocked: true }] }, { deferSave: true }))
+    .toEqual({ outcome: 'blocked' });
+  expect(updateDoc).toHaveBeenCalledOnce();
+});

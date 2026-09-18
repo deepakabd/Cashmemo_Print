@@ -3,6 +3,8 @@ import { getAdmin, LoginError } from './loginService.js';
 import { buildAdminUserRestoreData } from '../src/utils/adminUserRestore.js';
 import { isHashedPin } from './pinCredentials.js';
 import { USER_SINGLETON_PATHS } from '../src/utils/userDataSchema.js';
+import { validateAdminUserPatch } from './adminUserValidation.js';
+import { mutateAdminUserWorkflow } from './adminUserWorkflows.js';
 
 const normalizeCode = (value) => String(value || '').trim().toUpperCase();
 const guardId = (code) => createHash('sha256').update(code).digest('hex');
@@ -17,11 +19,14 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
     throw new LoginError('invalid-input', 'Invalid user write.', 400);
   }
   const code = normalizeCode(data.dealerCode);
-  if (!code || code.length > 128 || (userId != null && !validId(userId))
+  const partialUpdate = mode === 'update' && !Object.hasOwn(data, 'dealerCode');
+  if ((!partialUpdate && (!code || code.length > 128)) || (userId != null && !validId(userId))
     || (mode === 'update' && !userId) || (mode === 'approve' && !validId(requestId))) {
     throw new LoginError('invalid-input', 'Valid dealer code and user ID required.', 400);
   }
-  const patch = { ...(mode === 'restore' ? buildAdminUserRestoreData(data) : data), dealerCode: code, updatedAt: timestamp };
+  const patch = { ...(mode === 'restore' ? buildAdminUserRestoreData(data) : data),
+    ...(!partialUpdate ? { dealerCode: code } : {}), updatedAt: timestamp };
+  for (const field of ['createdAt', 'approvedAt', 'restoredAt']) delete patch[field];
   if (mode === 'restore') {
     if (!isHashedPin(patch.pinHash)) delete patch.pinHash;
     patch.approvalStatus = {};
@@ -30,12 +35,22 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
   delete patch.id;
   delete patch.approved;
   delete patch.confirmPin;
+  validateAdminUserPatch(patch);
   const users = firestore.collection('users');
   const guards = firestore.collection('dealerCodeReservations');
   // Stable across transaction retries; never create multiple auto-IDs on retry.
   const candidateRef = userId ? users.doc(userId) : users.doc();
 
   return firestore.runTransaction(async (tx) => {
+    if (partialUpdate) {
+      const current = await tx.get(candidateRef);
+      if (!current.exists) throw new LoginError('user-not-found', 'User no longer exists.', 404);
+      for (const [field, path] of Object.entries(USER_SINGLETON_PATHS)) {
+        if (Object.hasOwn(patch, field)) tx.set(users.doc(`${candidateRef.id}/${path}`), { value: patch[field], updatedAt: timestamp });
+      }
+      tx.update(candidateRef, patch);
+      return { id: candidateRef.id, dealerCode: current.data().dealerCode || '' };
+    }
     const requestRef = mode === 'approve' ? firestore.collection('registrationRequests').doc(requestId) : null;
     const request = requestRef ? await tx.get(requestRef) : null;
     if (requestRef && !request.exists) {
@@ -110,7 +125,8 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
       }
     }
     // Replace patched maps as complete values, matching their singleton copies.
-    tx.set(targetRef, next, mode === 'restore' ? { merge: false } : { mergeFields: Object.keys(next) });
+    if (current.exists && mode !== 'restore') tx.update(targetRef, next);
+    else tx.set(targetRef, next);
     if (requestRef) {
       tx.set(requestRef, { status: 'approved', approvedUserId: targetRef.id,
         approvedAt: timestamp, approvedBy: actor }, { merge: true });
@@ -133,5 +149,8 @@ export const saveAdminUser = async (authorization, body) => {
   }
   if (claims.role !== 'admin') throw new LoginError('forbidden', 'Admin role required.', 403);
   const { FieldValue } = await import('firebase-admin/firestore');
+  if (['delete', 'reply', 'completeDictionary'].includes(body?.mode)) {
+    return mutateAdminUserWorkflow(firestore, body, FieldValue.serverTimestamp());
+  }
   return saveAdminUserTransaction(firestore, body, FieldValue.serverTimestamp(), claims.email || claims.uid || 'admin');
 };

@@ -1,4 +1,4 @@
-import { fetchAllAdminUsers, fetchAdminPendingUserApprovals, mapAdminUserList } from './adminUserRepository';
+import { fetchAllAdminUsers, mapAdminUserList } from './adminUserRepository';
 import { fetchFirestoreCollectionPageRest, retryFirestoreRequest } from './firestoreRest';
 import { sanitizeUsersForCache } from '../utils/adminUiHelpers';
 import { sanitizeRegistrationRequests } from '../utils/registrationStorage';
@@ -34,29 +34,37 @@ export const readAdminSnapshotCache = () => {
   return null;
 };
 
-const readAll = async (name) => {
+const readAll = async (name, { limit = Infinity, orderBy, where } = {}) => {
   const documents = [];
   const seenTokens = new Set();
   let pageToken = null;
   do {
-    const page = await retryFirestoreRequest(() => fetchFirestoreCollectionPageRest(name, 200, {
-      pageToken, pauseOnForbidden: name === 'adminAuditTrail',
+    const page = await retryFirestoreRequest(() => fetchFirestoreCollectionPageRest(name, Math.min(200, limit - documents.length), {
+      pageToken, orderBy, where, pauseOnForbidden: name === 'adminAuditTrail',
     }));
     documents.push(...page.documents);
+    if (documents.length >= limit) break;
     pageToken = page.nextPageToken;
     if (pageToken && seenTokens.has(pageToken)) throw new Error('Repeated Firestore page token.');
     if (pageToken) seenTokens.add(pageToken);
   } while (pageToken);
-  return documents;
+  return documents.slice(0, limit);
 };
 
 export const loadAdminSnapshot = async (previousSnapshot = null) => {
-  const readUsers = async () => {
-    const users = await fetchAllAdminUsers();
-    return { users, pendingApprovals: await fetchAdminPendingUserApprovals(users) };
+  // The dashboard retains only the latest 150 audit events.
+  const readAudit = () => readAll('adminAuditTrail', { limit: 150, orderBy: 'createdAt desc' });
+  // Pending work comes exclusively from the queue, without user detail reads.
+  // Retain a bounded rejected history for the existing rejected-requests tab.
+  const readApprovals = async () => {
+    const [pending, rejected] = await Promise.all([
+      readAll('updateApprovals', { where: { field: 'status', value: 'pending' } }),
+      readAll('updateApprovals', { limit: 150, where: { field: 'status', value: 'rejected' } }),
+    ]);
+    return [...pending, ...rejected];
   };
   const results = await Promise.allSettled([
-    readAll('registrationRequests'), readUsers(), readAll('updateApprovals'), readAll('adminAuditTrail'),
+    readAll('registrationRequests'), fetchAllAdminUsers(), readApprovals(), readAudit(),
   ]);
   const errors = results.flatMap((result, index) => result.status === 'rejected'
     ? [`${collections[index]}: ${result.reason?.message || 'Firestore read failed.'}`] : []);
@@ -74,8 +82,7 @@ export const loadAdminSnapshot = async (previousSnapshot = null) => {
     version: 1, lastSyncAt: new Date().toISOString(),
     ...Object.fromEntries(results.map((result, index) => [collections[index], result.value])),
   };
-  snapshot.approvals.push(...snapshot.users.pendingApprovals);
-  snapshot.users = snapshot.users.users;
+  snapshot.requests = sanitizeRegistrationRequests(snapshot.requests);
   snapshot.audit = snapshot.audit.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 150);
   // Cache failure cannot turn a successful Firebase read into an offline read.
   try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(sanitizeSnapshot(snapshot))); } catch { /* Optional cache. */ }

@@ -10,7 +10,7 @@ import CashMemoEnglish from './CashMemoEnglish';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet, getLayoutPrintStyles } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { auth, db } from './firebase';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 //TEST
 import './App.css';
 import {
@@ -33,7 +33,6 @@ import {
   getDeviceStatusLabel,
   getDrawerDetailSections,
   getDrawerSummaryRows,
-  maskSecret,
   normalizeLoginDevices,
   sanitizeUserForCache,
   sanitizeUsersForCache,
@@ -126,7 +125,6 @@ import {
 import {
   getApiDictionaryPreviewEntry,
   getDictionaryDocId,
-  isMatchingDictionaryRequest,
   normalizePendingTypeLabel,
 } from './utils/dictionaryHelpers';
 import {
@@ -268,6 +266,7 @@ function App() {
   const [userDealerCode, setUserDealerCode] = useState('');
   const [userPin, setUserPin] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
+  const loginAttemptRef = useRef(0);
   const [dealerWelcome, setDealerWelcome] = useState('');
   const [sampleDataLoaded, setSampleDataLoaded] = useState(false);
   const [sampleDataLoading, setSampleDataLoading] = useState(false);
@@ -760,13 +759,12 @@ function App() {
     }
     try {
       const nextApprovalStatus = { ...(loggedInUser.approvalStatus || {}), [type]: 'pending' };
-      let approvalSaved = false;
+      const batch = writeBatch(db);
 
-      try {
         const approvalsSnap = await getDocs(query(collection(db, 'updateApprovals'), where('userId', '==', loggedInUser.id)));
         const existingPending = approvalsSnap.docs.find((d) => d.data()?.type === type && d.data()?.status === 'pending');
         if (existingPending) {
-          await updateDoc(doc(db, 'updateApprovals', existingPending.id), {
+          batch.update(doc(db, 'updateApprovals', existingPending.id), {
             payload,
             dealerCode: loggedInUser.dealerCode || '',
             dealerName: loggedInUser.dealerName || '',
@@ -774,7 +772,7 @@ function App() {
             updatedAt: serverTimestamp(),
           });
         } else {
-          await addDoc(collection(db, 'updateApprovals'), {
+          batch.set(doc(collection(db, 'updateApprovals')), {
             userId: loggedInUser.id,
             dealerCode: loggedInUser.dealerCode || '',
             dealerName: loggedInUser.dealerName || '',
@@ -785,9 +783,6 @@ function App() {
             updatedAt: serverTimestamp(),
           });
         }
-        approvalSaved = true;
-      } catch (e) { void e; }
-
     const pendingUpdatePatch = {
       approvalStatus: nextApprovalStatus,
       [`pendingUpdates.${type}`]: {
@@ -797,9 +792,11 @@ function App() {
         adminReply: '',
         adminReplyAt: '',
       },
-      lastApprovalStorage: approvalSaved ? 'collection' : 'userDoc',
+      lastApprovalStorage: 'collection',
     };
-      const resolvedId = await updateUserInFirebase(loggedInUser.id, pendingUpdatePatch, loggedInUser.dealerCode);
+      batch.update(doc(db, 'users', loggedInUser.id), { ...pendingUpdatePatch, updatedAt: serverTimestamp() });
+      await batch.commit();
+      const resolvedId = loggedInUser.id;
       updateUserInStore(
         resolvedId,
         (u) => ({
@@ -852,6 +849,7 @@ function App() {
     }
 
     setIsUserLoginSubmitting(true);
+    const loginAttempt = ++loginAttemptRef.current;
     let firestoreUser = null;
     let dealerLookupStatus = 'not-found';
     try {
@@ -896,7 +894,7 @@ function App() {
       return;
     }
 
-    const deviceResult = await registerLoginDevice(firestoreUser);
+    const deviceResult = await registerLoginDevice(firestoreUser, { deferSave: true });
     if (deviceResult.outcome === 'blocked') {
       pushToast('Is device par login blocked hai. Admin se unblock karwaiye.', 'error');
       setIsUserLoginSubmitting(false);
@@ -970,9 +968,26 @@ function App() {
     }
     logRecentActivity('Logged in successfully', localUser?.dealerCode);
     setIsUserLoginSubmitting(false);
+    if (deviceResult.outcome === 'ready') {
+      const signedInUser = auth.currentUser;
+      void deviceResult.save().then((result) => {
+        if (auth.currentUser !== signedInUser || loginAttemptRef.current !== loginAttempt) return;
+        if (result.outcome === 'save-failed') {
+          pushToast('Login device could not be saved to Firestore. Device history was not updated.', 'warning');
+        } else if (result.outcome === 'ok') {
+          setLoggedInUser((current) => current?.id === localUser.id
+            ? { ...current, loginDevices: result.loginDevices } : current);
+        }
+      }).catch(() => {
+        if (auth.currentUser === signedInUser && loginAttemptRef.current === loginAttempt) {
+          pushToast('Login device history could not be saved.', 'warning');
+        }
+      });
+    }
   };
 
   const handleLogout = () => {
+    loginAttemptRef.current += 1;
     hideAllViews();
     clearUserSession();
     onboardingAutoOpenedRef.current = false;
@@ -1724,9 +1739,9 @@ function App() {
 
         const approvalType = normalizeApprovalType(activeApprovalReply.type);
         if (approvalType !== 'dictionary' && !targetUser?.id) throw new Error('User not found for reply.');
-        await saveAdminApprovalReply({ approvalDocId, userId: targetUser?.id, type: approvalType,
+        await saveAdminApprovalReply({ approvalDocId, userId: activeApprovalReply.userId || targetUser?.id, type: approvalType,
           pendingType: activeApprovalReply.type, source: activeApprovalReply.source, message: replyMessage,
-          matchesDictionaryRequest: (request) => isMatchingDictionaryRequest(request, activeApprovalReply, targetUser?.id),
+          approval: activeApprovalReply,
         });
       } catch (error) {
         const reason = error?.message || 'Reply could not be saved to Firestore. Please retry.';
@@ -2351,6 +2366,7 @@ function App() {
         return safeCurrentUser;
         });
         setEditingUserId('');
+        setEditUser((prev) => ({ ...prev, pin: '' }));
         await loadData();
         logAdminActivity('user_updated', { dealerCode: targetUser.dealerCode || '' });
       } catch (error) {
@@ -2372,40 +2388,6 @@ function App() {
     };
 
     const pendingApprovalRequests = updateApprovals.filter((r) => String(r.status || 'pending').toLowerCase() === 'pending');
-    const fallbackPendingApprovals = users.flatMap((u) => {
-      const pendingUpdates = u?.pendingUpdates || {};
-      const pendingUpdateApprovals = Object.entries(pendingUpdates)
-        .filter(([, v]) => String(v?.status || 'pending').toLowerCase() === 'pending')
-        .map(([type, value]) => ({
-          id: `userdoc-${u.id}-${type}`,
-          source: 'userDoc',
-          userId: u.id,
-          dealerCode: u.dealerCode || '',
-          dealerName: u.dealerName || '',
-          type,
-          status: value?.status || 'pending',
-          payload: value?.payload ?? null,
-          requestedAt: value?.requestedAt || '',
-          adminReply: value?.adminReply || '',
-          adminReplyAt: value?.adminReplyAt || '',
-        }));
-      const pendingDictionaryApprovals = (Array.isArray(u?.pendingDictionaryRequests) ? u.pendingDictionaryRequests : [])
-        .filter((request) => String(request?.status || 'pending').toLowerCase() === 'pending')
-        .map((request, idx) => ({
-          id: `userdict-${u.id}-${request?.id || request?.approvalId || idx}`,
-          source: 'userDoc',
-          userId: u.id,
-          dealerCode: request?.dealerCode || u.dealerCode || '',
-          dealerName: request?.dealerName || u.dealerName || '',
-          type: 'dictionary',
-          status: request?.status || 'pending',
-          payload: request?.payload || request,
-          requestedAt: request?.requestedAt || request?.payload?.requestedAt || '',
-          approvalId: request?.approvalId || '',
-          clientRequestId: request?.id || request?.payload?.clientRequestId || '',
-        }));
-      return [...pendingUpdateApprovals, ...pendingDictionaryApprovals];
-    });
     const collectionDictionaryPendingApprovals = pendingApprovalRequests.filter((approval) => (
       normalizeApprovalType(approval.type) === 'dictionary'
     ));
@@ -2414,10 +2396,7 @@ function App() {
       if (approvalType === 'dictionary') {
         return false;
       }
-      const user = users.find((u) => u.id === approval.userId || String(u?.dealerCode || '').trim() === String(approval?.dealerCode || '').trim());
-      const pendingStatus = user?.pendingUpdates?.[approvalType]?.status;
-      if (!pendingStatus) return true;
-      return String(pendingStatus).toLowerCase() === 'pending';
+      return true;
     });
     const getApprovalKey = (approval) => {
       if (!approval) return '';
@@ -2433,7 +2412,7 @@ function App() {
     };
 
     const combinedApprovalMap = new Map();
-    [...collectionPendingApprovals, ...collectionDictionaryPendingApprovals, ...fallbackPendingApprovals].forEach((approval) => {
+    [...collectionPendingApprovals, ...collectionDictionaryPendingApprovals].forEach((approval) => {
       const key = getApprovalKey(approval);
       if (!combinedApprovalMap.has(key)) {
         combinedApprovalMap.set(key, approval);
@@ -2519,9 +2498,9 @@ function App() {
       const approvalDocId = approval.source === 'userDoc' ? approval.approvalId : approval.id;
       const targetUser = users.find((user) => user.id === approval.userId
         || (approval.dealerCode && user.dealerCode === approval.dealerCode));
-      await completeAdminDictionaryRequest(targetUser?.id, approvalDocId,
-        (request) => isMatchingDictionaryRequest(request, approval, targetUser.id), status,
-        approval.id === `userdoc-${targetUser?.id}-${approval.type}` ? approval.type : null);
+      await completeAdminDictionaryRequest(approval.userId || targetUser?.id, approvalDocId,
+        approval, status,
+        approval.pendingType || (approval.id === `userdoc-${targetUser?.id}-${approval.type}` ? approval.type : null));
     };
 
     const flushDictionaryChanges = () => {
@@ -3176,11 +3155,7 @@ function App() {
         : viewRequest
           ? { title: `Request - ${viewRequest?.dealerCode || ''}`, data: viewRequest || {}, noteKey: `request:${viewRequest?.id || ''}`, type: 'request' }
           : null;
-    const activeDrawerData = activeDrawer?.type === 'detail' && /^User - /.test(activeDrawer?.title || '')
-      ? sanitizeUserForCache(activeDrawer?.data || {})
-      : activeDrawer?.type === 'request'
-        ? { ...(activeDrawer?.data || {}), pin: activeDrawer?.data?.pin ? maskSecret(activeDrawer.data.pin, 0) : undefined }
-        : activeDrawer?.data || {};
+    const activeDrawerData = sanitizeUserForCache(activeDrawer?.data || {});
     const activeDrawerDetailSections = getDrawerDetailSections(activeDrawerData);
     const activeSubFilterOptions = adminSubFilterOptions[activeAdminTab] || [{ value: 'all', label: 'All' }];
     const getBulkPreviewItems = (items = []) => items.slice(0, 5).map((item, index) => {
@@ -3910,7 +3885,6 @@ function App() {
                   <th>Email</th>
                   <th>Package</th>
                   <th>Validity</th>
-                  <th>PIN</th>
                   <th>Profile Updated</th>
                   <th>Bank Updated</th>
                   <th>Rate Updated</th>
@@ -3922,7 +3896,7 @@ function App() {
               <tbody>
                 {pagedUsersList.length === 0 ? (
                   <tr>
-                    <td colSpan="14" className="admin-empty-cell">No users match the current search.</td>
+                    <td colSpan="13" className="admin-empty-cell">No users match the current search.</td>
                   </tr>
                 ) : (
                   pagedUsersList.map((u, idx) => {
@@ -3943,7 +3917,6 @@ function App() {
                           {formatDisplayDate(u.validTill)}
                           {getRemainingDays(u.validTill) !== null ? ` (${getRemainingDays(u.validTill)}d)` : ''}
                         </td>
-                        <td>{maskSecret(u.pin, 0)}</td>
                         <td><button type="button" onClick={() => { void openDetailView(u, 'profile'); }}>View</button></td>
                         <td><button type="button" onClick={() => { void openDetailView(u, 'bank'); }}>View</button></td>
                         <td><button type="button" onClick={() => { void openDetailView(u, 'rates'); }}>View</button></td>
@@ -4029,7 +4002,7 @@ function App() {
               </select>
               <input className="form-input" aria-label="Edit User Valid From" type="date" value={editUser.validFrom} onChange={(e) => setEditUser((p) => ({ ...p, validFrom: e.target.value }))} />
               <input className="form-input" aria-label="Edit User Valid Till" type="date" value={editUser.validTill} onChange={(e) => setEditUser((p) => ({ ...p, validTill: e.target.value }))} />
-              <input className="form-input" aria-label="Edit User PIN" placeholder="PIN" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
+              <input className="form-input" aria-label="Edit User PIN" placeholder="PIN" type="password" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
               <select className="form-input" aria-label="Edit User Role" value={editUser.role} onChange={(e) => setEditUser((p) => ({ ...p, role: e.target.value }))}>
                 <option value="operator">Operator</option>
                 <option value="viewer">Viewer</option>
@@ -4065,7 +4038,7 @@ function App() {
             </div>
             <div className="form-actions">
               <button onClick={saveEditedUser} disabled={!canMutateAdminData}>Save User Changes</button>
-              <button onClick={() => setEditingUserId('')}>Cancel</button>
+              <button onClick={() => { setEditingUserId(''); setEditUser((prev) => ({ ...prev, pin: '' })); }}>Cancel</button>
             </div>
           </div>
         )}

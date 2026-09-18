@@ -61,6 +61,44 @@ const loadService = async () => {
 };
 
 describe('authenticated Firestore REST requests', () => {
+  it('filters pending approvals on the server and follows an exclusive document-name cursor', async () => {
+    auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('test-token') };
+    const name = 'projects/test-project/databases/(default)/documents/updateApprovals/a';
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [
+      { document: { name, fields: { status: { stringValue: 'pending' }, payload: { mapValue: { fields: {
+        englishWord: { stringValue: 'Milk' },
+      } } } } } },
+    ] }).mockResolvedValueOnce({ ok: true, json: async () => [{ readTime: 'now' }] });
+    vi.stubGlobal('fetch', fetchMock);
+    const service = await loadService();
+    const options = { where: { field: 'status', value: 'pending' } };
+    const first = await service.fetchFirestoreCollectionPageRest('updateApprovals', 1, options);
+    expect(first).toEqual({ documents: [{ id: 'a', status: 'pending', payload: { englishWord: 'Milk' } }], nextPageToken: name });
+    const second = await service.fetchFirestoreCollectionPageRest('updateApprovals', 1, { ...options, pageToken: first.nextPageToken });
+    expect(second).toEqual({ documents: [], nextPageToken: null });
+    expect(fetchMock.mock.calls[0][0]).toContain('/documents:runQuery?');
+    const request = fetchMock.mock.calls[1][1];
+    expect(request.method).toBe('POST');
+    expect(request.headers.Authorization).toBe('Bearer test-token');
+    expect(JSON.parse(request.body).structuredQuery).toEqual({
+      from: [{ collectionId: 'updateApprovals' }],
+      where: { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'pending' } } },
+      orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }], limit: 1,
+      startAt: { values: [{ referenceValue: name }], before: false },
+    });
+  });
+
+  it('encodes the requested audit ordering and page size', async () => {
+    auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('test-token') };
+    auth.authStateReady.mockResolvedValue(undefined);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ documents: [] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const service = await loadService();
+    await service.fetchFirestoreCollectionPageRest('adminAuditTrail', 150, { orderBy: 'createdAt desc' });
+    const params = new URL(fetchMock.mock.calls[0][0]).searchParams;
+    expect(params.get('orderBy')).toBe('createdAt desc');
+    expect(params.get('pageSize')).toBe('150');
+  });
   it('loads 450 admin users through real REST decoding, including a short intermediate page', async () => {
     auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('test-token') };
     auth.authStateReady.mockResolvedValue(undefined);

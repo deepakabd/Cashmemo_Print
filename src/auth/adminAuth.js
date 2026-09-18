@@ -5,9 +5,9 @@ export { adminSignOut };
 export const adminSignIn = async (loginId, password) => {
   const credential = await signIn(loginId, password);
   try {
-    // Refresh so a recently assigned server-side role is not hidden by a
-    // cached token. Firestore rules remain the authorization boundary.
-    const token = await credential.user.getIdTokenResult(true);
+    // Sign-in already issued a fresh token; refresh only if its admin claim is absent.
+    let token = await credential.user.getIdTokenResult();
+    if (token.claims.role !== 'admin') token = await credential.user.getIdTokenResult(true);
     if (token.claims.role !== 'admin') {
       const error = new Error('This Firebase account does not have the admin role. An authorized administrator must assign its admin custom claim.');
       error.code = 'auth/admin-role-required';

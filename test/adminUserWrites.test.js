@@ -41,6 +41,7 @@ const database = (initial = {}, failCommitFor = '') => {
           return snapshot(target);
         },
         set: (target, data, options) => writes.push({ target, data, options }),
+        update: (target, data) => writes.push({ target, data, update: true }),
         delete: (target) => writes.push({ target, remove: true }),
       };
       const result = await callback(tx);
@@ -48,8 +49,19 @@ const database = (initial = {}, failCommitFor = '') => {
       if (failCommitFor && writes.some(({ target }) => target.path.startsWith(failCommitFor))) {
         throw new Error('Commit failed');
       }
-      for (const { target, data, options, remove } of writes) {
+      for (const { target, data, options, remove, update } of writes) {
         if (remove) records.delete(target.path);
+        else if (update) {
+          if (!records.has(target.path)) throw new Error('Missing update target');
+          const next = structuredClone(records.get(target.path));
+          for (const [field, value] of Object.entries(data)) {
+            const keys = field.split('.');
+            let parent = next;
+            for (const key of keys.slice(0, -1)) parent = parent[key] ??= {};
+            parent[keys.at(-1)] = value;
+          }
+          records.set(target.path, next);
+        }
         else records.set(target.path, options?.merge || options?.mergeFields ? { ...records.get(target.path), ...data } : data);
         versions.set(target.path, (versions.get(target.path) || 0) + 1);
       }
@@ -64,6 +76,54 @@ const create = (firestore, code, mode = 'create', userId) => saveAdminUserTransa
     data: { dealerCode: code, dealerName: 'Test', status: 'active' } }, 'timestamp');
 
 describe('server dealer code uniqueness', () => {
+  it('updates partial fields and dotted approval status while preserving the dealer code and singleton copies', async () => {
+    const { firestore, records } = database({ 'users/a': { dealerCode: '123', status: 'active',
+      pendingUpdates: { rates: { status: 'pending', payload: [{ rate: 10 }] } } } });
+    await saveAdminUserTransaction(firestore, { mode: 'update', userId: 'a', data: {
+      ratesData: [{ rate: 20 }], 'pendingUpdates.rates.status': 'approved', mobile: '9876543210',
+    } }, 'timestamp');
+    expect(records.get('users/a')).toMatchObject({ dealerCode: '123', mobile: '9876543210', ratesDataCount: 1,
+      pendingUpdates: { rates: { status: 'approved', payload: [{ rate: 10 }] } } });
+    expect(records.get('users/a/rates/current')).toEqual({ value: [{ rate: 20 }], updatedAt: 'timestamp' });
+  });
+
+  it.each([{ mobile: '123' }, { package: 'unknown' }, { status: 'unknown' }, { ratesData: {} }, { 'dealerCode.value': '456' }])
+    ('rejects invalid partial data %j before any writes', async (data) => {
+      const { firestore, records } = database({ 'users/a': { dealerCode: '123' } });
+      await expect(saveAdminUserTransaction(firestore, { mode: 'update', userId: 'a', data }, 'timestamp'))
+        .rejects.toMatchObject({ status: 400, code: 'invalid-input' });
+      expect([...records.entries()]).toEqual([['users/a', { dealerCode: '123' }]]);
+    });
+
+  it('refuses partial patches to missing users', async () => {
+    const { firestore, records } = database();
+    await expect(saveAdminUserTransaction(firestore, { mode: 'update', userId: 'missing', data: { status: 'active' } }, 'timestamp'))
+      .rejects.toMatchObject({ status: 404, code: 'user-not-found' });
+    expect(records.size).toBe(0);
+  });
+
+  it('publishes neither parent nor singleton changes when a partial update cannot commit', async () => {
+    const before = { 'users/a': { dealerCode: '123', ratesData: [{ rate: 10 }] },
+      'users/a/rates/current': { value: [{ rate: 10 }] } };
+    const { firestore, records } = database(before, 'users/a/rates/');
+    await expect(saveAdminUserTransaction(firestore, { mode: 'update', userId: 'a', data: { ratesData: [{ rate: 20 }] } }, 'timestamp'))
+      .rejects.toThrow('Commit failed');
+    expect([...records.entries()]).toEqual(Object.entries(before));
+  });
+
+  it('dispatches an authenticated deletion through the server transaction', async () => {
+    const { firestore, records } = database({ 'users/a': { dealerCode: '123' } });
+    sdk.firestore = firestore;
+    sdk.verifyIdToken.mockResolvedValueOnce({ role: 'admin', uid: 'admin' });
+    expect(await saveAdminUser('Bearer admin', { mode: 'delete', userId: 'a' })).toEqual({ id: 'a' });
+    expect(records.has('users/a')).toBe(false);
+  });
+
+  it.each(['delete', 'reply', 'completeDictionary'])('requires an admin claim for workflow %s', async (mode) => {
+    sdk.verifyIdToken.mockResolvedValueOnce({ role: 'operator' });
+    await expect(saveAdminUser('Bearer dealer', { mode, userId: 'a' })).rejects.toMatchObject({ status: 403 });
+  });
+
   it('commits activation, request completion and one audit together, and replays without rewriting the user', async () => {
     const { firestore, records } = database({
       'registrationRequests/request': { dealerCode: '123', status: 'pending' },
@@ -75,7 +135,7 @@ describe('server dealer code uniqueness', () => {
     });
     const before = [...records.entries()];
     expect(await saveAdminUserTransaction(firestore, { mode: 'approve', requestId: 'request',
-      data: { dealerCode: '123', package: 'different', validTill: '2999-01-01' } }, 'later'))
+      data: { dealerCode: '123', package: 'Enterprise Package - 365 Days', validTill: '2999-01-01' } }, 'later'))
       .toEqual({ id: first.id, dealerCode: '123', alreadyApproved: true });
     expect([...records.entries()]).toEqual(before);
     expect([...records.keys()].filter((path) => path.startsWith('adminAuditTrail/'))).toHaveLength(1);
@@ -128,7 +188,7 @@ describe('server dealer code uniqueness', () => {
     const { firestore, records } = database();
     const pinHash = await hashPin('1234');
     await saveAdminUserTransaction(firestore, { mode: 'restore', userId: 'deleted', data: {
-      dealerCode: '123', dealerName: 'Dealer', package: 'gold', status: 'active',
+      dealerCode: '123', dealerName: 'Dealer', package: 'Premium Package - 30 Days', status: 'active',
       profileData: { distributorName: 'Dealer' }, ratesData: [{ rate: 10 }], pinHash,
       pin: '1234', confirmPin: '1234', approved: false, blocked: true, expired: true,
       authUid: 'old-auth', uid: 'old', loginDevices: [{ deviceId: 'old' }],
@@ -138,7 +198,7 @@ describe('server dealer code uniqueness', () => {
       createdAt: 'old', restoredBy: 'admin', restoreCount: 1,
     } }, 'timestamp');
     const restored = records.get('users/deleted');
-    expect(restored).toEqual({ dealerCode: '123', dealerName: 'Dealer', package: 'gold', status: 'active',
+    expect(restored).toEqual({ dealerCode: '123', dealerName: 'Dealer', package: 'Premium Package - 30 Days', status: 'active',
       profileData: { distributorName: 'Dealer' }, ratesData: [{ rate: 10 }], ratesDataCount: 1, pinHash,
       role: 'operator', approvalStatus: {}, restoredBy: 'admin', restoreCount: 1,
       createdAt: 'timestamp', updatedAt: 'timestamp', approvedAt: 'timestamp', restoredAt: 'timestamp',

@@ -72,7 +72,7 @@ export const lookupDealerByCode = async (dealerCode, pin) => {
   }
   if (!result.token || !result.dealerCode) throw new Error('Login API returned an invalid sign-in response.');
   const credential = await signInWithCustomToken(auth, result.token);
-  await credential.user.getIdToken(true);
+  await credential.user.getIdToken();
   let documents;
   if (result.userId) {
     const snapshot = await getDoc(doc(db, 'users', result.userId));
@@ -114,7 +114,7 @@ export const buildPinWritePatch = async (pin) => {
   return value ? { pin: value, pinHash: null, pinUpdatedAt: new Date().toISOString() } : {};
 };
 
-export const registerLoginDevice = async (firestoreUser) => {
+export const registerLoginDevice = async (firestoreUser, { deferSave = false } = {}) => {
   // NOTE: ye client-side convenience check hai, security boundary nahi.
   // blocked flag client ke apne fetch kiye loginDevices par decide hota hai,
   // aur naye deviceId se (localStorage clear) block bypass ho sakta hai.
@@ -126,21 +126,24 @@ export const registerLoginDevice = async (firestoreUser) => {
   );
   if (currentDevice?.blocked) return { outcome: "blocked" };
 
-  const loginDevices = upsertLoginDevice(
-    firestoreUser.loginDevices,
-    currentDeviceInfo,
-  );
-  try {
-    await updateDoc(doc(db, "users", firestoreUser.id), {
-      loginDevices,
-      lastLoginAt: loginDevices[0]?.lastLoginAt || new Date().toISOString(),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    return { outcome: 'save-failed', error };
-  }
-  firestoreUser.loginDevices = loginDevices;
-  return { outcome: "ok", loginDevices };
+  const save = async () => {
+    const loginDevices = upsertLoginDevice(
+      firestoreUser.loginDevices,
+      currentDeviceInfo,
+    );
+    try {
+      await updateDoc(doc(db, "users", firestoreUser.id), {
+        loginDevices,
+        lastLoginAt: loginDevices[0]?.lastLoginAt || new Date().toISOString(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      return { outcome: 'save-failed', error };
+    }
+    firestoreUser.loginDevices = loginDevices;
+    return { outcome: "ok", loginDevices };
+  };
+  return deferSave ? { outcome: 'ready', save } : save();
 };
 
 export const markUserExpiredIfDue = async (firestoreUser) => {
