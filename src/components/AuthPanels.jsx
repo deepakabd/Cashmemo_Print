@@ -265,6 +265,8 @@ export const AdminLoginPanel = ({
 );
 
 export const UserLoginPanel = ({
+  deviceUserName = '',
+  setDeviceUserName,
   userDealerCode,
   setUserDealerCode,
   userPinVisible,
@@ -319,6 +321,13 @@ export const UserLoginPanel = ({
               value={userPin}
               onChange={(e) => setUserPin(e.target.value)}
             />
+          </div>
+          <div>
+            <label className="auth-field-label" htmlFor="login-device-user-name">Device user name (optional)</label>
+            <input id="login-device-user-name" className="form-input" placeholder="e.g. Deepak / Office operator"
+              autoComplete="off" maxLength={100} value={deviceUserName} disabled={isUserLoginSubmitting}
+              onChange={(e) => setDeviceUserName?.(e.target.value)} aria-describedby="login-device-user-help" />
+            <small id="login-device-user-help">Is device par login karne wale vyakti ka naam enter karein. System username automatically available nahi hai.</small>
           </div>
           <div className="login-help-row">
             <label className="login-help-checkbox">

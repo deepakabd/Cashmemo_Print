@@ -181,14 +181,50 @@ export const getLoginDeviceName = (device = {}) => {
   return savedName || 'Unknown device';
 };
 
-export const getCurrentDeviceInfo = async () => {
+const DEVICE_USER_NAME_KEY = 'cashmemoDeviceUserName';
+export const readDeviceUserName = () => {
+  try { return String(localStorage.getItem(DEVICE_USER_NAME_KEY) || '').trim().slice(0, 100); } catch { return ''; }
+};
+export const rememberDeviceUserName = (name) => {
+  try { localStorage.setItem(DEVICE_USER_NAME_KEY, String(name || '').trim().slice(0, 100)); } catch { /* Optional preference. */ }
+};
+
+export const getLoginSystemInfo = (device = {}, hints = {}) => {
+  const ua = String(device.userAgent || '');
+  const browserMatch = ua.match(/(EdgA|EdgiOS|Edg|OPR|CriOS|Chrome|FxiOS|Firefox)\/([\d.]+)/);
+  const browserNames = { EdgA: 'Microsoft Edge', EdgiOS: 'Microsoft Edge', Edg: 'Microsoft Edge', OPR: 'Opera',
+    CriOS: 'Chrome', Chrome: 'Chrome', FxiOS: 'Firefox', Firefox: 'Firefox' };
+  // Edge and Opera UAs also contain Chrome, so prefer their own version token.
+  const preferred = ua.match(/(EdgA|EdgiOS|Edg|OPR)\/([\d.]+)/) || browserMatch;
+  const browser = preferred ? browserNames[preferred[1]] : /Safari\//.test(ua) ? 'Safari' : '';
+  const fullVersion = (hints.fullVersionList || []).find((entry) =>
+    ({ 'Microsoft Edge': 'Microsoft Edge', Chrome: 'Google Chrome', Opera: 'Opera' }[browser] || browser) === entry.brand)?.version;
+  const platform = String(hints.platform || device.platform || '');
+  const os = /Android/i.test(`${ua} ${platform}`) ? 'Android'
+    : /iPhone|iPad/i.test(ua) || (/Mac/i.test(platform) && device.maxTouchPoints > 1) ? 'iOS / iPadOS'
+      : /Win/i.test(`${ua} ${platform}`) ? 'Windows'
+        : /CrOS/i.test(ua) ? 'ChromeOS' : /Mac/i.test(`${ua} ${platform}`) ? 'macOS'
+          : /Linux/i.test(`${ua} ${platform}`) ? 'Linux' : platform;
+  return {
+    browser: String(device.browser || browser || 'Browser'),
+    browserVersion: String(device.browserVersion || fullVersion || preferred?.[2] || ua.match(/Version\/([\d.]+)/)?.[1] || ''),
+    os: String(device.os || os),
+    // UA platform versions are reported values, not a verified Windows edition.
+    osVersion: String(device.osVersion || hints.platformVersion
+      || ua.match(/(?:Android |Windows NT |(?:CPU (?:iPhone )?OS |Mac OS X ))([\d._]+)/)?.[1]?.replaceAll('_', '.') || ''),
+    architecture: String(device.architecture || hints.architecture || ''),
+    bitness: String(device.bitness || hints.bitness || ''),
+  };
+};
+
+export const getCurrentDeviceInfo = async ({ deviceUserName = '' } = {}) => {
   const nav = typeof navigator !== 'undefined' ? navigator : {};
   let hints = {};
   let hintsTimeout;
   try {
     if (nav.userAgentData?.getHighEntropyValues) {
       hints = await Promise.race([
-        nav.userAgentData.getHighEntropyValues(['model']),
+        nav.userAgentData.getHighEntropyValues(['model', 'platformVersion', 'architecture', 'bitness', 'fullVersionList']),
         new Promise((resolve) => { hintsTimeout = setTimeout(() => resolve({}), 700); }),
       ]);
     }
@@ -202,21 +238,15 @@ export const getCurrentDeviceInfo = async () => {
     : 'unknown-screen';
   const userAgent = String(nav.userAgent || 'Unknown browser');
   const platform = String(hints.platform || nav.userAgentData?.platform || nav.platform || 'Unknown platform');
-  const browserName = userAgent.includes('Edg/')
-    ? 'Microsoft Edge'
-    : userAgent.includes('Chrome/')
-      ? 'Chrome'
-      : userAgent.includes('Firefox/')
-        ? 'Firefox'
-        : userAgent.includes('Safari/')
-          ? 'Safari'
-          : 'Browser';
 
   return {
     deviceId: getCurrentDeviceId(),
     deviceName: getLoginDeviceName({ userAgent, platform, model: hints.model, mobile: nav.userAgentData?.mobile, maxTouchPoints: nav.maxTouchPoints }),
     model: String(hints.model || ''),
-    browser: browserName,
+    ...getLoginSystemInfo({ userAgent, platform, maxTouchPoints: nav.maxTouchPoints }, hints),
+    deviceUserName: String(deviceUserName || '').trim().slice(0, 100),
+    language: String(nav.language || ''),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
     platform,
     screen: screenInfo,
     userAgent,
@@ -228,10 +258,14 @@ export const normalizeLoginDevices = (devices = []) => (
     ? devices
       .filter((device) => device && typeof device === 'object')
       .map((device) => ({
+        ...getLoginSystemInfo(device),
         deviceId: String(device.deviceId || device.id || '').trim(),
         deviceName: getLoginDeviceName(device),
         model: String(device.model || '').trim(),
-        browser: String(device.browser || '').trim(),
+        accountName: String(device.accountName || '').trim(),
+        deviceUserName: String(device.deviceUserName || '').trim().slice(0, 100),
+        language: String(device.language || '').trim(),
+        timezone: String(device.timezone || '').trim(),
         platform: String(device.platform || '').trim(),
         screen: String(device.screen || '').trim(),
         userAgent: String(device.userAgent || '').trim(),
