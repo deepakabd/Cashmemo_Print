@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import AdminPage from '../src/AdminPage';
+import { loadAdminSnapshot } from '../src/services/adminDataRepository';
+import { getAdminUserStatistics } from '../src/services/adminUserRepository';
 import { fetchFirestoreCollectionPageRest } from '../src/services/firestoreRest';
 
 vi.mock('../src/firebase', () => ({ auth: {}, db: {} }));
@@ -13,10 +13,10 @@ vi.mock('../src/services/userSubcollections', () => ({
 vi.mock('../src/services/firestoreRest', () => ({
   fetchFirestoreCollectionPageRest: vi.fn(), fetchFirestoreDocumentRest: vi.fn(), retryFirestoreRequest: (fn) => fn(),
 }));
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
+afterEach(() => { vi.resetAllMocks(); localStorage.clear(); });
 
-it('renders counters and rows from all repository pages using canonical status despite contradictory legacy flags', async () => {
-  fetchFirestoreCollectionPageRest
+it('loads all users into the production snapshot and computes canonical counters despite contradictory legacy flags', async () => {
+  const usersPage = vi.fn()
     .mockResolvedValueOnce({ documents: Array.from({ length: 200 }, (_, index) => ({
       id: `u-${index}`, dealerCode: `${index}`, status: 'active', approved: false, blocked: true,
     })), nextPageToken: 'second' })
@@ -27,13 +27,14 @@ it('renders counters and rows from all repository pages using canonical status d
       { id: 'tail-pending', status: 'pending', active: true },
       { id: 'tail-legacy', approved: true, active: true },
     ], nextPageToken: null });
-  render(<AdminPage />);
-  expect(await screen.findByText('Total Users: 205')).toBeTruthy();
-  for (const label of ['Active Users: 201', 'Blocked Users: 1', 'Expired Users: 1', 'Pending Accounts: 2']) {
-    expect(screen.getByText(label)).toBeTruthy();
-  }
-  expect(screen.getByText('41012345')).toBeTruthy();
-  expect(screen.getAllByRole('row')).toHaveLength(206);
-  expect(fetchFirestoreCollectionPageRest).toHaveBeenNthCalledWith(2, 'users', 200,
+  fetchFirestoreCollectionPageRest.mockImplementation((name, size, options) => name === 'users'
+    ? usersPage(name, size, options) : Promise.resolve({ documents: [], nextPageToken: null }));
+  const { snapshot, health } = await loadAdminSnapshot();
+  expect(health.source).toBe('live');
+  expect(snapshot.users).toHaveLength(205);
+  expect(getAdminUserStatistics(snapshot.users)).toMatchObject({ total: 205,
+    byStatus: { active: 201, disabled: 1, expired: 1, pending: 2 } });
+  expect(snapshot.users).toContainEqual(expect.objectContaining({ dealerCode: '41012345' }));
+  expect(usersPage).toHaveBeenNthCalledWith(2, 'users', 200,
     expect.objectContaining({ pageToken: 'second' }));
 });

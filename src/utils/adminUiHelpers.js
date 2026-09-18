@@ -2,6 +2,8 @@ export const sanitizeUserForCache = (user = {}) => {
   if (!user || typeof user !== 'object') return user;
   const nextUser = { ...user };
   delete nextUser.pin;
+  delete nextUser.pinHash;
+  delete nextUser.confirmPin;
   delete nextUser.approved;
   return nextUser;
 };
@@ -75,7 +77,7 @@ export const getDrawerSummaryRows = ({
       { label: 'Requested At', value: formatDisplayDateTime(data?.createdAt || data?.approvedAt) },
     ];
   }
-  return Object.entries(data || {})
+  return Object.entries(sanitizeUserForCache(data))
     .slice(0, 8)
     .map(([label, value]) => ({
       label,
@@ -101,7 +103,7 @@ export const formatDrawerFieldValue = (value) => {
 };
 
 export const getDrawerDetailSections = (data = {}) => {
-  const entries = Object.entries(data || {});
+  const entries = Object.entries(sanitizeUserForCache(data));
   const hiddenKeys = new Set(['approvalStatus', 'profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates', 'lastUploadedData']);
   const simpleFields = [];
   const groupedFields = [];

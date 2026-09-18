@@ -6,7 +6,7 @@ import { fetchFirestoreCollectionPageRest } from '../src/services/firestoreRest'
 import AdminDataStatus from '../src/components/AdminDataStatus';
 
 vi.mock('../src/services/adminUserRepository', () => ({
-  fetchAllAdminUsers: vi.fn(), fetchAdminPendingUserApprovals: async () => [], mapAdminUserList: (user) => user,
+  fetchAllAdminUsers: vi.fn(), mapAdminUserList: (user) => user,
 }));
 vi.mock('../src/services/firestoreRest', () => ({
   fetchFirestoreCollectionPageRest: vi.fn(), retryFirestoreRequest: (fn) => fn(),
@@ -21,6 +21,36 @@ beforeEach(() => {
 });
 
 describe('admin snapshot provenance', () => {
+  it('queries the pending queue without reading individual pending users', async () => {
+    fetchAllAdminUsers.mockResolvedValue(Array.from({ length: 1000 }, (_, index) => ({
+      id: `user-${index}`, pendingUpdates: { profile: { status: 'pending' } }, dictionaryPendingCount: 1,
+    })));
+    fetchFirestoreCollectionPageRest.mockImplementation(async (name, size, options) => ({
+      documents: name === 'updateApprovals' && options.where?.value === 'pending'
+        ? [{ id: 'queued', status: 'pending', payload: { distributorName: 'Dealer' } }] : [],
+      nextPageToken: null,
+    }));
+    const result = await loadAdminSnapshot();
+    expect(result.snapshot.users).toHaveLength(1000);
+    expect(result.snapshot.approvals).toEqual([{ id: 'queued', status: 'pending', payload: { distributorName: 'Dealer' } }]);
+    expect(fetchFirestoreCollectionPageRest).toHaveBeenCalledTimes(4);
+    expect(fetchFirestoreCollectionPageRest).toHaveBeenCalledWith('updateApprovals', 200,
+      expect.objectContaining({ where: { field: 'status', value: 'pending' } }));
+    expect(fetchAllAdminUsers).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads only the latest 150 audit entries instead of downloading the full history', async () => {
+    fetchFirestoreCollectionPageRest.mockImplementation(async (name) => ({
+      documents: name === 'adminAuditTrail' ? Array.from({ length: 150 }, (_, i) => ({ id: `audit-${i}` })) : [],
+      nextPageToken: name === 'adminAuditTrail' ? 'older-events' : null,
+    }));
+    const result = await loadAdminSnapshot();
+    expect(result.health.source).toBe('live');
+    expect(result.snapshot.audit).toHaveLength(150);
+    const calls = fetchFirestoreCollectionPageRest.mock.calls.filter(([name]) => name === 'adminAuditTrail');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(['adminAuditTrail', 150, expect.objectContaining({ orderBy: 'createdAt desc' })]);
+  });
   it.each([true, false])('does not mark approvals-only success as live (cache available=%s)', async (hasCache) => {
     const previous = hasCache ? cached() : null;
     fetchAllAdminUsers.mockRejectedValue(new Error('users unavailable'));
@@ -66,6 +96,7 @@ describe('admin snapshot provenance', () => {
     const result = await loadAdminSnapshot();
     expect(result.health.source).toBe('live');
     expect(result.health.lastSyncAt).toBe(result.snapshot.lastSyncAt);
+    expect(result.snapshot.requests).toEqual([{ id: 'request' }]);
     const stored = JSON.parse(localStorage.getItem('adminDataSnapshot'));
     expect(stored.requests).toEqual([{ id: 'request' }]);
     expect(stored.users).toEqual([{ id: 'live', status: 'active' }]);
@@ -119,8 +150,8 @@ describe('admin snapshot provenance', () => {
 
   it('follows continuation pages for requests and approvals', async () => {
     fetchFirestoreCollectionPageRest.mockImplementation(async (name, size, options) => ({
-      documents: [{ id: `${name}-${options.pageToken || 'first'}` }],
-      nextPageToken: name === 'adminAuditTrail' || options.pageToken ? null : 'second',
+      documents: options.where?.value === 'rejected' ? [] : [{ id: `${name}-${options.pageToken || 'first'}` }],
+      nextPageToken: options.where?.value === 'rejected' || name === 'adminAuditTrail' || options.pageToken ? null : 'second',
     }));
     const result = await loadAdminSnapshot();
     expect(result.snapshot.requests).toHaveLength(2);

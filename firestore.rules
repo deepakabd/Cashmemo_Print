@@ -93,23 +93,17 @@ service cloud.firestore {
       // Creation and dealer-code changes go through the trusted transaction
       // endpoint, which enforces uniqueness against legacy and new users.
       allow create: if false;
-      allow delete: if isAdmin();
+      allow delete: if false;
 
-      // Update is a single rule covering both cases (Firestore ORs multiple
-      // `allow update` statements, so a careless second rule would grant more
-      // than intended):
-      //   * an admin may update fields other than dealerCode directly;
-      //   * a dealer may update only their own doc, only while their account is
-      //     active, and never the credential/privilege fields.
-      allow update: if configCopiesMatch(userId) && ((isAdmin() && pinFieldsSafe()
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerCode']))
-        || (
+      // Admin mutations use the authenticated server endpoint. Direct writes
+      // remain available only for a dealer's permitted self-service fields.
+      allow update: if !isAdmin() && configCopiesMatch(userId) && (
           (isSelf(userId) || isOwnDealerDoc())
           && isActiveAccount()
           && pinFieldsSafe()
           && !request.resource.data.diff(resource.data).affectedKeys()
                .hasAny(['dealerCode', 'role', 'status', 'package', 'packageDays', 'validFrom', 'validTill', 'pinHash', 'pin', 'authUid', 'approvalStatus'])
-        ));
+        );
 
       match /{group}/{item} {
         function configField() {
@@ -127,7 +121,7 @@ service cloud.firestore {
         }
         allow read: if configField() != '' && (isAdmin() || ownsParent());
         allow create, update: if configField() != ''
-          && (isAdmin() || (ownsParent() && isActiveAccount()))
+          && !isAdmin() && ownsParent() && isActiveAccount()
           && request.resource.data.keys().hasOnly(['value', 'updatedAt'])
           && request.resource.data.value
             == getAfter(/databases/$(database)/documents/users/$(userId)).data[configField()];

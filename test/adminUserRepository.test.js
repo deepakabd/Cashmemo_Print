@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchAllAdminUsers, fetchAdminUserDetail, fetchAdminPendingUserApprovals, getAdminUserStatistics } from '../src/services/adminUserRepository';
+import { fetchAllAdminUsers, fetchAdminUserDetail, getAdminUserStatistics } from '../src/services/adminUserRepository';
 import { fetchFirestoreCollectionPageRest, fetchFirestoreDocumentRest } from '../src/services/firestoreRest';
 import { getDoc } from 'firebase/firestore';
 import { readUserSubcollections } from '../src/services/userSubcollections';
@@ -68,21 +68,6 @@ describe('complete admin user repository', () => {
     const fallback = fetchAdminUserDetail('detail');
     await vi.advanceTimersByTimeAsync(1500);
     expect(await fallback).toEqual(rest);
-  });
-
-  it('loads approval payloads only for pending users, using a dedicated document mask', async () => {
-    fetchFirestoreDocumentRest.mockResolvedValueOnce({ pendingUpdates: {
-      rates: { status: 'pending', payload: [{ rate: 20 }] }, profile: { status: 'approved' },
-    } });
-    const result = await fetchAdminPendingUserApprovals([
-      { id: 'pending', dealerCode: '123', pendingUpdates: { rates: { status: 'pending' } } },
-      { id: 'complete', dealerCode: '456', pendingUpdates: { profile: { status: 'approved' } } },
-    ]);
-    expect(result).toMatchObject([{ userId: 'pending', source: 'userDoc', type: 'rates', payload: [{ rate: 20 }] }]);
-    expect(fetchFirestoreDocumentRest).toHaveBeenCalledTimes(1);
-    expect(fetchFirestoreDocumentRest).toHaveBeenCalledWith('users', 'pending', {
-      fieldPaths: ['pendingUpdates', 'pendingDictionaryRequests'],
-    });
   });
 
   it('includes users beyond 200, missing dealer codes, and cross-page duplicates in statistics', async () => {

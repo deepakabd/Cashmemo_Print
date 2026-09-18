@@ -65,10 +65,11 @@ const request = async (path, { pauseOnForbidden = false } = {}) => {
   return operation;
 };
 
-const sendRequest = async (path, user) => {
+const sendRequest = async (path, user, body) => {
   const token = await user.getIdToken();
-  const response = await fetch(`${baseUrl()}/${path}${path.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const response = await fetch(`${baseUrl()}${path.startsWith(':') ? '' : '/'}${path}${path.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey)}`, {
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
     const details = await response.json().catch(() => null);
@@ -81,9 +82,27 @@ const sendRequest = async (path, user) => {
 };
 
 export const fetchFirestoreCollectionPageRest = async (collectionName, pageSize = 200, options = {}) => {
+  if (options.where) {
+    await auth.authStateReady();
+    if (!auth.currentUser) throw new Error('Firebase sign-in required. Please log in again.');
+    const { field, value } = options.where;
+    const rows = await sendRequest(':runQuery', auth.currentUser, { structuredQuery: {
+      from: [{ collectionId: collectionName }],
+      where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: value } } },
+      orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+      limit: pageSize,
+      ...(options.pageToken ? { startAt: { values: [{ referenceValue: options.pageToken }], before: false } } : {}),
+    } });
+    const documents = rows.filter((row) => row.document).map(({ document }) => ({
+      ...decodeFields(document.fields), id: document.name.split('/').pop(),
+    }));
+    const last = rows.filter((row) => row.document).at(-1)?.document;
+    return { documents, nextPageToken: documents.length === pageSize ? last.name : null };
+  }
   const pageToken = options.pageToken ? `&pageToken=${encodeURIComponent(options.pageToken)}` : '';
   const mask = (options.fieldPaths || []).map((path) => `&mask.fieldPaths=${encodeURIComponent(path)}`).join('');
-  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}${pageToken}${mask}`, options);
+  const order = options.orderBy ? `&orderBy=${encodeURIComponent(options.orderBy)}` : '';
+  const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}${pageToken}${mask}${order}`, options);
   const documents = (data.documents || []).map((document) => ({
     id: document.name.split('/').pop(),
     ...decodeFields(document.fields),

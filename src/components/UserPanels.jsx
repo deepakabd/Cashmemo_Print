@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, arrayUnion, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { arrayUnion, collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import { getAccessState } from '../app/permissions';
@@ -732,11 +732,12 @@ export const DictionaryRequestPanel = ({
       };
     });
 
-    let approvalSavedCount = 0;
     try {
-      try {
-        const approvalRefs = await Promise.all(
-          pendingRequests.map((request) => addDoc(collection(db, 'updateApprovals'), {
+        const batch = writeBatch(db);
+        pendingRequests.forEach((request) => {
+          const approvalRef = doc(collection(db, 'updateApprovals'));
+          request.approvalId = approvalRef.id;
+          batch.set(approvalRef, {
             userId: loggedInUser.id,
             dealerCode: loggedInUser.dealerCode || '',
             dealerName: loggedInUser.dealerName || '',
@@ -745,23 +746,14 @@ export const DictionaryRequestPanel = ({
             status: 'pending',
             requestedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          }))
-        );
-        approvalRefs.forEach((approvalRef, index) => {
-          pendingRequests[index].approvalId = approvalRef.id;
+          });
         });
-        approvalSavedCount = approvalRefs.length;
-      } catch (e) { void e; }
-
-      try {
-        await updateDoc(doc(db, 'users', loggedInUser.id), {
+        batch.update(doc(db, 'users', loggedInUser.id), {
           dictionaryPendingCount: nextPendingCount,
           pendingDictionaryRequests: arrayUnion(...pendingRequests),
           updatedAt: serverTimestamp(),
         });
-      } catch {
-        if (!approvalSavedCount) throw new Error('DICTIONARY_REQUEST_NOT_SAVED');
-      }
+        await batch.commit();
 
       updateUserInStore(
         loggedInUser.id,
