@@ -1,5 +1,9 @@
 import BulkConsumerImport from './components/BulkConsumerImport';
 import InvoiceCorrections from './components/InvoiceCorrections';
+import InventoryCashRegister from './components/InventoryCashRegister';
+import WorkspaceActionButton from './components/WorkspaceActionButton';
+import { defaultCommands } from './utils/workspaceCommands';
+import WorkspaceCommandSettings from './components/WorkspaceCommandSettings';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -133,8 +137,23 @@ function InvoiceWorkspace({ loggedInUser }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const dealerStorageKey = String(loggedInUser?.dealerCode || loggedInUser?.profileData?.distributorCode || 'guest').trim() || 'guest';
+  const [commands, setCommands] = useState(() => {
+    try { const saved = JSON.parse(localStorage.getItem(`cashmemoCommands_${dealerStorageKey}`) || '{}'); return Object.fromEntries(Object.entries(defaultCommands).map(([key, value]) => [key, typeof saved?.[key] === 'boolean' ? saved[key] : value])); } catch { return { ...defaultCommands }; }
+  });
+  const changeCommand = (key, visible) => {
+    const next = { ...commands, [key]: visible };
+    setCommands(next);
+    try { localStorage.setItem(`cashmemoCommands_${dealerStorageKey}`, JSON.stringify(next)); } catch { /* Preferences still apply for this session. */ }
+  };
   const invoiceDraftStorageKey = `cashmemoInvoiceDraft_${dealerStorageKey}`;
   const savedInvoicesStorageKey = `cashmemoSavedInvoices_${dealerStorageKey}`;
+  const [inventoryEntries, setInventoryEntries] = useState(() => {
+    try { const records = JSON.parse(localStorage.getItem(`cashmemoInventoryRegister_${dealerStorageKey}`) || '[]'); return Array.isArray(records) ? records : []; } catch { return []; }
+  });
+  const cacheInventory = (records) => {
+    setInventoryEntries(records);
+    try { localStorage.setItem(`cashmemoInventoryRegister_${dealerStorageKey}`, JSON.stringify(records)); } catch { /* Optional offline cache. */ }
+  };
   const initialInvoiceRates = (() => {
     try {
       const userRates = Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null;
@@ -176,7 +195,7 @@ function InvoiceWorkspace({ loggedInUser }) {
     accountNo: '',
     ifsc: '',
   };
-  const [invoiceRates] = useState(initialInvoiceRates);
+  const invoiceRates = initialInvoiceRates;
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [invoiceRows, setInvoiceRows] = useState([
     { id: `row-${Date.now()}`, item: '', quantity: 1, customRate: '', discount: '' },
@@ -255,6 +274,7 @@ function InvoiceWorkspace({ loggedInUser }) {
       if (generation !== syncGeneration.current) return;
       cacheRecords(result.invoices.map(normalizeSavedInvoiceRecord)); setBulkCustomers(result.consumers);
       setAdjustments(result.adjustments || []);
+      cacheInventory(result.inventoryEntries || []);
       try { localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(result.consumers)); } catch { /* Optional cache. */ }
       setCloudStatus('live');
     } catch (error) { if (generation === syncGeneration.current) { setBillingError(error.message); setCloudStatus('offline'); } }
@@ -1142,19 +1162,6 @@ function InvoiceWorkspace({ loggedInUser }) {
       }
       fieldEl.replaceWith(valueNode);
     });
-    const printConsumerNo = printClone.querySelector('.billto-consumerno.print-field-value');
-    const printDateValue = printClone.querySelector('.billto-date.print-date-value');
-    if (printConsumerNo && printDateValue) {
-      const dateStrong = document.createElement('strong');
-      dateStrong.className = 'print-date-inline';
-      dateStrong.textContent = printDateValue.textContent;
-      printConsumerNo.classList.add('print-consumerno-with-date');
-      printConsumerNo.appendChild(dateStrong);
-      const dateRow = printDateValue.closest('.billto-date-row');
-      if (dateRow) {
-        dateRow.remove();
-      }
-    }
     // A print popup starts as about:blank. Set a base URL explicitly so assets
     // and the Vite-generated stylesheet keep resolving after deployment too.
     // Do not copy the app's complete stylesheet into the popup. The live app
@@ -1214,6 +1221,9 @@ function InvoiceWorkspace({ loggedInUser }) {
         .billto-inline-row { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6px !important; }
         .billto-address, .billto-gstin, .billto-date-row { grid-column: 1 / -1 !important; }
         .billto-date-row { display: flex !important; justify-content: flex-end !important; }
+        .billto-name-date-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto !important; gap: 12px !important; grid-column: 1 / -1 !important; align-items: start !important; }
+        .billto-name-date-row .billto-date-row { grid-column: 2 !important; }
+        .billto-form > .billto-consumerno { grid-column: 1 !important; justify-self: start !important; width: 100% !important; max-width: none !important; }
         .invoice-table, .summary-table { width: 100% !important; border-collapse: collapse !important; }
         .invoice-table { margin-top: 10px !important; font-size: 9px !important; }
         .invoice-table th, .invoice-table td, .summary-table td { border: 1px solid #9ea9ba !important; padding: 4px 5px !important; text-align: left !important; color: #000 !important; }
@@ -1453,6 +1463,11 @@ function InvoiceWorkspace({ loggedInUser }) {
 
   const updateBin = async (kind, record, restore = false) => {
     if (!restore && !window.confirm(`Move this ${kind} to Bin? The record will be hidden from active records and reports.`)) return;
+    if (kind === 'Register Entry') {
+      const updated = await cloudMutation({ mode: restore ? 'inventoryRestore' : 'inventoryDelete', id: record.id, version: record.version || 0 });
+      if (updated) cacheInventory(inventoryEntries.map((item) => item.id === updated.id ? updated : item));
+      return;
+    }
     let stored = record;
     if (kind === 'Consumer' && !stored.id) stored = await cloudMutation({ mode: 'consumer', consumer: record, migrate: true });
     if (!stored) return;
@@ -1464,6 +1479,18 @@ function InvoiceWorkspace({ loggedInUser }) {
       setPaymentInvoice(null); setHistoryInvoiceId('');
     } else {
       const next = [...consumerRecords.filter((item) => item.id !== updated.id), updated];
+      setBulkCustomers(next);
+      try { localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(next)); } catch { /* Optional cache. */ }
+    }
+  };
+  const permanentDeleteBin = async (kind, record) => {
+    if (!window.confirm(`Permanently delete this ${kind}? This cannot be undone.`)) return;
+    const result = await cloudMutation({ mode: 'permanentDeleteBin', kind, id: record.id, version: record.version || 0 });
+    if (!result) return;
+    if (kind === 'Register Entry') cacheInventory(inventoryEntries.filter((item) => item.id !== record.id));
+    else if (kind === 'Invoice') cacheRecords(invoiceRecords.filter((item) => item.id !== record.id));
+    else {
+      const next = consumerRecords.filter((item) => item.id !== record.id);
       setBulkCustomers(next);
       try { localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(next)); } catch { /* Optional cache. */ }
     }
@@ -1531,7 +1558,7 @@ function InvoiceWorkspace({ loggedInUser }) {
         <div className="invoice-workspace__brand"><img src="/branding.png" alt="LPG CashMemo" /><span>Invoice Workspace</span></div>
         <span className="invoice-workspace__nav-label">WORKSPACE</span>
         <nav aria-label="Invoice navigation">
-          {['Dashboard', 'Add Consumer', 'Bulk Consumer Import', 'List of Consumer', 'Product', 'Billing', 'Generated Invoice', 'Ledger', 'Credit / Debit', 'Adjustments', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing', 'Bin', 'Setting'].map((view, index) => (
+          {['Dashboard', 'Add Consumer', 'Bulk Consumer Import', 'List of Consumer', 'Product', 'Billing', 'Generated Invoice', 'Ledger', 'Credit / Debit', 'Adjustments', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing', 'Bin', 'Setting', 'Inventory & Cash Register', 'Inventory & Cash Register Report'].map((view, index) => (
             <button key={view} type="button" className={activeView === view ? 'is-active' : ''}
               aria-current={activeView === view ? 'page' : undefined} onClick={() => setActiveView(view)}>
               <span aria-hidden="true">{['◫', '＋', '♙', '◇', '▤', '▧', '≡', '⇄', '±', '▣', '⚙'][index]}</span>{view}
@@ -1548,12 +1575,14 @@ function InvoiceWorkspace({ loggedInUser }) {
         <div className="invoice-workspace__heading"><div><span className="invoice-workspace__eyebrow">INVOICE WORKSPACE</span><h2>{activeView === 'Billing' ? 'Create Invoice' : activeView}</h2></div>
           {activeView === 'Dashboard' && <button type="button" className="invoice-workspace__primary" onClick={() => { handleResetInvoice(); setActiveView('Billing'); }}>＋ New Invoice</button>}
         </div>
-        <div className="invoice-workspace__content">
+        <div className={`invoice-workspace__content${['Add Consumer', 'Bulk Consumer Import', 'List of Consumer', 'Product', 'Generated Invoice', 'Ledger', 'Credit / Debit', 'Adjustments', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing', 'Bin', 'Setting'].includes(activeView) ? ' invoice-management' : ''}`} data-view={activeView}>
         <div className={`invoice-cloud-status invoice-cloud-status--${cloudStatus}`} role="status"><strong>{cloudStatus === 'live' ? 'Cloud billing connected' : cloudStatus === 'syncing' ? 'Syncing cloud billing…' : 'Offline — displaying cached data'}</strong><span>{cloudStatus !== 'live' ? 'Saving and payments are disabled until sync succeeds.' : 'Invoices and consumers are saved to your dealer account.'}</span><button type="button" disabled={cloudStatus === 'syncing' || billingBusy} onClick={() => void syncCloud()}>Sync Data</button></div>
         {billingError && <div className="invoice-billing-error" role="alert">{billingError}</div>}
+        {activeView === 'Setting' && <WorkspaceCommandSettings commands={commands} onChange={changeCommand} />}
+        {['Inventory & Cash Register', 'Inventory & Cash Register Report'].includes(activeView) && <InventoryCashRegister commands={commands} bank={bankDetails} dealer={dealer} rates={invoiceRates} view={activeView === 'Inventory & Cash Register Report' ? 'report' : 'entry'} records={inventoryEntries} disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(entry) => cacheInventory([...inventoryEntries.filter((row) => row.id !== entry.id), entry])} />}
         {['Notes / Refunds', 'Outstanding Ageing'].includes(activeView) && <InvoiceCorrections view={activeView} records={savedInvoices} disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(record) => cacheRecords(invoiceRecords.map((item) => item.id === record.id ? normalizeSavedInvoiceRecord(record) : item))} />}
         {activeView === 'Bulk Consumer Import' && <BulkConsumerImport disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(consumers) => { const ids = new Set(consumers.map((item) => item.id)); const next = [...consumerRecords.filter((item) => !ids.has(item.id)), ...consumers]; setBulkCustomers(next); try { localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(next)); } catch { /* Optional cache. */ } }} />}
-        {activeView === 'Bin' && <section className="invoice-workspace__card"><h3>Bin</h3><p>Deleted records can be restored. Invoice numbers, receipts and ledger history are retained.</p><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Type</th><th>Record</th><th>Deleted on</th><th>Action</th></tr></thead><tbody>{[...consumerRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Consumer', record })), ...invoiceRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Invoice', record }))].map(({ kind, record }) => <tr key={`${kind}-${record.id}`}><td>{kind}</td><td>{record.invoiceNumber || record.consumerName} ? {record.consumerNo || record.header?.name}</td><td>{record.deletedAt ? new Date(record.deletedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '?'}</td><td><button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin(kind, record, true)}>Restore {kind}</button></td></tr>)}</tbody></table></div>{!consumerRecords.some((item) => item.trashed) && !invoiceRecords.some((item) => item.trashed) && <p>Bin is empty.</p>}</section>}
+        {activeView === 'Bin' && <section className="invoice-workspace__card"><h3>Bin</h3><p>Deleted records can be restored. Invoice numbers, receipts and ledger history are retained.</p><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Type</th><th>Record</th><th>Deleted on</th><th>Action</th></tr></thead><tbody>{[...consumerRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Consumer', record })), ...invoiceRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Invoice', record })), ...inventoryEntries.filter((item) => item.deleted).map((record) => ({ kind: 'Register Entry', record }))].map(({ kind, record }) => <tr key={`${kind}-${record.id}`}><td>{kind}</td><td>{record.invoiceNumber || record.consumerName || record.name} · {record.consumerNo || record.header?.name || record.village}</td><td>{record.deletedAt ? new Date(record.deletedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '?'}</td><td><button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin(kind, record, true)}>Restore {kind}</button>{commands.permanentDelete && <button type="button" className="invoice-bin-delete" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void permanentDeleteBin(kind, record)}>Permanently Delete</button>}</td></tr>)}</tbody></table></div>{!consumerRecords.some((item) => item.trashed) && !invoiceRecords.some((item) => item.trashed) && !inventoryEntries.some((item) => item.deleted) && <p>Bin is empty.</p>}</section>}
         {activeView === 'Adjustments' && <section className="invoice-workspace__card"><h3>Opening Balance / Credit–Debit Adjustment</h3><p>Debit increases the consumer balance; credit reduces it. Entries remain in transaction history.</p><form onSubmit={async (event) => { event.preventDefault(); const entry = await cloudMutation({ mode: 'adjustment', entry: { ...adjustmentDraft, id: adjustmentIdRef.current, amount: Number(adjustmentDraft.amount) } }); if (entry) { setAdjustments((previous) => [...previous.filter((item) => item.id !== entry.id), entry]); adjustmentIdRef.current = crypto.randomUUID(); setAdjustmentDraft((draft) => ({ ...draft, amount: '', reason: '' })); } }}><div className="invoice-workspace__form-grid"><label>Adjustment consumer<select required value={adjustmentDraft.consumerId} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, consumerId: event.target.value }))}><option value="">Choose consumer</option>{bulkCustomers.filter((consumer) => !consumer.trashed).map((consumer) => <option key={consumer.id} value={consumer.id}>{consumer.consumerName} · {consumer.consumerNo || consumer.mobileNo}</option>)}</select></label><label>Entry type<select value={adjustmentDraft.type} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, type: event.target.value }))}>{['OpeningDebit', 'OpeningCredit', 'Debit', 'Credit'].map((type) => <option key={type}>{type}</option>)}</select></label><label>Adjustment amount<input required type="number" min="0.01" step="0.01" value={adjustmentDraft.amount} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, amount: event.target.value }))} /></label><label>Adjustment date<input required type="date" max={indiaDate()} value={adjustmentDraft.date} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, date: event.target.value }))} /></label><label>Adjustment reason<input required maxLength={500} value={adjustmentDraft.reason} onChange={(event) => setAdjustmentDraft((draft) => ({ ...draft, reason: event.target.value }))} /></label></div><button className="invoice-workspace__primary" type="submit" disabled={billingBusy || cloudStatus !== 'live'}>Save Adjustment</button></form><h4>Saved Adjustments</h4>{adjustments.filter((entry) => !deletedConsumerKeys.has(String(entry.consumerKey).trim().toLowerCase())).map((entry) => <p key={entry.id}>{entry.date} · {entry.consumer} · {entry.type} · {formatMoney(entry.amount)} · {entry.reason}</p>)}</section>}
         {activeView === 'Consumer Statement' && <section className="invoice-workspace__card"><h3>Consumer Statement</h3><div className="invoice-workspace__form-grid"><label>Statement consumer<select value={statementConsumer} onChange={(event) => setStatementConsumer(event.target.value)}><option value="">Choose consumer</option>{statementConsumers.map(([key, name]) => <option key={key} value={key}>{name} · {key}</option>)}</select></label><label>Statement from<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>Statement to<input type="date" min={dateFrom} value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><p>Opening: {formatMoney(statement.opening)} · Debit: {formatMoney(statement.debit)} · Credit: {formatMoney(statement.credit)} · Closing: {formatMoney(statement.closing)}</p><button type="button" disabled={!statementConsumer} onClick={exportStatement}>Download Statement CSV</button><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Date</th><th>Invoice</th><th>Details</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>{statement.transactions.map((row) => <tr key={`${row.invoiceNumber}-${row.id}`}><td>{row.date}</td><td>{row.invoiceNumber}</td><td>{row.detail}</td><td>{formatMoney(row.debit)}</td><td>{formatMoney(row.credit)}</td><td>{formatMoney(row.balance)}</td></tr>)}</tbody></table></div></section>}
         {historyInvoice && <section className="invoice-workspace__card"><h3>Payment History — {historyInvoice.invoiceNumber}</h3><button type="button" onClick={() => setHistoryInvoiceId('')}>Close Payment History</button>{historyInvoice.payments?.map((payment) => <div key={payment.id}><p>{payment.date} · {formatMoney(payment.amount)} · {payment.mode} · {payment.reference}</p>{payment.reversal ? <p>Reversed: {payment.reversal.reason} · {payment.reversal.date}</p> : <button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void recordCorrection(historyInvoice, payment.id)}>Reverse Payment</button>}</div>)}</section>}
@@ -1598,14 +1627,14 @@ function InvoiceWorkspace({ loggedInUser }) {
                 consumers.set(key, customer);
               }
               const visibleConsumers = [...consumers.entries()].filter(([, customer]) => !customer.trashed && !deletedConsumerKeys.has(String(customer.consumerNo || customer.mobileNo || customer.consumerName).trim().toLowerCase()) && matchesSearch(customer));
-              return visibleConsumers.length ? visibleConsumers.map(([key, customer]) => <tr key={key}><td>{customer.consumerName || '—'}</td><td>{customer.consumerNo || '—'}</td><td>{customer.mobileNo || '—'}</td><td>{customer.address || '—'}</td><td><div className="invoice-workspace__row-actions"><button type="button" onClick={() => startConsumerInvoice(customer)}>Create Invoice</button><button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void modifyConsumer(customer)}>Modify Consumer</button><button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin('Consumer', customer)}>Delete Consumer</button><button type="button" onClick={() => { setWorkspaceSearch(customer.consumerNo || customer.consumerName); setActiveView('Generated Invoice'); }}>Invoice History</button></div></td></tr>) : <tr><td colSpan={5}>No matching consumers. Use Add Consumer to add one.</td></tr>;
+              return visibleConsumers.length ? visibleConsumers.map(([key, customer]) => <tr key={key}><td>{customer.consumerName || '—'}</td><td>{customer.consumerNo || '—'}</td><td>{customer.mobileNo || '—'}</td><td>{customer.address || '—'}</td><td><div className="invoice-workspace__row-actions"><WorkspaceActionButton label="Create Invoice" icon="create" type="button" onClick={() => startConsumerInvoice(customer)} /><WorkspaceActionButton label="Modify Consumer" icon="edit" type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void modifyConsumer(customer)} /><WorkspaceActionButton label="Delete Consumer" icon="delete" type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin('Consumer', customer)} /><WorkspaceActionButton label="Invoice History" icon="history" type="button" onClick={() => { setWorkspaceSearch(customer.consumerNo || customer.consumerName); setActiveView('Generated Invoice'); }} /></div></td></tr>) : <tr><td colSpan={5}>No matching consumers. Use Add Consumer to add one.</td></tr>;
             })()}
           </tbody></table></div>
         </section>}
         {activeView === 'Generated Invoice' && <section className="invoice-workspace__card">
           <h3>Generated Invoices</h3><p>{savedInvoices.length} saved invoices</p>
           <div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Invoice</th><th>Consumer</th><th>Date</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-            {visibleInvoices.map((record) => <tr key={record.id}><td><strong>{record.invoiceNumber || record.id}</strong><small className="invoice-dashboard__invoice-id">{record.title}</small></td><td>{record.header?.name || record.draft?.billToName || '—'}</td><td>{formatInvoiceDisplayDate(record.header?.date || getDraftInvoiceDate(record.draft, record.savedAt))}</td><td>{formatMoney(resolveInvoiceAmount(record))}<small className="invoice-dashboard__invoice-id">Paid {formatMoney(invoicePaid(record))} · Due {formatMoney(invoiceDue(record))}</small></td><td>{record.status}</td><td><div className="invoice-workspace__row-actions"><button type="button" onClick={() => handleDuplicateSavedInvoice(record)}>Open</button><button type="button" disabled={billingBusy || cloudStatus !== 'live' || record.status === 'Cancelled' || invoicePaid(record) > 0 || Boolean(record.notes?.length || record.refunds?.length)} onClick={() => handleDuplicateSavedInvoice(record)}>Modify Invoice</button><button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin('Invoice', record)}>Delete Invoice</button><button type="button" onClick={() => void shareInvoice(record)}>Share</button><button type="button" disabled={billingBusy || cloudStatus !== 'live' || invoiceDue(record) <= 0} onClick={() => handleToggleInvoiceStatus(record.id)}>Record Payment</button><button type="button" onClick={() => setHistoryInvoiceId(record.id)}>Payment History</button><button type="button" disabled={billingBusy || cloudStatus !== 'live' || invoicePaid(record) > 0 || record.status === 'Cancelled'} onClick={() => void recordCorrection(record)}>Cancel Invoice</button></div></td></tr>)}
+            {visibleInvoices.map((record) => <tr key={record.id}><td><strong>{record.invoiceNumber || record.id}</strong><small className="invoice-dashboard__invoice-id">{record.title}</small></td><td>{record.header?.name || record.draft?.billToName || '—'}</td><td>{formatInvoiceDisplayDate(record.header?.date || getDraftInvoiceDate(record.draft, record.savedAt))}</td><td>{formatMoney(resolveInvoiceAmount(record))}<small className="invoice-dashboard__invoice-id">Paid {formatMoney(invoicePaid(record))} · Due {formatMoney(invoiceDue(record))}</small></td><td>{record.status}</td><td><div className="invoice-workspace__row-actions"><WorkspaceActionButton label="Open" icon="open" type="button" onClick={() => handleDuplicateSavedInvoice(record)} /><WorkspaceActionButton label="Modify Invoice" icon="edit" type="button" disabled={billingBusy || cloudStatus !== 'live' || record.status === 'Cancelled' || invoicePaid(record) > 0 || Boolean(record.notes?.length || record.refunds?.length)} onClick={() => handleDuplicateSavedInvoice(record)} /><WorkspaceActionButton label="Delete Invoice" icon="delete" type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin('Invoice', record)} /><WorkspaceActionButton label="Share" icon="share" type="button" onClick={() => void shareInvoice(record)} /><WorkspaceActionButton label="Record Payment" icon="payment" type="button" disabled={billingBusy || cloudStatus !== 'live' || invoiceDue(record) <= 0} onClick={() => handleToggleInvoiceStatus(record.id)} /><WorkspaceActionButton label="Payment History" icon="history" type="button" onClick={() => setHistoryInvoiceId(record.id)} /><WorkspaceActionButton label="Cancel Invoice" icon="cancel" type="button" disabled={billingBusy || cloudStatus !== 'live' || invoicePaid(record) > 0 || record.status === 'Cancelled'} onClick={() => void recordCorrection(record)} /></div></td></tr>)}
             {!visibleInvoices.length && <tr><td colSpan={6}>No matching invoices. Save an invoice from Billing or clear filters.</td></tr>}
           </tbody></table></div>
         </section>}
@@ -1613,7 +1642,7 @@ function InvoiceWorkspace({ loggedInUser }) {
           <h3>{activeView === 'Ledger' ? 'Consumer Ledger' : 'Credit / Debit Summary'}</h3>
           <p>{activeView === 'Ledger' ? 'Consumer balances from saved invoice records.' : 'Debit is the invoiced amount. Credit is the amount recorded as paid on saved invoices.'}</p>
           <div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Consumer</th><th>Mobile</th><th>{activeView === 'Ledger' ? 'Total Invoiced' : 'Debit'}</th><th>{activeView === 'Ledger' ? 'Paid' : 'Credit'}</th><th>Balance Due</th><th>Actions</th></tr></thead><tbody>
-            {ledgerGroups.map((group) => <tr key={group.key}><td>{group.customerName}</td><td>{group.mobile || '—'}</td><td>₹{group.totalAmount.toFixed(2)}</td><td>₹{group.paidAmount.toFixed(2)}</td><td>₹{group.dueAmount.toFixed(2)}</td><td><button type="button" onClick={() => handlePrintLedger(group)}>Print Ledger</button><button type="button" onClick={() => { setStatementConsumer(group.key); setActiveView('Consumer Statement'); }}>View Statement</button></td></tr>)}
+            {ledgerGroups.map((group) => <tr key={group.key}><td>{group.customerName}</td><td>{group.mobile || '—'}</td><td>₹{group.totalAmount.toFixed(2)}</td><td>₹{group.paidAmount.toFixed(2)}</td><td>₹{group.dueAmount.toFixed(2)}</td><td><WorkspaceActionButton label="Print Ledger" icon="print" type="button" onClick={() => handlePrintLedger(group)} /><WorkspaceActionButton label="View Statement" icon="statement" type="button" onClick={() => { setStatementConsumer(group.key); setActiveView('Consumer Statement'); }} /></td></tr>)}
             {!ledgerGroups.length && <tr><td colSpan={6}>No ledger entries yet. Save an invoice or opening balance.</td></tr>}
           </tbody></table></div>
           <h4>Transaction History</h4><p>Running balance is calculated per consumer, including transactions before the selected date range.</p><div className="invoice-workspace__table-scroll"><table className="data-table" aria-label="Ledger transactions"><thead><tr><th>Date</th><th>Consumer</th><th>Invoice Number</th><th>Details</th><th>Debit</th><th>Credit</th><th>Running Balance</th></tr></thead><tbody>{ledgerRows.map((row) => <tr key={`${row.invoiceNumber}-${row.id}`}><td>{formatInvoiceDisplayDate(row.date)}</td><td>{row.consumer}</td><td>{row.invoiceNumber}</td><td>{row.detail}</td><td>{formatMoney(row.debit)}</td><td>{formatMoney(row.credit)}</td><td>{formatMoney(row.balance)}</td></tr>)}{!ledgerRows.length && <tr><td colSpan={7}>No matching transactions.</td></tr>}</tbody></table></div>
@@ -1640,7 +1669,7 @@ function InvoiceWorkspace({ loggedInUser }) {
             {consumerError && <p role="alert">{consumerError}</p>}<button className="invoice-workspace__primary" type="submit" disabled={billingBusy || cloudStatus !== 'live'}>{billingBusy ? 'Saving…' : 'Save Consumer & Bill'}</button>
           </form>
         </section>}
-        {activeView === 'Product' && <section className="invoice-workspace__card"><h3>Product Catalogue</h3><p>Products and approved rates available for billing.</p><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Product</th><th>Code</th><th>HSN</th><th>Basic Price</th><th>SGST</th><th>CGST</th><th>RSP</th></tr></thead><tbody>{invoiceRates.map((rate, index) => <tr key={`${rate.Code}-${index}`}><td>{rate.Item}</td><td>{rate.Code || '—'}</td><td>{rate.HSNCode}</td><td>₹{rate.BasicPrice.toFixed(2)}</td><td>{rate.SGST}%</td><td>{rate.CGST}%</td><td>₹{rate.RSP.toFixed(2)}</td></tr>)}</tbody></table></div>{!invoiceRates.length && <p>No approved products available. Add rates through Rate Update.</p>}</section>}
+        {activeView === 'Product' && <section className="invoice-workspace__card"><h3>Product Catalogue</h3><p>Products and approved rates available for billing.</p><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Product</th>{commands.productCode && <th>Code</th>}{commands.productHSN && <th>HSN</th>}{commands.productBasicPrice && <th className="product-numeric">Basic Price</th>}{commands.productSGST && <th className="product-numeric">SGST</th>}{commands.productCGST && <th className="product-numeric">CGST</th>}<th className="product-numeric">RSP</th></tr></thead><tbody>{invoiceRates.map((rate, index) => <tr key={`${rate.Code}-${index}`}><td>{rate.Item}</td>{commands.productCode && <td>{rate.Code || '—'}</td>}{commands.productHSN && <td>{rate.HSNCode}</td>}{commands.productBasicPrice && <td className="product-numeric">₹{rate.BasicPrice.toFixed(2)}</td>}{commands.productSGST && <td className="product-numeric">{rate.SGST}%</td>}{commands.productCGST && <td className="product-numeric">{rate.CGST}%</td>}<td className="product-numeric">₹{rate.RSP.toFixed(2)}</td></tr>)}</tbody></table></div>{!invoiceRates.length && <p>No approved products available. Add rates through Rate Update.</p>}</section>}
         {activeView === 'Setting' && <section className="invoice-workspace__card"><h3>Invoice Settings</h3><p>Your dealer profile and bank details are used on every invoice.</p><div className="invoice-workspace__form-grid"><div><h4>Business Details</h4><p>{dealer.name}</p><p>{dealer.address}</p><p>Contact: {dealer.contact}</p><p>GSTIN: {dealer.gstn}</p></div><div><h4>Bank Details</h4><p>Bank: {bankDetails.bankName || '—'}</p><p>Branch: {bankDetails.branch || '—'}</p><p>Account: {bankDetails.accountNo || '—'}</p><p>IFSC: {bankDetails.ifsc || '—'}</p></div></div><p>Update these details through Profile Update and Bank Details.</p></section>}
       <div className="invoice-workspace__billing" hidden={activeView !== 'Billing'}>
       <div className="invoice-workspace__billing-heading"><span>Invoice Preview & Editor</span><button type="button" onClick={handlePrintInvoice}>Print / Download PDF</button></div>
@@ -1648,7 +1677,6 @@ function InvoiceWorkspace({ loggedInUser }) {
         <div className="invoice-tax-label">Tax Invoice</div>
         {selectedInvoice?.status === 'Cancelled' && <div className="invoice-billing-error">CANCELLED — {selectedInvoice.cancellation?.reason}</div>}
         {currentInvoiceNumber && <div className="invoice-workspace__invoice-number">Invoice No: <strong>{currentInvoiceNumber}</strong></div>}
-        <div className="invoice-workspace__invoice-number"><label>Due Date <input aria-label="Invoice due date" type="date" min={billToDate} value={billDueDate} disabled={lockedInvoice} onChange={(event) => setBillDueDate(event.target.value)} /></label></div>
         <div className="invoice-header">
           <div className="invoice-brand">
             <div className="invoice-brand-logo">
@@ -1667,6 +1695,7 @@ function InvoiceWorkspace({ loggedInUser }) {
           <div className="section-box billto-section">
             <span className="section-label">Bill To</span>
             <div className="billto-form">
+              <div className="billto-name-date-row">
               <div className="billto-field billto-name" style={{ position: 'relative' }}>
                 <label>Consumer Name</label>
                 <input
@@ -1695,6 +1724,13 @@ function InvoiceWorkspace({ loggedInUser }) {
                   </div>
                 )}
               </div>
+              <div className="billto-date-row">
+                <div className="billto-field">
+                  <label htmlFor="create-invoice-date">Date</label>
+                  <input id="create-invoice-date" className="invoice-input billto-date" type="date" value={billToDate} readOnly={Boolean(editingInvoiceId)} onChange={(e) => setBillToDate(e.target.value)} />
+                </div>
+              </div>
+              </div>
               <div className="billto-field billto-consumerno">
                 <label>Consumer No (if available)</label>
                 <input className="invoice-input billto-consumerno" placeholder="Consumer No (if available)" value={billToConsumerNo} onChange={(e) => setBillToConsumerNo(toUpperValue(e.target.value))} />
@@ -1712,12 +1748,6 @@ function InvoiceWorkspace({ loggedInUser }) {
               <div className="billto-field billto-gstin">
                 <label>GSTIN (if available)</label>
                 <input className="invoice-input billto-gstin" placeholder="GSTIN (if available)" value={billToGstin} onChange={(e) => setBillToGstin(toUpperValue(e.target.value))} />
-              </div>
-              <div className="billto-date-row">
-                <div className="billto-field">
-                  <label>Date</label>
-                  <input className="invoice-input billto-date" type="date" value={billToDate} readOnly={Boolean(editingInvoiceId)} onChange={(e) => setBillToDate(e.target.value)} />
-                </div>
               </div>
             </div>
           </div>
