@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getAdmin, LoginError } from './loginService.js';
 import { getUserAccountStatus } from '../src/utils/userAccountStatus.js';
-import { invoicePaid, invoiceDue, paymentStatus, indiaDate, financialYear } from '../src/utils/invoiceAccounting.js';
+import { invoicePaid, invoiceDue, invoiceNetTotal, invoiceRefunded, paymentStatus, indiaDate, financialYear } from '../src/utils/invoiceAccounting.js';
 
 const fail = (message, status = 400) => { throw new LoginError('billing-error', message, status); };
 const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -44,10 +44,18 @@ export const mutateInvoice = async (firestore, userId, body, actor = userId) => 
     }
     if (!existing.exists || existing.data().archived) fail('Invoice not found.', 404);
     const record = existing.data();
+    if (body.mode === 'trashInvoice' || body.mode === 'restoreInvoice') {
+      const trashed = body.mode === 'trashInvoice';
+      if (Boolean(record.trashed) === trashed) return record;
+      const next = { ...record, trashed, deletedAt: trashed ? new Date().toISOString() : null, deletedBy: trashed ? actor : null, restoredAt: trashed ? null : new Date().toISOString() };
+      tx.update(ref, next); return next;
+    }
+    if (record.trashed) fail('Restore this invoice from Bin before changing it.', 409);
     if (body.mode === 'reversePayment') {
       const payment = record.payments.find((item) => item.id === body.paymentId);
       if (!payment) fail('Payment not found.', 404);
       if (payment.reversal) return record;
+      if (record.refunds?.length) fail('Payments backing recorded refunds cannot be reversed.');
       const reason = String(body.reason || '').trim();
       if (reason.length < 3 || reason.length > 500) fail('A reversal reason of 3–500 characters is required.');
       const next = { ...record, payments: record.payments.map((item) => item.id === payment.id ? { ...item, reversal: { reason, date: indiaDate(), recordedBy: actor, recordedAt: new Date().toISOString() } } : item) };
@@ -56,14 +64,40 @@ export const mutateInvoice = async (firestore, userId, body, actor = userId) => 
     if (body.mode === 'cancel' || body.mode === 'delete') {
       if (record.status === 'Cancelled') return record;
       if (invoicePaid(record) > 0) fail('Invoices with recorded payments cannot be deleted or cancelled. Reverse payments first.');
+      if (record.refunds?.length) fail('Invoices with recorded refunds cannot be cancelled.');
       const reason = String(body.reason || '').trim();
       if (reason.length < 3 || reason.length > 500) fail('A cancellation reason of 3–500 characters is required.');
       const next = { ...record, status: 'Cancelled', cancellation: { reason, date: indiaDate(), recordedBy: actor, recordedAt: new Date().toISOString() } };
       tx.update(ref, { status: next.status, cancellation: next.cancellation }); return next;
     }
     if (record.status === 'Cancelled') fail('Cancelled invoices cannot be changed.');
+    if (body.mode === 'note' || body.mode === 'refund') {
+      const entry = body.entry;
+      if (!validId(entry?.id)) fail('Entry ID required.');
+      const field = body.mode === 'note' ? 'notes' : 'refunds';
+      const entries = record[field] || [];
+      const amount = Number(entry.amount);
+      const reason = String(entry.reason || '').trim();
+      const replay = entries.find((item) => item.id === entry.id);
+      if (replay) {
+        if (replay.amount !== amount || replay.date !== entry.date || replay.reason !== reason || (field === 'notes' && replay.type !== entry.type)) fail('Entry ID already used with different details.', 409);
+        return record;
+      }
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000 || Math.abs(amount * 100 - Math.round(amount * 100)) > 0.00001) fail('Valid positive amount with up to two decimals required.');
+      if (!validDate(entry.date) || entry.date < record.header.date || entry.date > indiaDate()) fail('Entry date must be between the invoice date and today.');
+      if (reason.length < 3 || reason.length > 500) fail('Reason of 3?500 characters required.');
+      if (field === 'notes' && !['Credit', 'Debit'].includes(entry.type)) fail('Credit or Debit note required.');
+      if (field === 'notes' && entry.type === 'Credit' && amount > invoiceNetTotal(record)) fail('Credit cannot exceed the adjusted invoice total.');
+      const refundable = Math.max(0, invoicePaid(record) - invoiceRefunded(record) - invoiceNetTotal(record));
+      if (field === 'refunds' && Math.round(amount * 100) > Math.round(refundable * 100)) fail('Refund cannot exceed the consumer credit on this invoice. Issue a credit note first.');
+      const saved = { id: entry.id, amount, date: entry.date, reason, recordedBy: actor, recordedAt: new Date().toISOString(), ...(field === 'notes' ? { type: entry.type } : {}) };
+      const next = { ...record, [field]: [...entries, saved] };
+      next.status = paymentStatus(next);
+      tx.update(ref, { [field]: next[field], status: next.status });
+      return next;
+    }
     if (body.mode === 'edit') {
-      if (invoicePaid(record) > 0) fail('Invoices with recorded payments cannot be edited.');
+      if (invoicePaid(record) > 0 || record.notes?.length || record.refunds?.length) fail('Invoices with payments, notes or refunds cannot be edited.');
       const draft = body.record?.draft;
       const total = Number(draft?.summary?.payableTotal);
       if (!draft || !draft.billToName?.trim() || !validDate(draft.billToDate)
@@ -115,6 +149,19 @@ export const invoiceWorkspace = async (authorization, body) => {
     const [invoices, consumers, adjustments] = await Promise.all([root.collection('invoices').get(), root.collection('consumers').get(), root.collection('billingAdjustments').get()]);
     return { invoices: invoices.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((record) => !record.archived), consumers: consumers.docs.map((doc) => ({ ...doc.data(), id: doc.id })), adjustments: adjustments.docs.map((doc) => ({ ...doc.data(), id: doc.id })) };
   }
+  if (body.mode === 'trashConsumer' || body.mode === 'restoreConsumer') {
+    if (!validId(body.id)) fail('Valid consumer ID required.');
+    const ref = root.collection('consumers').doc(body.id);
+    return firestore.runTransaction(async (tx) => {
+      const snapshot = await tx.get(ref);
+      if (!snapshot.exists) fail('Consumer not found.', 404);
+      const record = snapshot.data();
+      const trashed = body.mode === 'trashConsumer';
+      if (Boolean(record.trashed) === trashed) return { ...record, id: ref.id };
+      const next = { ...record, trashed, deletedAt: trashed ? new Date().toISOString() : null, deletedBy: trashed ? claims.email || claims.uid || body.userId : null, restoredAt: trashed ? null : new Date().toISOString() };
+      tx.update(ref, next); return { ...next, id: ref.id };
+    });
+  }
   if (body.mode === 'adjustment') {
     const entry = body.entry;
     if (!validId(entry?.id) || !['OpeningDebit', 'OpeningCredit', 'Debit', 'Credit'].includes(entry.type)
@@ -126,7 +173,7 @@ export const invoiceWorkspace = async (authorization, body) => {
       const existing = await tx.get(ref);
       if (existing.exists) return { ...existing.data(), id: ref.id };
       const consumer = await tx.get(root.collection('consumers').doc(entry.consumerId));
-      if (!consumer.exists) fail('Consumer not found.', 404);
+      if (!consumer.exists || consumer.data().trashed) fail('Active consumer not found.', 404);
       const openingRef = root.collection('billingOpeningBalances').doc(entry.consumerId);
       if (entry.type.startsWith('Opening')) {
         const opening = await tx.get(openingRef);
@@ -150,8 +197,9 @@ export const invoiceWorkspace = async (authorization, body) => {
       if (existing.exists) {
         if (body.migrate === true) return { ...existing.data(), id };
         if (body.editId === id) {
+          if (existing.data().trashed) fail('Restore this consumer from Bin before editing.', 409);
           const next = Object.fromEntries(['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin', 'centerNo'].map((key) => [key, String(input[key] || '').trim().slice(0, 500)]));
-          tx.update(ref, next); return { ...next, id };
+          tx.update(ref, { ...next, updatedAt: new Date().toISOString() }); return { ...existing.data(), ...next, id };
         }
         fail('This consumer number already exists.', 409);
       }
