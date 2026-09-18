@@ -8,7 +8,7 @@ vi.mock('../src/firebase', () => ({ db: {} }));
 vi.mock('firebase/firestore', () => ({
   addDoc: vi.fn(), collection: vi.fn(), serverTimestamp: vi.fn(() => 'server-time'),
 }));
-vi.mock('../src/auth/userAuth', () => ({ buildPinWritePatch: async (pin) => ({ pin }) }));
+vi.mock('../src/auth/userAuth', () => ({ buildPinWritePatch: async () => ({ pin: null, pinHash: 'server-generated-hash' }) }));
 
 beforeEach(() => { addDoc.mockReset(); });
 

@@ -38,6 +38,7 @@ Firestore Security Rules (enforce the claims)
 ```
 
 - The PIN is stored as a **scrypt hash** (`scrypt$N$r$p$salt$hash`).
+- New writes call `/api/pin-hash` before persistence and fail closed if hashing fails. The admin API also hashes raw PIN inputs independently. Registration approval transfers the stored request hash server-side and clears legacy plaintext credentials as part of the transaction. Historical plaintext records still require migration; deploy the updated Firestore rules to reject plaintext registration writes.
 - The plaintext `pin` field is **never written** by any code path.
 - Verification happens on the trusted layer only.
 - Login now produces a real Auth session, so rules can be enforced.

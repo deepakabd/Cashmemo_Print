@@ -68,6 +68,7 @@ import HeaderUpdateForm from './components/app/HeaderUpdateForm';
 import UpgradePlanForm from './components/app/UpgradePlanForm';
 import AboutInfo from './components/app/AboutInfo';
 import { BrandedLoading, BrandedNotFound } from './components/BrandMark';
+import CredentialInput from './components/CredentialInput';
 import LabelUpdatePage from './components/app/LabelUpdatePage';
 import CashmemoPrintGuide from './components/CashmemoPrintGuide';
 import ExpiredPlanGuide from './components/ExpiredPlanGuide';
@@ -703,13 +704,19 @@ export const AdminPanel = ({
           const seenDealerCodes = new Set();
           const validationFailures = [];
           // Hash every row's PIN up front, so nothing plaintext is ever carried
-          // into local storage. Failed hashes simply omit the patch (PIN unset).
-          const pinPatches = new Map(
+          // into local storage. A hashing failure aborts preparation.
+          let pinPatches;
+          try {
+            pinPatches = new Map(
             await Promise.all(rows.map(async (row, index) => [
               index,
               await buildPinWritePatch(row.pin || row.PIN || ''),
             ])),
-          );
+            );
+          } catch {
+            pushToast('PIN hashing failed. No users were imported. Please try again.', 'error');
+            return;
+          }
 
           const importedUsers = rows.reduce((acc, row, index) => {
             const candidate = {
@@ -2603,7 +2610,7 @@ export const AdminPanel = ({
                 <option key={pkg} value={pkg}>{pkg}</option>
               ))}
             </select>
-            <input className="form-input" aria-label="New User PIN" placeholder="PIN" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
+            <CredentialInput className="form-input" aria-label="New User PIN" placeholder="PIN" type="password" maxLength={6} value={newUser.pin} onChange={(e) => setNewUser((p) => ({ ...p, pin: e.target.value }))} />
             <select className="form-input" aria-label="New User Role" value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
               <option value="operator">Operator</option>
               <option value="viewer">Viewer</option>
@@ -2759,7 +2766,7 @@ export const AdminPanel = ({
               </select>
               <input className="form-input" aria-label="Edit User Valid From" type="date" value={editUser.validFrom} onChange={(e) => setEditUser((p) => ({ ...p, validFrom: e.target.value }))} />
               <input className="form-input" aria-label="Edit User Valid Till" type="date" value={editUser.validTill} onChange={(e) => setEditUser((p) => ({ ...p, validTill: e.target.value }))} />
-              <input className="form-input" aria-label="Edit User PIN" placeholder="PIN" type="password" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
+              <CredentialInput className="form-input" aria-label="Edit User PIN" placeholder="PIN" type="password" value={editUser.pin} onChange={(e) => setEditUser((p) => ({ ...p, pin: e.target.value }))} />
               <select className="form-input" aria-label="Edit User Role" value={editUser.role} onChange={(e) => setEditUser((p) => ({ ...p, role: e.target.value }))}>
                 <option value="operator">Operator</option>
                 <option value="viewer">Viewer</option>

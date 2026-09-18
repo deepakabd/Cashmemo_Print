@@ -12,6 +12,6 @@ Deploy the API/client changes and updated Firestore rules together. Rules have b
 
 Confirmed registration actions update the pending queue immediately and remain completed during stale or failed refreshes. Rejection persists the real request document and its audit atomically, regardless of ID prefix. Legacy Demo/Basic packages are accepted only when approving a stored registration with that exact package; new user writes retain current package validation.
 
-Scope: this centralizes user mutations. Shared dictionary content, standalone audit events, registration submissions, and standalone approval-document maintenance retain their existing paths. The plaintext credential persistence finding recorded in `ADMIN_PIN_AUDIT.md` remains separate.
+Scope: this centralizes user mutations. Shared dictionary content, standalone audit events, registration submissions, and standalone approval-document maintenance retain their existing paths. Credential writes now enforce server hashing; see `ADMIN_PIN_AUDIT.md` for the write flow and historical migration limits.
 
 Transaction behavior follows [Firestore transactions documentation](https://firebase.google.com/docs/firestore/manage-data/transactions).

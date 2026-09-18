@@ -144,6 +144,5 @@ export const verifyPin = async (pin, storedPin) => {
 
 /** True when a stored value is already a scrypt hash. */
 export const isHashedPin = (storedPin) => {
-  const parts = String(storedPin ?? "").split("$");
-  return parts.length === 6 && parts[0] === "scrypt";
+  return /^scrypt\$16384\$8\$1\$[A-Za-z0-9+/]{22}==\$[A-Za-z0-9+/]{86}==$/.test(String(storedPin ?? ""));
 };
