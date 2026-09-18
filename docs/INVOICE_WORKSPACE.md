@@ -19,3 +19,15 @@ Consumer records support editing and invoice-history navigation. Consumer number
 Dashboard supports All Time, Today, This Month and Financial Year periods, optional due-date overdue alerts and current outstanding-consumer rankings. A4 printing uses the browser print dialog (choose Save as PDF). Share sends an invoice text summary through native sharing or a WhatsApp compose window; it does not publish a public invoice URL or automatically send messages. Browser exit warns about an unsaved billing draft.
 
 No production deployment or remote-data migration was run during implementation. Rules emulator validation remains a deployment check.
+
+
+Invoice-linked notes and refunds
+
+The Notes / Refunds view records immutable credit/debit notes and refunds on the invoice document. Notes change the adjusted total without rewriting the issued invoice. Refunds are limited transactionally to excess active receipts above that adjusted total. Retries use stable entry IDs; changed payloads with an existing ID are rejected. Payments backing refunds cannot be reversed. Notes/refunds lock invoice editing. Ledger and consumer statements retain each receipt, note, and refund.
+
+Outstanding Ageing groups positive balances by days past the due date (invoice date fallback): not due, 0?30, 31?60, 61?90 and 90+. Cancelled invoices are excluded. Direct downloadable PDF remains future work; the existing print dialog is unchanged. These changes have not been deployed.
+
+
+Bin and modification
+
+Consumer List offers Modify Consumer and Delete Consumer; Generated Invoice offers Modify Invoice and Delete Invoice. Delete moves the record into a cloud-persisted Bin using a `trashed` flag, deletion time and actor. Restore clears that flag and retains the original ID and invoice number. Normal lists exclude trashed records; trashed consumer master records suppress consumers inferred from invoice history. Trashed invoices are excluded from active dashboard totals, records, ledger, statements and ageing. Their original transactions remain stored in Bin for restoration. Trashed consumers are excluded from consumer records, counts, ledger and statement selectors; independently stored invoices are not cascade-deleted. Trashed records reject edit/payment operations until restored. Paid or corrected invoices keep existing edit restrictions; use notes for financial corrections. No permanent deletion is provided.

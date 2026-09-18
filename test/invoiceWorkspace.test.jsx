@@ -15,6 +15,8 @@ vi.mock('../src/services/invoiceRepository', () => ({ invoiceRequest: vi.fn(asyn
   if (body.mode === 'payment') { const record = cloud.invoices.get(body.id); const next = { ...record, payments: [...record.payments, body.payment] }; next.status = paymentStatus(next); cloud.invoices.set(body.id, next); return next; }
   if (body.mode === 'reversePayment') { const record = cloud.invoices.get(body.id); const next = { ...record, payments: record.payments.map((payment) => payment.id === body.paymentId ? { ...payment, reversal: { reason: body.reason, date: '2026-09-18' } } : payment) }; next.status = paymentStatus(next); cloud.invoices.set(body.id, next); return next; }
   if (body.mode === 'cancel') { const next = { ...cloud.invoices.get(body.id), status: 'Cancelled', cancellation: { reason: body.reason, date: '2026-09-18' } }; cloud.invoices.set(body.id, next); return next; }
+  if (['trashInvoice', 'restoreInvoice'].includes(body.mode)) { const next = { ...cloud.invoices.get(body.id), trashed: body.mode === 'trashInvoice', deletedAt: '2026-09-18T10:00:00Z' }; cloud.invoices.set(body.id, next); return next; }
+  if (['trashConsumer', 'restoreConsumer'].includes(body.mode)) { const next = { ...cloud.consumers.find((item) => item.id === body.id), trashed: body.mode === 'trashConsumer', deletedAt: '2026-09-18T10:00:00Z' }; cloud.consumers = cloud.consumers.map((item) => item.id === body.id ? next : item); return next; }
   if (body.mode === 'delete') { cloud.invoices.delete(body.id); return { id: body.id }; }
 }) }));
 beforeEach(() => { cloud.invoices.clear(); cloud.consumers = []; cloud.fail = false; });
@@ -130,4 +132,35 @@ it('records a partial payment and filters generated invoices by payment status',
   expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
   fireEvent.change(screen.getByPlaceholderText('Name, consumer number, mobile or invoice'), { target: { value: 'missing consumer' } });
   expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
+});
+
+it('moves consumers and invoices out of their lists into Bin and restores both', { timeout: 20000 }, async () => {
+  cloud.consumers = [{ id: 'consumer1', consumerName: 'Ravi', consumerNo: '101', mobileNo: '9876543210' }];
+  cloud.invoices.set('bill', { id: 'bill', invoiceNumber: 'INV/2026-27/00001', status: 'Unpaid', payments: [], draft: { billToName: 'Ravi', billToConsumerNo: '101', billToDate: '2026-09-18', summary: { payableTotal: 100 } } });
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  render(<InvoicePage loggedInUser={dealer} />);
+  await screen.findByText('Cloud billing connected');
+  fireEvent.click(screen.getByRole('button', { name: 'List of Consumer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Modify Consumer' }));
+  expect(screen.getByLabelText('Consumer Name').value).toBe('Ravi');
+  fireEvent.click(screen.getByRole('button', { name: 'List of Consumer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Consumer' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete Consumer' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Generated Invoice' }));
+  expect(screen.getByRole('button', { name: 'Modify Invoice' }).disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Invoice' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete Invoice' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+  expect(within(screen.getByRole('button', { name: /Generated Invoices/ })).getByText('0')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Ledger' }));
+  expect(screen.queryByText('Ravi')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Bin' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Restore Consumer' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Restore Consumer' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Restore Invoice' }));
+  await screen.findByText('Bin is empty.');
+  fireEvent.click(screen.getByRole('button', { name: 'Generated Invoice' }));
+  expect(screen.getByRole('button', { name: 'Delete Invoice' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'List of Consumer' }));
+  expect(screen.getByRole('button', { name: 'Modify Consumer' })).toBeTruthy();
 });

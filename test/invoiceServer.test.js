@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { mutateInvoice, invoiceWorkspace } from '../server/invoiceWorkspace.js';
-import { buildInvoiceLedger, invoiceDue, invoicePaid, financialYear, consumerStatement } from '../src/utils/invoiceAccounting.js';
+import { buildInvoiceLedger, invoiceDue, invoicePaid, financialYear, consumerStatement, outstandingAgeing } from '../src/utils/invoiceAccounting.js';
 
 const sdk = vi.hoisted(() => ({ auth: { verifyIdToken: vi.fn() }, firestore: null }));
 vi.mock('../server/loginService.js', async (original) => ({ ...await original(), getAdmin: async () => sdk }));
@@ -107,4 +107,56 @@ it('allows only one opening balance per stored consumer', async () => {
   const entry = { id: 'opening', consumerId: 'customer', type: 'OpeningDebit', amount: 200, date: '2026-03-01', reason: 'Carry forward' };
   await invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'adjustment', entry });
   await expect(invoiceWorkspace('Bearer token', { userId: 'u1', mode: 'adjustment', entry: { ...entry, id: 'duplicate' } })).rejects.toThrow('already recorded');
+});
+
+it('links credit notes and refunds atomically without losing receipt history', async () => {
+  const { firestore } = database();
+  await mutateInvoice(firestore, 'u1', create('bill'));
+  await mutateInvoice(firestore, 'u1', payment('receipt', 1000));
+  const note = { mode: 'note', id: 'bill', entry: { id: 'note1', type: 'Credit', amount: 200, date: '2026-04-03', reason: 'Returned goods' } };
+  await mutateInvoice(firestore, 'u1', note);
+  const refund = { mode: 'refund', id: 'bill', entry: { id: 'refund1', amount: 150, date: '2026-04-03', reason: 'Return refund' } };
+  const record = await mutateInvoice(firestore, 'u1', refund);
+  expect(record.payments[0].amount).toBe(1000);
+  expect(buildInvoiceLedger([record]).at(-1).balance).toBe(-50);
+  expect(await mutateInvoice(firestore, 'u1', refund)).toEqual(record);
+  const results = await Promise.allSettled(['r2', 'r3'].map((id) => mutateInvoice(firestore, 'u1', { ...refund, entry: { ...refund.entry, id, amount: 50 } })));
+  expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+  await expect(mutateInvoice(firestore, 'u1', { mode: 'reversePayment', id: 'bill', paymentId: 'receipt', reason: 'Correction' })).rejects.toThrow('refunds');
+  await expect(mutateInvoice(firestore, 'u1', { ...note, entry: { ...note.entry, amount: 201 } })).rejects.toThrow('different details');
+});
+
+it('classifies ageing boundaries and excludes cancelled or paid invoices', () => {
+  const records = ['2026-09-19', '2026-08-19', '2026-08-18', '2026-07-20', '2026-07-19', '2026-06-20', '2026-06-19'].map((date, index) => ({ id: String(index), header: { date, amount: 100 }, payments: [] }));
+  const rows = outstandingAgeing([...records, { status: 'Cancelled', header: { date: '2026-04-01', amount: 100 } }], '2026-09-18');
+  expect(rows.map((row) => row.days)).toEqual([0, 30, 31, 60, 61, 90, 91]);
+  expect(rows.map((row) => row.bucket)).toEqual(['Not due', '0?30 days', '31?60 days', '31?60 days', '61?90 days', '61?90 days', '90+ days']);
+});
+
+it('trashes and restores invoices while retaining numbers, payments and ledger balances', async () => {
+  const { firestore } = database();
+  const original = await mutateInvoice(firestore, 'u1', create('bill'));
+  await mutateInvoice(firestore, 'u1', payment('receipt', 400));
+  const deleted = await mutateInvoice(firestore, 'u1', { mode: 'trashInvoice', id: 'bill' }, 'admin');
+  expect(deleted.trashed).toBe(true); expect(deleted.deletedBy).toBe('admin');
+  expect(deleted.invoiceNumber).toBe(original.invoiceNumber);
+  expect(buildInvoiceLedger([deleted]).at(-1).balance).toBe(600);
+  await expect(mutateInvoice(firestore, 'u1', payment('new', 100))).rejects.toThrow('Restore');
+  const restored = await mutateInvoice(firestore, 'u1', { mode: 'restoreInvoice', id: 'bill' });
+  expect(restored.trashed).toBe(false); expect(restored.payments[0].amount).toBe(400);
+});
+it('persists consumer bin state, blocks editing until restoration and preserves duplicate identity', async () => {
+  const { firestore } = database({ 'users/u1': { dealerCode: 'D001', status: 'active' } });
+  sdk.firestore = firestore;
+  sdk.auth.verifyIdToken.mockResolvedValue({ uid: 'u1', dealerCode: 'D001', accountActive: true, planActive: true });
+  const call = (body) => invoiceWorkspace('Bearer token', { userId: 'u1', ...body });
+  const consumer = { consumerName: 'Ravi', consumerNo: '101', mobileNo: '9876543210' };
+  const saved = await call({ mode: 'consumer', consumer });
+  await call({ mode: 'trashConsumer', id: saved.id });
+  expect((await call({ mode: 'load' })).consumers[0].trashed).toBe(true);
+  await expect(call({ mode: 'consumer', editId: saved.id, consumer })).rejects.toThrow('Restore');
+  await expect(call({ mode: 'consumer', consumer })).rejects.toThrow('already exists');
+  await call({ mode: 'restoreConsumer', id: saved.id });
+  const modified = await call({ mode: 'consumer', editId: saved.id, consumer: { ...consumer, consumerName: 'Ravi Updated' } });
+  expect(modified.trashed).toBe(false); expect(modified.consumerName).toBe('Ravi Updated');
 });
