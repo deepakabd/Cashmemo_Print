@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 const readStorageValue = (key, fallback) => {
   try {
@@ -12,6 +12,22 @@ const readStorageValue = (key, fallback) => {
 export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } = {}) => {
   const [requests, setRequests] = useState([]);
   const [users, setUsers] = useState([]);
+  const confirmedRegistrationStatuses = useRef(new Map());
+  const reconcileRegistrationRequests = (nextRequests, live = false) => nextRequests.map((request) => {
+    const confirmed = confirmedRegistrationStatuses.current.get(request.id);
+    if (!confirmed) return request;
+    const status = String(request.status || 'pending').trim().toLowerCase();
+    if (status !== 'pending') {
+      if (live) confirmedRegistrationStatuses.current.delete(request.id);
+      return request;
+    }
+    return { ...request, status: confirmed };
+  });
+  const completeRegistrationRequest = (id, status) => {
+    // Call only after the server confirms the mutation, never on a failed write.
+    confirmedRegistrationStatuses.current.set(id, status);
+    setRequests((previous) => reconcileRegistrationRequests(previous));
+  };
   const [updateApprovals, setUpdateApprovals] = useState([]);
   const [activeAdminTabState, setActiveAdminTabState] = useState(() => {
     const savedTab = readStorageValue('activeAdminTab', 'dashboard');
@@ -47,10 +63,6 @@ export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } 
   const [adminNotifications, setAdminNotifications] = useState([]);
   const [adminDataHealth, setAdminDataHealth] = useState({ source: 'unknown', lastSyncAt: '', firebaseReachable: false, error: '' });
   const [hiddenApprovalIds, setHiddenApprovalIds] = useState([]);
-  const [registrationStatusOverrides, setRegistrationStatusOverrides] = useState(() => {
-    const parsed = readStorageValue('registrationStatusOverrides', {});
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  });
 
   const confirmAdminAction = externalConfirmAdminAction || ((message) => window.confirm(message));
 
@@ -107,8 +119,8 @@ export const useAdminData = ({ confirmAdminAction: externalConfirmAdminAction } 
     setAdminDataHealth,
     hiddenApprovalIds,
     setHiddenApprovalIds,
-    registrationStatusOverrides,
-    setRegistrationStatusOverrides,
+    completeRegistrationRequest,
+    reconcileRegistrationRequests,
     confirmAdminAction,
     paginateAdminRows,
   };

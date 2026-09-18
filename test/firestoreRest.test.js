@@ -61,6 +61,20 @@ const loadService = async () => {
 };
 
 describe('authenticated Firestore REST requests', () => {
+  it('uses the real registration document ID even when a legacy record stores a different id field', async () => {
+    auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('test-token') };
+    const document = { name: 'projects/test-project/databases/(default)/documents/registrationRequests/real-doc',
+      fields: { id: { stringValue: 'req-local-copy' }, status: { stringValue: 'pending' } } };
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ documents: [document] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => document }));
+    const service = await loadService();
+    expect((await service.fetchFirestoreCollectionPageRest('registrationRequests')).documents)
+      .toEqual([{ id: 'real-doc', status: 'pending' }]);
+    expect(await service.fetchFirestoreDocumentRest('registrationRequests', 'real-doc'))
+      .toEqual({ id: 'real-doc', status: 'pending' });
+  });
+
   it('filters pending approvals on the server and follows an exclusive document-name cursor', async () => {
     auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('test-token') };
     const name = 'projects/test-project/databases/(default)/documents/updateApprovals/a';

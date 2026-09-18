@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { saveAdminUserTransaction, saveAdminUser } from '../server/adminUsers.js';
 import { hashPin } from '../server/pinCredentials.js';
+import { rejectAdminRegistrationTransaction } from '../server/adminUserWorkflows.js';
 
 const sdk = vi.hoisted(() => ({ verifyIdToken: vi.fn(), firestore: null }));
 vi.mock('../server/loginService.js', async (original) => ({
@@ -76,6 +77,59 @@ const create = (firestore, code, mode = 'create', userId) => saveAdminUserTransa
     data: { dealerCode: code, dealerName: 'Test', status: 'active' } }, 'timestamp');
 
 describe('server dealer code uniqueness', () => {
+  it.each(['req-real', 'legacy-real'])('rejects a real registration %s atomically with one audit, and replays safely', async (requestId) => {
+    const { firestore, records } = database({ [`registrationRequests/${requestId}`]: { dealerCode: '123', status: 'pending' } });
+    await rejectAdminRegistrationTransaction(firestore, requestId, 'timestamp', 'admin');
+    expect(records.get(`registrationRequests/${requestId}`)).toMatchObject({ status: 'rejected', rejectedBy: 'admin', rejectedAt: 'timestamp' });
+    const before = [...records.entries()];
+    expect(await rejectAdminRegistrationTransaction(firestore, requestId, 'later')).toMatchObject({ alreadyRejected: true });
+    expect([...records.entries()]).toEqual(before);
+    expect([...records.keys()].filter((path) => path.startsWith('adminAuditTrail/'))).toHaveLength(1);
+  });
+
+  it.each([{}, { 'registrationRequests/request': { status: 'approved' } }])('refuses missing or already approved registrations without changing data', async (initial) => {
+    const { firestore, records } = database(initial);
+    await expect(rejectAdminRegistrationTransaction(firestore, 'request', 'timestamp')).rejects.toBeInstanceOf(Error);
+    expect([...records.entries()]).toEqual(Object.entries(initial));
+  });
+
+  it('rolls back rejection when its audit cannot commit', async () => {
+    const initial = { 'registrationRequests/request': { status: 'pending' } };
+    const { firestore, records } = database(initial, 'adminAuditTrail/');
+    await expect(rejectAdminRegistrationTransaction(firestore, 'request', 'timestamp')).rejects.toThrow('Commit failed');
+    expect([...records.entries()]).toEqual(Object.entries(initial));
+  });
+
+  it('allows only one terminal action when approve and reject race', async () => {
+    const { firestore, records } = database({ 'registrationRequests/request': { dealerCode: '123', status: 'pending' } });
+    const results = await Promise.allSettled([
+      create(firestore, '123', 'approve'), rejectAdminRegistrationTransaction(firestore, 'request', 'timestamp'),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const status = records.get('registrationRequests/request').status;
+    expect(['approved', 'rejected']).toContain(status);
+    expect([...records.keys()].filter((path) => path.startsWith('users/'))).toHaveLength(status === 'approved' ? 1 : 0);
+  });
+
+  it.each([['Demo Package - 1 Day', 1], ['Basic Package - 7 Days', 7]])('approves stored legacy package %s with its correct validity', async (packageName, days) => {
+    const { firestore, records } = database({ 'registrationRequests/request': { dealerCode: '123', status: 'pending', package: packageName } });
+    const saved = await saveAdminUserTransaction(firestore, { mode: 'approve', requestId: 'request',
+      data: { dealerCode: '123', package: packageName, packageDays: 0 } }, 'timestamp');
+    expect(records.get('registrationRequests/request').status).toBe('approved');
+    expect(records.get(`users/${saved.id}`).packageDays).toBe(days);
+    expect(new Date(records.get(`users/${saved.id}`).validTill).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('does not allow legacy package exceptions for new users or an unrelated registration package', async () => {
+    const { firestore, records } = database({ 'registrationRequests/request': { dealerCode: '123', package: 'Premium Package - 30 Days' } });
+    for (const mode of ['create', 'approve']) {
+      await expect(saveAdminUserTransaction(firestore, { mode, requestId: 'request',
+        data: { dealerCode: '123', package: 'Demo Package - 1 Day' } }, 'timestamp'))
+        .rejects.toMatchObject({ code: 'invalid-input' });
+    }
+    expect(records.size).toBe(1);
+  });
+
   it('updates partial fields and dotted approval status while preserving the dealer code and singleton copies', async () => {
     const { firestore, records } = database({ 'users/a': { dealerCode: '123', status: 'active',
       pendingUpdates: { rates: { status: 'pending', payload: [{ rate: 10 }] } } } });
@@ -119,9 +173,18 @@ describe('server dealer code uniqueness', () => {
     expect(records.has('users/a')).toBe(false);
   });
 
-  it.each(['delete', 'reply', 'completeDictionary'])('requires an admin claim for workflow %s', async (mode) => {
+  it.each(['delete', 'reply', 'completeDictionary', 'rejectRegistration'])('requires an admin claim for workflow %s', async (mode) => {
     sdk.verifyIdToken.mockResolvedValueOnce({ role: 'operator' });
     await expect(saveAdminUser('Bearer dealer', { mode, userId: 'a' })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('dispatches authenticated registration rejection through the API service', async () => {
+    const { firestore, records } = database({ 'registrationRequests/request': { status: 'pending' } });
+    sdk.firestore = firestore;
+    sdk.verifyIdToken.mockResolvedValueOnce({ role: 'admin', uid: 'admin' });
+    expect(await saveAdminUser('Bearer admin', { mode: 'rejectRegistration', requestId: 'request' }))
+      .toMatchObject({ status: 'rejected' });
+    expect(records.get('registrationRequests/request').status).toBe('rejected');
   });
 
   it('commits activation, request completion and one audit together, and replays without rewriting the user', async () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { patchAdminUser, deleteAdminUser, completeAdminDictionaryRequest, saveAdminApprovalReply } from '../src/services/adminUserRepository';
+import { patchAdminUser, deleteAdminUser, completeAdminDictionaryRequest, saveAdminApprovalReply, rejectAdminRegistrationRequest } from '../src/services/adminUserRepository';
 const auth = vi.hoisted(() => ({ authStateReady: vi.fn(), currentUser: null }));
 vi.mock('../src/firebase', () => ({ auth, db: {} }));
 vi.mock('../src/services/userSubcollections', () => ({ readUserSubcollections: vi.fn(), mergeUserDocWithSubcollections: vi.fn() }));
@@ -24,6 +24,11 @@ it('uses the same API for deletion, replies and dictionary completion', async ()
   await saveAdminApprovalReply({ userId: 'u', approvalDocId: 'a', type: 'profile', message: 'Fix GST' });
   await completeAdminDictionaryRequest('u', 'a', { id: 'a' }, 'approved');
   expect(fetch.mock.calls.map(([, request]) => JSON.parse(request.body).mode)).toEqual(['delete', 'reply', 'completeDictionary']);
+});
+
+it.each(['req-real-firestore-id', 'legacy-real-firestore-id'])('persists registration rejection for %s instead of assuming it is local', async (requestId) => {
+  await rejectAdminRegistrationRequest(requestId);
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ mode: 'rejectRegistration', requestId });
 });
 
 it('propagates server validation errors without a Firestore fallback', async () => {
