@@ -1,7 +1,7 @@
 import { loadAdminSnapshot } from './services/adminDataRepository';
 import { buildAdminUserRestoreData } from './utils/adminUserRestore';
 import AdminDataStatus from './components/AdminDataStatus';
-import { clearLegacyRegistrationStorage, writeRegistrationRequestsCache } from './utils/registrationStorage';
+import { clearLegacyRegistrationStorage } from './utils/registrationStorage';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Suspense, useCallback } from 'react';
@@ -150,7 +150,7 @@ import {
 } from './auth/userAuth';
 import { updateUserData } from './services/userSubcollections';
 import { retryDeniedFirestoreReads } from './services/firestoreRest';
-import { fetchAdminUserDetail, getAdminUserStatistics, saveAdminUser, patchAdminUser, deleteAdminUser, completeAdminDictionaryRequest, saveAdminApprovalReply } from './services/adminUserRepository';
+import { fetchAdminUserDetail, getAdminUserStatistics, saveAdminUser, patchAdminUser, deleteAdminUser, completeAdminDictionaryRequest, saveAdminApprovalReply, rejectAdminRegistrationRequest } from './services/adminUserRepository';
 import { getUserAccountStatus } from './utils/userAccountStatus';
 import { adminSignIn, adminSignOut, validateAdminCredentials } from './auth/adminAuth';
 import {
@@ -1500,8 +1500,8 @@ function App() {
       setAdminDataHealth,
       hiddenApprovalIds,
       setHiddenApprovalIds,
-      registrationStatusOverrides,
-      setRegistrationStatusOverrides,
+      completeRegistrationRequest,
+      reconcileRegistrationRequests,
       confirmAdminAction,
       paginateAdminRows,
     } = useAdminData({ confirmAdminAction: confirmAdminActionWithDialog });
@@ -1767,7 +1767,7 @@ function App() {
     const loadData = () => {
       if (adminLoadRef.current) return adminLoadRef.current;
       const previous = adminSnapshotRef.current ? { ...adminSnapshotRef.current,
-        requests, users, approvals: updateApprovals, audit: auditTrail } : null;
+        users, approvals: updateApprovals, audit: auditTrail } : null;
       const syncingHealth = { source: 'syncing', lastSyncAt: previous?.lastSyncAt || '', firebaseReachable: false, error: '' };
       adminHealthRef.current = syncingHealth;
       setAdminDataHealth(syncingHealth);
@@ -1780,8 +1780,9 @@ function App() {
         }
         const { snapshot, health } = await loadAdminSnapshot(previous);
         if (snapshot) {
-          adminSnapshotRef.current = snapshot;
-          setRequests(snapshot.requests);
+          const reconciled = { ...snapshot, requests: reconcileRegistrationRequests(snapshot.requests, health.source === 'live') };
+          adminSnapshotRef.current = reconciled;
+          setRequests(reconciled.requests);
           setUsers(snapshot.users);
           setUpdateApprovals(snapshot.approvals);
           setAuditTrail(snapshot.audit);
@@ -1794,9 +1795,7 @@ function App() {
         if (health.source === 'live') {
           setAdminUserDetails({});
           setAuditSyncDisabled(false);
-          // Confirmed Firebase statuses supersede local action overrides.
-          registrationStatusOverridesRef.current = {};
-          setRegistrationStatusOverrides({});
+          // Remove obsolete browser-only workflow overrides.
           try { localStorage.removeItem('registrationStatusOverrides'); } catch { /* Optional cache. */ }
         }
         setAuditSyncState({ source: health.source === 'live' ? 'firebase' : health.source,
@@ -2023,20 +2022,14 @@ function App() {
     const { canAccessTab, canMutateAdminData: roleCanMutate } = getAdminTabAccess(adminRole);
     const canMutateAdminData = roleCanMutate && adminDataHealth.source === 'live';
 
-    const registrationStatusOverridesRef = useRef(registrationStatusOverrides);
-    const setRegistrationOverride = (id, status) => {
-      const next = { ...registrationStatusOverridesRef.current, [id]: status };
-      registrationStatusOverridesRef.current = next;
-      setRegistrationStatusOverrides(next);
-      setRequests((prev) => prev.map((request) => (
-        request.id === id ? { ...request, status } : request
-      )));
-      setSelectedRequestIds((prev) => prev.filter((requestId) => requestId !== id));
-      try {
-        localStorage.setItem('registrationStatusOverrides', JSON.stringify(next));
-      } catch {
-        // The completed action must still clear the queue when storage is full.
+    const completeRegistrationInView = (id, status) => {
+      completeRegistrationRequest(id, status);
+      if (adminSnapshotRef.current) {
+        adminSnapshotRef.current = { ...adminSnapshotRef.current,
+          requests: reconcileRegistrationRequests(adminSnapshotRef.current.requests) };
       }
+      setSelectedRequestIds((prev) => prev.filter((requestId) => requestId !== id));
+      setViewRequest((current) => current?.id === id ? null : current);
     };
 
     const resolveEditToken = (user) => {
@@ -2098,8 +2091,8 @@ function App() {
       }
       // Approval and its audit are already committed. Cache/refresh failures
       // must not turn a confirmed approval into a reported write failure.
-      setRequests((prev) => prev.map((request) => request.id === id ? { ...request, status: 'approved' } : request));
-      setSelectedRequestIds((prev) => prev.filter((requestId) => requestId !== id));
+      completeRegistrationInView(id, 'approved');
+      pushToast('Registration approved.', 'success');
       try {
         await loadData();
       } catch {
@@ -2114,26 +2107,20 @@ function App() {
       if (!req) return { ok: false, reason: 'Registration request not found.' };
       if (!options.skipConfirm && !(await confirmAdminAction(`Reject registration request for ${req?.dealerCode || 'this dealer'}?`))) return { ok: false, reason: 'Action cancelled.' };
       try {
-        const requestId = String(id || '');
-        const isLocalOnlyRequest = requestId.startsWith('req-') || requestId.startsWith('legacy-');
-        if (!isLocalOnlyRequest) {
-          await updateDoc(doc(db, 'registrationRequests', id), {
-            status: 'rejected',
-            rejectedAt: serverTimestamp(),
-          });
-        } else {
-          const nextLocal = requests.map((r) => (r.id === id ? { ...r, status: 'rejected' } : r));
-          setRequests(nextLocal);
-          writeRegistrationRequestsCache(nextLocal);
-        }
-        setRegistrationOverride(id, 'rejected');
-        await loadData();
-        logAdminActivity('registration_rejected', { id, dealerCode: req?.dealerCode || '' });
-        return { ok: true };
-      } catch {
-        pushToast('Reject failed. Check Firestore rules.', 'error');
-        return { ok: false, reason: 'Reject failed. Check Firestore rules.' };
+        await rejectAdminRegistrationRequest(id);
+      } catch (error) {
+        const reason = error?.message || 'Reject failed. Check server configuration.';
+        pushToast(reason, 'error');
+        return { ok: false, reason };
       }
+      completeRegistrationInView(id, 'rejected');
+      pushToast('Registration rejected.', 'success');
+      try {
+        await loadData();
+      } catch {
+        pushToast('Registration rejected in Firestore, but the dashboard could not refresh. Please refresh.', 'warning');
+      }
+      return { ok: true };
     };
 
     const addManualUser = async () => {

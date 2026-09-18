@@ -1,10 +1,30 @@
 import { LoginError } from './loginService.js';
 import { isMatchingDictionaryRequest } from '../src/utils/dictionaryHelpers.js';
+import { createHash } from 'node:crypto';
 
 const TYPES = ['profile', 'profileData', 'bank', 'bankDetailsData', 'rates', 'rate', 'ratesData',
   'header', 'hindiHeaderData', 'deliveryArea', 'deliveryStaff', 'planUpgrade', 'dictionary'];
 const validId = (id) => typeof id === 'string' && id.length > 0 && !id.includes('/') && id !== '.' && id !== '..';
 const fail = (message, status = 400) => { throw new LoginError(status === 404 ? 'not-found' : 'invalid-input', message, status); };
+
+export const rejectAdminRegistrationTransaction = (firestore, requestId, timestamp, actor = 'admin') => {
+  if (!validId(requestId)) fail('Registration request ID required.');
+  return firestore.runTransaction(async (tx) => {
+    const requestRef = firestore.collection('registrationRequests').doc(requestId);
+    const request = await tx.get(requestRef);
+    if (!request.exists) fail('Registration request no longer exists.', 404);
+    const status = String(request.data().status || 'pending').trim().toLowerCase();
+    if (status === 'rejected') return { requestId, status: 'rejected', alreadyRejected: true };
+    if (status !== 'pending') throw new LoginError('request-not-pending', 'Registration request is no longer pending.', 409);
+    tx.update(requestRef, { status: 'rejected', rejectedAt: timestamp, rejectedBy: actor });
+    const auditId = createHash('sha256').update(requestId).digest('hex');
+    tx.set(firestore.collection('adminAuditTrail').doc(`registration-rejected-${auditId}`), {
+      action: 'registration_rejected', actor, createdAt: timestamp,
+      details: { id: requestId, dealerCode: request.data().dealerCode || '' },
+    });
+    return { requestId, status: 'rejected' };
+  });
+};
 
 export const mutateAdminUserWorkflow = async (firestore, body, timestamp) => {
   const { mode, userId, approvalDocId, type, pendingType = type, source, message, approval: identity = {}, status } = body;

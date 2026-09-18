@@ -101,6 +101,7 @@ export const saveAdminUser = (data, { mode = 'create', userId, requestId } = {})
 
 export const patchAdminUser = (userId, patch) => saveAdminUser(patch, { mode: 'update', userId });
 export const deleteAdminUser = (userId) => mutateAdminUser({ mode: 'delete', userId });
+export const rejectAdminRegistrationRequest = (requestId) => mutateAdminUser({ mode: 'rejectRegistration', requestId });
 
 export const saveAdminApprovalReply = (options) => mutateAdminUser({ ...options, mode: 'reply' });
 

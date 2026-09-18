@@ -3,8 +3,8 @@ import { getAdmin, LoginError } from './loginService.js';
 import { buildAdminUserRestoreData } from '../src/utils/adminUserRestore.js';
 import { isHashedPin } from './pinCredentials.js';
 import { USER_SINGLETON_PATHS } from '../src/utils/userDataSchema.js';
-import { validateAdminUserPatch } from './adminUserValidation.js';
-import { mutateAdminUserWorkflow } from './adminUserWorkflows.js';
+import { LEGACY_REGISTRATION_PACKAGES, validateAdminUserPatch } from './adminUserValidation.js';
+import { mutateAdminUserWorkflow, rejectAdminRegistrationTransaction } from './adminUserWorkflows.js';
 
 const normalizeCode = (value) => String(value || '').trim().toUpperCase();
 const guardId = (code) => createHash('sha256').update(code).digest('hex');
@@ -35,7 +35,7 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
   delete patch.id;
   delete patch.approved;
   delete patch.confirmPin;
-  validateAdminUserPatch(patch);
+  if (mode !== 'approve') validateAdminUserPatch(patch);
   const users = firestore.collection('users');
   const guards = firestore.collection('dealerCodeReservations');
   // Stable across transaction retries; never create multiple auto-IDs on retry.
@@ -59,10 +59,11 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
     if (request && normalizeCode(request.data().dealerCode) !== code) {
       throw new LoginError('request-mismatch', 'Registration dealer code changed. Refresh and retry.', 409);
     }
-    if (request && !['pending', 'approved'].includes(request.data().status || 'pending')) {
+    const requestStatus = String(request?.data().status || 'pending').trim().toLowerCase();
+    if (request && !['pending', 'approved'].includes(requestStatus)) {
       throw new LoginError('request-not-pending', 'Registration request is no longer pending.', 409);
     }
-    if (request?.data().status === 'approved') {
+    if (request && requestStatus === 'approved') {
       const approvedUserId = request.data().approvedUserId;
       if (!validId(approvedUserId)) {
         throw new LoginError('approval-inconsistent', 'Previous approval has no linked user. Admin reconciliation required.', 409);
@@ -72,6 +73,9 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
         throw new LoginError('approval-inconsistent', 'Previously approved user is missing or changed. Admin reconciliation required.', 409);
       }
       return { id: approvedUserId, dealerCode: code, alreadyApproved: true };
+    }
+    if (mode === 'approve') {
+      validateAdminUserPatch(patch, { legacyRegistration: patch.package === request.data().package });
     }
     const guardRef = guards.doc(guardId(code));
     const guard = await tx.get(guardRef);
@@ -117,6 +121,15 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
       next.role = current.exists ? (current.data().role || 'operator') : 'operator';
       next.status = 'active';
       next.approvedAt = timestamp;
+      if (patch.package === request.data().package && Object.hasOwn(LEGACY_REGISTRATION_PACKAGES, patch.package)) {
+        const days = LEGACY_REGISTRATION_PACKAGES[patch.package];
+        const from = new Date();
+        const till = new Date(from);
+        till.setDate(till.getDate() + days);
+        next.packageDays = days;
+        next.validFrom = from.toISOString();
+        next.validTill = till.toISOString();
+      }
     }
     if (mode === 'restore') next.restoredAt = timestamp;
     for (const [field, path] of Object.entries(USER_SINGLETON_PATHS)) {
@@ -149,6 +162,9 @@ export const saveAdminUser = async (authorization, body) => {
   }
   if (claims.role !== 'admin') throw new LoginError('forbidden', 'Admin role required.', 403);
   const { FieldValue } = await import('firebase-admin/firestore');
+  if (body?.mode === 'rejectRegistration') {
+    return rejectAdminRegistrationTransaction(firestore, body.requestId, FieldValue.serverTimestamp(), claims.email || claims.uid || 'admin');
+  }
   if (['delete', 'reply', 'completeDictionary'].includes(body?.mode)) {
     return mutateAdminUserWorkflow(firestore, body, FieldValue.serverTimestamp());
   }

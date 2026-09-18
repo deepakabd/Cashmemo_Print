@@ -104,8 +104,8 @@ export const fetchFirestoreCollectionPageRest = async (collectionName, pageSize 
   const order = options.orderBy ? `&orderBy=${encodeURIComponent(options.orderBy)}` : '';
   const data = await request(`${encodeURIComponent(collectionName)}?pageSize=${pageSize}${pageToken}${mask}${order}`, options);
   const documents = (data.documents || []).map((document) => ({
-    id: document.name.split('/').pop(),
     ...decodeFields(document.fields),
+    id: document.name.split('/').pop(),
   }));
   return { documents, nextPageToken: data.nextPageToken || null };
 };
@@ -119,5 +119,5 @@ export const fetchFirestoreDocumentRest = async (collectionName, documentId, opt
   if (!documentId) return null;
   const mask = (options.fieldPaths || []).map((path) => `mask.fieldPaths=${encodeURIComponent(path)}`).join('&');
   const data = await request(`${encodeURIComponent(collectionName)}/${encodeURIComponent(documentId)}${mask ? `?${mask}` : ''}`, options);
-  return { id: documentId, ...decodeFields(data.fields) };
+  return { ...decodeFields(data.fields), id: documentId };
 };
