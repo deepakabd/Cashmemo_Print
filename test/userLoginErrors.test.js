@@ -74,7 +74,20 @@ it('supports an older token API only through an authenticated code-restricted qu
   expect((await lookupDealerByCode('123', '1234')).outcome).toBe('ok');
   expect(signInWithCustomToken.mock.invocationCallOrder[0]).toBeLessThan(getDocs.mock.invocationCallOrder[0]);
 });
-it('keeps existing legacy PIN write compatibility', async () => {
-  expect(await buildPinWritePatch(' 1234 ')).toMatchObject({ pin: '1234', pinHash: null });
+it('returns only server-hashed credentials and skips blank PIN changes', async () => {
+  const pinHash = `scrypt$16384$8$1$${'A'.repeat(22)}==$${'B'.repeat(86)}==`;
+  api({ pin: null, pinHash, pinUpdatedAt: '2026-09-18T00:00:00.000Z' });
+  expect(await buildPinWritePatch(' 1234 ')).toEqual({ pin: null, pinHash, pinUpdatedAt: '2026-09-18T00:00:00.000Z' });
+  expect(fetch).toHaveBeenCalledWith('/api/pin-hash', expect.objectContaining({ body: JSON.stringify({ pin: '1234' }) }));
+  fetch.mockClear();
   expect(await buildPinWritePatch('')).toEqual({});
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('never falls back to plaintext when hashing fails or returns unsafe data', async () => {
+  api({ error: 'Hash service unavailable' }, false);
+  await expect(buildPinWritePatch('1234')).rejects.toThrow('Hash service unavailable');
+  api({ pin: '1234', pinHash: null });
+  await expect(buildPinWritePatch('1234')).rejects.toThrow('invalid response');
+  fetch.mockRejectedValue(new Error('offline'));
+  await expect(buildPinWritePatch('1234')).rejects.toThrow('offline');
 });

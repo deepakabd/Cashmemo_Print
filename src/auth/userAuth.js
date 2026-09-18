@@ -108,10 +108,24 @@ export const lookupDealerByCode = async (dealerCode, pin) => {
   throw new Error('Signed-in user record no longer exists. Please contact admin.');
 };
 
-// Legacy writes remain compatible with the server's plaintext-to-hash upgrade.
+// Hash on the trusted server before constructing any persistence payload.
 export const buildPinWritePatch = async (pin) => {
   const value = String(pin ?? '').trim();
-  return value ? { pin: value, pinHash: null, pinUpdatedAt: new Date().toISOString() } : {};
+  if (!value) return {};
+  const response = await fetch('/api/pin-hash', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: value }),
+  });
+  let result;
+  try { result = await response.json(); } catch {
+    throw new Error('PIN hashing API is unavailable. Please try again.');
+  }
+  if (!response.ok) throw new Error(result?.error || 'PIN hashing failed. Please try again.');
+  if (!/^scrypt\$16384\$8\$1\$[A-Za-z0-9+/]{22}==\$[A-Za-z0-9+/]{86}==$/.test(result?.pinHash)
+    || result.pin != null || !Number.isFinite(Date.parse(result.pinUpdatedAt))) {
+    throw new Error('PIN hashing API returned an invalid response.');
+  }
+  return { pin: null, pinHash: result.pinHash, pinUpdatedAt: result.pinUpdatedAt };
 };
 
 export const registerLoginDevice = async (firestoreUser, { deferSave = false, deviceUserName = '' } = {}) => {

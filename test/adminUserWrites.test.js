@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { saveAdminUserTransaction, saveAdminUser } from '../server/adminUsers.js';
-import { hashPin } from '../server/pinCredentials.js';
+import { hashPin, verifyPin } from '../server/pinCredentials.js';
 import { rejectAdminRegistrationTransaction } from '../server/adminUserWorkflows.js';
 
 const sdk = vi.hoisted(() => ({ verifyIdToken: vi.fn(), firestore: null }));
@@ -77,6 +77,27 @@ const create = (firestore, code, mode = 'create', userId) => saveAdminUserTransa
     data: { dealerCode: code, dealerName: 'Test', status: 'active' } }, 'timestamp');
 
 describe('server dealer code uniqueness', () => {
+  it('hashes raw API PINs and preserves credentials for blank edit PINs', async () => {
+    const { firestore, records } = database();
+    const result = await saveAdminUserTransaction(firestore, { data: { dealerCode: '123', pin: '123456', pinHash: null } }, 'timestamp');
+    const stored = records.get(`users/${result.id}`);
+    expect(stored.pin).toBeNull();
+    expect(await verifyPin('123456', stored.pinHash)).toMatchObject({ matches: true, legacy: false });
+    await saveAdminUserTransaction(firestore, { mode: 'update', userId: result.id, data: { pin: '', pinHash: null } }, 'later');
+    expect(records.get(`users/${result.id}`).pinHash).toBe(stored.pinHash);
+    expect(JSON.stringify(result)).not.toContain('123456');
+  });
+
+  it.each(['hash', 'legacy'])('approves using stored registration credentials (%s)', async (format) => {
+    const credentials = format === 'hash' ? { pinHash: await hashPin('654321'), pin: null } : { pin: '654321' };
+    const { firestore, records } = database({ 'registrationRequests/request': { dealerCode: '123', status: 'pending', ...credentials } });
+    const result = await create(firestore, '123', 'approve');
+    for (const path of [`users/${result.id}`, 'registrationRequests/request']) {
+      expect(records.get(path).pin).toBeNull();
+      expect(await verifyPin('654321', records.get(path).pinHash)).toMatchObject({ matches: true, legacy: false });
+    }
+  });
+
   it.each(['req-real', 'legacy-real'])('rejects a real registration %s atomically with one audit, and replays safely', async (requestId) => {
     const { firestore, records } = database({ [`registrationRequests/${requestId}`]: { dealerCode: '123', status: 'pending' } });
     await rejectAdminRegistrationTransaction(firestore, requestId, 'timestamp', 'admin');
@@ -141,8 +162,7 @@ describe('server dealer code uniqueness', () => {
     expect(records.get('users/a/rates/current')).toEqual({ value: [{ rate: 20 }], updatedAt: 'timestamp' });
   });
 
-  it.each([{ mobile: '123' }, { package: 'unknown' }, { status: 'unknown' }, { ratesData: {} }, { 'dealerCode.value': '456' }])
-    ('rejects invalid partial data %j before any writes', async (data) => {
+  it.each([{ mobile: '123' }, { package: 'unknown' }, { status: 'unknown' }, { ratesData: {} }, { 'dealerCode.value': '456' }])('rejects invalid partial data %j before any writes', async (data) => {
       const { firestore, records } = database({ 'users/a': { dealerCode: '123' } });
       await expect(saveAdminUserTransaction(firestore, { mode: 'update', userId: 'a', data }, 'timestamp'))
         .rejects.toMatchObject({ status: 400, code: 'invalid-input' });
@@ -262,7 +282,7 @@ describe('server dealer code uniqueness', () => {
     } }, 'timestamp');
     const restored = records.get('users/deleted');
     expect(restored).toEqual({ dealerCode: '123', dealerName: 'Dealer', package: 'Premium Package - 30 Days', status: 'active',
-      profileData: { distributorName: 'Dealer' }, ratesData: [{ rate: 10 }], ratesDataCount: 1, pinHash,
+      profileData: { distributorName: 'Dealer' }, ratesData: [{ rate: 10 }], ratesDataCount: 1, pinHash, pin: null,
       role: 'operator', approvalStatus: {}, restoredBy: 'admin', restoreCount: 1,
       createdAt: 'timestamp', updatedAt: 'timestamp', approvedAt: 'timestamp', restoredAt: 'timestamp',
     });

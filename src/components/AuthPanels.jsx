@@ -4,6 +4,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { buildPinWritePatch } from '../auth/userAuth';
 import BrandMark from './BrandMark';
+import CredentialInput from './CredentialInput';
 import { clearLegacyRegistrationStorage, writeRegistrationRequestsCache } from '../utils/registrationStorage';
 
 export const RegisterPanel = ({
@@ -178,12 +179,12 @@ export const RegisterPanel = ({
             </div>
             <div>
               <label className="auth-field-label">PIN</label>
-              <input name="pin" autoComplete="new-password" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="PIN (4 digits)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
+              <CredentialInput name="pin" autoComplete="new-password" className={`form-input${errors.pin ? ' form-input--error' : ''}`} placeholder="PIN (4 digits)" type="password" value={form.pin} onChange={onChange} maxLength={4} />
               {errors.pin && <div className="form-error">{errors.pin}</div>}
             </div>
             <div>
               <label className="auth-field-label">Confirm PIN</label>
-              <input name="confirmPin" autoComplete="new-password" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="Confirm PIN" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
+              <CredentialInput name="confirmPin" autoComplete="new-password" className={`form-input${errors.confirmPin ? ' form-input--error' : ''}`} placeholder="Confirm PIN" type="password" value={form.confirmPin} onChange={onChange} maxLength={4} />
               {errors.confirmPin && <div className="form-error">{errors.confirmPin}</div>}
             </div>
             <div>
@@ -245,7 +246,7 @@ export const AdminLoginPanel = ({
           </div>
           <div>
             <label className="auth-field-label">Password</label>
-            <input
+            <CredentialInput
               className="form-input"
               type="password"
               placeholder="Password"
@@ -313,7 +314,7 @@ export const UserLoginPanel = ({
           </div>
           <div>
             <label className="auth-field-label">PIN</label>
-            <input
+            <CredentialInput
               className="form-input"
               type={userPinVisible ? 'text' : 'password'}
               placeholder="PIN"

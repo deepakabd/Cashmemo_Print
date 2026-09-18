@@ -9,8 +9,10 @@ Audited `user.pin`, `pin:`, `pinHash`, and other PIN display references.
 - Server verification, hashing, migration, Firestore rule restrictions, and credential test fixtures retain intentional references. Restore supports validated hashes in its write payload; these are excluded from admin list/detail state.
 - Static demo PIN instructions remain public demo information.
 
-## Remaining credential storage issue
+## Credential writes fixed
 
-`src/auth/userAuth.js` currently returns `{ pin: value, pinHash: null, ... }` from `buildPinWritePatch()`. Registration spreads that patch into a Firestore write, and admin create/edit/import sends it to `server/adminUsers.js`, which currently preserves plaintext `pin` for those modes. Consequently, the older claim in `PIN_SECURITY.md` that plaintext PINs are never written does not describe the current implementation. The presence of `api/pin-hash.js` does not change this: this client helper does not call it.
+`buildPinWritePatch()` now calls `/api/pin-hash` and returns only `{ pin: null, pinHash, pinUpdatedAt }`. Blank PIN edits return `{}`. Failed hashing or unsafe responses throw; there is no plaintext fallback. Registration, create, edit, and import use this helper.
 
-This needs a separate credential-write migration to trusted hashing and removal of plaintext persistence. The UI changes here prevent these stored credentials from being displayed or retained in admin user/request state; they do not resolve plaintext database storage.
+The authenticated admin API independently hashes raw PIN inputs and rejects malformed hashes. Approval copies credentials from the stored registration request, hashing and clearing a legacy plaintext PIN atomically with approval. Registration rules reject plaintext `pin` and `confirmPin` writes.
+
+Existing database records are not automatically migrated by this code change. Deploy the API/client and Firestore rules; audit and migrate historical plaintext records separately. No remote deployment or migration was performed during this fix.

@@ -134,8 +134,16 @@ service cloud.firestore {
     // admin. Reads are admin-only so pending applications (which include contact
     // details) are not publicly listable.
     match /registrationRequests/{requestId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin();
+      function safeRegistrationCredentials() {
+        let hash = request.resource.data.get('pinHash', null);
+        return pinFieldsSafe()
+          && request.resource.data.get('confirmPin', null) == null
+          && (hash == null || (hash is string
+            && hash.matches('scrypt[$]16384[$]8[$]1[$][A-Za-z0-9+/]{22}==[$][A-Za-z0-9+/]{86}==')));
+      }
+      allow create: if safeRegistrationCredentials();
+      allow read, delete: if isAdmin();
+      allow update: if isAdmin() && safeRegistrationCredentials();
     }
 
     // ---- update approvals --------------------------------------------------

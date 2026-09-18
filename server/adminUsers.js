@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { getAdmin, LoginError } from './loginService.js';
 import { buildAdminUserRestoreData } from '../src/utils/adminUserRestore.js';
 import { isHashedPin } from './pinCredentials.js';
+import { buildPinHashPatch } from './pinAdmin.js';
 import { USER_SINGLETON_PATHS } from '../src/utils/userDataSchema.js';
 import { LEGACY_REGISTRATION_PACKAGES, validateAdminUserPatch } from './adminUserValidation.js';
 import { mutateAdminUserWorkflow, rejectAdminRegistrationTransaction } from './adminUserWorkflows.js';
@@ -35,6 +36,17 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
   delete patch.id;
   delete patch.approved;
   delete patch.confirmPin;
+  // Enforce hashing here as well: direct API callers cannot persist plaintext.
+  if (mode !== 'restore' && String(patch.pin ?? '').trim()) {
+    Object.assign(patch, await buildPinHashPatch(String(patch.pin).trim()));
+  } else if (patch.pinHash != null) {
+    if (!isHashedPin(patch.pinHash)) throw new LoginError('invalid-input', 'Invalid PIN hash.', 400);
+    patch.pin = null;
+  } else {
+    delete patch.pin;
+    delete patch.pinHash;
+    delete patch.pinUpdatedAt;
+  }
   if (mode !== 'approve') validateAdminUserPatch(patch);
   const users = firestore.collection('users');
   const guards = firestore.collection('dealerCodeReservations');
@@ -77,6 +89,12 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
     if (mode === 'approve') {
       validateAdminUserPatch(patch, { legacyRegistration: patch.package === request.data().package });
     }
+    // Credentials come from the stored request, never the sanitized admin UI.
+    const registrationCredentials = request && String(request.data().pin ?? '').trim()
+      ? await buildPinHashPatch(String(request.data().pin).trim())
+      : request && isHashedPin(request.data().pinHash)
+        ? { pin: null, pinHash: request.data().pinHash, pinUpdatedAt: request.data().pinUpdatedAt || timestamp }
+        : null;
     const guardRef = guards.doc(guardId(code));
     const guard = await tx.get(guardRef);
     const matches = await tx.get(users.where('dealerCode', '==', code).limit(2));
@@ -109,6 +127,7 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
     if (oldGuard?.exists && oldGuard.data().userId === targetRef.id) tx.delete(oldGuardRef);
     tx.set(guardRef, { dealerCode: code, userId: targetRef.id });
     const next = { ...patch };
+    if (registrationCredentials) Object.assign(next, registrationCredentials);
     if (!current.exists) {
       next.createdAt = timestamp;
       next.approvalStatus ??= {};
@@ -142,6 +161,7 @@ export const saveAdminUserTransaction = async (firestore, { mode = 'create', use
     else tx.set(targetRef, next);
     if (requestRef) {
       tx.set(requestRef, { status: 'approved', approvedUserId: targetRef.id,
+        ...(registrationCredentials || {}),
         approvedAt: timestamp, approvedBy: actor }, { merge: true });
       tx.set(firestore.collection('adminAuditTrail').doc(`registration-approved-${guardId(requestId)}`), {
         action: 'registration_approved', actor, createdAt: timestamp,
