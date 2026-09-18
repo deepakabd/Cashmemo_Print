@@ -61,6 +61,11 @@ vi.mock('../src/CashMemoHindi.jsx', () => ({
 }));
 
 import App from '../src/App.jsx';
+import { auth } from '../src/firebase.js';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { loadAdminSnapshot } from '../src/services/adminDataRepository';
+
+vi.mock('../src/services/adminDataRepository', () => ({ loadAdminSnapshot: vi.fn() }));
 
 const createRows = (count = 30) => Array.from({ length: count }, (_, index) => {
   const serial = 410001 + index;
@@ -133,6 +138,42 @@ const createPrintWindow = () => {
 };
 
 describe('App UI selection and print flow', () => {
+  it('transitions from pending admin authentication to one stable panel load', async () => {
+    auth.currentUser = null;
+    let finishSignIn;
+    signInWithEmailAndPassword.mockImplementationOnce(() => new Promise((resolve) => { finishSignIn = resolve; }));
+    loadAdminSnapshot.mockReset().mockResolvedValue({
+      snapshot: { version: 1, requests: [], users: [], approvals: [], audit: [] },
+      health: { source: 'live', firebaseReachable: true, error: '' },
+    });
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Admin$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Yes, Login as Admin' }));
+    const email = await screen.findByPlaceholderText('Admin Email');
+    fireEvent.change(email, { target: { value: 'admin@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'test-password' } });
+    const form = email.closest('form');
+    const previousCalls = signInWithEmailAndPassword.mock.calls.length;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(signInWithEmailAndPassword.mock.calls.length).toBe(previousCalls + 1);
+    // Firebase changes currentUser before the role check completes.
+    const user = { email: 'admin@example.com', getIdTokenResult: vi.fn().mockResolvedValue({ claims: { role: 'admin' } }) };
+    auth.currentUser = user;
+    expect(screen.getByPlaceholderText('Admin Email')).toBe(email);
+    expect(loadAdminSnapshot).not.toHaveBeenCalled();
+    finishSignIn({ user });
+    await screen.findByText('LIVE FIREBASE');
+    expect(screen.queryByPlaceholderText('Admin Email')).toBeNull();
+    const search = screen.getByPlaceholderText('Search current tab...');
+    fireEvent.change(search, { target: { value: 'stable search' } });
+    const toast = screen.getByText('Admin login successful.').closest('.toast-item');
+    fireEvent.click(within(toast).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.getByPlaceholderText('Search current tab...')).toBe(search));
+    expect(search.value).toBe('stable search');
+    expect(loadAdminSnapshot).toHaveBeenCalledTimes(1);
+  });
+
   // Same async print path as the test below (two dynamic imports + 2 rendered
   // memos), so it needs the same budget when the suite runs with other workers.
   it('keeps manual selections across pages and prints selected consumers only', { timeout: 20000 }, async () => {

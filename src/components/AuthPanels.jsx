@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 import { db } from '../firebase';
@@ -30,6 +30,7 @@ export const RegisterPanel = ({
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const registrationInFlightRef = useRef(false);
   const [showPaymentUpi, setShowPaymentUpi] = useState(false);
 
   const onChange = (e) => {
@@ -52,7 +53,9 @@ export const RegisterPanel = ({
   };
 
   const onSubmit = async () => {
+    if (isSubmitting || registrationInFlightRef.current) return;
     if (!validateRegisterForm()) return;
+    registrationInFlightRef.current = true;
     setIsSubmitting(true);
     const request = {
       id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -86,8 +89,10 @@ export const RegisterPanel = ({
       });
     } catch {
       pushToast('Registration save to Firebase failed. Check Firebase config.', 'error');
-      setIsSubmitting(false);
       return;
+    } finally {
+      registrationInFlightRef.current = false;
+      setIsSubmitting(false);
     }
 
     const requestToStore = { ...request, id: requestRef.id };
@@ -105,7 +110,6 @@ export const RegisterPanel = ({
     setForm((prev) => ({ ...prev, pin: '', confirmPin: '' }));
     pushToast('Registration request submitted!', 'success');
     logRecentActivity('Submitted registration request', form.dealerCode);
-    setIsSubmitting(false);
     onClose();
   };
 
@@ -231,7 +235,8 @@ export const AdminLoginPanel = ({
           className="register-form register-form--enhanced"
           onSubmit={(e) => {
             e.preventDefault();
-            handleAdminLoginSubmit();
+            if (isAdminLoginSubmitting) return;
+            void handleAdminLoginSubmit();
           }}
         >
           <div>
@@ -239,9 +244,11 @@ export const AdminLoginPanel = ({
             <input
               className="form-input"
               placeholder="Admin Email"
+              type="email"
               autoComplete="username"
               value={adminLoginId}
               onChange={(e) => setAdminLoginId(e.target.value)}
+              disabled={isAdminLoginSubmitting}
             />
           </div>
           <div>
@@ -253,13 +260,14 @@ export const AdminLoginPanel = ({
               autoComplete="current-password"
               value={adminPassword}
               onChange={(e) => setAdminPassword(e.target.value)}
+              disabled={isAdminLoginSubmitting}
             />
           </div>
+          <div className="form-actions auth-panel__actions">
+            <button className="auth-primary-button" type="submit" disabled={isAdminLoginSubmitting}>{isAdminLoginSubmitting ? 'Logging in...' : 'Login'}</button>
+            <button className="auth-secondary-button" type="button" onClick={navigateToHome} disabled={isAdminLoginSubmitting}>Close</button>
+          </div>
         </form>
-        <div className="form-actions auth-panel__actions">
-          <button className="auth-primary-button" onClick={handleAdminLoginSubmit} type="button" disabled={isAdminLoginSubmitting}>{isAdminLoginSubmitting ? 'Logging in...' : 'Login'}</button>
-          <button className="auth-secondary-button" onClick={navigateToHome} disabled={isAdminLoginSubmitting}>Close</button>
-        </div>
       </div>
     </div>
   </div>

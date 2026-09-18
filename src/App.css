@@ -7975,6 +7975,42 @@
   border-radius: 12px;
   background: #fff8e5;
   color: #714c06;
+  border-left-width: 5px;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 6%);
+}
+
+.admin-data-status__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 24px;
+  width: 100%;
+  font-size: 15px;
+}
+
+.admin-data-status__summary strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.admin-data-status__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.admin-data-status__summary time {
+  font-weight: 600;
+}
+
+.admin-data-status__details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
 }
 
 .admin-data-status--live {

@@ -11,13 +11,17 @@ it('accepts the fresh sign-in admin claim without a forced refresh', async () =>
   expect(credential.user.getIdTokenResult).toHaveBeenCalledWith();
 });
 
-it('refreshes missing claims once to support a recently assigned admin role', async () => {
+it('rejects a missing admin claim without requesting a forced refresh', async () => {
   const getIdTokenResult = vi.fn().mockResolvedValueOnce({ claims: {} })
     .mockResolvedValueOnce({ claims: { role: 'admin' } });
   const credential = { user: { getIdTokenResult } };
   signIn.mockResolvedValue(credential);
-  await expect(adminSignIn('admin@example.com', 'test')).resolves.toBe(credential);
-  expect(getIdTokenResult).toHaveBeenNthCalledWith(2, true);
+  adminSignOut.mockResolvedValue();
+  await expect(adminSignIn('admin@example.com', 'test')).rejects.toMatchObject({ code: 'auth/admin-role-required' });
+  expect(getIdTokenResult).toHaveBeenCalledOnce();
+  expect(getIdTokenResult).toHaveBeenCalledWith();
+  expect(getIdTokenResult).not.toHaveBeenCalledWith(true);
+  expect(adminSignOut).toHaveBeenCalled();
 });
 
 it('signs out an account without the required admin claim', async () => {
