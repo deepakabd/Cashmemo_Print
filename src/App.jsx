@@ -38,7 +38,6 @@ import {
   readDeviceUserName,
   rememberDeviceUserName,
   sanitizeUserForCache,
-  sanitizeUsersForCache,
 } from './utils/adminUiHelpers';
 import {
   ADMIN_ROLE_PERMISSIONS,
@@ -538,7 +537,6 @@ export const AdminPanel = ({
       }
       return { ok: true };
     };
-//test check
     const loadData = () => {
       if (adminLoadRef.current) return adminLoadRef.current;
       const previous = adminSnapshotRef.current ? { ...adminSnapshotRef.current,
@@ -2990,14 +2988,14 @@ export const AdminPanel = ({
                   </button>
                   <button
                     className="admin-ghost-btn"
-                    onClick={bulkApproveApiWords} disabled={!canMutateAdminData}
+                    onClick={bulkApproveApiWords}
                     disabled={!canMutateAdminData || selectedApiWordApprovals.length === 0}
                   >
                     Bulk Approve
                   </button>
                   <button
                     className="admin-ghost-btn"
-                    onClick={bulkRejectApiWords} disabled={!canMutateAdminData}
+                    onClick={bulkRejectApiWords}
                     disabled={!canMutateAdminData || selectedApiWordApprovals.length === 0}
                   >
                     Bulk Reject
@@ -3760,6 +3758,7 @@ function App() {
   const [announcementDraftFormKey, setAnnouncementDraftFormKey] = useState(0);
   const [isUserLoginSubmitting, setIsUserLoginSubmitting] = useState(false);
   const [isAdminLoginSubmitting, setIsAdminLoginSubmitting] = useState(false);
+  const adminLoginInFlightRef = useRef(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMainMenu, setShowMainMenu] = useState(false);
@@ -4955,11 +4954,13 @@ function App() {
   };
 
   const handleAdminLoginSubmit = async () => {
+    if (isAdminLoginSubmitting || adminLoginInFlightRef.current) return;
     const { loginId, password, valid } = validateAdminCredentials(adminLoginId, adminPassword);
     if (!valid) {
       pushToast('Admin Email and Password required.', 'error');
       return;
     }
+    adminLoginInFlightRef.current = true;
     setIsAdminLoginSubmitting(true);
     try {
       await adminSignIn(loginId, password);
@@ -4974,8 +4975,10 @@ function App() {
         : error?.code === 'auth/admin-role-required'
           ? error.message
           : 'Admin login failed. Check Firebase Authentication credentials.', 'error');
+    } finally {
+      adminLoginInFlightRef.current = false;
+      setIsAdminLoginSubmitting(false);
     }
-    setIsAdminLoginSubmitting(false);
   };
 
 

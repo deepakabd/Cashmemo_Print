@@ -139,13 +139,28 @@ describe('admin snapshot provenance', () => {
     expect(result.snapshot.users).toEqual([{ id: 'legacy' }]);
     render(<AdminDataStatus health={result.health} />);
     expect(screen.getByText('OFFLINE CACHE')).toBeTruthy();
-    expect(screen.getByText('LAST SYNC: Unknown')).toBeTruthy();
+    expect(screen.getByText('No successful sync recorded')).toBeTruthy();
     expect(screen.getByText(/Admin changes are disabled/)).toBeTruthy();
   });
 
   it('does not mislabel successful Firebase reads when storage is full', async () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota exceeded'); });
     expect((await loadAdminSnapshot()).health.source).toBe('live');
+  });
+
+  it('retains the exact successful sync time when live data becomes cached or syncing', () => {
+    const lastSyncAt = '2026-09-16T08:00:22Z';
+    const { container, rerender } = render(<AdminDataStatus health={{ source: 'live', lastSyncAt }} />);
+    const time = container.querySelector('time');
+    expect(time.dateTime).toBe('2026-09-16T08:00:22.000Z');
+    expect(time.textContent).toMatch(/01:30:22.*pm IST/i);
+    rerender(<AdminDataStatus health={{ source: 'offline', lastSyncAt }} />);
+    expect(container.querySelector('time').textContent).toBe(time.textContent);
+    expect(screen.getByText(/may be stale/)).toBeTruthy();
+    expect(screen.getByText(/Approve, Reject, Delete and Restore require live data/)).toBeTruthy();
+    rerender(<AdminDataStatus health={{ source: 'syncing', lastSyncAt }} />);
+    expect(screen.getByText(/not yet confirmed/)).toBeTruthy();
+    expect(container.querySelector('time').dateTime).toBe('2026-09-16T08:00:22.000Z');
   });
 
   it('follows continuation pages for requests and approvals', async () => {

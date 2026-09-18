@@ -5,9 +5,8 @@ export { adminSignOut };
 export const adminSignIn = async (loginId, password) => {
   const credential = await signIn(loginId, password);
   try {
-    // Sign-in already issued a fresh token; refresh only if its admin claim is absent.
-    let token = await credential.user.getIdTokenResult();
-    if (token.claims.role !== 'admin') token = await credential.user.getIdTokenResult(true);
+    // Use the sign-in token without triggering an additional token refresh.
+    const token = await credential.user.getIdTokenResult();
     if (token.claims.role !== 'admin') {
       const error = new Error('This Firebase account does not have the admin role. An authorized administrator must assign its admin custom claim.');
       error.code = 'auth/admin-role-required';
