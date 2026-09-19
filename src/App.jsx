@@ -3,6 +3,7 @@ import { buildAdminUserRestoreData } from './utils/adminUserRestore';
 import AdminDataStatus from './components/AdminDataStatus';
 import LoginDeviceDetails from './components/LoginDeviceDetails';
 import { clearLegacyRegistrationStorage } from './utils/registrationStorage';
+import { resolveRatesForDate } from './utils/rateUtils';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Suspense, useCallback } from 'react';
@@ -1316,9 +1317,11 @@ export const AdminPanel = ({
         if (approvalType === 'header') {
           nextStatus.hindiHeaderData = 'approved';
         }
-        const approvedTargetValue = (approvalType === 'profile' || approvalType === 'bank')
-          ? { ...(targetUser?.[targetField] || {}), ...(approval.payload || {}) }
-          : approval.payload;
+        const approvedTargetValue = approvalType === 'rates' && Array.isArray(approval.payload)
+          ? approval.payload.map((row) => ({ ...row, RateStatus: 'Approved', RateApprovedAt: new Date().toISOString() }))
+          : (approvalType === 'profile' || approvalType === 'bank')
+            ? { ...(targetUser?.[targetField] || {}), ...(approval.payload || {}) }
+            : approval.payload;
         if (approvalType === 'dictionary') {
           const dictionaryPayload = getDictionaryApprovalPayload(approval);
           const englishWord = String(dictionaryPayload?.englishWord || dictionaryPayload?.eng || '').trim();
@@ -4316,7 +4319,6 @@ function App() {
           });
         }
     const pendingUpdatePatch = {
-      approvalStatus: nextApprovalStatus,
       [`pendingUpdates.${type}`]: {
         status: 'pending',
         payload,
@@ -4350,8 +4352,10 @@ function App() {
       );
       pushToast(successMessage || 'Your request is pending with admin for approval.', 'success');
       return true;
-    } catch {
-      pushToast('Request submit failed. Check Firebase permissions.', 'error');
+    } catch (error) {
+      const errorCode = String(error?.code || 'unknown').replace('firestore/', '');
+      console.error('Update approval request failed:', error);
+      pushToast(`Request submit failed (${errorCode}). Please try again.`, 'error');
       return false;
     }
   };
@@ -5853,8 +5857,12 @@ function App() {
               return savedRates ? JSON.parse(savedRates) : [];
             })();
           if (Array.isArray(rates) && rates.length > 0) {
+              const datedRates = resolveRatesForDate(
+                rates,
+                processedCustomer['Cash Memo Date'] || processedCustomer['Order Date'],
+              );
               const productText = String(processedCustomer['Consumer Package'] || '').toLowerCase();
-              const match = rates.find(r => {
+              const match = datedRates.find(r => {
                 const itemText = String(r.Item || '').toLowerCase();
                 return productText.includes(itemText) || itemText.includes(productText);
               });
@@ -7452,7 +7460,7 @@ function App() {
   const handleSaveRatesForUser = async (rates) => {
     if (!loggedInUser?.id) return;
     const normalizedRates = Array.isArray(rates) ? rates : [];
-    await submitUpdateApprovalRequest({
+    return submitUpdateApprovalRequest({
       type: 'rates',
       payload: normalizedRates,
       localKey: 'ratesData',
@@ -8240,7 +8248,7 @@ function App() {
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">📦 Stock Register</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
                   {isLoggedIn && hasHindiPackageAccess && <button type="button" className="navbar-submenu-item" onClick={() => { handleDictionaryOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('dictionaryUpdate')} role="menuitem">📖 Dictionary</button>}
-                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('invoice')} role="menuitem">🧾 Invoice</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('invoice')} role="menuitem">🧾 INVOICE WORKSPACE</button>}
                   <button type="button" className="navbar-submenu-item" onClick={() => { handleAboutOpen(); setShowMainMenu(false); }} role="menuitem">ℹ️ About Us</button>
                   {isLoggedIn && workMenuItems.length > 0 && (
                     <>
@@ -8617,6 +8625,8 @@ function App() {
                 onClose={navigateToHome}
                 initialRatesData={Array.isArray(loggedInUser?.ratesData) ? loggedInUser.ratesData : null}
                 onSaveRates={handleSaveRatesForUser}
+                updatedBy={loggedInUser?.dealerName || loggedInUser?.dealerCode || 'Dealer'}
+                requestState={loggedInUser?.pendingUpdates?.rates || null}
               />
             </Suspense>
           )}

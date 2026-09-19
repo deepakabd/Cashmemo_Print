@@ -92,7 +92,8 @@ export const ProfileUpdatePanel = ({
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (event) => {
+    event?.preventDefault();
     if (!validateProfileForm()) return;
     setIsSaving(true);
     const ok = await submitUpdateApprovalRequest({
@@ -109,9 +110,12 @@ export const ProfileUpdatePanel = ({
   };
 
   return (
-    <div className="placeholder-container">
-      <h2>Profile Update</h2>
-      <div className="profile-form">
+    <div className="placeholder-container profile-update-panel">
+      <div className="profile-update-panel__header">
+        <div className="profile-update-panel__avatar" aria-hidden="true">{String(formData.distributorName || loggedInUser?.dealerName || 'D').trim().charAt(0).toUpperCase()}</div>
+        <div><h2>Profile Update</h2><p>Distributor identity, contact aur invoice profile details update karein.</p></div>
+      </div>
+      <form className="profile-form profile-update-form" onSubmit={handleSave}>
         <span className="profile-label">Profile Photo</span>
         <div className="profile-photo-field">
           {formData.photoDataUrl ? (
@@ -170,11 +174,12 @@ export const ProfileUpdatePanel = ({
           <textarea className={`form-textarea${errors.address ? ' form-input--error' : ''}`} name="address" rows="3" value={formData.address} onChange={handleChange} />
           {errors.address && <div className="form-error">{errors.address}</div>}
         </div>
-      </div>
-      <div className="form-actions">
-        <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-        <button onClick={onClose} disabled={isSaving}>Close</button>
-      </div>
+        <p className="profile-update-panel__note">Changes admin approval ke baad profile, invoice aur printed documents mein दिखाई देंगे।</p>
+        <div className="form-actions profile-update-panel__actions">
+          <button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Submit for Approval'}</button>
+          <button type="button" onClick={onClose} disabled={isSaving}>Close</button>
+        </div>
+      </form>
     </div>
   );
 };
@@ -234,34 +239,46 @@ export const BankDetailsPanel = ({
   };
 
   return (
-    <div className="placeholder-container">
-      <h2>Bank Details</h2>
-      <div className="profile-form">
-        <span className="profile-label">Bank Name</span>
-        <div>
-          <input className={`form-input${errors.bankName ? ' form-input--error' : ''}`} name="bankName" type="text" value={formData.bankName} onChange={handleChange} />
+    <div className="placeholder-container bank-details-panel">
+      <div className="bank-details-panel__header">
+        <div className="bank-details-panel__icon" aria-hidden="true">₹</div>
+        <div><h2>Bank Details</h2><p>Invoice aur payment records ke liye apne verified bank details update karein.</p></div>
+      </div>
+      <form className="bank-details-form" onSubmit={handleSave}>
+        <label className="bank-details-field">
+          <span className="profile-label">Bank Name</span>
+          <div>
+          <input className={`form-input${errors.bankName ? ' form-input--error' : ''}`} name="bankName" type="text" autoComplete="organization" placeholder="Enter bank name" value={formData.bankName} onChange={handleChange} />
           {errors.bankName && <div className="form-error">{errors.bankName}</div>}
-        </div>
-        <span className="profile-label">Branch</span>
-        <div>
-          <input className={`form-input${errors.branch ? ' form-input--error' : ''}`} name="branch" type="text" value={formData.branch} onChange={handleChange} />
+          </div>
+        </label>
+        <label className="bank-details-field">
+          <span className="profile-label">Branch</span>
+          <div>
+          <input className={`form-input${errors.branch ? ' form-input--error' : ''}`} name="branch" type="text" placeholder="Enter branch name" value={formData.branch} onChange={handleChange} />
           {errors.branch && <div className="form-error">{errors.branch}</div>}
-        </div>
-        <span className="profile-label">Account No</span>
-        <div>
-          <input className={`form-input${errors.accountNo ? ' form-input--error' : ''}`} name="accountNo" type="text" value={formData.accountNo} onChange={handleChange} />
+          </div>
+        </label>
+        <label className="bank-details-field bank-details-field--wide">
+          <span className="profile-label">Account Number</span>
+          <div>
+          <input className={`form-input${errors.accountNo ? ' form-input--error' : ''}`} name="accountNo" type="text" inputMode="numeric" autoComplete="off" placeholder="8–20 digit account number" value={formData.accountNo} onChange={handleChange} />
           {errors.accountNo && <div className="form-error">{errors.accountNo}</div>}
-        </div>
-        <span className="profile-label">IFSC Code</span>
-        <div>
-          <input className={`form-input${errors.ifsc ? ' form-input--error' : ''}`} name="ifsc" type="text" value={formData.ifsc} onChange={handleChange} />
+          </div>
+        </label>
+        <label className="bank-details-field bank-details-field--wide">
+          <span className="profile-label">IFSC Code</span>
+          <div>
+          <input className={`form-input${errors.ifsc ? ' form-input--error' : ''}`} name="ifsc" type="text" autoCapitalize="characters" spellCheck="false" placeholder="Example: SBIN0001234" value={formData.ifsc} onChange={handleChange} />
           {errors.ifsc && <div className="form-error">{errors.ifsc}</div>}
+          </div>
+        </label>
+        <p className="bank-details-panel__note">Bank details admin approval ke baad invoice aur payment documents mein update honge.</p>
+        <div className="form-actions bank-details-panel__actions">
+          <button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Submit for Approval'}</button>
+          <button type="button" onClick={onClose} disabled={isSaving}>Close</button>
         </div>
-      </div>
-      <div className="form-actions">
-        <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-        <button onClick={onClose} disabled={isSaving}>Close</button>
-      </div>
+      </form>
     </div>
   );
 };
@@ -313,16 +330,14 @@ export const UserProfilePanel = ({
     .map(([type, info]) => {
       const normalizedType = String(type || '').trim();
       const status = String(info?.status || loggedInUser?.approvalStatus?.[type] || '').toLowerCase() || 'draft';
-      const mostRecentAt = info?.approvedAt || info?.rejectedAt || info?.adminReplyAt || info?.requestedAt || '';
+      const mostRecentAt = info?.approvedAt || info?.rejectedAt || info?.requestedAt || '';
       return {
         type: normalizedType,
         status,
         requestedAt: info?.requestedAt || '',
         lastUpdatedAt: mostRecentAt,
-        adminReply: String(info?.adminReply || '').trim(),
         approvedAt: info?.approvedAt || '',
         rejectedAt: info?.rejectedAt || '',
-        adminReplyAt: info?.adminReplyAt || '',
         timeline: [
           { key: 'submitted', label: 'Submitted', date: info?.requestedAt || '', complete: Boolean(info?.requestedAt) },
           { key: 'pending', label: 'Pending', date: info?.requestedAt || '', complete: ['pending', 'approved', 'rejected'].includes(status) },
@@ -333,7 +348,6 @@ export const UserProfilePanel = ({
             complete: status === 'approved' || status === 'rejected',
             tone: status === 'rejected' ? 'danger' : 'success',
           },
-          { key: 'reply', label: 'Admin Reply', date: info?.adminReplyAt || '', complete: Boolean(info?.adminReply), tone: 'info' },
         ],
       };
     })
@@ -347,13 +361,12 @@ export const UserProfilePanel = ({
   }, [initialSection]);
 
   return (
-    <div className="placeholder-container">
-      <h2>User Profile</h2>
-      {profilePhotoDataUrl && (
-        <div className="user-profile-photo-wrap">
-          <img className="user-profile-photo" src={profilePhotoDataUrl} alt="User profile" />
-        </div>
-      )}
+    <div className="placeholder-container user-profile-panel">
+      <div className="user-profile-hero">
+        {profilePhotoDataUrl ? <img className="user-profile-photo" src={profilePhotoDataUrl} alt="User profile" /> : <div className="user-profile-avatar">{String(data?.distributorName || loggedInUser?.dealerName || 'U').trim().charAt(0).toUpperCase()}</div>}
+        <div><span className="user-profile-eyebrow">ACCOUNT PROFILE</span><h2>{data?.distributorName || loggedInUser?.dealerName || 'User Profile'}</h2><p>{loggedInUser?.dealerCode || data?.distributorCode || 'Distributor account'} · {currentPackage}</p></div>
+        <span className={`user-profile-plan-status${isPlanExpired ? ' is-expired' : ''}`}>{isPlanExpired ? 'Plan Expired' : 'Plan Active'}</span>
+      </div>
       <div className="home-account-grid user-profile-summary-grid">
         {summaryItems.map((item) => (
           <div key={item.label} className="home-account-item">
@@ -362,7 +375,7 @@ export const UserProfilePanel = ({
           </div>
         ))}
       </div>
-      <div className="profile-form">
+      <div className="profile-form user-profile-details-card">
         <span className="profile-label">Current Package</span>
         <span>{currentPackage}</span>
         <span className="profile-label">Package Validity</span>
@@ -408,7 +421,6 @@ export const UserProfilePanel = ({
                   <span>Status: {item.status || '-'}</span>
                   <span>Requested: {formatDisplayDate(item.requestedAt) || '-'}</span>
                   <span>Last Update: {formatDisplayDate(item.lastUpdatedAt) || '-'}</span>
-                  {item.adminReply && <span>Admin Reply: {item.adminReply}</span>}
                   <div className="user-profile-request-timeline">
                     {item.timeline.map((step) => (
                       <div
@@ -470,7 +482,7 @@ export const UserProfilePanel = ({
           </div>
         )}
       </div>
-      <div className="form-actions">
+      <div className="form-actions user-profile-close-actions">
         <button onClick={onClose}>Close</button>
       </div>
     </div>
@@ -776,8 +788,11 @@ export const DictionaryRequestPanel = ({
   };
 
   return (
-    <div className="placeholder-container dictionary-request-panel">
-      <h2>{title}</h2>
+    <div className={`placeholder-container dictionary-request-panel${mode === 'default' ? ' dictionary-update-panel' : ''}${isDeliveryAreaMode ? ' delivery-area-update-panel' : ''}${isDeliveryStaffMode ? ' delivery-staff-update-panel' : ''}`}>
+      <div className="dictionary-request-header">
+        <div className="dictionary-request-header__icon" aria-hidden="true">{isDeliveryAreaMode ? '⌖' : isDeliveryStaffMode ? '👤' : 'Aa'}</div>
+        <div><h2>{title}</h2><p>{isDeliveryAreaMode ? 'Delivery locations aur unke Hindi print names update karein.' : isDeliveryStaffMode ? 'Delivery staff names aur Hindi translations manage karein.' : 'English aur Hindi dictionary entries update karein.'}</p></div>
+      </div>
       {mode === 'default' ? (
         <div className="dictionary-pending-count">{pendingCount} request pending</div>
       ) : null}
@@ -899,14 +914,14 @@ export const DictionaryRequestPanel = ({
           <button type="button" className="dictionary-request-add-row" onClick={addEntry} disabled={entries.length >= MAX_DICTIONARY_REQUEST_ROWS}>
             {entries.length >= MAX_DICTIONARY_REQUEST_ROWS ? `Maximum ${MAX_DICTIONARY_REQUEST_ROWS} Rows Added` : 'Add Another Row'}
           </button>
-          <div className="dictionary-pending-count">English word type karte hi existing dictionary se suggestion aur duplicate/conflict check dikhega.</div>
+          <div className="dictionary-pending-count">{isDeliveryAreaMode ? 'Area ka English aur Hindi naam bharein. Approval ke baad ye delivery-area list mein उपलब्ध होगा।' : isDeliveryStaffMode ? 'Staff ka English aur Hindi naam bharein. Approval ke baad list update hogi.' : 'English word type karte hi existing dictionary se suggestion aur duplicate/conflict check dikhega.'}</div>
           {!isDeliveryAreaMode && !isDeliveryStaffMode ? (
             <div className="dictionary-pending-count">Ek baar mein 1 se {MAX_DICTIONARY_REQUEST_ROWS} dictionary requests bhej sakte hain.</div>
           ) : null}
         </>
       </div>
-      <div className="form-actions">
-        <button onClick={submitDictionaryRequest}>Send Request</button>
+      <div className="form-actions dictionary-request-footer">
+        <button onClick={submitDictionaryRequest}>{isDeliveryAreaMode ? 'Submit Area Update' : isDeliveryStaffMode ? 'Submit Staff Update' : 'Send Request'}</button>
         <button onClick={onClose}>Close</button>
       </div>
     </div>

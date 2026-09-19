@@ -2,6 +2,7 @@
 import { indiaDate } from '../utils/invoiceAccounting';
 import { printRegisterBill } from '../utils/registerBill';
 import { defaultCommands } from '../utils/workspaceCommands';
+import { resolveRatesForDate } from '../utils/rateUtils';
 
 const quantities = ['filledGoes14', 'emptyIn14', 'filledGoes19', 'emptyIn19'];
 const labels = ['Filled Goes', 'Empty In'];
@@ -70,8 +71,9 @@ export default function InventoryCashRegister({ records, disabled, mutate, onSav
   const reportTable = useRef(null);
   const reportSummary = useRef(null);
   const change = (key, value) => setDraft((previous) => ({ ...previous, [key]: value }));
-  const rate14 = cylinderRate(rates, '14.2');
-  const rate19 = cylinderRate(rates, '19');
+  const datedRates = resolveRatesForDate(rates, draft.date);
+  const rate14 = cylinderRate(datedRates, '14.2');
+  const rate19 = cylinderRate(datedRates, '19');
   const missingRate = (Number(draft.filledGoes14) > 0 && rate14 === '') || (Number(draft.filledGoes19) > 0 && rate19 === '');
   const totalAmount = Math.round((Number(draft.filledGoes14 || 0) * Number(rate14 || 0) + Number(draft.filledGoes19 || 0) * Number(rate19 || 0)) * 100) / 100;
   const rows = records.filter((row) => !row.deleted && (!from || row.date >= from) && (!to || row.date <= to) && [row.name, row.village, row.contact, row.remark].join(' ').toLowerCase().includes(search.trim().toLowerCase()) && Object.entries(filters).every(([key, filter]) => numericColumns.includes(key)
