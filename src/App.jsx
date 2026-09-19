@@ -3783,6 +3783,7 @@ function App() {
   const [showCashmemoLayout, setShowCashmemoLayout] = useState(false);
   const [showCashmemoPrintGuide, setShowCashmemoPrintGuide] = useState(false);
   const [showAttendance, setShowAttendance] = useState(false);
+  const [attendanceOpenSettings, setAttendanceOpenSettings] = useState(false);
   const [showIdCard, setShowIdCard] = useState(false);
   const [showEmployeeProfile, setShowEmployeeProfile] = useState(false);
   const [showEmployeeProfileCreate, setShowEmployeeProfileCreate] = useState(false);
@@ -4621,6 +4622,13 @@ function App() {
   };
   const handleAttendanceOpen = () => {
     hideAllViews();
+    setAttendanceOpenSettings(false);
+    setShowAttendance(true);
+    setShowUserMenu(false);
+  };
+  const handleAttendanceSettingsOpen = () => {
+    hideAllViews();
+    setAttendanceOpenSettings(true);
     setShowAttendance(true);
     setShowUserMenu(false);
   };
@@ -8244,7 +8252,7 @@ function App() {
                 <div className="navbar-submenu" role="menu" aria-label="Main menu">
                   <button type="button" className="navbar-submenu-item" onClick={() => { handleHomeOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">🏠 Home</button>
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoPrintGuideOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">🖨️ Cashmemo Print</button>}
-                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAttendanceOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">👥 Attendance</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAttendanceOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">👥 HR &amp; WORKFORCE</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">📦 Inventory Reports</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
                   {isLoggedIn && hasHindiPackageAccess && <button type="button" className="navbar-submenu-item" onClick={() => { handleDictionaryOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('dictionaryUpdate')} role="menuitem">📖 Dictionary</button>}
@@ -8499,33 +8507,20 @@ function App() {
           {showCashmemoPrintGuide && <CashmemoPrintGuide onUpload={handleReUploadClick} canUpload={!isTestUser} />}
           {showAttendance && (
             <Suspense fallback={<div className="placeholder-container">Loading attendance...</div>}>
-              <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} onSalarySlipOpen={handleSalarySlipOpen} onAttendanceReportOpen={handleAttendanceReportOpen} onEmployeeReportOpen={handleEmployeeReportOpen} onIdCardOpen={handleIdCardOpen} onEmployeeAddOpen={handleEmployeeAddOpen} />
+              <LazyAttendancePage loggedInUser={loggedInUser} onClose={navigateToHome} onEmployeeProfileOpen={handleEmployeeProfileOpen} onSalarySlipOpen={handleSalarySlipOpen} onAttendanceReportOpen={handleAttendanceReportOpen} onEmployeeReportOpen={handleEmployeeReportOpen} onIdCardOpen={handleIdCardOpen} onEmployeeAddOpen={handleEmployeeAddOpen} initialShowSettings={attendanceOpenSettings} />
             </Suspense>
           )}
-          {showIdCard && (
-            <Suspense fallback={<div className="placeholder-container">Loading ID cards...</div>}>
-              <LazyIdCardPage loggedInUser={loggedInUser} onClose={handleIdCardClose} />
-            </Suspense>
-          )}
-          {showEmployeeProfile && (
-            <Suspense fallback={<div className="placeholder-container">Loading employee profile...</div>}>
-              <LazyEmployeeProfilePage loggedInUser={loggedInUser} onClose={handleEmployeeProfileClose} createNew={showEmployeeProfileCreate} />
-            </Suspense>
-          )}
-          {showSalarySlipPage && (
-            <Suspense fallback={<div className="placeholder-container">Loading salary slips...</div>}>
-              <LazySalarySlipPage loggedInUser={loggedInUser} onClose={handleSalarySlipClose} initialEmployeeId={salarySlipEmployeeId} />
-            </Suspense>
-          )}
-          {showAttendanceReportPage && (
-            <Suspense fallback={<div className="placeholder-container">Loading attendance report...</div>}>
-              <LazyAttendanceReportPage loggedInUser={loggedInUser} onClose={handleAttendanceReportClose} />
-            </Suspense>
-          )}
-          {showEmployeeReportPage && (
-            <Suspense fallback={<div className="placeholder-container">Loading employee report...</div>}>
-              <LazyEmployeeReportPage loggedInUser={loggedInUser} onClose={handleEmployeeReportClose} onSalarySlipOpen={handleSalarySlipForEmployee} />
-            </Suspense>
+          {(showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage) && (
+            <div className="attendance-subpage-shell">
+              <aside className="attendance-navigation attendance-subpage-navigation" aria-label="Attendance Centre menu"><div className="attendance-navigation__title"><span>HR Workspace</span><strong>Attendance Menu</strong></div><nav><button type="button" onClick={handleAttendanceOpen}><span>⌂</span>Attendance</button><button type="button" className={showEmployeeReportPage ? 'active' : ''} onClick={handleEmployeeReportOpen}><span>▤</span>Report</button><button type="button" className={showAttendanceReportPage ? 'active' : ''} onClick={handleAttendanceReportOpen}><span>▥</span>Attendance Report</button><button type="button" className={showSalarySlipPage ? 'active' : ''} onClick={handleSalarySlipOpen}><span>₹</span>Salary Slips</button><button type="button" className={showIdCard ? 'active' : ''} onClick={handleIdCardOpen}><span>▣</span>ID Cards</button><button type="button" className={showEmployeeProfile && !showEmployeeProfileCreate ? 'active' : ''} onClick={handleEmployeeProfileOpen}><span>●</span>Employee Profile</button><button type="button" onClick={handleAttendanceSettingsOpen}><span>⚙</span>Settings</button><button type="button" className={`attendance-navigation__add${showEmployeeProfileCreate ? ' active' : ''}`} onClick={handleEmployeeAddOpen}><span>＋</span>Add Employee</button><button type="button" className="attendance-navigation__close" onClick={navigateToHome}><span>←</span>Close</button></nav></aside>
+              <div className="attendance-subpage-shell__content">
+                {showIdCard && <Suspense fallback={<div className="placeholder-container">Loading ID cards...</div>}><LazyIdCardPage loggedInUser={loggedInUser} onClose={handleIdCardClose} /></Suspense>}
+                {showEmployeeProfile && <Suspense fallback={<div className="placeholder-container">Loading employee profile...</div>}><LazyEmployeeProfilePage loggedInUser={loggedInUser} onClose={handleEmployeeProfileClose} createNew={showEmployeeProfileCreate} /></Suspense>}
+                {showSalarySlipPage && <Suspense fallback={<div className="placeholder-container">Loading salary slips...</div>}><LazySalarySlipPage loggedInUser={loggedInUser} onClose={handleSalarySlipClose} initialEmployeeId={salarySlipEmployeeId} /></Suspense>}
+                {showAttendanceReportPage && <Suspense fallback={<div className="placeholder-container">Loading attendance report...</div>}><LazyAttendanceReportPage loggedInUser={loggedInUser} onClose={handleAttendanceReportClose} /></Suspense>}
+                {showEmployeeReportPage && <Suspense fallback={<div className="placeholder-container">Loading employee report...</div>}><LazyEmployeeReportPage loggedInUser={loggedInUser} onClose={handleEmployeeReportClose} onSalarySlipOpen={handleSalarySlipForEmployee} /></Suspense>}
+              </div>
+            </div>
           )}
           {showStockRegister && (
             <Suspense fallback={<div className="placeholder-container">Loading stock register...</div>}>

@@ -143,7 +143,7 @@ export default function EmployeeProfilePage({ loggedInUser, onClose, createNew =
   const pendingDocuments = employee ? Math.max(0, 3 - (employee.documents || []).length) : 0;
 
   return <section className={`attendance-page employee-profile-page ${profileEditing ? 'is-editing' : ''}`}>
-    <header className="attendance-hero"><div><p>EMPLOYEE DIRECTORY</p><h1>Employee Profile</h1><span>Personal details, payroll, attendance, documents and ID-card readiness.</span></div><button className="attendance-close" onClick={onClose}>Back to Attendance</button></header>
+    <header className="attendance-hero"><div><p>EMPLOYEE DIRECTORY</p><h1>Employee Profile</h1><span>Personal details, payroll, attendance, documents and ID-card readiness.</span></div></header>
     {message && <div className="attendance-toast">{message}</div>}
     <section className="employee-profile-workspace">
       <label>Select employee<select value={employeeId} onChange={(event) => selectEmployee(event.target.value)}><option value="">Choose employee</option>{data.employees.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.employeeCode || 'No ID'}{item.active === false ? ' · Inactive' : ''}</option>)}</select></label>
