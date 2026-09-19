@@ -163,8 +163,20 @@ service cloud.firestore {
 
     match /updateApprovals/{approvalId} {
       allow read: if isAdmin() || (isSignedIn() && isActiveAccount());
-      allow create: if isSignedIn() && isActiveAccount() && hasActivePlan();
-      allow update, delete: if isAdmin();
+      allow create: if isSignedIn() && isActiveAccount() && hasActivePlan()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if isAdmin() || (
+        isSignedIn() && isActiveAccount() && hasActivePlan()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.type == resource.data.type
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'pending'
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['userId', 'type', 'status', 'requestedAt'])
+      );
+      allow delete: if isAdmin();
     }
 
     // ---- shared dictionary / settings --------------------------------------

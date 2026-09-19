@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 import './InvoiceWorkspace.css';
 import { invoiceRequest } from './services/invoiceRepository';
 import { invoicePaid, invoiceDue, indiaDate, buildInvoiceLedger, consumerStatement } from './utils/invoiceAccounting';
+import { resolveRatesForDate } from './utils/rateUtils';
 
 const BULK_IMPORT_TEMPLATE_HEADERS = [
   'Consumer Name',
@@ -171,6 +172,7 @@ function InvoiceWorkspace({ loggedInUser }) {
           SGST: parseFloat(rate?.SGST) || 0,
           CGST: parseFloat(rate?.CGST) || 0,
           RSP: parseFloat(rate?.RSP) || 0,
+          RateMonth: String(rate?.RateMonth || ''),
         }))
         .filter((rate) => rate.Item);
     } catch {
@@ -195,7 +197,7 @@ function InvoiceWorkspace({ loggedInUser }) {
     accountNo: '',
     ifsc: '',
   };
-  const invoiceRates = initialInvoiceRates;
+  const allInvoiceRates = initialInvoiceRates;
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [invoiceRows, setInvoiceRows] = useState([
     { id: `row-${Date.now()}`, item: '', quantity: 1, customRate: '', discount: '' },
@@ -204,6 +206,7 @@ function InvoiceWorkspace({ loggedInUser }) {
   const [billToConsumerNo, setBillToConsumerNo] = useState('');
   const [billToMobileNo, setBillToMobileNo] = useState('');
   const [billToDate, setBillToDate] = useState(indiaDate());
+  const invoiceRates = resolveRatesForDate(allInvoiceRates, billToDate || indiaDate());
   const [billDueDate, setBillDueDate] = useState('');
   const [billToAddress, setBillToAddress] = useState('');
   const [billToGstin, setBillToGstin] = useState('');
@@ -1579,7 +1582,7 @@ function InvoiceWorkspace({ loggedInUser }) {
         <div className={`invoice-cloud-status invoice-cloud-status--${cloudStatus}`} role="status"><strong>{cloudStatus === 'live' ? 'Cloud billing connected' : cloudStatus === 'syncing' ? 'Syncing cloud billing…' : 'Offline — displaying cached data'}</strong><span>{cloudStatus !== 'live' ? 'Saving and payments are disabled until sync succeeds.' : 'Invoices and consumers are saved to your dealer account.'}</span><button type="button" disabled={cloudStatus === 'syncing' || billingBusy} onClick={() => void syncCloud()}>Sync Data</button></div>
         {billingError && <div className="invoice-billing-error" role="alert">{billingError}</div>}
         {activeView === 'Setting' && <WorkspaceCommandSettings commands={commands} onChange={changeCommand} />}
-        {['Inventory & Cash Register', 'Inventory & Cash Register Report'].includes(activeView) && <InventoryCashRegister commands={commands} bank={bankDetails} dealer={dealer} rates={invoiceRates} view={activeView === 'Inventory & Cash Register Report' ? 'report' : 'entry'} records={inventoryEntries} disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(entry) => cacheInventory([...inventoryEntries.filter((row) => row.id !== entry.id), entry])} />}
+        {['Inventory & Cash Register', 'Inventory & Cash Register Report'].includes(activeView) && <InventoryCashRegister commands={commands} bank={bankDetails} dealer={dealer} rates={allInvoiceRates} view={activeView === 'Inventory & Cash Register Report' ? 'report' : 'entry'} records={inventoryEntries} disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(entry) => cacheInventory([...inventoryEntries.filter((row) => row.id !== entry.id), entry])} />}
         {['Notes / Refunds', 'Outstanding Ageing'].includes(activeView) && <InvoiceCorrections view={activeView} records={savedInvoices} disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(record) => cacheRecords(invoiceRecords.map((item) => item.id === record.id ? normalizeSavedInvoiceRecord(record) : item))} />}
         {activeView === 'Bulk Consumer Import' && <BulkConsumerImport disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(consumers) => { const ids = new Set(consumers.map((item) => item.id)); const next = [...consumerRecords.filter((item) => !ids.has(item.id)), ...consumers]; setBulkCustomers(next); try { localStorage.setItem(`cashmemoBulkCustomers_${dealerStorageKey}`, JSON.stringify(next)); } catch { /* Optional cache. */ } }} />}
         {activeView === 'Bin' && <section className="invoice-workspace__card"><h3>Bin</h3><p>Deleted records can be restored. Invoice numbers, receipts and ledger history are retained.</p><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Type</th><th>Record</th><th>Deleted on</th><th>Action</th></tr></thead><tbody>{[...consumerRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Consumer', record })), ...invoiceRecords.filter((item) => item.trashed).map((record) => ({ kind: 'Invoice', record })), ...inventoryEntries.filter((item) => item.deleted).map((record) => ({ kind: 'Register Entry', record }))].map(({ kind, record }) => <tr key={`${kind}-${record.id}`}><td>{kind}</td><td>{record.invoiceNumber || record.consumerName || record.name} · {record.consumerNo || record.header?.name || record.village}</td><td>{record.deletedAt ? new Date(record.deletedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '?'}</td><td><button type="button" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void updateBin(kind, record, true)}>Restore {kind}</button>{commands.permanentDelete && <button type="button" className="invoice-bin-delete" disabled={billingBusy || cloudStatus !== 'live'} onClick={() => void permanentDeleteBin(kind, record)}>Permanently Delete</button>}</td></tr>)}</tbody></table></div>{!consumerRecords.some((item) => item.trashed) && !invoiceRecords.some((item) => item.trashed) && !inventoryEntries.some((item) => item.deleted) && <p>Bin is empty.</p>}</section>}

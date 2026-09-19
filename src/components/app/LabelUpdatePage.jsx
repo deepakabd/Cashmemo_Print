@@ -19,24 +19,34 @@ const LabelUpdatePage = ({
     acc[item.group].push(item);
     return acc;
   }, {});
+  const visibleLabelCount = CASHMEMO_LABEL_OPTIONS.filter((item) => activeSettings[item.key] !== false).length;
 
   return (
     <div className="placeholder-container label-update-page">
       <div className="label-update-header">
-        <div>
-          <h2>Label Update</h2>
-          <p>Cashmemo print labels, page type select.</p>
+        <div className="label-update-title">
+          <div className="label-update-title__icon" aria-hidden="true">Aa</div>
+          <div>
+            <h2>Label Update</h2>
+            <p>Cashmemo print mein दिखाई देने वाले labels ko page type ke हिसाब se manage karein.</p>
+          </div>
         </div>
         <div className="label-update-actions">
-          <select className="form-input" value={labelUpdatePageType} onChange={(e) => setLabelUpdatePageType(e.target.value)}>
+          <label className="label-update-page-type">Page layout<select className="form-input" value={labelUpdatePageType} onChange={(e) => setLabelUpdatePageType(e.target.value)}>
             {CASHMEMO_PAGE_TYPES.map((type) => (
               <option key={type} value={type}>{type}</option>
             ))}
-          </select>
+          </select></label>
           <button type="button" onClick={() => setAllCashMemoLabelsForPage(labelUpdatePageType, true)}>Select All</button>
           <button type="button" onClick={() => setAllCashMemoLabelsForPage(labelUpdatePageType, false)}>Clear All</button>
           <button type="button" onClick={() => resetCashMemoLabelsForPage(labelUpdatePageType)}>Reset Default</button>
         </div>
+      </div>
+
+      <div className="label-update-summary">
+        <strong>{labelUpdatePageType}</strong>
+        <span>{visibleLabelCount} of {CASHMEMO_LABEL_OPTIONS.length} labels visible</span>
+        <small>Unchecked labels sirf print se hide honge; original data सुरक्षित रहेगा।</small>
       </div>
 
       <div className="label-update-grid">
@@ -59,8 +69,8 @@ const LabelUpdatePage = ({
         ))}
       </div>
 
-      <div className="form-actions">
-        <button onClick={handleSaveCashMemoLabels}>Save</button>
+      <div className="form-actions label-update-footer">
+        <button onClick={handleSaveCashMemoLabels}>Save Label Settings</button>
         <button onClick={() => {
           setLabelDraftSettings(mergeCashMemoLabelSettings(cashMemoLabelSettings));
           navigateToHome();

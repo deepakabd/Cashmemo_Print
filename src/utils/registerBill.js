@@ -1,13 +1,16 @@
+import { resolveRatesForDate } from './rateUtils';
+
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const money = (value) => Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const registerBillHtml = (record, dealer = {}, rates = [], bank = {}) => {
+  const datedRates = resolveRatesForDate(rates, record.date);
   const products = [
     { name: '14.2KG LPG Cylinder', quantity: Number(record.filledGoes14 || 0), rate: Number(record.rate14 || 0) },
     { name: '19KG LPG Cylinder', quantity: Number(record.filledGoes19 || 0), rate: Number(record.rate19 || 0) },
   ].filter((product) => product.quantity > 0).map((product) => {
     const size = product.name.startsWith('14.2') ? '14.2' : '19';
-    const matching = rates.filter((row) => new RegExp(`^${size.replace('.', '\\.')}\\s*KG\\b`, 'i').test(String(row.Item || '').trim()) && /CYLINDER/i.test(row.Item));
+    const matching = datedRates.filter((row) => new RegExp(`^${size.replace('.', '\\.')}\\s*KG\\b`, 'i').test(String(row.Item || '').trim()) && /CYLINDER/i.test(row.Item));
     const details = matching.find((row) => /CYLINDER$/i.test(row.Item.trim())) || matching[0];
     const sgstPct = Number(details?.SGST || 0);
     const cgstPct = Number(details?.CGST || 0);

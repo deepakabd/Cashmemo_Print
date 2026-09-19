@@ -34,7 +34,8 @@ const HeaderUpdateForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, 
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (event) => {
+    event?.preventDefault();
     if (!validateHeaderForm()) return;
     setIsSaving(true);
     const ok = await submitUpdateApprovalRequest({
@@ -51,9 +52,18 @@ const HeaderUpdateForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, 
   };
 
   return (
-    <div className="placeholder-container">
-      <h2>Header Update (Hindi / Local)</h2>
-      <div className="profile-form">
+    <div className="placeholder-container local-header-update-panel">
+      <div className="local-header-update-panel__header">
+        <div className="local-header-update-panel__icon" aria-hidden="true">हि</div>
+        <div><h2>Header Update (Hindi / Local)</h2><p>Hindi cashmemo par print hone wale distributor header details update karein.</p></div>
+      </div>
+      <div className="local-header-preview" aria-label="Header preview">
+        <span>LIVE PREVIEW</span>
+        <strong>{formData.distributorName || 'Distributor Name'}</strong>
+        <p>{formData.address || 'Distributor address'}</p>
+        <small>{formData.telephone || 'Telephone'} · {formData.email || 'Email'} · GSTN: {formData.gstn || '—'}</small>
+      </div>
+      <form className="profile-form local-header-update-form" onSubmit={handleSave}>
         <span className="profile-label">Distributor Name</span>
         <div>
           <input className={`form-input${errors.distributorName ? ' form-input--error' : ''}`} name="distributorName" type="text" value={formData.distributorName} onChange={handleChange} placeholder="उदा: MAHADEV HP GAS..." />
@@ -79,11 +89,12 @@ const HeaderUpdateForm = ({ onClose, loggedInUser, submitUpdateApprovalRequest, 
           <input className={`form-input${errors.telephone ? ' form-input--error' : ''}`} name="telephone" type="text" value={formData.telephone} onChange={handleChange} placeholder="उदा: 7070236555" />
           {errors.telephone && <div className="form-error">{errors.telephone}</div>}
         </div>
-      </div>
-      <div className="form-actions">
-        <button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-        <button onClick={onClose} disabled={isSaving}>Close</button>
-      </div>
+        <p className="local-header-update-panel__note">Changes admin approval ke baad Hindi / Local cashmemo header mein दिखाई देंगे।</p>
+        <div className="form-actions local-header-update-panel__actions">
+          <button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Submit for Approval'}</button>
+          <button type="button" onClick={onClose} disabled={isSaving}>Close</button>
+        </div>
+      </form>
     </div>
   );
 };
