@@ -57,7 +57,7 @@ export default function SalarySlipPage({ loggedInUser, onClose, initialEmployeeI
   };
   const profile = employee?.profile || {};
   return <section className="attendance-page salary-slip-page">
-    <header className="attendance-hero"><div><p>PAYROLL MENU</p><h1>Salary Slips</h1><span>Open, review and print employee salary slips.</span></div><button className="attendance-close" onClick={onClose}>Back to Attendance</button></header>
+    <header className="attendance-hero"><div><p>PAYROLL MENU</p><h1>Salary Slips</h1><span>Open, review and print employee salary slips.</span></div></header>
     <section className="salary-slip-page-toolbar"><label>Salary month<input type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} /></label><label>Select employee<select value={employee?.id || ''} onChange={(event) => setEmployeeId(event.target.value)}><option value="">Choose employee</option>{employees.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.employeeCode || 'No ID'}</option>)}</select></label>{employee && <button type="button" className="attendance-primary" onClick={printSlip}>Print salary slip</button>}</section>
     {!employee || !row ? <div className="attendance-empty"><h3>No active employee found</h3><p>Activate an employee in Employee Profile to generate a salary slip.</p></div> : <article className="salary-slip salary-slip-page-card">
       <header><div><span className="section-label">SALARY SLIP</span><h2>{loggedInUser?.dealerName || 'Cashmemo'}</h2><p>{new Date(`${reportMonth}-01T12:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</p></div></header>
