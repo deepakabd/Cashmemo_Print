@@ -194,6 +194,7 @@ import {
   LazyAttendanceReportPage,
   LazyEmployeeReportPage,
   LazyStockRegisterPage,
+  LazySalesReportPage,
 } from './app/routes';
 
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
@@ -3792,6 +3793,18 @@ function App() {
   const [showAttendanceReportPage, setShowAttendanceReportPage] = useState(false);
   const [showEmployeeReportPage, setShowEmployeeReportPage] = useState(false);
   const [showStockRegister, setShowStockRegister] = useState(false);
+  const [showSalesReport, setShowSalesReport] = useState(false);
+
+  useEffect(() => {
+    if (showSalesReport) {
+      document.body.classList.add('body--sales-report-active');
+    } else {
+      document.body.classList.remove('body--sales-report-active');
+    }
+    return () => {
+      document.body.classList.remove('body--sales-report-active');
+    };
+  }, [showSalesReport]);
   const [showUpgradePlan, setShowUpgradePlan] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -4568,6 +4581,7 @@ function App() {
     setShowAttendanceReportPage(false);
     setShowEmployeeReportPage(false);
     setShowStockRegister(false);
+    setShowSalesReport(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -4635,6 +4649,11 @@ function App() {
   const handleStockRegisterOpen = () => {
     hideAllViews();
     setShowStockRegister(true);
+    setShowUserMenu(false);
+  };
+  const handleSalesReportOpen = () => {
+    hideAllViews();
+    setShowSalesReport(true);
     setShowUserMenu(false);
   };
   const handleIdCardOpen = () => {
@@ -7594,6 +7613,7 @@ function App() {
       : showAttendanceReportPage ? 'attendanceReport'
       : showEmployeeReportPage ? 'employeeReport'
       : showStockRegister ? 'stockRegister'
+      : showSalesReport ? 'salesReport'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -8254,6 +8274,7 @@ function App() {
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoPrintGuideOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">🖨️ Cashmemo Print</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAttendanceOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">👥 HR &amp; WORKFORCE</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">📦 Inventory Reports</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleSalesReportOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('salesReport')} role="menuitem">📊 Sales Report</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
                   {isLoggedIn && hasHindiPackageAccess && <button type="button" className="navbar-submenu-item" onClick={() => { handleDictionaryOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('dictionaryUpdate')} role="menuitem">📖 Dictionary</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('invoice')} role="menuitem">🧾 INVOICE WORKSPACE</button>}
@@ -8433,8 +8454,8 @@ function App() {
         </div>
       )}
       {isLoggedIn && isPlanExpired && !showUpgradePlan && !showAboutInfo && !showUserProfile && <ExpiredPlanGuide onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
-      {(showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
-        <div className="book-view">
+      {(showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+        <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}`}>
           {showUpgradePlan && (
             <UpgradePlanForm
               onClose={navigateToHome}
@@ -8525,6 +8546,11 @@ function App() {
           {showStockRegister && (
             <Suspense fallback={<div className="placeholder-container">Loading stock register...</div>}>
               <LazyStockRegisterPage loggedInUser={loggedInUser} onClose={navigateToHome} />
+            </Suspense>
+          )}
+          {showSalesReport && (
+            <Suspense fallback={<div className="placeholder-container">Loading sales report...</div>}>
+              <LazySalesReportPage loggedInUser={loggedInUser} parsedData={parsedData} onClose={navigateToHome} />
             </Suspense>
           )}
           {showLabelUpdate && (

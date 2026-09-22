@@ -62,6 +62,7 @@ export const buildMenuAccessRules = ({
   deliveryAreaUpdate: () => !isPlanExpired && hasHindiPackageAccess,
   deliveryStaffUpdate: () => !isPlanExpired && hasHindiPackageAccess,
   headerUpdate: () => !isPlanExpired && hasHindiPackageAccess,
+  salesReport: () => !isPlanExpired,
   upgradePlan: () => true,
   support: () => true,
 });
