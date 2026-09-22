@@ -13,6 +13,7 @@ export default function SalesImportModal({
   initialMonthCode = '09',
   lockedMonths = {},
   isAdmin = false,
+  allowSalesReupload = false,
 }) {
   const [uploadType, setUploadType] = useState(initialUploadType); // 'monthWise' | 'fyWise'
   const [selectedYear, setSelectedYear] = useState(initialYear);
@@ -24,17 +25,18 @@ export default function SalesImportModal({
   const [selectedFile, setSelectedFile] = useState(null);
   const [reading, setReading] = useState(false);
   const [parseStatus, setParseStatus] = useState(''); // 'Reading Excel...', 'Validating...', etc.
-  const [errorMsg, setErrorMsg] = useState(null);
+  const [normalizing, setNormalizing] = useState(false);
   const [normalizedResult, setNormalizedResult] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   const fileInputRef = useRef(null);
 
+  // Sync state with incoming props
   useEffect(() => {
     if (isOpen) {
       setUploadType(initialUploadType);
       setSelectedYear(initialYear);
       setSelectedMonthCode(initialMonthCode);
-      setSelectedImportTarget('allRows');
       setOverwriteMonth(true);
       setSelectedFile(null);
       setErrorMsg(null);
@@ -45,8 +47,13 @@ export default function SalesImportModal({
   if (!isOpen) return null;
 
   const currentYmKey = `${selectedYear}-${selectedMonthCode}`;
-  const isCurrentMonthLocked = !!lockedMonths[currentYmKey]?.confirmed;
-  const isUploadBlocked = uploadType === 'monthWise' && isCurrentMonthLocked && !isAdmin;
+  const now = new Date();
+  const realCurrentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // Current month sales data upload MUST NEVER be locked
+  const isRealCurrentMonth = currentYmKey === realCurrentYm;
+  const isCurrentMonthLocked = !isRealCurrentMonth && !!lockedMonths[currentYmKey]?.confirmed;
+  const canReupload = isAdmin || allowSalesReupload;
+  const isUploadBlocked = uploadType === 'monthWise' && isCurrentMonthLocked && !canReupload;
 
   const handleFileSelect = async (event) => {
     const file = event.target.files?.[0];
@@ -250,8 +257,8 @@ export default function SalesImportModal({
             }}>
               <span>{isAdmin ? '🔑' : '🔒'}</span>
               <span>
-                {isAdmin
-                  ? `Month ${currentYmKey} is confirmed & locked. As Admin, re-uploading will overwrite this month's data.`
+                {canReupload
+                  ? `Month ${currentYmKey} is confirmed & locked. Re-uploading is permitted for your account.`
                   : `Month ${currentYmKey} is confirmed and locked. Re-uploading is blocked without Admin approval.`}
               </span>
             </div>

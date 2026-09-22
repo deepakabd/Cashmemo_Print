@@ -10,13 +10,13 @@ const APPROVAL_TYPES = ['profile', 'profileData', 'bank', 'bankDetailsData', 'ra
 export const ADMIN_USER_LIST_FIELDS = [
   'dealerCode', 'dealerName', 'name', 'mobile', 'email', 'package', 'packageDays', 'validFrom', 'validTill',
   'role', 'status', 'createdAt', 'approvedAt', 'updatedAt', 'lastLoginAt', 'dictionaryPendingCount',
-  'approvalStatus', 'cashMemoLabelSettings', 'ratesDataCount',
+  'approvalStatus', 'cashMemoLabelSettings', 'ratesDataCount', 'userAccess',
   'profileData.distributorCode', 'profileData.distributorName', 'bankDetailsData.bankName', 'hindiHeaderData.distributorName',
   ...APPROVAL_TYPES.flatMap((type) => ['status', 'requestedAt', 'approvedAt', 'rejectedAt', 'adminReply', 'adminReplyAt']
     .map((field) => `pendingUpdates.${type}.${field}`)),
 ];
 const DETAIL_FIELDS = ['profileData', 'bankDetailsData', 'ratesData', 'hindiHeaderData', 'pendingUpdates',
-  'loginDevices', 'pendingDictionaryRequests', 'deliveryAreaUpdates', 'deliveryStaffUpdates', 'authUid', 'uid'];
+  'loginDevices', 'pendingDictionaryRequests', 'deliveryAreaUpdates', 'deliveryStaffUpdates', 'authUid', 'uid', 'userAccess'];
 
 const projectFields = (data, paths) => {
   const result = {};

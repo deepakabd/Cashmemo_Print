@@ -20,7 +20,7 @@ export const validateAdminUserPatch = (patch, { legacyRegistration = false } = {
   for (const field of ['ratesData', 'loginDevices', 'pendingDictionaryRequests', 'deliveryAreaUpdates', 'deliveryStaffUpdates']) {
     if (Object.hasOwn(patch, field) && !Array.isArray(patch[field])) invalid(`${field} must be an array.`);
   }
-  for (const field of ['profileData', 'bankDetailsData', 'hindiHeaderData', 'approvalStatus', 'cashMemoLabelSettings']) {
+  for (const field of ['profileData', 'bankDetailsData', 'hindiHeaderData', 'approvalStatus', 'cashMemoLabelSettings', 'userAccess']) {
     if (Object.hasOwn(patch, field) && (!patch[field] || typeof patch[field] !== 'object' || Array.isArray(patch[field]))) invalid(`${field} must be an object.`);
   }
   if (Object.hasOwn(patch, 'packageDays') && (!Number.isInteger(patch.packageDays) || patch.packageDays < 0)) invalid('Invalid package duration.');
