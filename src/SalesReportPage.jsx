@@ -435,16 +435,40 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const userRole = String(loggedInUser?.role || loggedInUser?.userType || '').toLowerCase();
   const isAdmin = !userRole || userRole.includes('admin') || userRole.includes('dealer') || userRole.includes('owner');
 
+  // Cloud sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // Load from Firebase on mount
   useEffect(() => {
     let active = true;
+    setIsSyncing(true);
     loadSalesReportFromFirebase(loggedInUser).then((remote) => {
       if (active && remote) {
         setStoreData(remote);
       }
+    }).finally(() => {
+      if (active) setIsSyncing(false);
     });
     return () => { active = false; };
   }, [loggedInUser]);
+
+  const handleManualCloudSync = async () => {
+    setIsSyncing(true);
+    try {
+      const remote = await loadSalesReportFromFirebase(loggedInUser);
+      if (remote) {
+        setStoreData(remote);
+        showNotification(`Cloud sync complete! ${remote.transactions?.length || 0} transactions synchronized.`, 'success');
+      } else {
+        showNotification('Cloud data synchronized successfully.', 'success');
+      }
+    } catch (err) {
+      console.error('Cloud sync error:', err);
+      showNotification('Cloud sync failed. Please check connection.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const showNotification = (text, tone = 'success') => {
     setNotification({ text, tone });
@@ -1091,26 +1115,32 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       if (!prodName) return;
 
       const qty = Number(r.orderQuantity) || 1;
-      let rowRate = Number(r.rsp) || 0;
-      const salesVal = Number(r.salesValue) || Number(r.amount) || 0;
+      const isCommercial = prodName.toUpperCase().includes('19') || prodName.toUpperCase().includes('COMM');
 
-      // Handle legacy or cached data where r.amount had total amount
-      if (Number(r.amount) > 0 && qty > 0) {
-        const unitFromAmount = Math.round((Number(r.amount) / qty) * 100) / 100;
-        if (rowRate <= 0 || (rowRate === 1039 && unitFromAmount > 1500)) {
-          rowRate = unitFromAmount;
+      // User Rule: Default Rate (₹) = RSP / Order Quantity
+      const rawRsp = Number(r.rawRsp) || Number(r.rsp) || Number(r.amount) || Number(r.salesValue) || 0;
+      const salesVal = Number(r.salesValue) || Number(r.amount) || (rawRsp > 0 ? rawRsp : 0);
+
+      let rowRate = 0;
+      if (rawRsp > 0 && qty > 0) {
+        const calculatedRate = Math.round((rawRsp / qty) * 100) / 100;
+        // Protect against double-division if rawRsp was already per-unit
+        if (qty > 1 && calculatedRate < (isCommercial ? 1500 : 600) && rawRsp >= (isCommercial ? 1800 : 700)) {
+          rowRate = rawRsp;
+        } else {
+          rowRate = calculatedRate;
         }
-      }
-      if (rowRate <= 0 && qty > 0 && salesVal > 0) {
+      } else if (salesVal > 0 && qty > 0) {
         rowRate = Math.round((salesVal / qty) * 100) / 100;
       }
 
       if (!productMap.has(prodName)) {
         productMap.set(prodName, {
           name: prodName,
-          category: r.category || (prodName.toUpperCase().includes('19') || prodName.toUpperCase().includes('COMM') ? 'Commercial' : 'Domestic'),
+          category: r.category || (isCommercial ? 'Commercial' : 'Domestic'),
           rates: [],
           totalQty: 0,
+          totalRsp: 0,
           totalSales: 0,
           txCount: 0,
           productType: r.productType || '',
@@ -1122,6 +1152,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
       const item = productMap.get(prodName);
       item.totalQty += qty;
+      item.totalRsp += (rawRsp > 0 ? rawRsp : salesVal);
       item.totalSales += (salesVal > 0 ? salesVal : qty * rowRate);
       item.txCount += 1;
       if (rowRate > 0) {
@@ -1190,7 +1221,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             bestRate = parseFloat(rt);
           }
         });
-        defaultRate = bestRate;
+      } else if (item.totalQty > 0 && item.totalRsp > 0) {
+        // Fallback: Total RSP / Total Order Quantity
+        defaultRate = Math.round((item.totalRsp / item.totalQty) * 100) / 100;
       } else if (item.totalQty > 0 && item.totalSales > 0) {
         defaultRate = Math.round((item.totalSales / item.totalQty) * 100) / 100;
       }
@@ -2151,6 +2184,30 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             title="Upload Current Month (September 2026) Sales Data"
           >
             ⚡ Upload Current Month (Sept 2026)
+          </button>
+          {/* Cloud Sync Action */}
+          <button
+            type="button"
+            className="sales-report-btn sales-report-btn--cloud-sync"
+            onClick={handleManualCloudSync}
+            disabled={isSyncing}
+            title="Synchronize all Sales Report Data with Firebase Cloud across devices"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: isSyncing ? '#475569' : 'rgba(255,255,255,0.18)',
+              color: '#ffffff',
+              border: '1px solid rgba(255,255,255,0.3)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              fontWeight: '700',
+              fontSize: '12px',
+              cursor: isSyncing ? 'wait' : 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {isSyncing ? '🔄 Syncing...' : '☁️ Cloud Sync'}
           </button>
           {/* Full Screen Viewport Toggle */}
           <button
@@ -4218,7 +4275,12 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   const mName = m.name;
                   const ymKey = `${uploadYear}-${mCode}`;
                   const monthData = storeData.monthlyUploads?.[ymKey];
-                  const isLocked = !!(lockedMonths[ymKey]?.confirmed || monthData?.confirmed);
+                  const now = new Date();
+                  const realCurrentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  const isRealCurrentMonth = ymKey === realCurrentYm;
+                  const isLocked = !isRealCurrentMonth && !!(lockedMonths[ymKey]?.confirmed || monthData?.confirmed);
+                  const allowSalesReupload = loggedInUser?.userAccess?.allowSalesReupload === true;
+                  const canReupload = !isLocked || isAdmin || allowSalesReupload;
                   const hasData = !!(monthData && (monthData.summary?.totalRows > 0 || (monthData.rows && monthData.rows.length > 0)));
 
                   return (
@@ -4280,13 +4342,13 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                             flex: 1,
                             fontSize: '11px',
                             padding: '6px 8px',
-                            background: isLocked && !isAdmin ? '#e2e8f0' : '#0284c7',
-                            color: isLocked && !isAdmin ? '#94a3b8' : '#ffffff',
-                            cursor: isLocked && !isAdmin ? 'not-allowed' : 'pointer',
+                            background: !canReupload ? '#e2e8f0' : '#0284c7',
+                            color: !canReupload ? '#94a3b8' : '#ffffff',
+                            cursor: !canReupload ? 'not-allowed' : 'pointer',
                           }}
-                          disabled={isLocked && !isAdmin}
+                          disabled={!canReupload}
                           onClick={() => openImportModal('monthWise', uploadYear, mCode)}
-                          title={isLocked && !isAdmin ? 'Month is locked. Admin approval required to re-upload.' : 'Upload / Replace Sales Excel'}
+                          title={!canReupload ? 'Month is locked. Admin approval required to re-upload.' : 'Upload / Replace Sales Excel'}
                         >
                           📤 {hasData ? 'Re-upload' : 'Upload'}
                         </button>
@@ -4717,7 +4779,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   <div>
                     <h3 style={{ margin: 0 }}>📦 Package &amp; Product Type Enable / Disable</h3>
                     <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>
-                      Product Name aur Default Rate (₹) uploaded current month data se dynamically fetch hote hain. Kisi bhi cylinder type ko enable/disable karein ya default rate customize karein.
+                      Product Name aur Default Rate (₹) uploaded current month data se dynamically fetch hote hain (<strong>Default Rate = RSP / Order Quantity</strong>). Kisi bhi cylinder type ko enable/disable karein ya default rate customize karein.
                     </p>
                   </div>
 
@@ -4767,7 +4829,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                         : productSettingYm === 'ALL'
                           ? 'All Uploaded Months'
                           : availableUploadedMonths.find((m) => m.ym === productSettingYm)?.label || 'Uploaded Data'
-                    }</strong>. Product Name aur Default Selling Rate (₹) uploaded monthly sales data se fetch ho rahe hain.
+                    }</strong>. Default Selling Rate (₹) har product ke liye <strong>RSP / Order Quantity</strong> se calculate ho raha hai.
                   </span>
                 </div>
 
@@ -4777,7 +4839,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                       <tr>
                         <th>Package Code / Product Name</th>
                         <th>Category</th>
-                        <th style={{ textAlign: 'right' }}>Default Rate (₹)</th>
+                        <th style={{ textAlign: 'right' }} title="Default Rate = RSP / Order Quantity">
+                          Default Rate (₹)<br/>
+                          <span style={{ fontSize: '10.5px', fontWeight: '600', color: '#0369a1', textTransform: 'none' }}>(RSP / Qty)</span>
+                        </th>
                         <th style={{ textAlign: 'center' }}>Month Cylinders</th>
                         <th style={{ textAlign: 'center' }}>Status</th>
                         <th style={{ textAlign: 'center' }}>Action</th>
@@ -4794,7 +4859,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                                 <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
                                   {prod.isAutoFetched ? (
                                     <span style={{ fontSize: '10.5px', color: '#15803d', fontWeight: '600' }}>
-                                      ⚡ Auto-fetched ({prod.txCount} orders)
+                                      ⚡ Auto-fetched: RSP / Qty ({prod.txCount} orders)
                                     </span>
                                   ) : (
                                     <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: '600' }}>
@@ -5157,6 +5222,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         initialMonthCode={importModalConfig.monthCode}
         lockedMonths={lockedMonths}
         isAdmin={isAdmin}
+        allowSalesReupload={loggedInUser?.userAccess?.allowSalesReupload === true}
       />
     </main>
   );

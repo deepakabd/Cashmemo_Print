@@ -96,6 +96,6 @@ export const HEADER_MAPPING = {
 // be widened to `admin`. Keep this map and `viewer` in sync with the Firestore
 // Security Rules admin check; the frontend copy is UI guidance, not security.
 export const ADMIN_ROLE_PERMISSIONS = {
-  admin: { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
-  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user'], mutate: false },
+  admin: { tabs: ['dashboard', 'dictionary', 'pending-registration', 'approval', 'active-user', 'total-user', 'user-access', 'create-user', 'announcements', 'recycle-bin'], mutate: true },
+  viewer: { tabs: ['dashboard', 'dictionary', 'active-user', 'total-user', 'user-access'], mutate: false },
 };

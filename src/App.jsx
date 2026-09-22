@@ -12,7 +12,7 @@ import CashMemoEnglish from './CashMemoEnglish';
 import CashmemoLayoutPage, { CASHMEMO_LAYOUT_PRINT_STYLES, CashmemoHeaderPreviewSheet, getLayoutPrintStyles } from './CashmemoLayoutPage';
 import UserMenuDropdown from './components/UserMenuDropdown';
 import { auth, db } from './firebase';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, setDoc, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, getDocFromCache, getDocsFromCache, onSnapshot, setDoc, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 //TEST
 import './App.css';
 import {
@@ -196,6 +196,8 @@ import {
   LazyStockRegisterPage,
   LazySalesReportPage,
 } from './app/routes';
+import { UnauthorizedAccessPage } from './components/UnauthorizedAccessPage';
+import { AdminUserAccessPanel } from './components/AdminUserAccessPanel';
 
 const PLAN_UPGRADE_OPTIONS = PACKAGE_OPTIONS;
 
@@ -1828,6 +1830,7 @@ export const AdminPanel = ({
       { key: 'approval', label: 'Approval', count: nonDictionaryPendingApprovals.length },
       { key: 'active-user', label: 'Active User', count: activeUsers },
       { key: 'total-user', label: 'Total User', count: userStatistics.total },
+      { key: 'user-access', label: 'User Access', count: null },
       { key: 'create-user', label: 'Create User', count: null },
       { key: 'announcements', label: 'Announcements', count: activeAnnouncementCount },
       { key: 'recycle-bin', label: 'Recycle Bin', count: deletedUsersBin.length },
@@ -1869,9 +1872,11 @@ export const AdminPanel = ({
         { value: 'viewer', label: 'Viewer Role' },
         { value: 'expiring', label: 'Expiring Soon' },
       ],
-      'announcements': [{ value: 'all', label: 'All announcements' }],
-      'dictionary': [{ value: 'all', label: 'No extra filter' }],
-      'create-user': [{ value: 'all', label: 'No extra filter' }],
+      'announcements': [{ value: 'all', label: 'All Announcements' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }],
+      'recycle-bin': [{ value: 'all', label: 'All Bin Items' }],
+      'user-access': [{ value: 'all', label: 'All Users' }],
+      dictionary: [{ value: 'all', label: 'All Dictionary Words' }, { value: 'approved', label: 'Approved' }, { value: 'rejected', label: 'Rejected' }, { value: 'active', label: 'Active' }],
+      audit: [{ value: 'all', label: 'All Events' }, { value: 'login', label: 'Logins' }, { value: 'user_created', label: 'User Created' }, { value: 'user_updated', label: 'User Updated' }, { value: 'user_deleted', label: 'User Deleted' }, { value: 'approval_action', label: 'Approvals' }],
     };
     const currentTabMeta = {
       dashboard: {
@@ -1893,6 +1898,10 @@ export const AdminPanel = ({
       'total-user': {
         title: 'All Users',
         subtitle: `${filteredUsersList.length} users currently visible`,
+      },
+      'user-access': {
+        title: 'User Access Control',
+        subtitle: 'Enable or disable active user access for HR, Inventory, Sales, Cashmemo Layout, Invoice, and Sales Re-upload.',
       },
       'create-user': {
         title: 'Create User',
@@ -2633,6 +2642,16 @@ export const AdminPanel = ({
             <button onClick={addManualUser} disabled={!canMutateAdminData}>Create User</button>
           </div>
         </div>
+        )}
+
+        {activeAdminTab === 'user-access' && (
+          <AdminUserAccessPanel
+            users={users}
+            updateUserInStore={updateUserInStore}
+            pushToast={pushToast}
+            canMutateAdminData={canMutateAdminData}
+            setLoggedInUser={setLoggedInUser}
+          />
         )}
 
         {(activeAdminTab === 'active-user' || activeAdminTab === 'total-user') && (
@@ -3809,6 +3828,7 @@ function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showUserLogin, setShowUserLogin] = useState(false);
+  const [unauthorizedAccessState, setUnauthorizedAccessState] = useState(null);
   const [adminLoginId, setAdminLoginId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [userDealerCode, setUserDealerCode] = useState('');
@@ -4564,7 +4584,23 @@ function App() {
     });
   };
 
+  const isMenuAccessAllowed = useCallback((menuKey) => {
+    if (showAdminPanel || loggedInUser?.role === 'admin' || loggedInUser?.role === 'owner') return true;
+    if (!loggedInUser) return true;
+    const access = loggedInUser?.userAccess;
+    if (!access) return true;
+    return access[menuKey] !== false;
+  }, [showAdminPanel, loggedInUser]);
+
+  const handleUnauthorizedMenu = useCallback((menuTitle) => {
+    hideAllViews();
+    setUnauthorizedAccessState({ menuTitle });
+    setShowMainMenu(false);
+    setShowUserMenu(false);
+  }, []);
+
   const hideAllViews = () => {
+    setUnauthorizedAccessState(null);
     setShowHomeInfo(false);
     setShowAboutInfo(false);
     setShowInvoicePage(false);
@@ -4625,6 +4661,10 @@ function App() {
     setShowUserMenu(false);
   };
   const handleCashmemoLayoutOpen = () => {
+    if (!isMenuAccessAllowed('cashmemoLayout')) {
+      handleUnauthorizedMenu('📋 Cashmemo Layout');
+      return;
+    }
     hideAllViews();
     setShowCashmemoLayout(true);
     setShowUserMenu(false);
@@ -4635,28 +4675,48 @@ function App() {
     setShowUserMenu(false);
   };
   const handleAttendanceOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setAttendanceOpenSettings(false);
     setShowAttendance(true);
     setShowUserMenu(false);
   };
   const handleAttendanceSettingsOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setAttendanceOpenSettings(true);
     setShowAttendance(true);
     setShowUserMenu(false);
   };
   const handleStockRegisterOpen = () => {
+    if (!isMenuAccessAllowed('inventoryReports')) {
+      handleUnauthorizedMenu('📦 Inventory Reports');
+      return;
+    }
     hideAllViews();
     setShowStockRegister(true);
     setShowUserMenu(false);
   };
   const handleSalesReportOpen = () => {
+    if (!isMenuAccessAllowed('salesReport')) {
+      handleUnauthorizedMenu('📊 Sales Report');
+      return;
+    }
     hideAllViews();
     setShowSalesReport(true);
     setShowUserMenu(false);
   };
   const handleIdCardOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setShowIdCard(true);
     setShowUserMenu(false);
@@ -4666,12 +4726,20 @@ function App() {
     setShowAttendance(true);
   };
   const handleEmployeeProfileOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setShowEmployeeProfile(true);
     setShowEmployeeProfileCreate(false);
     setShowUserMenu(false);
   };
   const handleEmployeeAddOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setShowEmployeeProfile(true);
     setShowEmployeeProfileCreate(true);
@@ -4682,12 +4750,20 @@ function App() {
     setShowAttendance(true);
   };
   const handleSalarySlipOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setSalarySlipEmployeeId('');
     setShowSalarySlipPage(true);
     setShowUserMenu(false);
   };
   const handleSalarySlipForEmployee = (employeeId) => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setSalarySlipEmployeeId(employeeId || '');
     setShowSalarySlipPage(true);
@@ -4699,6 +4775,10 @@ function App() {
     setShowAttendance(true);
   };
   const handleAttendanceReportOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setShowAttendanceReportPage(true);
     setShowUserMenu(false);
@@ -4708,6 +4788,10 @@ function App() {
     setShowAttendance(true);
   };
   const handleEmployeeReportOpen = () => {
+    if (!isMenuAccessAllowed('hrWorkforce')) {
+      handleUnauthorizedMenu('👥 HR & WORKFORCE');
+      return;
+    }
     hideAllViews();
     setShowEmployeeReportPage(true);
     setShowUserMenu(false);
@@ -4800,6 +4884,44 @@ function App() {
   }, [isLoggedIn, showProfileUpdate, loggedInUser]);
 
   useEffect(() => {
+    if (!loggedInUser?.id) return;
+    const userDocRef = doc(db, 'users', loggedInUser.id);
+    const unsubscribe = onSnapshot(userDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && data.userAccess) {
+          setLoggedInUser((prev) => {
+            if (!prev) return prev;
+            if (JSON.stringify(prev.userAccess || {}) === JSON.stringify(data.userAccess)) {
+              return prev;
+            }
+            const updated = {
+              ...prev,
+              userAccess: data.userAccess,
+            };
+            try {
+              const rawSession = localStorage.getItem(USER_SESSION_STORAGE_KEY);
+              if (rawSession) {
+                const session = JSON.parse(rawSession);
+                localStorage.setItem(USER_SESSION_STORAGE_KEY, JSON.stringify({
+                  ...session,
+                  userAccess: data.userAccess,
+                }));
+              }
+            } catch (e) {
+              console.warn('Failed to update session with userAccess', e);
+            }
+            return updated;
+          });
+        }
+      }
+    }, (error) => {
+      console.warn('User live sync error:', error);
+    });
+    return () => unsubscribe();
+  }, [loggedInUser?.id]);
+
+  useEffect(() => {
     if (!isLoggedIn || !loggedInUser || onboardingAutoOpenedRef.current) return;
     const onboardingUserKey = String(
       loggedInUser?.dealerCode
@@ -4832,6 +4954,10 @@ function App() {
   };
 
   const handleInvoiceOpen = () => {
+    if (!isMenuAccessAllowed('invoiceWorkspace')) {
+      handleUnauthorizedMenu('🧾 INVOICE WORKSPACE');
+      return;
+    }
     hideAllViews();
     setShowInvoicePage(true);
     setShowUserMenu(false);
@@ -8272,12 +8398,12 @@ function App() {
                 <div className="navbar-submenu" role="menu" aria-label="Main menu">
                   <button type="button" className="navbar-submenu-item" onClick={() => { handleHomeOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">🏠 Home</button>
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoPrintGuideOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">🖨️ Cashmemo Print</button>}
-                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAttendanceOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">👥 HR &amp; WORKFORCE</button>}
-                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired} role="menuitem">📦 Inventory Reports</button>}
-                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleSalesReportOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('salesReport')} role="menuitem">📊 Sales Report</button>}
-                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAttendanceOpen(); setShowMainMenu(false); }} disabled={isPlanExpired && isMenuAccessAllowed('hrWorkforce')} role="menuitem">👥 HR &amp; WORKFORCE</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired && isMenuAccessAllowed('inventoryReports')} role="menuitem">📦 Inventory Reports</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleSalesReportOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('salesReport') ? false : !canAccessMenuFeature('salesReport')} role="menuitem">📊 Sales Report</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('cashmemoLayout') ? false : !canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
                   {isLoggedIn && hasHindiPackageAccess && <button type="button" className="navbar-submenu-item" onClick={() => { handleDictionaryOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('dictionaryUpdate')} role="menuitem">📖 Dictionary</button>}
-                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('invoice')} role="menuitem">🧾 INVOICE WORKSPACE</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('invoiceWorkspace') ? false : !canAccessMenuFeature('invoice')} role="menuitem">🧾 INVOICE WORKSPACE</button>}
                   <button type="button" className="navbar-submenu-item" onClick={() => { handleAboutOpen(); setShowMainMenu(false); }} role="menuitem">ℹ️ About Us</button>
                   {isLoggedIn && workMenuItems.length > 0 && (
                     <>
@@ -8453,9 +8579,17 @@ function App() {
           ))}
         </div>
       )}
-      {isLoggedIn && isPlanExpired && !showUpgradePlan && !showAboutInfo && !showUserProfile && <ExpiredPlanGuide onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
-      {(showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+      {isLoggedIn && isPlanExpired && !showUpgradePlan && !showAboutInfo && !showUserProfile && !unauthorizedAccessState && <ExpiredPlanGuide onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
+      {(Boolean(unauthorizedAccessState) || showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
         <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}`}>
+          {unauthorizedAccessState && (
+            <UnauthorizedAccessPage
+              menuTitle={unauthorizedAccessState.menuTitle}
+              onClose={navigateToHome}
+              onContactAdmin={handleContactOpen}
+              adminContacts={ADMIN_CONTACTS}
+            />
+          )}
           {showUpgradePlan && (
             <UpgradePlanForm
               onClose={navigateToHome}

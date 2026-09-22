@@ -1,4 +1,5 @@
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import LZString from 'lz-string';
 import { db } from '../firebase';
 import { normalizeSalesRows } from '../utils/salesDataNormalizer';
 import {
@@ -172,9 +173,56 @@ export const normalizeSalesReportData = (raw = {}) => {
   };
 };
 
+export const COMPACT_TX_FIELDS = [
+  'id', 'uniqueKey', 'slNo', 'orderNo', 'orderDate', 'orderDateKey', 'orderTime',
+  'orderStatus', 'orderSource', 'orderType', 'consumerNo', 'consumerName',
+  'natureOfConsumer', 'packageCode', 'productType', 'category', 'typeOfConsumer',
+  'cashMemoNo', 'cashMemoDate', 'cashMemoCancelDate', 'cashMemoStatus',
+  'cancellationReason', 'deliveryMode', 'actualDeliveryDate', 'orderQuantity',
+  'subsidyQty', 'deliveryStaff', 'onlineRefillPaymentStatus', 'ivrsBookingNumber',
+  'mobileNo', 'isRegMobile', 'dacType', 'dacVerified', 'consumerAddress',
+  'rawRsp', 'rsp', 'salesValue', 'deliveryArea', 'isRefillPort', 'ekycStatus',
+  'paymentMode', 'salesDate', 'salesDateSource', 'dateKey', 'day', 'monthNo',
+  'monthName', 'year', 'fy', 'importBatchId', 'sourceFileName',
+];
+
 /**
- * Creates a lightweight copy of the sales data for localStorage & Firestore user document,
- * stripping out redundant multi-megabyte raw transaction arrays so 5MB and 1MB quotas are never exceeded.
+ * Compresses an array of transaction objects into a compact base64 string using LZString
+ */
+export function compressTransactions(transactions = []) {
+  if (!Array.isArray(transactions) || transactions.length === 0) return '';
+  const rows = transactions.map((t) => COMPACT_TX_FIELDS.map((f) => (t[f] !== undefined ? t[f] : null)));
+  const json = JSON.stringify(rows);
+  return LZString.compressToBase64(json);
+}
+
+/**
+ * Decompresses a base64 LZString into full transaction objects
+ */
+export function decompressTransactions(compressedStr) {
+  if (!compressedStr || typeof compressedStr !== 'string') return [];
+  try {
+    const decompressedJson = LZString.decompressFromBase64(compressedStr);
+    if (!decompressedJson) return [];
+    const rows = JSON.parse(decompressedJson);
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => {
+      if (!Array.isArray(r) && typeof r === 'object' && r !== null) return r;
+      const obj = {};
+      COMPACT_TX_FIELDS.forEach((f, idx) => {
+        obj[f] = r[idx] !== undefined ? r[idx] : null;
+      });
+      return obj;
+    });
+  } catch (err) {
+    console.warn('Failed to decompress transactions from cloud:', err);
+    return [];
+  }
+}
+
+/**
+ * Creates a lightweight copy of the sales data for localStorage cache,
+ * stripping out redundant multi-megabyte raw transaction arrays so 5MB quota is never exceeded.
  */
 export const createLightweightCacheCopy = (normalized) => {
   const lightMonthly = {};
@@ -186,6 +234,8 @@ export const createLightweightCacheCopy = (normalized) => {
         uploadedAt: up.uploadedAt,
         uploadedBy: up.uploadedBy,
         confirmed: up.confirmed,
+        confirmedAt: up.confirmedAt || null,
+        confirmedBy: up.confirmedBy || null,
         summary: up.summary,
         rows: [], // Omit duplicate 5000+ rows array to prevent quota explosion
       };
@@ -193,10 +243,11 @@ export const createLightweightCacheCopy = (normalized) => {
   }
 
   return {
+    isReset: normalized.isReset || false,
     settings: normalized.settings,
     batches: normalized.batches,
     monthlyUploads: lightMonthly,
-    // Store only small sample in localStorage cache; full transactions are safely stored in IndexedDB
+    // Store only small sample in localStorage cache; full transactions are safely stored in IndexedDB and compressed in cloud
     transactions: normalized.transactions && normalized.transactions.length > 300
       ? normalized.transactions.slice(0, 300)
       : (normalized.transactions || []),
@@ -216,7 +267,8 @@ export const loadSalesReportData = (user) => {
 };
 
 /**
- * Load complete dataset from high-capacity IndexedDB, with Firestore cloud backup
+ * Load complete dataset from high-capacity IndexedDB, with Firestore cloud synchronization
+ * Supports full multi-device synchronization by decompressing cloud transactions.
  */
 export const loadSalesReportFromFirebase = async (user) => {
   const key = getStorageKey(user);
@@ -229,12 +281,8 @@ export const loadSalesReportFromFirebase = async (user) => {
     console.warn('Error reading from IndexedDB:', err);
   }
 
-  if (idbData && Array.isArray(idbData.transactions) && idbData.transactions.length > 0) {
-    return normalizeSalesReportData(idbData);
-  }
-
   // 2. Secondary client source: localStorage
-  const localData = loadSalesReportData(user);
+  const localData = idbData ? normalizeSalesReportData(idbData) : loadSalesReportData(user);
 
   // 3. Remote Cloud source: Firestore
   if (!user) return localData;
@@ -244,13 +292,53 @@ export const loadSalesReportFromFirebase = async (user) => {
     if (snap.exists()) {
       const remote = snap.data()?.salesReportData;
       if (remote) {
+        // Hydrate transactions from cloud compressedData if available
+        let remoteTransactions = [];
+        if (remote.compressedData) {
+          remoteTransactions = decompressTransactions(remote.compressedData);
+        } else if (remote.compressedTransactions) {
+          remoteTransactions = decompressTransactions(remote.compressedTransactions);
+        } else if (Array.isArray(remote.transactions) && remote.transactions.length > 0) {
+          remoteTransactions = remote.transactions;
+        }
+
+        const localTxCount = Array.isArray(localData.transactions) ? localData.transactions.length : 0;
+        const remoteTxCount = remoteTransactions.length;
+
+        // Remote transactions take precedence if:
+        // - remote has transactions (e.g. uploaded from another computer)
+        // - or local is empty
+        // - or remote was explicitly reset
+        const useRemoteTransactions = remoteTxCount > 0 || (localTxCount === 0) || remote.isReset;
+
+        const finalTransactions = useRemoteTransactions
+          ? remoteTransactions
+          : (localTxCount > 0 ? localData.transactions : remoteTransactions);
+
         const merged = normalizeSalesReportData({
           ...localData,
           ...remote,
-          transactions: (idbData?.transactions?.length ? idbData.transactions : localData.transactions),
+          transactions: finalTransactions,
         });
-        // Cache merged copy into IndexedDB
+
+        // Ensure each monthlyUpload has its rows populated from finalTransactions
+        Object.keys(merged.monthlyUploads || {}).forEach((ym) => {
+          if (!merged.monthlyUploads[ym].rows || merged.monthlyUploads[ym].rows.length === 0) {
+            merged.monthlyUploads[ym].rows = merged.transactions.filter((t) => {
+              const rowYm = `${t.year}-${String(t.monthNo).padStart(2, '0')}`;
+              return rowYm === ym;
+            });
+          }
+        });
+
+        // Cache merged copy into local IndexedDB and localStorage
         await saveSalesReportToIndexedDB(key, merged);
+        try {
+          localStorage.setItem(key, JSON.stringify(createLightweightCacheCopy(merged)));
+        } catch {
+          // localStorage quota safety
+        }
+
         return merged;
       }
     }
@@ -263,7 +351,7 @@ export const loadSalesReportFromFirebase = async (user) => {
 
 /**
  * Save sales report data safely using high-capacity IndexedDB,
- * with quota-safe lightweight localStorage and Firestore caching.
+ * with quota-safe lightweight localStorage and full compressed cloud persistence in Firestore.
  */
 export const saveSalesReportData = async (user, data) => {
   const normalized = normalizeSalesReportData(data);
@@ -280,16 +368,40 @@ export const saveSalesReportData = async (user, data) => {
     console.warn('localStorage quota exceeded; full dataset is safely stored in IndexedDB.', storageErr);
   }
 
-  // 3. Cloud Storage: Save metadata and monthly summaries to Firestore (safe against 1MB doc limit)
+  // 3. Cloud Storage: Save metadata and COMPRESSED full transactions to Firestore (safe against 1MB doc limit)
   if (!user) return true;
   const docId = getUserDocId(user);
   try {
-    const cloudPayload = createLightweightCacheCopy(normalized);
+    const lightMonthly = {};
+    if (normalized.monthlyUploads) {
+      Object.entries(normalized.monthlyUploads).forEach(([ym, up]) => {
+        lightMonthly[ym] = {
+          fileName: up.fileName,
+          fileSize: up.fileSize,
+          uploadedAt: up.uploadedAt,
+          uploadedBy: up.uploadedBy,
+          confirmed: up.confirmed,
+          confirmedAt: up.confirmedAt || null,
+          confirmedBy: up.confirmedBy || null,
+          summary: up.summary,
+          rows: [], // Omit duplicate rows array in monthlyUploads; all rows are in compressedData
+        };
+      });
+    }
+
+    const compressed = compressTransactions(normalized.transactions);
+
+    const cloudPayload = {
+      isReset: normalized.isReset || false,
+      settings: normalized.settings,
+      batches: normalized.batches,
+      monthlyUploads: lightMonthly,
+      compressedData: compressed,
+      updatedAt: serverTimestamp(),
+    };
+
     await setDoc(doc(db, 'users', docId), {
-      salesReportData: {
-        ...cloudPayload,
-        updatedAt: serverTimestamp(),
-      },
+      salesReportData: cloudPayload,
     }, { merge: true });
     return true;
   } catch (error) {
@@ -314,9 +426,14 @@ export const importSalesBatch = async (user, currentStore, batchRecord, validRow
     }
   });
 
+  const now = new Date();
+  const realCurrentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const allowSalesReupload = user?.userAccess?.allowSalesReupload === true;
+
   for (const ym of affectedMonths) {
-    const isLocked = lockedMonths[ym]?.confirmed || currentStore.monthlyUploads?.[ym]?.confirmed;
-    if (isLocked && !isAdmin) {
+    // Current month sales data upload MUST NEVER be locked
+    const isLocked = ym !== realCurrentYm && (lockedMonths[ym]?.confirmed || currentStore.monthlyUploads?.[ym]?.confirmed);
+    if (isLocked && !isAdmin && !allowSalesReupload) {
       throw new Error(`Month ${ym} is confirmed and locked. Admin approval is required to re-upload.`);
     }
   }

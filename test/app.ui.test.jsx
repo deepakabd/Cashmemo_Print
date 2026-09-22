@@ -28,6 +28,7 @@ vi.mock('firebase/firestore', () => ({
   getDocs: vi.fn(async () => ({ empty: true, docs: [], size: 0 })),
   getDocsFromCache: vi.fn(async () => ({ empty: true, docs: [], size: 0 })),
   limit: vi.fn(() => ({})),
+  onSnapshot: vi.fn(() => () => {}),
   orderBy: vi.fn(() => ({})),
   query: vi.fn(() => ({})),
   serverTimestamp: vi.fn(() => 'SERVER_TIMESTAMP'),

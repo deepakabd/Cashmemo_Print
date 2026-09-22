@@ -459,13 +459,13 @@ export function normalizeSalesRows(rawRows = [], options = {}) {
         'amount', 'totalamount', 'salesvalue', 'netpayable', 'invoiceamount', 'billamount', 'netamount', 'total'
       ], null);
 
-      let rsp = 0;
+      let rawRsp = 0;
       let salesValue = 0;
 
       if (rawUnitRate !== null && rawUnitRate !== '') {
         const parsedRsp = parseFloat(String(rawUnitRate).replace(/[^0-9.]/g, ''));
         if (!isNaN(parsedRsp) && parsedRsp > 0) {
-          rsp = Math.round(parsedRsp * 100) / 100;
+          rawRsp = Math.round(parsedRsp * 100) / 100;
         }
       }
 
@@ -473,10 +473,26 @@ export function normalizeSalesRows(rawRows = [], options = {}) {
         const parsedTotal = parseFloat(String(rawTotalAmount).replace(/[^0-9.]/g, ''));
         if (!isNaN(parsedTotal) && parsedTotal > 0) {
           salesValue = Math.round(parsedTotal * 100) / 100;
-          if (rsp === 0 && rawQty > 0) {
-            rsp = Math.round((salesValue / rawQty) * 100) / 100;
-          }
         }
+      }
+
+      // User Rule: Default Rate (₹) = RSP / Order Quantity
+      let rsp = 0;
+      const isCommercial = packageCode.toUpperCase().includes('19') || packageCode.toUpperCase().includes('COMM');
+
+      if (rawRsp > 0 && rawQty > 0) {
+        const unitFromRsp = Math.round((rawRsp / rawQty) * 100) / 100;
+        // Protect against double-division if rawRsp was already per-unit
+        if (rawQty > 1 && unitFromRsp < (isCommercial ? 1500 : 600) && rawRsp >= (isCommercial ? 1800 : 700)) {
+          rsp = rawRsp;
+        } else {
+          rsp = unitFromRsp;
+        }
+        if (salesValue === 0) {
+          salesValue = rawRsp;
+        }
+      } else if (salesValue > 0 && rawQty > 0) {
+        rsp = Math.round((salesValue / rawQty) * 100) / 100;
       }
 
       // If unit rate is known but sales value wasn't directly in a total column
@@ -486,7 +502,6 @@ export function normalizeSalesRows(rawRows = [], options = {}) {
 
       // Fallback if neither was present
       if (rsp === 0) {
-        const isCommercial = packageCode.toUpperCase().includes('19') || packageCode.toUpperCase().includes('COMM');
         rsp = isCommercial ? 3047 : 1039;
         salesValue = Math.round((rawQty * rsp) * 100) / 100;
       }
@@ -537,6 +552,7 @@ export function normalizeSalesRows(rawRows = [], options = {}) {
         dacType,
         dacVerified,
         consumerAddress,
+        rawRsp: rawRsp > 0 ? rawRsp : (salesValue || rsp * rawQty),
         rsp,
         salesValue,
         deliveryArea,
