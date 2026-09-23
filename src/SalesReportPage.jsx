@@ -503,8 +503,41 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const batches = Array.isArray(storeData.batches) ? storeData.batches : [];
   const lockedMonths = storeData?.settings?.lockedMonths || {};
 
+  const consumerSearchIndex = useMemo(() => {
+    const fields = ['consumerNo', 'mobileNo', 'orderNo', 'cashMemoNo', 'consumerName'];
+    const index = Object.fromEntries(fields.map((field) => [field, { suggestions: [], rows: new Map() }]));
+    const normalize = (field, value) => field === 'mobileNo'
+      ? String(value || '').replace(/\D/g, '')
+      : String(value || '').trim().replace(/\s+/g, '').toLowerCase();
+
+    transactions.forEach((row) => {
+      fields.forEach((field) => {
+        const displayValue = String(row[field] || '').trim();
+        const normalized = normalize(field, displayValue);
+        if (!normalized) return;
+        if (!index[field].rows.has(normalized)) {
+          index[field].rows.set(normalized, []);
+          index[field].suggestions.push({
+            value: displayValue,
+            normalized,
+            consumerName: row.consumerName || 'Unknown Consumer',
+            consumerNo: row.consumerNo || '—',
+            mobile: row.mobileNo || '—',
+          });
+        }
+        index[field].rows.get(normalized).push(row);
+      });
+    });
+    fields.forEach((field) => {
+      index[field].suggestions.sort((a, b) => a.normalized.localeCompare(b.normalized, undefined, { numeric: true }));
+    });
+    return index;
+  }, [transactions]);
+
   const consumerSearchResults = useMemo(() => {
-    const queryValue = consumerSearchQuery.trim().replace(/\s+/g, '').toLowerCase();
+    const queryValue = consumerSearchMode === 'mobileNo'
+      ? consumerSearchQuery.replace(/\D/g, '')
+      : consumerSearchQuery.trim().replace(/\s+/g, '').toLowerCase();
     if (!queryValue) return [];
     const field = {
       consumerNo: 'consumerNo',
@@ -513,11 +546,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       cashMemoNo: 'cashMemoNo',
       consumerName: 'consumerName',
     }[consumerSearchMode] || 'consumerNo';
-    return transactions
-      .filter((row) => String(row[field] || '').replace(/\s+/g, '').toLowerCase() === queryValue)
+    return [...(consumerSearchIndex[field]?.rows.get(queryValue) || [])]
       .sort((a, b) => String(b.actualDeliveryDate || b.cashMemoDate || b.orderDateKey || b.orderDate || '')
         .localeCompare(String(a.actualDeliveryDate || a.cashMemoDate || a.orderDateKey || a.orderDate || '')));
-  }, [transactions, consumerSearchMode, consumerSearchQuery]);
+  }, [consumerSearchIndex, consumerSearchMode, consumerSearchQuery]);
 
   const activeConsumerSearchSuggestions = useMemo(() => {
     const field = {
@@ -531,27 +563,17 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       ? String(value || '').replace(/\D/g, '')
       : String(value || '').trim().replace(/\s+/g, '').toLowerCase();
     const queryValue = normalize(consumerSearchQuery);
-    const unique = new Map();
-    transactions.forEach((row) => {
-      const displayValue = String(row[field] || '').trim();
-      const normalized = normalize(displayValue);
-      if (!normalized || unique.has(normalized)) return;
-      if (queryValue && !normalized.startsWith(queryValue) && !normalized.includes(queryValue)) return;
-      unique.set(normalized, {
-        value: displayValue,
-        normalized,
-        consumerName: row.consumerName || 'Unknown Consumer',
-        consumerNo: row.consumerNo || '—',
-        mobile: row.mobileNo || '—',
-      });
-    });
-    return Array.from(unique.values())
-      .sort((a, b) => {
-        const prefixDifference = Number(b.normalized.startsWith(queryValue)) - Number(a.normalized.startsWith(queryValue));
-        return prefixDifference || a.normalized.localeCompare(b.normalized, undefined, { numeric: true });
-      })
-      .slice(0, 8);
-  }, [transactions, consumerSearchMode, consumerSearchQuery]);
+    const suggestions = consumerSearchIndex[field]?.suggestions || [];
+    if (!queryValue) return suggestions.slice(0, 8);
+    const prefixMatches = [];
+    const containsMatches = [];
+    for (const suggestion of suggestions) {
+      if (suggestion.normalized.startsWith(queryValue)) prefixMatches.push(suggestion);
+      else if (suggestion.normalized.includes(queryValue)) containsMatches.push(suggestion);
+      if (prefixMatches.length >= 8) break;
+    }
+    return [...prefixMatches, ...containsMatches].slice(0, 8);
+  }, [consumerSearchIndex, consumerSearchMode, consumerSearchQuery]);
 
   // Open Import Modal helper
   const openImportModal = (uploadType = 'monthWise', year = 2026, monthCode = '09') => {
