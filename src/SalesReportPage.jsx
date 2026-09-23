@@ -456,6 +456,8 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Cloud sync state
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [hasCompletedInitialSync, setHasCompletedInitialSync] = useState(false);
   const [cloudOperation, setCloudOperation] = useState(null);
   const progressOptions = (label) => ({
     onProgress: (percent) => setCloudOperation({ label, percent }),
@@ -464,21 +466,29 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   // Load from Firebase on mount
   useEffect(() => {
     let active = true;
+    setHasCompletedInitialSync(false);
     setIsSyncing(true);
-    loadSalesReportFromFirebase(loggedInUser).then((remote) => {
+    setSyncProgress(0);
+    loadSalesReportFromFirebase(loggedInUser, {
+      onProgress: (percent) => { if (active) setSyncProgress(percent); },
+    }).then((remote) => {
       if (active && remote) {
         setStoreData(remote);
       }
     }).finally(() => {
-      if (active) setIsSyncing(false);
+      if (active) {
+        setIsSyncing(false);
+        setHasCompletedInitialSync(true);
+      }
     });
     return () => { active = false; };
   }, [loggedInUser]);
 
   const handleManualCloudSync = async () => {
     setIsSyncing(true);
+    setSyncProgress(0);
     try {
-      const remote = await loadSalesReportFromFirebase(loggedInUser);
+      const remote = await loadSalesReportFromFirebase(loggedInUser, { onProgress: setSyncProgress });
       if (remote) {
         setStoreData(remote);
         showNotification(`Cloud sync complete! ${remote.transactions?.length || 0} transactions synchronized.`, 'success');
@@ -2432,9 +2442,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               fontSize: '12px',
               cursor: isSyncing ? 'wait' : 'pointer',
               transition: 'all 0.2s ease',
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
-            {isSyncing ? '🔄 Syncing...' : '☁️ Cloud Sync'}
+            {isSyncing ? `🔄 Syncing... ${syncProgress}%` : '☁️ Cloud Sync'}
+            {isSyncing && (
+              <span className="cloud-sync-button-progress" style={{ width: `${syncProgress}%` }} />
+            )}
           </button>
           {/* Full Screen Viewport Toggle */}
           <button
@@ -2583,7 +2598,18 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         </aside>
 
         {/* Right Content Area */}
-        <section className="sales-report-content">
+        <section className={`sales-report-content${!hasCompletedInitialSync ? ' sales-report-content--initial-sync' : ''}`}>
+          {!hasCompletedInitialSync && (
+            <div className="sales-initial-sync-screen" role="status" aria-live="polite">
+              <div className="sales-initial-sync-screen__icon">☁️</div>
+              <h2>Loading Sales Report</h2>
+              <p>Cloud data synchronize ho raha hai. Report sync complete hone ke baad dikhega.</p>
+              <div className="sales-initial-sync-screen__progress">
+                <span style={{ width: `${syncProgress}%` }} />
+              </div>
+              <strong>{syncProgress}% Synced</strong>
+            </div>
+          )}
           {/* ========================================== */}
           {/* TAB 1: OVERVIEW / SALES DASHBOARD          */}
           {/* ========================================== */}

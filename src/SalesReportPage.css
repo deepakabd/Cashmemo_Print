@@ -323,6 +323,76 @@ body.body--sales-report-active .book-view {
   gap: 20px;
 }
 
+.sales-report-content--initial-sync > :not(.sales-initial-sync-screen) {
+  display: none !important;
+}
+
+.sales-initial-sync-screen {
+  min-height: 430px;
+  padding: 48px 24px;
+  border: 1px solid #d9e8f2;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(14, 165, 233, 0.12), transparent 35%),
+    linear-gradient(145deg, #ffffff 0%, #f4faff 100%);
+  box-shadow: 0 12px 35px rgba(15, 55, 86, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.sales-initial-sync-screen__icon {
+  margin-bottom: 14px;
+  font-size: 54px;
+  line-height: 1;
+  filter: drop-shadow(0 8px 12px rgba(2, 132, 199, 0.2));
+  animation: sales-cloud-float 1.8s ease-in-out infinite;
+}
+
+.sales-initial-sync-screen h2 {
+  margin: 0;
+  color: #0f3756;
+  font-size: 24px;
+}
+
+.sales-initial-sync-screen p {
+  max-width: 520px;
+  margin: 10px 0 22px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.sales-initial-sync-screen__progress {
+  width: min(420px, 90%);
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+  box-shadow: inset 0 1px 3px rgba(15, 55, 86, 0.12);
+}
+
+.sales-initial-sync-screen__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0284c7, #22c55e);
+  transition: width 0.25s ease;
+}
+
+.sales-initial-sync-screen strong {
+  margin-top: 12px;
+  color: #0369a1;
+  font-size: 14px;
+}
+
+@keyframes sales-cloud-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
 /* Cards & Sections */
 .sales-card {
   background: #ffffff;
@@ -1355,6 +1425,17 @@ input:checked + .slider:before {
   gap: 2px;
   align-items: center;
   text-align: center;
+}
+
+.cloud-sync-button-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(90deg, #38bdf8, #34d399);
+  transition: width 0.2s ease;
+  pointer-events: none;
 }
 
 .sales-kpi-summary-grid--single-row .sales-kpi-summary-card span {

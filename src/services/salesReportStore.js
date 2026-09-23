@@ -355,7 +355,9 @@ export const loadSalesReportData = (user) => {
  * Load complete dataset from high-capacity IndexedDB, with Firestore cloud synchronization
  * Supports full multi-device synchronization by decompressing cloud transactions.
  */
-export const loadSalesReportFromFirebase = async (user) => {
+export const loadSalesReportFromFirebase = async (user, options = {}) => {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+  onProgress(5);
   const key = getStorageKey(user);
 
   // 1. Primary client source: Check high-capacity IndexedDB (contains all 50,000+ rows)
@@ -365,12 +367,16 @@ export const loadSalesReportFromFirebase = async (user) => {
   } catch (err) {
     console.warn('Error reading from IndexedDB:', err);
   }
+  onProgress(10);
 
   // 2. Secondary client source: localStorage
   const localData = idbData ? normalizeSalesReportData(idbData) : loadSalesReportData(user);
 
   // 3. Remote Cloud source:
-  if (!user) return localData;
+  if (!user) {
+    onProgress(100);
+    return localData;
+  }
 
   let remote = null;
 
@@ -383,14 +389,16 @@ export const loadSalesReportFromFirebase = async (user) => {
     });
     if (resp.ok) {
       const result = await resp.json();
+      onProgress(20);
       if (result?.salesReportData) {
         remote = result.salesReportData;
         // monthKeys is the authoritative R2 manifest. Accept it even if an
         // older concurrent fallback temporarily rewrote storageVersion.
         if (Array.isArray(remote.monthKeys) && remote.monthKeys.length > 0) {
-          const monthlyRows = [];
-          const missingMonthKeys = [];
-          for (const monthKey of remote.monthKeys) {
+          // Monthly R2 objects are independent. Load them concurrently instead
+          // of waiting for every network round trip one-by-one.
+          let completedMonths = 0;
+          const monthLoads = await Promise.all(remote.monthKeys.map(async (monthKey) => {
             try {
               const monthResponse = await postSalesReportApi({
                 mode: 'loadMonth',
@@ -399,12 +407,17 @@ export const loadSalesReportFromFirebase = async (user) => {
                 monthKey,
               });
               const monthResult = await monthResponse.json();
-              monthlyRows.push(...decompressTransactions(monthResult.compressedData));
+              return { monthKey, rows: decompressTransactions(monthResult.compressedData), missing: false };
             } catch (monthError) {
               if (monthError?.code !== 'r2-object-missing' && monthError?.code !== 'http-404') throw monthError;
-              missingMonthKeys.push(monthKey);
+              return { monthKey, rows: [], missing: true };
+            } finally {
+              completedMonths += 1;
+              onProgress(Math.round(20 + (completedMonths / remote.monthKeys.length) * 70));
             }
-          }
+          }));
+          const monthlyRows = monthLoads.flatMap((month) => month.rows);
+          const missingMonthKeys = monthLoads.filter((month) => month.missing).map((month) => month.monthKey);
           remote = { ...remote, transactions: monthlyRows, missingMonthKeys };
         }
       }
@@ -462,6 +475,7 @@ export const loadSalesReportFromFirebase = async (user) => {
         } catch (repairError) {
           console.warn('SalesReport missing cloud months could not be repaired.', repairError);
         }
+        onProgress(100);
         return repaired;
       }
     }
@@ -523,6 +537,7 @@ export const loadSalesReportFromFirebase = async (user) => {
         // localStorage quota safety
       }
 
+      onProgress(100);
       return merged;
     } else {
       if (shouldSyncLocalToCloud && user) {
@@ -533,10 +548,12 @@ export const loadSalesReportFromFirebase = async (user) => {
           console.warn('Auto-syncing real local sales data to cloud failed:', err);
         }
       }
+      onProgress(100);
       return localData;
     }
   }
 
+  onProgress(100);
   return idbData ? normalizeSalesReportData(idbData) : localData;
 };
 
