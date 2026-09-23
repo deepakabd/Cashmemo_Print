@@ -143,6 +143,9 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, docId: 'dealer_123' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, docId: 'dealer_123' }),
     });
 
     const success = await saveSalesReportData(user, store);
@@ -150,6 +153,12 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(success).toBe(true);
     expect(salesReportDb.saveSalesReportToIndexedDB).toHaveBeenCalled();
     expect(globalThis.fetch).toHaveBeenCalled();
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toMatchObject({
+      mode: 'saveMonth', monthKey: '2026-09',
+    });
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toMatchObject({
+      mode: 'saveManifest',
+    });
     // Since API succeeded, direct client setDoc was not needed
     expect(firestore.setDoc).not.toHaveBeenCalled();
   });

@@ -2,6 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import handler from '../api/sales-report.js';
 import { handleSalesReportRequest, splitSalesReportData } from '../server/salesReportService.js';
 
+const r2 = vi.hoisted(() => ({
+  save: vi.fn(),
+  load: vi.fn(),
+  remove: vi.fn(),
+}));
+
+vi.mock('../server/r2SalesReportStore.js', () => ({
+  saveR2SalesMonth: r2.save,
+  loadR2SalesMonth: r2.load,
+  deleteR2SalesMonth: r2.remove,
+}));
+
 vi.mock('../server/loginService.js', () => {
   class MockLoginError extends Error {
     constructor(code, message, status = 400) {
@@ -94,6 +106,9 @@ describe('SalesReport Server API & Service', () => {
     mockAuth.verifyIdToken.mockResolvedValue({
       uid: 'user_1', dealerCode: 'D100', accountActive: true, planActive: true,
     });
+    r2.save.mockReset().mockResolvedValue(undefined);
+    r2.load.mockReset();
+    r2.remove.mockReset().mockResolvedValue(undefined);
   });
 
   it('rejects requests without userId or dealerCode', async () => {
@@ -183,6 +198,32 @@ describe('SalesReport Server API & Service', () => {
       mode: 'load', userId: 'user_1',
     });
     expect(loaded.salesReportData.compressedData).toBe(compressedData);
+  });
+
+  it('stores monthly reports in R2 and saves only their manifest in Firestore', async () => {
+    mockUsers.set('user_1', { dealerCode: 'D100' });
+    await handleSalesReportRequest('Bearer token', {
+      mode: 'saveMonth', userId: 'user_1', monthKey: '2026-09', compressedData: 'MONTH_DATA',
+    });
+    await handleSalesReportRequest('Bearer token', {
+      mode: 'saveManifest', userId: 'user_1',
+      salesReportData: { monthKeys: ['2026-09'], batches: [] },
+    });
+
+    expect(r2.save).toHaveBeenCalledWith('user_1', '2026-09', 'MONTH_DATA');
+    expect(mockUsers.get('user_1').salesReportData).toMatchObject({
+      storageVersion: 3, monthKeys: ['2026-09'],
+    });
+    expect(mockUsers.get('user_1').salesReportData.compressedData).toBeUndefined();
+  });
+
+  it('loads a monthly report from R2', async () => {
+    mockUsers.set('user_1', { dealerCode: 'D100', salesReportData: { storageVersion: 3, monthKeys: ['2026-09'] } });
+    r2.load.mockResolvedValueOnce('MONTH_DATA');
+    const result = await handleSalesReportRequest('Bearer token', {
+      mode: 'loadMonth', userId: 'user_1', monthKey: '2026-09',
+    });
+    expect(result.compressedData).toBe('MONTH_DATA');
   });
 
   it('splits data below the Firestore limit with safe per-document headroom', () => {
