@@ -105,11 +105,6 @@ const getStorageKey = (user = {}) => {
   return `cashmemoSalesReport_${String(identifier).trim().replace(/\s+/g, '_')}`;
 };
 
-const getUserDocId = (user = {}) => {
-  const identifier = user?.id || user?.dealerCode || user?.dealerName || 'default';
-  return String(identifier).trim().replace(/\s+/g, '_');
-};
-
 export const resolveFirestoreUserDocRef = async (user = {}) => {
   const userId = user?.id ? String(user.id).trim() : '';
   const dealerCode = user?.dealerCode ? String(user.dealerCode).trim() : '';
@@ -137,7 +132,6 @@ const postSalesReportApi = async (payload) => {
   if (!auth.currentUser) {
     throw new Error('Firebase sign-in required for Sales Report cloud sync.');
   }
-  const token = await auth.currentUser.getIdToken();
   if (typeof window === 'undefined') {
     if (globalThis.fetch && !globalThis.fetch._isMockFunction && globalThis.fetch.name === 'fetch') {
       throw new Error('Relative URL not supported in unmocked Node fetch');
@@ -153,14 +147,22 @@ const postSalesReportApi = async (payload) => {
     }
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const request = async (forceRefresh = false) => {
+    const token = await auth.currentUser.getIdToken(forceRefresh);
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  };
+
+  let response = await request();
+  if (response.status === 401 && auth.currentUser) {
+    response = await request(true);
+  }
   if (!response.ok) {
     let result = null;
     try {
@@ -381,7 +383,9 @@ export const loadSalesReportFromFirebase = async (user) => {
       const result = await resp.json();
       if (result?.salesReportData) {
         remote = result.salesReportData;
-        if (remote.storageVersion === 3 && Array.isArray(remote.monthKeys)) {
+        // monthKeys is the authoritative R2 manifest. Accept it even if an
+        // older concurrent fallback temporarily rewrote storageVersion.
+        if (Array.isArray(remote.monthKeys) && remote.monthKeys.length > 0) {
           const monthlyRows = [];
           for (const monthKey of remote.monthKeys) {
             const monthResponse = await postSalesReportApi({
