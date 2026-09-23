@@ -45,7 +45,13 @@ export const handleSalesReportRequest = async (authorization, body = {}) => {
   let claims;
   try {
     claims = await auth.verifyIdToken(token, true);
-  } catch {
+  } catch (error) {
+    console.warn('[sales-report] Firebase ID token verification failed:', {
+      code: error?.code || 'unknown',
+      message: error?.message || 'unknown',
+      tokenLength: token.length,
+      jwtSegments: token.split('.').length,
+    });
     throw new LoginError('unauthenticated', 'Sign in again to sync Sales Report data.', 401);
   }
   const mode = body.mode || 'save'; // 'save' | 'load'
@@ -163,6 +169,15 @@ export const handleSalesReportRequest = async (authorization, body = {}) => {
     delete payload.storageVersion;
     delete payload.chunkCount;
     delete payload.compression;
+  }
+
+  // A slow legacy fallback from another tab must not replace a newer R2
+  // manifest after its monthly objects have already been committed.
+  const latestSnapshot = await targetDocRef.get();
+  const latestSalesReport = latestSnapshot.data()?.salesReportData;
+  if (latestSalesReport?.storageVersion === 3
+    || (Array.isArray(latestSalesReport?.monthKeys) && latestSalesReport.monthKeys.length > 0)) {
+    return { success: true, docId: targetDocRef.id, storageVersion: 3 };
   }
 
   await targetDocRef.set({
