@@ -437,6 +437,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Cloud sync state
   const [isSyncing, setIsSyncing] = useState(false);
+  const [cloudOperation, setCloudOperation] = useState(null);
+  const progressOptions = (label) => ({
+    onProgress: (percent) => setCloudOperation({ label, percent }),
+  });
 
   // Load from Firebase on mount
   useEffect(() => {
@@ -513,12 +517,15 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   // Confirm month data lock
   const handleConfirmMonth = async (ym) => {
     try {
+      setCloudOperation({ label: `Locking ${ym}`, percent: 0 });
       const confirmedBy = loggedInUser?.dealerName || loggedInUser?.username || 'User';
-      const nextStore = await confirmMonthData(loggedInUser, storeData, ym, confirmedBy);
+      const nextStore = await confirmMonthData(loggedInUser, storeData, ym, confirmedBy, progressOptions(`Locking ${ym}`));
       setStoreData(nextStore);
       showNotification(`Month ${ym} confirmed and locked against re-upload.`);
     } catch (err) {
       showNotification(err.message || 'Confirmation failed.', 'error');
+    } finally {
+      setCloudOperation(null);
     }
   };
 
@@ -529,12 +536,15 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       return;
     }
     try {
+      setCloudOperation({ label: `Unlocking ${ym}`, percent: 0 });
       const unlockedBy = loggedInUser?.dealerName || loggedInUser?.username || 'Admin';
-      const nextStore = await unlockMonthData(loggedInUser, storeData, ym, unlockedBy);
+      const nextStore = await unlockMonthData(loggedInUser, storeData, ym, unlockedBy, progressOptions(`Unlocking ${ym}`));
       setStoreData(nextStore);
       showNotification(`Month ${ym} unlocked by Admin. Re-upload is now enabled.`);
     } catch (err) {
       showNotification(err.message || 'Unlock failed.', 'error');
+    } finally {
+      setCloudOperation(null);
     }
   };
 
@@ -562,11 +572,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     if (!confirmed) return;
 
     try {
-      const nextStore = await resetMonthSalesData(loggedInUser, storeData, ym);
+      setCloudOperation({ label: `Resetting ${ym}`, percent: 0 });
+      const nextStore = await resetMonthSalesData(loggedInUser, storeData, ym, progressOptions(`Resetting ${ym}`));
       setStoreData(nextStore);
       showNotification(`✅ Successfully reset and removed uploaded sales data for ${ym}.`);
     } catch (err) {
       showNotification(err.message || 'Failed to reset month data.', 'error');
+    } finally {
+      setCloudOperation(null);
     }
   };
 
@@ -583,11 +596,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     if (!confirmed) return;
 
     try {
-      const nextStore = await resetAllSalesData(loggedInUser, storeData);
+      setCloudOperation({ label: 'Resetting all sales data', percent: 0 });
+      const nextStore = await resetAllSalesData(loggedInUser, storeData, progressOptions('Resetting all sales data'));
       setStoreData(nextStore);
       showNotification('✅ All uploaded sales data has been reset successfully.');
     } catch (err) {
       showNotification(err.message || 'Failed to reset all data.', 'error');
+    } finally {
+      setCloudOperation(null);
     }
   };
 
@@ -1955,11 +1971,22 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   // ==========================================
   const handleConfirmImport = async (batchRecord, validRows) => {
     try {
-      const nextStore = await importSalesBatch(loggedInUser, storeData, batchRecord, validRows);
+      setCloudOperation({ label: `Uploading ${batchRecord.fileName}`, percent: 0 });
+      const nextStore = await importSalesBatch(
+        loggedInUser,
+        storeData,
+        batchRecord,
+        validRows,
+        progressOptions(`Uploading ${batchRecord.fileName}`),
+      );
       setStoreData(nextStore);
       showNotification(`Successfully imported ${validRows.length} sales records!`);
+      return true;
     } catch (err) {
       showNotification(err.message || 'Import failed.', 'error');
+      return false;
+    } finally {
+      setCloudOperation(null);
     }
   };
 
@@ -2152,6 +2179,18 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
         }}>
           {notification.text}
+        </div>
+      )}
+
+      {cloudOperation && (
+        <div className="sales-cloud-progress" role="status" aria-live="polite">
+          <div className="sales-cloud-progress__label">
+            <strong>{cloudOperation.label}</strong>
+            <span>{cloudOperation.percent}%</span>
+          </div>
+          <div className="sales-cloud-progress__track">
+            <div className="sales-cloud-progress__fill" style={{ width: `${cloudOperation.percent}%` }} />
+          </div>
         </div>
       )}
 
@@ -5223,6 +5262,8 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         lockedMonths={lockedMonths}
         isAdmin={isAdmin}
         allowSalesReupload={loggedInUser?.userAccess?.allowSalesReupload === true}
+        uploading={Boolean(cloudOperation?.label?.startsWith('Uploading'))}
+        uploadProgress={cloudOperation?.label?.startsWith('Uploading') ? cloudOperation.percent : 0}
       />
     </main>
   );

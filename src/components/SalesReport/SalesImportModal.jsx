@@ -14,6 +14,8 @@ export default function SalesImportModal({
   lockedMonths = {},
   isAdmin = false,
   allowSalesReupload = false,
+  uploading = false,
+  uploadProgress = 0,
 }) {
   const [uploadType, setUploadType] = useState(initialUploadType); // 'monthWise' | 'fyWise'
   const [selectedYear, setSelectedYear] = useState(initialYear);
@@ -132,7 +134,7 @@ export default function SalesImportModal({
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!normalizedResult) return;
     const targetRows = selectedImportTarget === 'allRows'
       ? (normalizedResult.allValidRows || [])
@@ -158,8 +160,8 @@ export default function SalesImportModal({
       status: 'completed',
     };
 
-    onConfirmImport(batchRecord, targetRows);
-    onClose();
+    const saved = await onConfirmImport(batchRecord, targetRows);
+    if (saved) onClose();
   };
 
   return (
@@ -582,6 +584,12 @@ export default function SalesImportModal({
         </div>
 
         <div className="sales-modal-footer">
+          {uploading && (
+            <div className="sales-import-progress" role="status" aria-live="polite">
+              <div><strong>Saving to cloud</strong><span>{uploadProgress}%</span></div>
+              <progress max="100" value={uploadProgress} />
+            </div>
+          )}
           <button type="button" className="sales-report-btn" onClick={onClose}>
             Cancel
           </button>
@@ -598,10 +606,12 @@ export default function SalesImportModal({
               <button
                 type="button"
                 className="sales-report-btn sales-report-btn--primary"
-                disabled={!normalizedResult || !activeTargetRows.length || reading}
+                disabled={!normalizedResult || !activeTargetRows.length || reading || uploading}
                 onClick={handleConfirm}
               >
-                {reading
+                {uploading
+                  ? `Uploading ${uploadProgress}%`
+                  : reading
                   ? 'Processing...'
                   : `Confirm & Import ${targetLabel} (${activeTargetRows.length.toLocaleString()} Records)`}
               </button>
@@ -612,4 +622,3 @@ export default function SalesImportModal({
     </div>
   );
 }
-
