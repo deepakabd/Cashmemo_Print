@@ -381,6 +381,20 @@ export const loadSalesReportFromFirebase = async (user) => {
       const result = await resp.json();
       if (result?.salesReportData) {
         remote = result.salesReportData;
+        if (remote.storageVersion === 3 && Array.isArray(remote.monthKeys)) {
+          const monthlyRows = [];
+          for (const monthKey of remote.monthKeys) {
+            const monthResponse = await postSalesReportApi({
+              mode: 'loadMonth',
+              userId: user?.id,
+              dealerCode: user?.dealerCode,
+              monthKey,
+            });
+            const monthResult = await monthResponse.json();
+            monthlyRows.push(...decompressTransactions(monthResult.compressedData));
+          }
+          remote = { ...remote, transactions: monthlyRows };
+        }
       }
     }
   } catch (apiErr) {
@@ -539,6 +553,45 @@ export const saveSalesReportData = async (user, data) => {
     compressedData: compressed,
     updatedAt: nowIso,
   };
+
+  // R2 stores each month independently so annual data is never sent as one
+  // oversized object and a changed month does not depend on Firestore limits.
+  try {
+    const rowsByMonth = {};
+    normalized.transactions.forEach((row) => {
+      const monthKey = `${row.year}-${String(row.monthNo).padStart(2, '0')}`;
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) return;
+      if (!rowsByMonth[monthKey]) rowsByMonth[monthKey] = [];
+      rowsByMonth[monthKey].push(row);
+    });
+    const monthKeys = Object.keys(rowsByMonth).sort();
+    for (const monthKey of monthKeys) {
+      await postSalesReportApi({
+        mode: 'saveMonth',
+        userId: user?.id,
+        dealerCode: user?.dealerCode,
+        monthKey,
+        compressedData: compressTransactions(rowsByMonth[monthKey]),
+      });
+    }
+    await postSalesReportApi({
+      mode: 'saveManifest',
+      userId: user?.id,
+      dealerCode: user?.dealerCode,
+      salesReportData: {
+        isReset: normalized.isReset || false,
+        settings: normalized.settings,
+        batches: normalized.batches,
+        monthlyUploads: lightMonthly,
+        storageVersion: 3,
+        monthKeys,
+        updatedAt: nowIso,
+      },
+    });
+    return true;
+  } catch (r2Error) {
+    console.warn('SalesReport R2 sync unavailable; trying Firestore cloud storage.', r2Error);
+  }
 
   // Primary Cloud Path: Trusted Server API (uses Firebase Admin SDK, bypasses security rules, works for Admin & Dealers)
   try {

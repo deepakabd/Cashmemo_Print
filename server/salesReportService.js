@@ -1,4 +1,5 @@
 import { getAdmin, LoginError } from './loginService.js';
+import { deleteR2SalesMonth, loadR2SalesMonth, saveR2SalesMonth } from './r2SalesReportStore.js';
 
 export const SALES_REPORT_CHUNK_SIZE = 700_000;
 
@@ -87,6 +88,36 @@ export const handleSalesReportRequest = async (authorization, body = {}) => {
   if (mode !== 'load' && !isAdmin
     && (claims.accountActive !== true || claims.planActive !== true)) {
     throw new LoginError('inactive-account', 'An active account and plan are required to sync Sales Report data.', 403);
+  }
+
+  const validMonthKey = (value) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(value || ''));
+  if (mode === 'saveMonth' || mode === 'loadMonth') {
+    if (!validMonthKey(body.monthKey)) throw new LoginError('invalid-month', 'A valid Sales Report month is required.', 400);
+    if (mode === 'loadMonth') {
+      return { success: true, monthKey: body.monthKey,
+        compressedData: await loadR2SalesMonth(targetDocRef.id, body.monthKey) };
+    }
+    if (typeof body.compressedData !== 'string' || !body.compressedData) {
+      throw new LoginError('invalid-data', 'Compressed monthly Sales Report data is required.', 400);
+    }
+    await saveR2SalesMonth(targetDocRef.id, body.monthKey, body.compressedData);
+    return { success: true, monthKey: body.monthKey };
+  }
+
+  if (mode === 'saveManifest') {
+    const manifest = body.salesReportData;
+    const monthKeys = Array.isArray(manifest?.monthKeys) ? manifest.monthKeys : [];
+    if (!manifest || monthKeys.some((monthKey) => !validMonthKey(monthKey))) {
+      throw new LoginError('invalid-data', 'A valid Sales Report manifest is required.', 400);
+    }
+    const previousKeys = Array.isArray(target?.salesReportData?.monthKeys) ? target.salesReportData.monthKeys : [];
+    const payload = { ...manifest, storageVersion: 3,
+      monthKeys: [...new Set(monthKeys)].sort(), updatedAt: new Date().toISOString() };
+    delete payload.compressedData;
+    await targetDocRef.set({ salesReportData: payload }, { merge: true });
+    await Promise.all(previousKeys.filter((monthKey) => !payload.monthKeys.includes(monthKey))
+      .map((monthKey) => deleteR2SalesMonth(targetDocRef.id, monthKey)));
+    return { success: true, docId: targetDocRef.id, monthKeys: payload.monthKeys };
   }
 
   // 2. Process request mode

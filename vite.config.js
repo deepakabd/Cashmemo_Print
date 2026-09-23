@@ -23,6 +23,10 @@ export default defineConfig(({ mode }) => {
     'FIREBASE_SERVICE_ACCOUNT',
     'FIREBASE_PROJECT_ID',
     'VITE_FIREBASE_PROJECT_ID',
+    'CLOUDFLARE_R2_ACCOUNT_ID',
+    'CLOUDFLARE_R2_ACCESS_KEY_ID',
+    'CLOUDFLARE_R2_SECRET_ACCESS_KEY',
+    'CLOUDFLARE_R2_BUCKET',
   ]) {
     if (process.env[key] === undefined && env[key] !== undefined) {
       process.env[key] = env[key]
