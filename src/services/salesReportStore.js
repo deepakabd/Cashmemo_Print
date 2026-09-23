@@ -231,6 +231,8 @@ export const normalizeSalesReportData = (raw = {}) => {
   return {
     isReset,
     updatedAt: raw.updatedAt || null,
+    storageVersion: raw.storageVersion === 3 ? 3 : undefined,
+    monthKeys: Array.isArray(raw.monthKeys) ? [...raw.monthKeys] : undefined,
     settings: {
       uploadEnabled: settings.uploadEnabled !== false,
       allowDataReset: settings.allowDataReset === true,
@@ -387,22 +389,28 @@ export const loadSalesReportFromFirebase = async (user) => {
         // older concurrent fallback temporarily rewrote storageVersion.
         if (Array.isArray(remote.monthKeys) && remote.monthKeys.length > 0) {
           const monthlyRows = [];
+          const missingMonthKeys = [];
           for (const monthKey of remote.monthKeys) {
-            const monthResponse = await postSalesReportApi({
-              mode: 'loadMonth',
-              userId: user?.id,
-              dealerCode: user?.dealerCode,
-              monthKey,
-            });
-            const monthResult = await monthResponse.json();
-            monthlyRows.push(...decompressTransactions(monthResult.compressedData));
+            try {
+              const monthResponse = await postSalesReportApi({
+                mode: 'loadMonth',
+                userId: user?.id,
+                dealerCode: user?.dealerCode,
+                monthKey,
+              });
+              const monthResult = await monthResponse.json();
+              monthlyRows.push(...decompressTransactions(monthResult.compressedData));
+            } catch (monthError) {
+              if (monthError?.code !== 'r2-object-missing' && monthError?.code !== 'http-404') throw monthError;
+              missingMonthKeys.push(monthKey);
+            }
           }
-          remote = { ...remote, transactions: monthlyRows };
+          remote = { ...remote, transactions: monthlyRows, missingMonthKeys };
         }
       }
     }
   } catch (apiErr) {
-    console.warn('SalesReport server API load unreachable; falling back to direct Firestore read.', apiErr);
+    console.warn('SalesReport server API load failed; falling back to direct Firestore read.', apiErr);
   }
 
   // Secondary Fallback: Direct Firestore getDoc
@@ -431,6 +439,32 @@ export const loadSalesReportFromFirebase = async (user) => {
 
     const localTxCount = Array.isArray(localData.transactions) ? localData.transactions.length : 0;
     const remoteTxCount = remoteTransactions.length;
+    const missingMonthKeys = Array.isArray(remote.missingMonthKeys) ? remote.missingMonthKeys : [];
+
+    // Repair manifests created by the old partial-upload flow. Keep healthy R2
+    // months and fill only missing months from this device's IndexedDB copy.
+    if (missingMonthKeys.length > 0 && localTxCount > 0) {
+      const missingSet = new Set(missingMonthKeys);
+      const localRecoveryRows = localData.transactions.filter((row) => (
+        missingSet.has(`${row.year}-${String(row.monthNo).padStart(2, '0')}`)
+      ));
+      const recoveredMonths = new Set(localRecoveryRows.map((row) => (
+        `${row.year}-${String(row.monthNo).padStart(2, '0')}`
+      )));
+      if (missingMonthKeys.every((monthKey) => recoveredMonths.has(monthKey))) {
+        const repaired = normalizeSalesReportData({
+          ...localData,
+          ...remote,
+          transactions: [...remoteTransactions, ...localRecoveryRows],
+        });
+        try {
+          await saveSalesReportData(user, repaired);
+        } catch (repairError) {
+          console.warn('SalesReport missing cloud months could not be repaired.', repairError);
+        }
+        return repaired;
+      }
+    }
 
     const remoteHasReal = !isSampleStore(remote) && remoteTxCount > 0;
     const localHasReal = !isSampleStore(localData) && localTxCount > 0;
@@ -510,7 +544,8 @@ export const loadSalesReportFromFirebase = async (user) => {
  * Save sales report data safely using high-capacity IndexedDB,
  * with quota-safe lightweight localStorage and full compressed cloud persistence in Firestore.
  */
-export const saveSalesReportData = async (user, data) => {
+export const saveSalesReportData = async (user, data, options = {}) => {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const normalized = normalizeSalesReportData(data);
   const nowIso = new Date().toISOString();
   normalized.updatedAt = normalized.updatedAt || nowIso;
@@ -561,6 +596,7 @@ export const saveSalesReportData = async (user, data) => {
   // R2 stores each month independently so annual data is never sent as one
   // oversized object and a changed month does not depend on Firestore limits.
   try {
+    onProgress(5);
     const rowsByMonth = {};
     normalized.transactions.forEach((row) => {
       const monthKey = `${row.year}-${String(row.monthNo).padStart(2, '0')}`;
@@ -569,7 +605,15 @@ export const saveSalesReportData = async (user, data) => {
       rowsByMonth[monthKey].push(row);
     });
     const monthKeys = Object.keys(rowsByMonth).sort();
-    for (const monthKey of monthKeys) {
+    const requestedMonths = Array.isArray(options.monthKeys) ? new Set(options.monthKeys) : null;
+    // Once the account already has a valid R2 manifest, only changed months need
+    // uploading. The first migration still uploads everything before publishing
+    // its manifest, preventing missing-object (NoSuchKey) failures.
+    const uploadMonthKeys = requestedMonths && normalized.storageVersion === 3
+      ? monthKeys.filter((monthKey) => requestedMonths.has(monthKey))
+      : monthKeys;
+    for (let index = 0; index < uploadMonthKeys.length; index += 1) {
+      const monthKey = uploadMonthKeys[index];
       await postSalesReportApi({
         mode: 'saveMonth',
         userId: user?.id,
@@ -577,7 +621,9 @@ export const saveSalesReportData = async (user, data) => {
         monthKey,
         compressedData: compressTransactions(rowsByMonth[monthKey]),
       });
+      onProgress(Math.round(10 + ((index + 1) / Math.max(uploadMonthKeys.length, 1)) * 75));
     }
+    onProgress(90);
     await postSalesReportApi({
       mode: 'saveManifest',
       userId: user?.id,
@@ -592,6 +638,13 @@ export const saveSalesReportData = async (user, data) => {
         updatedAt: nowIso,
       },
     });
+    // Keep the in-memory store migration-aware so later changes in this session
+    // immediately use the fast incremental path.
+    if (data && typeof data === 'object') {
+      data.storageVersion = 3;
+      data.monthKeys = monthKeys;
+    }
+    onProgress(100);
     return true;
   } catch (r2Error) {
     console.warn('SalesReport R2 sync unavailable; trying Firestore cloud storage.', r2Error);
@@ -638,7 +691,7 @@ export const saveSalesReportData = async (user, data) => {
 /**
  * Import a new validated batch into the store
  */
-export const importSalesBatch = async (user, currentStore, batchRecord, validRows = []) => {
+export const importSalesBatch = async (user, currentStore, batchRecord, validRows = [], options = {}) => {
   // Check if any month in the imported rows is locked
   const lockedMonths = currentStore.settings?.lockedMonths || {};
   const userRole = String(user?.role || user?.userType || '').toLowerCase();
@@ -698,6 +751,7 @@ export const importSalesBatch = async (user, currentStore, batchRecord, validRow
 
   // Also update monthlyUploads grouping
   const updatedMonthlyUploads = { ...(currentStore.monthlyUploads || {}) };
+  const updatedLockedMonths = { ...(currentStore.settings?.lockedMonths || {}) };
 
   // If overwriteMonth was set, clear out the affected months in updatedMonthlyUploads
   if (batchRecord.overwriteMonth) {
@@ -721,14 +775,17 @@ export const importSalesBatch = async (user, currentStore, batchRecord, validRow
     const dacCount = combined.filter((r) => r.dacVerified).reduce((s, r) => s + (r.orderQuantity || 1), 0);
     const dacPercent = totalCylinders > 0 ? ((dacCount / totalCylinders) * 100).toFixed(1) : '0.0';
 
-    const wasConfirmed = updatedMonthlyUploads[ym]?.confirmed || false;
+    const isReupload = Boolean(currentStore.monthlyUploads?.[ym]);
+    if (isReupload) delete updatedLockedMonths[ym];
 
     updatedMonthlyUploads[ym] = {
       fileName: batchRecord.fileName,
       fileSize: batchRecord.fileSize || 0,
       uploadedAt: batchRecord.uploadedAt,
       uploadedBy: batchRecord.uploadedBy,
-      confirmed: wasConfirmed,
+      confirmed: false,
+      confirmedAt: null,
+      confirmedBy: null,
       summary: {
         totalRows: combined.length,
         totalCylinders,
@@ -745,9 +802,13 @@ export const importSalesBatch = async (user, currentStore, batchRecord, validRow
     batches: updatedBatches,
     transactions: updatedTransactions,
     monthlyUploads: updatedMonthlyUploads,
+    settings: {
+      ...currentStore.settings,
+      lockedMonths: updatedLockedMonths,
+    },
   };
 
-  await saveSalesReportData(user, nextStore);
+  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [...affectedMonths] });
   return nextStore;
 };
 
@@ -805,7 +866,7 @@ export const rollbackSalesBatch = async (user, currentStore, batchId) => {
 /**
  * Confirm a month's data to lock it against accidental re-uploads without admin approval
  */
-export const confirmMonthData = async (user, currentStore, ym, confirmedBy = 'User') => {
+export const confirmMonthData = async (user, currentStore, ym, confirmedBy = 'User', options = {}) => {
   const updatedMonthly = { ...(currentStore.monthlyUploads || {}) };
   if (updatedMonthly[ym]) {
     updatedMonthly[ym] = {
@@ -834,14 +895,14 @@ export const confirmMonthData = async (user, currentStore, ym, confirmedBy = 'Us
     settings: updatedSettings,
   };
 
-  await saveSalesReportData(user, nextStore);
+  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [] });
   return nextStore;
 };
 
 /**
  * Admin unlocks a confirmed month to allow re-upload
  */
-export const unlockMonthData = async (user, currentStore, ym, unlockedBy = 'Admin') => {
+export const unlockMonthData = async (user, currentStore, ym, unlockedBy = 'Admin', options = {}) => {
   const updatedMonthly = { ...(currentStore.monthlyUploads || {}) };
   if (updatedMonthly[ym]) {
     updatedMonthly[ym] = {
@@ -866,7 +927,7 @@ export const unlockMonthData = async (user, currentStore, ym, unlockedBy = 'Admi
     settings: updatedSettings,
   };
 
-  await saveSalesReportData(user, nextStore);
+  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [] });
   return nextStore;
 };
 
@@ -918,7 +979,7 @@ export const toggleAllowDataReset = async (user, currentStore, allowDataReset) =
 /**
  * Reset / Delete uploaded sales data for a specific month (ym = 'YYYY-MM')
  */
-export const resetMonthSalesData = async (user, currentStore, ym) => {
+export const resetMonthSalesData = async (user, currentStore, ym, options = {}) => {
   const existingTx = Array.isArray(currentStore.transactions) ? currentStore.transactions : [];
   const updatedTransactions = existingTx.filter((r) => {
     const rowYm = `${r.year}-${String(r.monthNo).padStart(2, '0')}`;
@@ -949,14 +1010,14 @@ export const resetMonthSalesData = async (user, currentStore, ym) => {
     },
   };
 
-  await saveSalesReportData(user, nextStore);
+  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [] });
   return nextStore;
 };
 
 /**
  * Reset / Delete ALL uploaded sales data across all months
  */
-export const resetAllSalesData = async (user, currentStore) => {
+export const resetAllSalesData = async (user, currentStore, options = {}) => {
   const nextStore = {
     ...currentStore,
     isReset: true,
@@ -969,6 +1030,6 @@ export const resetAllSalesData = async (user, currentStore) => {
     },
   };
 
-  await saveSalesReportData(user, nextStore);
+  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [] });
   return nextStore;
 };

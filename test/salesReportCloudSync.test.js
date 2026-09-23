@@ -4,6 +4,8 @@ import {
   decompressTransactions,
   loadSalesReportFromFirebase,
   saveSalesReportData,
+  importSalesBatch,
+  resetMonthSalesData,
   COMPACT_TX_FIELDS,
 } from '../src/services/salesReportStore';
 import * as salesReportDb from '../src/services/salesReportDb';
@@ -254,6 +256,37 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(salesReportDb.saveSalesReportToIndexedDB).toHaveBeenCalled();
   });
 
+  it('recovers a missing R2 month from IndexedDB and repairs the cloud manifest', async () => {
+    const user = { id: 'dealer_123', dealerCode: 'D123' };
+    const august = { id: 'aug', uniqueKey: 'aug', year: 2026, monthNo: 8, orderNo: 'AUG' };
+    const september = { id: 'sep', uniqueKey: 'sep', year: 2026, monthNo: 9, orderNo: 'SEP' };
+    vi.mocked(salesReportDb.loadSalesReportFromIndexedDB).mockResolvedValueOnce({
+      storageVersion: 3,
+      batches: [{ batchId: 'real', fileName: 'sales.xlsx' }],
+      monthlyUploads: {},
+      transactions: [august, september],
+    });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true, status: 200, json: async () => ({
+          salesReportData: { storageVersion: 3, monthKeys: ['2026-08', '2026-09'], batches: [{ batchId: 'real' }] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true, status: 200, json: async () => ({ compressedData: compressTransactions([august]) }),
+      })
+      .mockResolvedValueOnce({
+        ok: false, status: 404, json: async () => ({ error: 'missing', code: 'r2-object-missing' }),
+      })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+
+    const result = await loadSalesReportFromFirebase(user);
+
+    expect(result.transactions.map((row) => row.orderNo).sort()).toEqual(['AUG', 'SEP']);
+    const requestModes = globalThis.fetch.mock.calls.map((call) => JSON.parse(call[1].body).mode);
+    expect(requestModes).toEqual(['load', 'loadMonth', 'loadMonth', 'saveMonth', 'saveMonth', 'saveManifest']);
+  });
+
   it('loadSalesReportFromFirebase on a new machine restores all transactions from Firestore fallback', async () => {
     const user = { id: 'dealer_123', dealerCode: 'D123' };
 
@@ -377,5 +410,59 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(firestore.setDoc).toHaveBeenCalled();
     const lastSetDocCall = vi.mocked(firestore.setDoc).mock.calls.at(-1);
     expect(lastSetDocCall[1].salesReportData.batches[0].fileName).toBe('Real_Sales_File.xlsx');
+  });
+
+  it('re-upload unlocks the month, uploads only that month, and reports progress', async () => {
+    const user = { id: 'dealer_123', dealerCode: 'D123', role: 'admin' };
+    const oldRow = { id: 'old', uniqueKey: 'old', year: 2026, monthNo: 8, orderQuantity: 1, salesValue: 100 };
+    const newRow = { id: 'new', uniqueKey: 'new', year: 2026, monthNo: 8, orderQuantity: 2, salesValue: 200 };
+    const store = {
+      settings: { lockedMonths: { '2026-08': { confirmed: true } } },
+      batches: [], transactions: [oldRow],
+      monthlyUploads: { '2026-08': { confirmed: true, rows: [oldRow], summary: { totalRows: 1 } } },
+    };
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ success: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ success: true }) });
+    const onProgress = vi.fn();
+
+    const result = await importSalesBatch(user, store, {
+      batchId: 'replacement', fileName: 'august.xlsx', overwriteMonth: true,
+    }, [newRow], { onProgress });
+
+    expect(result.monthlyUploads['2026-08'].confirmed).toBe(false);
+    expect(result.settings.lockedMonths['2026-08']).toBeUndefined();
+    expect(result.transactions).toEqual([expect.objectContaining({ id: 'new' })]);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body).mode).toBe('saveMonth');
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).mode).toBe('saveManifest');
+    expect(onProgress).toHaveBeenLastCalledWith(100);
+  });
+
+  it('month reset unlocks immediately and uses metadata-only sync for an existing R2 manifest', async () => {
+    const user = { id: 'dealer_123', dealerCode: 'D123' };
+    const august = { id: 'aug', uniqueKey: 'aug', year: 2026, monthNo: 8 };
+    const september = { id: 'sep', uniqueKey: 'sep', year: 2026, monthNo: 9 };
+    const store = {
+      storageVersion: 3,
+      monthKeys: ['2026-08', '2026-09'],
+      settings: { lockedMonths: { '2026-08': { confirmed: true } } },
+      batches: [], transactions: [august, september],
+      monthlyUploads: {
+        '2026-08': { confirmed: true, rows: [august] },
+        '2026-09': { confirmed: false, rows: [september] },
+      },
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true, status: 200, json: async () => ({ success: true }),
+    });
+
+    const result = await resetMonthSalesData(user, store, '2026-08');
+
+    expect(result.settings.lockedMonths['2026-08']).toBeUndefined();
+    expect(result.monthlyUploads['2026-08']).toBeUndefined();
+    expect(result.transactions).toEqual([september]);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body).mode).toBe('saveManifest');
   });
 });

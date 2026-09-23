@@ -34,7 +34,15 @@ export const saveR2SalesMonth = async (userId, monthKey, compressedData) => {
 
 export const loadR2SalesMonth = async (userId, monthKey) => {
   const { client, bucket } = clientAndBucket();
-  const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey(userId, monthKey) }));
+  let result;
+  try {
+    result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey(userId, monthKey) }));
+  } catch (error) {
+    if (error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
+      throw new LoginError('r2-object-missing', `Sales Report data for ${monthKey} was not found.`, 404);
+    }
+    throw error;
+  }
   if (!result.Body) throw new LoginError('r2-object-missing', `Sales Report data for ${monthKey} was not found.`, 404);
   return result.Body.transformToString();
 };

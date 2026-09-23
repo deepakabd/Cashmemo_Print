@@ -226,6 +226,17 @@ describe('SalesReport Server API & Service', () => {
     expect(result.compressedData).toBe('MONTH_DATA');
   });
 
+  it('returns a typed 404 when an R2 month object is missing', async () => {
+    mockUsers.set('user_1', { dealerCode: 'D100', salesReportData: { storageVersion: 3, monthKeys: ['2026-09'] } });
+    r2.load.mockRejectedValueOnce(Object.assign(new Error('missing'), {
+      code: 'r2-object-missing', status: 404,
+    }));
+
+    await expect(handleSalesReportRequest('Bearer token', {
+      mode: 'loadMonth', userId: 'user_1', monthKey: '2026-09',
+    })).rejects.toMatchObject({ code: 'r2-object-missing', status: 404 });
+  });
+
   it('splits data below the Firestore limit with safe per-document headroom', () => {
     expect(splitSalesReportData('A'.repeat(1_625_000)).map((chunk) => chunk.length))
       .toEqual([700_000, 700_000, 225_000]);
