@@ -1,11 +1,13 @@
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import LZString from 'lz-string';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { normalizeSalesRows } from '../utils/salesDataNormalizer';
 import {
   saveSalesReportToIndexedDB,
   loadSalesReportFromIndexedDB,
 } from './salesReportDb';
+
+const MAX_INLINE_CLOUD_DATA_LENGTH = 700_000;
 
 export const DEFAULT_PRODUCT_TYPES = [
   { id: '14.2kg_domestic', name: '14.2 kg Domestic Refill', category: 'Domestic', defaultRate: 1039.00, enabled: true },
@@ -108,6 +110,72 @@ const getUserDocId = (user = {}) => {
   return String(identifier).trim().replace(/\s+/g, '_');
 };
 
+export const resolveFirestoreUserDocRef = async (user = {}) => {
+  const userId = user?.id ? String(user.id).trim() : '';
+  const dealerCode = user?.dealerCode ? String(user.dealerCode).trim() : '';
+
+  if (userId) {
+    return doc(db, 'users', userId);
+  }
+
+  if (dealerCode) {
+    try {
+      const snap = await getDocs(query(collection(db, 'users'), where('dealerCode', '==', dealerCode)));
+      if (snap?.docs && !snap.empty && snap.docs[0]) {
+        return snap.docs[0].ref;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const fallbackId = userId || dealerCode || user?.dealerName || 'default';
+  return doc(db, 'users', String(fallbackId).trim().replace(/\s+/g, '_'));
+};
+
+const postSalesReportApi = async (payload) => {
+  if (!auth.currentUser) {
+    throw new Error('Firebase sign-in required for Sales Report cloud sync.');
+  }
+  const token = await auth.currentUser.getIdToken();
+  if (typeof window === 'undefined') {
+    if (globalThis.fetch && !globalThis.fetch._isMockFunction && globalThis.fetch.name === 'fetch') {
+      throw new Error('Relative URL not supported in unmocked Node fetch');
+    }
+  }
+
+  let url = '/api/sales-report';
+  if (typeof window !== 'undefined' && window.location?.origin && !window.location.origin.startsWith('null')) {
+    try {
+      url = new URL('/api/sales-report', window.location.origin).toString();
+    } catch {
+      // ignore
+    }
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let result = null;
+    try {
+      result = await response.json();
+    } catch {
+      // The status still gives a useful diagnostic when the proxy returns HTML.
+    }
+    const error = new Error(result?.error || `Sales Report API failed with HTTP ${response.status}.`);
+    error.code = result?.code || `http-${response.status}`;
+    throw error;
+  }
+  return response;
+};
+
+
 /**
  * Normalizes root Sales Report state object
  */
@@ -160,6 +228,7 @@ export const normalizeSalesReportData = (raw = {}) => {
 
   return {
     isReset,
+    updatedAt: raw.updatedAt || null,
     settings: {
       uploadEnabled: settings.uploadEnabled !== false,
       allowDataReset: settings.allowDataReset === true,
@@ -172,6 +241,18 @@ export const normalizeSalesReportData = (raw = {}) => {
     transactions,
   };
 };
+
+export const isSampleBatch = (batch = {}) => {
+  return batch?.batchId === 'batch_initial_sep_2026' || batch?.fileName === 'Sales_Dump_September_2026.xlsx';
+};
+
+export const isSampleStore = (store = {}) => {
+  if (!store) return true;
+  const batches = Array.isArray(store.batches) ? store.batches : [];
+  if (batches.length === 0) return true;
+  return batches.every(isSampleBatch);
+};
+
 
 export const COMPACT_TX_FIELDS = [
   'id', 'uniqueKey', 'slNo', 'orderNo', 'orderDate', 'orderDateKey', 'orderTime',
@@ -284,66 +365,124 @@ export const loadSalesReportFromFirebase = async (user) => {
   // 2. Secondary client source: localStorage
   const localData = idbData ? normalizeSalesReportData(idbData) : loadSalesReportData(user);
 
-  // 3. Remote Cloud source: Firestore
+  // 3. Remote Cloud source:
   if (!user) return localData;
-  const docId = getUserDocId(user);
+
+  let remote = null;
+
+  // Primary Path: Server API /api/sales-report (uses Firebase Admin SDK, bypasses security rules, works for Admin & Dealers)
   try {
-    const snap = await getDoc(doc(db, 'users', docId));
-    if (snap.exists()) {
-      const remote = snap.data()?.salesReportData;
-      if (remote) {
-        // Hydrate transactions from cloud compressedData if available
-        let remoteTransactions = [];
-        if (remote.compressedData) {
-          remoteTransactions = decompressTransactions(remote.compressedData);
-        } else if (remote.compressedTransactions) {
-          remoteTransactions = decompressTransactions(remote.compressedTransactions);
-        } else if (Array.isArray(remote.transactions) && remote.transactions.length > 0) {
-          remoteTransactions = remote.transactions;
-        }
-
-        const localTxCount = Array.isArray(localData.transactions) ? localData.transactions.length : 0;
-        const remoteTxCount = remoteTransactions.length;
-
-        // Remote transactions take precedence if:
-        // - remote has transactions (e.g. uploaded from another computer)
-        // - or local is empty
-        // - or remote was explicitly reset
-        const useRemoteTransactions = remoteTxCount > 0 || (localTxCount === 0) || remote.isReset;
-
-        const finalTransactions = useRemoteTransactions
-          ? remoteTransactions
-          : (localTxCount > 0 ? localData.transactions : remoteTransactions);
-
-        const merged = normalizeSalesReportData({
-          ...localData,
-          ...remote,
-          transactions: finalTransactions,
-        });
-
-        // Ensure each monthlyUpload has its rows populated from finalTransactions
-        Object.keys(merged.monthlyUploads || {}).forEach((ym) => {
-          if (!merged.monthlyUploads[ym].rows || merged.monthlyUploads[ym].rows.length === 0) {
-            merged.monthlyUploads[ym].rows = merged.transactions.filter((t) => {
-              const rowYm = `${t.year}-${String(t.monthNo).padStart(2, '0')}`;
-              return rowYm === ym;
-            });
-          }
-        });
-
-        // Cache merged copy into local IndexedDB and localStorage
-        await saveSalesReportToIndexedDB(key, merged);
-        try {
-          localStorage.setItem(key, JSON.stringify(createLightweightCacheCopy(merged)));
-        } catch {
-          // localStorage quota safety
-        }
-
-        return merged;
+    const resp = await postSalesReportApi({
+      mode: 'load',
+      userId: user?.id,
+      dealerCode: user?.dealerCode,
+    });
+    if (resp.ok) {
+      const result = await resp.json();
+      if (result?.salesReportData) {
+        remote = result.salesReportData;
       }
     }
-  } catch (error) {
-    console.warn('SalesReport cloud read failed; using local IndexedDB copy.', error);
+  } catch (apiErr) {
+    console.warn('SalesReport server API load unreachable; falling back to direct Firestore read.', apiErr);
+  }
+
+  // Secondary Fallback: Direct Firestore getDoc
+  if (!remote) {
+    try {
+      const targetDocRef = await resolveFirestoreUserDocRef(user);
+      const snap = await getDoc(targetDocRef);
+      if (snap.exists()) {
+        remote = snap.data()?.salesReportData;
+      }
+    } catch (error) {
+      console.warn('SalesReport direct Firestore read failed; using local copy.', error);
+    }
+  }
+
+  if (remote) {
+    // Hydrate transactions from cloud compressedData if available
+    let remoteTransactions = [];
+    if (remote.compressedData) {
+      remoteTransactions = decompressTransactions(remote.compressedData);
+    } else if (remote.compressedTransactions) {
+      remoteTransactions = decompressTransactions(remote.compressedTransactions);
+    } else if (Array.isArray(remote.transactions) && remote.transactions.length > 0) {
+      remoteTransactions = remote.transactions;
+    }
+
+    const localTxCount = Array.isArray(localData.transactions) ? localData.transactions.length : 0;
+    const remoteTxCount = remoteTransactions.length;
+
+    const remoteHasReal = !isSampleStore(remote) && remoteTxCount > 0;
+    const localHasReal = !isSampleStore(localData) && localTxCount > 0;
+
+    let useRemoteTransactions = false;
+    let shouldSyncLocalToCloud = false;
+
+    if (remote.isReset) {
+      useRemoteTransactions = true;
+    } else if (localHasReal && !remoteHasReal) {
+      // Local has user's real uploaded data (which may have failed earlier due to permissions),
+      // while remote only has the default 40-row sample dump. DO NOT overwrite real data!
+      useRemoteTransactions = false;
+      shouldSyncLocalToCloud = true;
+    } else if (!localHasReal && remoteHasReal) {
+      // Local is empty/sample (e.g. System 2 fresh machine), remote has real uploaded data
+      useRemoteTransactions = true;
+    } else if (localHasReal && remoteHasReal) {
+      // Both have real data. Compare updatedAt timestamps
+      const remoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+      const localTime = localData.updatedAt ? new Date(localData.updatedAt).getTime() : 0;
+
+      if (remoteTime >= localTime) {
+        useRemoteTransactions = true;
+      } else {
+        useRemoteTransactions = false;
+        shouldSyncLocalToCloud = true;
+      }
+    } else {
+      // Both are sample or empty
+      useRemoteTransactions = remoteTxCount > 0;
+    }
+
+    if (useRemoteTransactions) {
+      const merged = normalizeSalesReportData({
+        ...localData,
+        ...remote,
+        transactions: remoteTransactions,
+      });
+
+      // Ensure each monthlyUpload has its rows populated from finalTransactions
+      Object.keys(merged.monthlyUploads || {}).forEach((ym) => {
+        if (!merged.monthlyUploads[ym].rows || merged.monthlyUploads[ym].rows.length === 0) {
+          merged.monthlyUploads[ym].rows = merged.transactions.filter((t) => {
+            const rowYm = `${t.year}-${String(t.monthNo).padStart(2, '0')}`;
+            return rowYm === ym;
+          });
+        }
+      });
+
+      // Cache merged copy into local IndexedDB and localStorage
+      await saveSalesReportToIndexedDB(key, merged);
+      try {
+        localStorage.setItem(key, JSON.stringify(createLightweightCacheCopy(merged)));
+      } catch {
+        // localStorage quota safety
+      }
+
+      return merged;
+    } else {
+      if (shouldSyncLocalToCloud && user) {
+        // Auto-heal: push real local data to cloud
+        try {
+          await saveSalesReportData(user, localData);
+        } catch (err) {
+          console.warn('Auto-syncing real local sales data to cloud failed:', err);
+        }
+      }
+      return localData;
+    }
   }
 
   return idbData ? normalizeSalesReportData(idbData) : localData;
@@ -355,6 +494,8 @@ export const loadSalesReportFromFirebase = async (user) => {
  */
 export const saveSalesReportData = async (user, data) => {
   const normalized = normalizeSalesReportData(data);
+  const nowIso = new Date().toISOString();
+  normalized.updatedAt = normalized.updatedAt || nowIso;
   const key = getStorageKey(user);
 
   // 1. Primary Storage: Save FULL dataset (all 5,000+ rows) into high-capacity IndexedDB
@@ -370,38 +511,65 @@ export const saveSalesReportData = async (user, data) => {
 
   // 3. Cloud Storage: Save metadata and COMPRESSED full transactions to Firestore (safe against 1MB doc limit)
   if (!user) return true;
-  const docId = getUserDocId(user);
+
+  const lightMonthly = {};
+  if (normalized.monthlyUploads) {
+    Object.entries(normalized.monthlyUploads).forEach(([ym, up]) => {
+      lightMonthly[ym] = {
+        fileName: up.fileName,
+        fileSize: up.fileSize,
+        uploadedAt: up.uploadedAt,
+        uploadedBy: up.uploadedBy,
+        confirmed: up.confirmed,
+        confirmedAt: up.confirmedAt || null,
+        confirmedBy: up.confirmedBy || null,
+        summary: up.summary,
+        rows: [], // Omit duplicate rows array in monthlyUploads; all rows are in compressedData
+      };
+    });
+  }
+
+  const compressed = compressTransactions(normalized.transactions);
+
+  const cloudPayload = {
+    isReset: normalized.isReset || false,
+    settings: normalized.settings,
+    batches: normalized.batches,
+    monthlyUploads: lightMonthly,
+    compressedData: compressed,
+    updatedAt: nowIso,
+  };
+
+  // Primary Cloud Path: Trusted Server API (uses Firebase Admin SDK, bypasses security rules, works for Admin & Dealers)
   try {
-    const lightMonthly = {};
-    if (normalized.monthlyUploads) {
-      Object.entries(normalized.monthlyUploads).forEach(([ym, up]) => {
-        lightMonthly[ym] = {
-          fileName: up.fileName,
-          fileSize: up.fileSize,
-          uploadedAt: up.uploadedAt,
-          uploadedBy: up.uploadedBy,
-          confirmed: up.confirmed,
-          confirmedAt: up.confirmedAt || null,
-          confirmedBy: up.confirmedBy || null,
-          summary: up.summary,
-          rows: [], // Omit duplicate rows array in monthlyUploads; all rows are in compressedData
-        };
-      });
-    }
-
-    const compressed = compressTransactions(normalized.transactions);
-
-    const cloudPayload = {
-      isReset: normalized.isReset || false,
-      settings: normalized.settings,
-      batches: normalized.batches,
-      monthlyUploads: lightMonthly,
-      compressedData: compressed,
-      updatedAt: serverTimestamp(),
-    };
-
-    await setDoc(doc(db, 'users', docId), {
+    const resp = await postSalesReportApi({
+      mode: 'save',
+      userId: user?.id,
+      dealerCode: user?.dealerCode,
       salesReportData: cloudPayload,
+    });
+    if (resp.ok) {
+      return true;
+    }
+  } catch (apiErr) {
+    console.warn('SalesReport server API save unreachable; falling back to direct Firestore write.', apiErr);
+  }
+
+  // A single Firestore document has a hard 1 MiB limit. Large reports are
+  // persisted by the API as chunk documents and cannot use this legacy path.
+  if (compressed.length > MAX_INLINE_CLOUD_DATA_LENGTH) {
+    console.warn('SalesReport cloud API did not save the chunked report; local IndexedDB copy retained.');
+    return false;
+  }
+
+  // Fallback Cloud Path: Direct client Firestore write
+  try {
+    const targetDocRef = await resolveFirestoreUserDocRef(user);
+    await setDoc(targetDocRef, {
+      salesReportData: {
+        ...cloudPayload,
+        updatedAt: serverTimestamp(),
+      },
     }, { merge: true });
     return true;
   } catch (error) {
@@ -747,4 +915,3 @@ export const resetAllSalesData = async (user, currentStore) => {
   await saveSalesReportData(user, nextStore);
   return nextStore;
 };
-
