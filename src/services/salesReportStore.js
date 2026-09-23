@@ -231,6 +231,8 @@ export const normalizeSalesReportData = (raw = {}) => {
   return {
     isReset,
     updatedAt: raw.updatedAt || null,
+    storageVersion: raw.storageVersion === 3 ? 3 : undefined,
+    monthKeys: Array.isArray(raw.monthKeys) ? [...raw.monthKeys] : undefined,
     settings: {
       uploadEnabled: settings.uploadEnabled !== false,
       allowDataReset: settings.allowDataReset === true,
@@ -387,22 +389,28 @@ export const loadSalesReportFromFirebase = async (user) => {
         // older concurrent fallback temporarily rewrote storageVersion.
         if (Array.isArray(remote.monthKeys) && remote.monthKeys.length > 0) {
           const monthlyRows = [];
+          const missingMonthKeys = [];
           for (const monthKey of remote.monthKeys) {
-            const monthResponse = await postSalesReportApi({
-              mode: 'loadMonth',
-              userId: user?.id,
-              dealerCode: user?.dealerCode,
-              monthKey,
-            });
-            const monthResult = await monthResponse.json();
-            monthlyRows.push(...decompressTransactions(monthResult.compressedData));
+            try {
+              const monthResponse = await postSalesReportApi({
+                mode: 'loadMonth',
+                userId: user?.id,
+                dealerCode: user?.dealerCode,
+                monthKey,
+              });
+              const monthResult = await monthResponse.json();
+              monthlyRows.push(...decompressTransactions(monthResult.compressedData));
+            } catch (monthError) {
+              if (monthError?.code !== 'r2-object-missing' && monthError?.code !== 'http-404') throw monthError;
+              missingMonthKeys.push(monthKey);
+            }
           }
-          remote = { ...remote, transactions: monthlyRows };
+          remote = { ...remote, transactions: monthlyRows, missingMonthKeys };
         }
       }
     }
   } catch (apiErr) {
-    console.warn('SalesReport server API load unreachable; falling back to direct Firestore read.', apiErr);
+    console.warn('SalesReport server API load failed; falling back to direct Firestore read.', apiErr);
   }
 
   // Secondary Fallback: Direct Firestore getDoc
@@ -431,6 +439,32 @@ export const loadSalesReportFromFirebase = async (user) => {
 
     const localTxCount = Array.isArray(localData.transactions) ? localData.transactions.length : 0;
     const remoteTxCount = remoteTransactions.length;
+    const missingMonthKeys = Array.isArray(remote.missingMonthKeys) ? remote.missingMonthKeys : [];
+
+    // Repair manifests created by the old partial-upload flow. Keep healthy R2
+    // months and fill only missing months from this device's IndexedDB copy.
+    if (missingMonthKeys.length > 0 && localTxCount > 0) {
+      const missingSet = new Set(missingMonthKeys);
+      const localRecoveryRows = localData.transactions.filter((row) => (
+        missingSet.has(`${row.year}-${String(row.monthNo).padStart(2, '0')}`)
+      ));
+      const recoveredMonths = new Set(localRecoveryRows.map((row) => (
+        `${row.year}-${String(row.monthNo).padStart(2, '0')}`
+      )));
+      if (missingMonthKeys.every((monthKey) => recoveredMonths.has(monthKey))) {
+        const repaired = normalizeSalesReportData({
+          ...localData,
+          ...remote,
+          transactions: [...remoteTransactions, ...localRecoveryRows],
+        });
+        try {
+          await saveSalesReportData(user, repaired);
+        } catch (repairError) {
+          console.warn('SalesReport missing cloud months could not be repaired.', repairError);
+        }
+        return repaired;
+      }
+    }
 
     const remoteHasReal = !isSampleStore(remote) && remoteTxCount > 0;
     const localHasReal = !isSampleStore(localData) && localTxCount > 0;
@@ -572,7 +606,10 @@ export const saveSalesReportData = async (user, data, options = {}) => {
     });
     const monthKeys = Object.keys(rowsByMonth).sort();
     const requestedMonths = Array.isArray(options.monthKeys) ? new Set(options.monthKeys) : null;
-    const uploadMonthKeys = requestedMonths
+    // Once the account already has a valid R2 manifest, only changed months need
+    // uploading. The first migration still uploads everything before publishing
+    // its manifest, preventing missing-object (NoSuchKey) failures.
+    const uploadMonthKeys = requestedMonths && normalized.storageVersion === 3
       ? monthKeys.filter((monthKey) => requestedMonths.has(monthKey))
       : monthKeys;
     for (let index = 0; index < uploadMonthKeys.length; index += 1) {
@@ -601,6 +638,12 @@ export const saveSalesReportData = async (user, data, options = {}) => {
         updatedAt: nowIso,
       },
     });
+    // Keep the in-memory store migration-aware so later changes in this session
+    // immediately use the fast incremental path.
+    if (data && typeof data === 'object') {
+      data.storageVersion = 3;
+      data.monthKeys = monthKeys;
+    }
     onProgress(100);
     return true;
   } catch (r2Error) {

@@ -27,6 +27,8 @@ import {
   SimpleBarChart,
   HorizontalBarChart,
   DonutChart,
+  RefillDacComparisonChart,
+  ProductBreakdownChart,
 } from './components/SalesReport/SalesReportCharts';
 import './SalesReportPage.css';
 
@@ -85,6 +87,19 @@ export const DEFAULT_ADVANCE_DELIVERY_STAFF = [
   'DM Guddu',
   'KRT',
 ];
+
+const toLocalInputDate = (date) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0'),
+].join('-');
+
+const getAdvanceDefaultDates = () => {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  return { today: toLocalInputDate(today), yesterday: toLocalInputDate(yesterday) };
+};
 
 // Fallback reference data matching user's September 2026 screenshots
 export const SAMPLE_DAC_ADVANCE_DATA = {
@@ -348,8 +363,12 @@ function SectionFilterToolbar({
 
 export default function SalesReportPage({ loggedInUser, parsedData = [], onClose }) {
   const [storeData, setStoreData] = useState(() => loadSalesReportData(loggedInUser));
-  // Tabs: 'overview' | 'currentMonthDac' | 'productWise' | 'monthWise' | 'monthlyDac' | 'dayWise' | 'fyWise' | 'breakdowns' | 'upload' | 'history' | 'detailed' | 'settings'
+  // Tabs: 'overview' | 'consumerSearch' | 'currentMonthDac' | 'productWise' | 'monthWise' | 'monthlyDac' | 'dayWise' | 'fyWise' | 'breakdowns' | 'upload' | 'history' | 'detailed' | 'settings'
   const [activeTab, setActiveTab] = useState('overview');
+
+  const [consumerSearchMode, setConsumerSearchMode] = useState('consumerNo');
+  const [consumerSearchQuery, setConsumerSearchQuery] = useState('');
+  const [consumerSearchFocused, setConsumerSearchFocused] = useState(false);
 
   // Breakdown sub-navigation
   const [breakdownTab, setBreakdownTab] = useState('area'); // 'area' | 'staff' | 'package' | 'nature' | 'source' | 'ekyc' | 'cancellation'
@@ -397,10 +416,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const [dacProductDropdownOpen, setDacProductDropdownOpen] = useState(false);
 
   // DAC Advance Report States
-  const [advanceDacMonth, setAdvanceDacMonth] = useState('09');
-  const [advanceDacYear, setAdvanceDacYear] = useState(2026);
-  const [advanceDacDay1, setAdvanceDacDay1] = useState('2026-09-22');
-  const [advanceDacDay2, setAdvanceDacDay2] = useState('2026-09-21');
+  const [advanceDacMonth, setAdvanceDacMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [advanceDacYear, setAdvanceDacYear] = useState(() => new Date().getFullYear());
+  const [advanceDacDay1, setAdvanceDacDay1] = useState(() => getAdvanceDefaultDates().today);
+  const [advanceDacDay2, setAdvanceDacDay2] = useState(() => getAdvanceDefaultDates().yesterday);
   const [advanceDacMode, setAdvanceDacMode] = useState('otpDac'); // 'otpDac' | 'all'
 
   // Fullscreen state
@@ -483,6 +502,56 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const transactions = Array.isArray(storeData.transactions) ? storeData.transactions : [];
   const batches = Array.isArray(storeData.batches) ? storeData.batches : [];
   const lockedMonths = storeData?.settings?.lockedMonths || {};
+
+  const consumerSearchResults = useMemo(() => {
+    const queryValue = consumerSearchQuery.trim().replace(/\s+/g, '').toLowerCase();
+    if (!queryValue) return [];
+    const field = {
+      consumerNo: 'consumerNo',
+      mobileNo: 'mobileNo',
+      orderNo: 'orderNo',
+      cashMemoNo: 'cashMemoNo',
+      consumerName: 'consumerName',
+    }[consumerSearchMode] || 'consumerNo';
+    return transactions
+      .filter((row) => String(row[field] || '').replace(/\s+/g, '').toLowerCase() === queryValue)
+      .sort((a, b) => String(b.actualDeliveryDate || b.cashMemoDate || b.orderDateKey || b.orderDate || '')
+        .localeCompare(String(a.actualDeliveryDate || a.cashMemoDate || a.orderDateKey || a.orderDate || '')));
+  }, [transactions, consumerSearchMode, consumerSearchQuery]);
+
+  const activeConsumerSearchSuggestions = useMemo(() => {
+    const field = {
+      consumerNo: 'consumerNo',
+      mobileNo: 'mobileNo',
+      orderNo: 'orderNo',
+      cashMemoNo: 'cashMemoNo',
+      consumerName: 'consumerName',
+    }[consumerSearchMode] || 'consumerNo';
+    const normalize = (value) => consumerSearchMode === 'mobileNo'
+      ? String(value || '').replace(/\D/g, '')
+      : String(value || '').trim().replace(/\s+/g, '').toLowerCase();
+    const queryValue = normalize(consumerSearchQuery);
+    const unique = new Map();
+    transactions.forEach((row) => {
+      const displayValue = String(row[field] || '').trim();
+      const normalized = normalize(displayValue);
+      if (!normalized || unique.has(normalized)) return;
+      if (queryValue && !normalized.startsWith(queryValue) && !normalized.includes(queryValue)) return;
+      unique.set(normalized, {
+        value: displayValue,
+        normalized,
+        consumerName: row.consumerName || 'Unknown Consumer',
+        consumerNo: row.consumerNo || '—',
+        mobile: row.mobileNo || '—',
+      });
+    });
+    return Array.from(unique.values())
+      .sort((a, b) => {
+        const prefixDifference = Number(b.normalized.startsWith(queryValue)) - Number(a.normalized.startsWith(queryValue));
+        return prefixDifference || a.normalized.localeCompare(b.normalized, undefined, { numeric: true });
+      })
+      .slice(0, 8);
+  }, [transactions, consumerSearchMode, consumerSearchQuery]);
 
   // Open Import Modal helper
   const openImportModal = (uploadType = 'monthWise', year = 2026, monthCode = '09') => {
@@ -885,6 +954,59 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     });
   }, [transactions, filters, salesDateBasis, storeData?.settings]);
 
+  // FY headline remains an annual total even when the dashboard month filter
+  // is used for month/day-specific cards and charts.
+  const fyHeadline = useMemo(() => {
+    let refill = 0;
+    let dac = 0;
+    const activeDays = new Set();
+    transactions.forEach((row) => {
+      if (filters.fy !== 'ALL' && row.fy !== filters.fy) return;
+      const qty = Number(row.orderQuantity) || 1;
+      refill += qty;
+      if (row.dacVerified) dac += qty;
+      const date = salesDateBasis === 'orderDate'
+        ? (row.orderDateKey || row.salesDate)
+        : salesDateBasis === 'cashMemoDate'
+          ? (row.cashMemoDate || row.salesDate)
+          : (row.actualDeliveryDate || row.salesDate);
+      if (date) activeDays.add(String(date).slice(0, 10));
+    });
+    return {
+      refill,
+      dac,
+      dacPercent: refill > 0 ? ((dac / refill) * 100).toFixed(1) : '0.0',
+      activeDays: Math.max(activeDays.size, 1),
+      averageDaily: Math.round(refill / Math.max(activeDays.size, 1)),
+    };
+  }, [transactions, filters.fy, salesDateBasis]);
+
+  const fyMonthlyRefillChart = useMemo(() => {
+    const totals = {};
+    transactions.forEach((row) => {
+      if (filters.fy !== 'ALL' && row.fy !== filters.fy) return;
+      const monthNo = Number(row.monthNo);
+      if (monthNo < 1 || monthNo > 12) return;
+      totals[monthNo] = (totals[monthNo] || 0) + (Number(row.orderQuantity) || 1);
+    });
+    return FY_MONTHS.map((month) => ({
+      label: month.shortName,
+      value: totals[month.monthNo] || 0,
+    }));
+  }, [transactions, filters.fy]);
+
+  const financialYearComparisonChart = useMemo(() => {
+    const totals = {};
+    transactions.forEach((row) => {
+      if (filters.fy !== 'ALL' && row.fy !== filters.fy) return;
+      const fy = row.fy ? formatFYLabel(row.fy) : 'Unknown';
+      totals[fy] = (totals[fy] || 0) + (Number(row.orderQuantity) || 1);
+    });
+    return Object.entries(totals)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([label, value]) => ({ label, value }));
+  }, [transactions, filters.fy]);
+
   // ==========================================
   // TOP DASHBOARD KPIS (Section 40)
   // ==========================================
@@ -919,27 +1041,75 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     const averageDailySales = Math.round(totalRefillQuantity / activeDaysCount);
     const dacPercent = totalRefillQuantity > 0 ? ((dacVerifiedCount / totalRefillQuantity) * 100).toFixed(1) : '0.0';
 
+    const toLocalDateKey = (date) => [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const todayKey = toLocalDateKey(today);
+    const yesterdayKey = toLocalDateKey(yesterday);
+    const selectedMonthNo = filters.monthNo !== 'ALL'
+      ? parseInt(filters.monthNo, 10)
+      : today.getMonth() + 1;
+    const selectedMonthYears = filteredTransactions
+      .filter((row) => Number(row.monthNo) === selectedMonthNo)
+      .map((row) => Number(row.year))
+      .filter(Number.isFinite);
+    const selectedMonthYear = selectedMonthYears.includes(today.getFullYear())
+      ? today.getFullYear()
+      : (selectedMonthYears.length > 0 ? Math.max(...selectedMonthYears) : today.getFullYear());
+    const currentMonthKey = `${selectedMonthYear}-${String(selectedMonthNo).padStart(2, '0')}`;
+
+    const summarizePeriod = (predicate) => {
+      let refill = 0;
+      let dac = 0;
+      filteredTransactions.forEach((row) => {
+        if (!predicate(String(row.salesDate || '').slice(0, 10))) return;
+        const qty = Number(row.orderQuantity) || 1;
+        refill += qty;
+        if (row.dacVerified) dac += qty;
+      });
+      return {
+        refill,
+        dacCount: dac,
+        dacPercent: refill > 0 ? ((dac / refill) * 100).toFixed(1) : '0.0',
+      };
+    };
+
+    const currentMonth = summarizePeriod((dateKey) => dateKey.startsWith(currentMonthKey));
+    const yesterdaySummary = summarizePeriod((dateKey) => dateKey === yesterdayKey);
+    const todaySummary = summarizePeriod((dateKey) => dateKey === todayKey);
+
     return {
-      totalRefillQuantity,
+      totalRefillQuantity: fyHeadline.refill,
       totalOrders,
       totalTransactionsCount,
       totalSalesValue,
       uniqueConsumers: uniqueConsumers.size,
       deliveredOrders,
       cancelledOrders,
-      averageDailySales,
-      dacPercent,
-      activeDaysCount,
+      averageDailySales: fyHeadline.averageDaily,
+      dacPercent: fyHeadline.dacPercent,
+      dacVerifiedCount: fyHeadline.dac,
+      activeDaysCount: fyHeadline.activeDays,
+      currentMonth,
+      yesterday: yesterdaySummary,
+      today: todaySummary,
+      currentMonthLabel: new Date(selectedMonthYear, selectedMonthNo - 1, 1)
+        .toLocaleString('en-IN', { month: 'short', year: 'numeric' }),
+      yesterdayLabel: yesterday.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      todayLabel: today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
     };
-  }, [filteredTransactions]);
+  }, [filteredTransactions, filters.monthNo, fyHeadline]);
 
   // ==========================================
   // CHARTS DATA COMPUTATIONS
   // ==========================================
   const chartsData = useMemo(() => {
     const dailyMap = {};
-    const monthlyMap = {};
-    const fyMap = {};
     const areaMap = {};
     const staffMap = {};
     const packageMap = {};
@@ -948,22 +1118,13 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
     filteredTransactions.forEach((r) => {
       const qty = r.orderQuantity || 1;
-      const dKey = r.salesDate || 'Unknown';
-      dailyMap[dKey] = (dailyMap[dKey] || 0) + qty;
-
-      const mKey = r.monthName || (r.monthNo ? MONTH_NAMES[r.monthNo - 1] : 'Unknown');
-      monthlyMap[mKey] = (monthlyMap[mKey] || 0) + qty;
-
-      const fKey = r.fy ? formatFYLabel(r.fy) : 'Unknown';
-      fyMap[fKey] = (fyMap[fKey] || 0) + qty;
-
       const aKey = r.deliveryArea || 'General';
       areaMap[aKey] = (areaMap[aKey] || 0) + qty;
 
       const sKey = r.deliveryStaff || 'General Staff';
       staffMap[sKey] = (staffMap[sKey] || 0) + qty;
 
-      const pKey = (r.packageCode || r.productType || '14.2 KG Cylinder').slice(0, 24);
+      const pKey = r.packageCode || r.productType || '14.2 KG Cylinder';
       packageMap[pKey] = (packageMap[pKey] || 0) + qty;
 
       const nKey = (r.natureOfConsumer || '1 - Domestic').slice(0, 22);
@@ -973,17 +1134,30 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       sourceMap[srcKey] = (sourceMap[srcKey] || 0) + qty;
     });
 
+    const now = new Date();
+    const targetMonthNo = filters.monthNo !== 'ALL'
+      ? parseInt(filters.monthNo, 10)
+      : now.getMonth() + 1;
+    const monthRows = filteredTransactions.filter((row) => Number(row.monthNo) === targetMonthNo);
+    const availableYears = monthRows.map((row) => Number(row.year)).filter(Number.isFinite);
+    const targetYear = availableYears.includes(now.getFullYear())
+      ? now.getFullYear()
+      : (availableYears.length > 0 ? Math.max(...availableYears) : now.getFullYear());
+
+    monthRows.forEach((row) => {
+      if (Number(row.year) !== targetYear) return;
+      const dateKey = String(row.salesDate || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+      dailyMap[dateKey] = (dailyMap[dateKey] || 0) + (Number(row.orderQuantity) || 1);
+    });
+
     const dailyChart = Object.entries(dailyMap)
       .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-30)
-      .map(([label, value]) => ({ label: label.slice(5), value }));
+      .map(([label, value]) => ({ label: label.slice(8, 10), value }));
 
-    const monthlyChart = FY_MONTHS.map((m) => ({
-      label: m.shortName,
-      value: monthlyMap[m.name] || 0,
-    }));
+    const monthlyChart = fyMonthlyRefillChart;
 
-    const fyChart = Object.entries(fyMap).map(([label, value]) => ({ label, value }));
+    const fyChart = financialYearComparisonChart;
 
     const areaChart = Object.entries(areaMap)
       .sort((a, b) => b[1] - a[1])
@@ -999,6 +1173,13 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     const natureChart = Object.entries(natureMap).map(([label, value]) => ({ label, value }));
     const sourceChart = Object.entries(sourceMap).map(([label, value]) => ({ label, value }));
 
+    const periodRefillChart = [
+      { label: 'Financial Year', refill: dashboardKpis.totalRefillQuantity, dacCount: dashboardKpis.dacVerifiedCount, dac: dashboardKpis.dacPercent },
+      { label: 'Current Month', refill: dashboardKpis.currentMonth.refill, dacCount: dashboardKpis.currentMonth.dacCount, dac: dashboardKpis.currentMonth.dacPercent },
+      { label: 'Yesterday', refill: dashboardKpis.yesterday.refill, dacCount: dashboardKpis.yesterday.dacCount, dac: dashboardKpis.yesterday.dacPercent },
+      { label: 'Today', refill: dashboardKpis.today.refill, dacCount: dashboardKpis.today.dacCount, dac: dashboardKpis.today.dacPercent },
+    ];
+
     return {
       dailyChart,
       monthlyChart,
@@ -1008,8 +1189,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       packageChart,
       natureChart,
       sourceChart,
+      periodRefillChart,
+      dailyChartLabel: `${MONTH_NAMES[targetMonthNo - 1]} ${targetYear}`,
     };
-  }, [filteredTransactions]);
+  }, [filteredTransactions, dashboardKpis, filters.monthNo, fyMonthlyRefillChart, financialYearComparisonChart]);
 
   // ==========================================
   // DAY-WISE TABLE & DAC REPORT
@@ -1086,24 +1269,26 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         item.orderCount += 1;
       }
     });
-    const currentActiveYm = `${advanceDacYear}-${String(advanceDacMonth).padStart(2, '0')}`;
+    const now = new Date();
+    const currentActiveYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     if (!ymMap.has(currentActiveYm)) {
       ymMap.set(currentActiveYm, {
         ym: currentActiveYm,
-        label: `${MONTH_NAMES[parseInt(advanceDacMonth, 10) - 1] || 'Current Month'} ${advanceDacYear}`,
+        label: `${MONTH_NAMES[now.getMonth()] || 'Current Month'} ${now.getFullYear()}`,
         totalCylinders: 0,
         orderCount: 0,
       });
     }
     return Array.from(ymMap.values()).sort((a, b) => b.ym.localeCompare(a.ym));
-  }, [transactions, advanceDacYear, advanceDacMonth]);
+  }, [transactions]);
 
   // Dynamic Product list and Default Rates auto-fetched strictly from current month uploaded sales data
   const fetchedMonthProducts = useMemo(() => {
-    const currentActiveMonthYm = `${advanceDacYear}-${String(advanceDacMonth).padStart(2, '0')}`;
+    const currentDate = new Date();
+    const currentActiveMonthYm = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
     const targetYm = (productSettingYm === 'CURRENT' || !productSettingYm) ? currentActiveMonthYm : productSettingYm;
 
-    // Determine target transactions for chosen month (or fallback to all if empty)
+    // Determine target transactions strictly from the selected source month.
     let targetRows;
     if (targetYm === 'ALL') {
       targetRows = transactions;
@@ -1112,9 +1297,6 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         const rowYm = `${r.year}-${String(r.monthNo).padStart(2, '0')}`;
         return rowYm === targetYm;
       });
-      if (targetRows.length === 0) {
-        targetRows = transactions;
-      }
     }
 
     const disabledList = Array.isArray(storeData.settings?.disabledProducts)
@@ -1132,23 +1314,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
       const qty = Number(r.orderQuantity) || 1;
       const isCommercial = prodName.toUpperCase().includes('19') || prodName.toUpperCase().includes('COMM');
-
-      // User Rule: Default Rate (₹) = RSP / Order Quantity
-      const rawRsp = Number(r.rawRsp) || Number(r.rsp) || Number(r.amount) || Number(r.salesValue) || 0;
-      const salesVal = Number(r.salesValue) || Number(r.amount) || (rawRsp > 0 ? rawRsp : 0);
-
-      let rowRate = 0;
-      if (rawRsp > 0 && qty > 0) {
-        const calculatedRate = Math.round((rawRsp / qty) * 100) / 100;
-        // Protect against double-division if rawRsp was already per-unit
-        if (qty > 1 && calculatedRate < (isCommercial ? 1500 : 600) && rawRsp >= (isCommercial ? 1800 : 700)) {
-          rowRate = rawRsp;
-        } else {
-          rowRate = calculatedRate;
-        }
-      } else if (salesVal > 0 && qty > 0) {
-        rowRate = Math.round((salesVal / qty) * 100) / 100;
-      }
+      const salesVal = Number(r.salesValue) || 0;
 
       if (!productMap.has(prodName)) {
         productMap.set(prodName, {
@@ -1168,12 +1334,8 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
       const item = productMap.get(prodName);
       item.totalQty += qty;
-      item.totalRsp += (rawRsp > 0 ? rawRsp : salesVal);
-      item.totalSales += (salesVal > 0 ? salesVal : qty * rowRate);
+      item.totalSales += salesVal;
       item.txCount += 1;
-      if (rowRate > 0) {
-        item.rates.push(rowRate);
-      }
     });
 
     // ONLY include custom products manually added by user (id starts with 'custom_'), NEVER inject static default dummy products
@@ -1222,25 +1384,8 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       if (customRates[item.name] !== undefined && !isNaN(Number(customRates[item.name]))) {
         defaultRate = Number(customRates[item.name]);
         isRateOverridden = true;
-      } else if (item.rates.length > 0) {
-        // Find most frequent (mode) rate in uploaded records
-        const rateFreq = {};
-        item.rates.forEach((rt) => {
-          const rounded = Math.round(rt * 100) / 100;
-          rateFreq[rounded] = (rateFreq[rounded] || 0) + 1;
-        });
-        let bestRate = item.rates[0];
-        let maxCount = 0;
-        Object.entries(rateFreq).forEach(([rt, cnt]) => {
-          if (cnt > maxCount) {
-            maxCount = cnt;
-            bestRate = parseFloat(rt);
-          }
-        });
-      } else if (item.totalQty > 0 && item.totalRsp > 0) {
-        // Fallback: Total RSP / Total Order Quantity
-        defaultRate = Math.round((item.totalRsp / item.totalQty) * 100) / 100;
       } else if (item.totalQty > 0 && item.totalSales > 0) {
+        // Default Rate = current/selected month Sales Value ÷ Refill Quantity.
         defaultRate = Math.round((item.totalSales / item.totalQty) * 100) / 100;
       }
 
@@ -1272,7 +1417,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
       return a.name.localeCompare(b.name);
     });
-  }, [transactions, productSettingYm, advanceDacYear, advanceDacMonth, storeData.settings]);
+  }, [transactions, productSettingYm, storeData.settings]);
 
   // Dynamic Year list for DAC Past/Current Year selector
   const dacAvailableYears = useMemo(() => {
@@ -1388,6 +1533,21 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     });
 
     const monthDacPct = sumTotal > 0 ? Math.round(((sumOtpDac + sumMasterDac) / sumTotal) * 100) : 0;
+    const toLocalDateKey = (date) => [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+    const todayDate = new Date();
+    const yesterdayDate = new Date(todayDate);
+    yesterdayDate.setDate(todayDate.getDate() - 1);
+    const emptyDay = (dateKey) => ({
+      dateKey, cdcms: 0, otpDac: 0, masterDac: 0, total: 0, dacPercent: '0%',
+    });
+    const todayKey = toLocalDateKey(todayDate);
+    const yesterdayKey = toLocalDateKey(yesterdayDate);
+    const todaySummary = dailyRows.find((row) => row.dateKey === todayKey) || emptyDay(todayKey);
+    const yesterdaySummary = dailyRows.find((row) => row.dateKey === yesterdayKey) || emptyDay(yesterdayKey);
 
     return {
       summary: {
@@ -1400,6 +1560,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       },
       rows: dailyRows,
       matchedCount: matchingTx.length,
+      today: {
+        ...todaySummary,
+        label: todayDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      },
+      yesterday: {
+        ...yesterdaySummary,
+        label: yesterdayDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      },
     };
   }, [transactions, dacReportYear, dacReportMonth, dacSelectedProducts, salesDateBasis, storeData?.settings]);
 
@@ -1813,12 +1981,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           months: new Set(),
         };
       }
-      fyMap[fy].orderCount++;
-      fyMap[fy].refillQuantity += (r.orderQuantity || 1);
       const q = Number(r.orderQuantity) || 1;
-      fyMap[fy].orderCount += q;
+      fyMap[fy].orderCount += 1;
       fyMap[fy].refillQuantity += q;
-      fyMap[fy].salesValue += (r.salesValue || 0);
+      fyMap[fy].salesValue += Number(r.salesValue) || 0;
       if (r.monthNo) fyMap[fy].months.add(r.monthNo);
     });
 
@@ -1848,7 +2014,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
     filteredTransactions.forEach((r) => {
       const qty = Number(r.orderQuantity) || 1;
-      const val = r.salesValue || 0;
+      const val = Number(r.salesValue) || 0;
 
       // Area
       const area = r.deliveryArea || 'General Area';
@@ -2282,6 +2448,13 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             </button>
             <button
               type="button"
+              className={`sales-report-tab-btn ${activeTab === 'consumerSearch' ? 'active' : ''}`}
+              onClick={() => setActiveTab('consumerSearch')}
+            >
+              <span>🔎</span>Search Consumer
+            </button>
+            <button
+              type="button"
               className={`sales-report-tab-btn ${activeTab === 'currentMonthDac' ? 'active' : ''}`}
               onClick={() => setActiveTab('currentMonthDac')}
             >
@@ -2318,14 +2491,25 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             <button
               type="button"
               className={`sales-report-tab-btn ${activeTab === 'dayWise' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dayWise')}
+              onClick={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  monthNo: String(new Date().getMonth() + 1).padStart(2, '0'),
+                  packageCode: 'ALL',
+                  selectedProducts: [...DEFAULT_DAC_PRODUCTS],
+                }));
+                setActiveTab('dayWise');
+              }}
             >
               <span>📈</span>Day wise Sales
             </button>
             <button
               type="button"
               className={`sales-report-tab-btn ${activeTab === 'fyWise' ? 'active' : ''}`}
-              onClick={() => setActiveTab('fyWise')}
+              onClick={() => {
+                setFilters((prev) => ({ ...prev, monthNo: 'ALL', packageCode: 'ALL', selectedProducts: [] }));
+                setActiveTab('fyWise');
+              }}
             >
               <span>🗓️</span>FY wise Sales
             </button>
@@ -2341,7 +2525,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             <button
               type="button"
               className={`sales-report-tab-btn ${activeTab === 'detailed' ? 'active' : ''}`}
-              onClick={() => setActiveTab('detailed')}
+              onClick={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  monthNo: String(new Date().getMonth() + 1).padStart(2, '0'),
+                }));
+                setDetailPage(1);
+                setActiveTab('detailed');
+              }}
             >
               <span>📋</span>Detailed Sales Data
             </button>
@@ -2391,43 +2582,51 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               />
 
               {/* Top KPI Cards (Section 40) */}
-              <div className="sales-kpi-summary-grid">
+              <div className="sales-kpi-summary-grid sales-kpi-summary-grid--single-row">
                 <div className="sales-kpi-summary-card sales-kpi-summary-card--primary">
-                  <span>Total Refill Quantity</span>
+                  <span>Total Refill Quantity - FY</span>
                   <strong>{dashboardKpis.totalRefillQuantity.toLocaleString()}</strong>
-                  <small>Total cylinders distributed</small>
+                  <small>Selected financial year</small>
                 </div>
                 <div className="sales-kpi-summary-card sales-kpi-summary-card--green">
-                  <span>Total Orders</span>
-                  <strong>{dashboardKpis.totalOrders.toLocaleString()}</strong>
-                  <small>Distinct bookings / cash memos</small>
-                </div>
-                <div className="sales-kpi-summary-card sales-kpi-summary-card--amber">
-                  <span>Total Sales Value</span>
-                  <strong>₹{dashboardKpis.totalSalesValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</strong>
-                  <small>Gross retail turnover</small>
-                </div>
-                <div className="sales-kpi-summary-card sales-kpi-summary-card--purple">
-                  <span>Unique Consumers</span>
-                  <strong>{dashboardKpis.uniqueConsumers.toLocaleString()}</strong>
-                  <small>Distinct consumer accounts</small>
-                </div>
-                <div className="sales-kpi-summary-card">
-                  <span>Delivered vs Cancelled</span>
-                  <strong>{dashboardKpis.deliveredOrders} / {dashboardKpis.cancelledOrders}</strong>
-                  <small>Conversion: {dashboardKpis.totalOrders > 0 ? Math.round((dashboardKpis.deliveredOrders / dashboardKpis.totalOrders) * 100) : 0}%</small>
-                </div>
-                <div className="sales-kpi-summary-card">
                   <span>Average Daily Sales</span>
                   <strong>{dashboardKpis.averageDailySales.toLocaleString()} Cyl/Day</strong>
                   <small>Across {dashboardKpis.activeDaysCount} active delivery days</small>
                 </div>
-                <div className="sales-kpi-summary-card">
-                  <span>DAC Compliance</span>
-                  <strong style={{ color: parseFloat(dashboardKpis.dacPercent) >= 95 ? '#15803d' : '#b45309' }}>
-                    {dashboardKpis.dacPercent}%
-                  </strong>
+                <div className="sales-kpi-summary-card sales-kpi-summary-card--amber">
+                  <span>DAC Compliance - FY</span>
+                  <strong>{dashboardKpis.dacPercent}%</strong>
                   <small>OTP/DAC authenticated</small>
+                </div>
+                <div className="sales-kpi-summary-card sales-kpi-summary-card--purple">
+                  <span>Total Refill - Current Month</span>
+                  <strong>{dashboardKpis.currentMonth.refill.toLocaleString()}</strong>
+                  <small>{dashboardKpis.currentMonthLabel}</small>
+                </div>
+                <div className="sales-kpi-summary-card">
+                  <span>DAC - Current Month</span>
+                  <strong>{dashboardKpis.currentMonth.dacPercent}%</strong>
+                  <small>{dashboardKpis.currentMonthLabel} compliance</small>
+                </div>
+                <div className="sales-kpi-summary-card">
+                  <span>Total Refill - Yesterday</span>
+                  <strong>{dashboardKpis.yesterday.refill.toLocaleString()}</strong>
+                  <small>{dashboardKpis.yesterdayLabel}</small>
+                </div>
+                <div className="sales-kpi-summary-card">
+                  <span>DAC - Yesterday</span>
+                  <strong>{dashboardKpis.yesterday.dacPercent}%</strong>
+                  <small>{dashboardKpis.yesterdayLabel} compliance</small>
+                </div>
+                <div className="sales-kpi-summary-card sales-kpi-summary-card--primary">
+                  <span>Total Refill - Today</span>
+                  <strong>{dashboardKpis.today.refill.toLocaleString()}</strong>
+                  <small>{dashboardKpis.todayLabel}</small>
+                </div>
+                <div className="sales-kpi-summary-card sales-kpi-summary-card--green">
+                  <span>DAC - Today</span>
+                  <strong>{dashboardKpis.today.dacPercent}%</strong>
+                  <small>{dashboardKpis.todayLabel} compliance</small>
                 </div>
               </div>
 
@@ -2442,8 +2641,18 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               <div className="sales-charts-grid">
                 <div className="sales-chart-card">
                   <div className="sales-chart-card-header">
-                    <h3>📈 Daily Refill Sales (Last 30 Active Days)</h3>
-                    <p>Refill quantity by delivery date</p>
+                    <h3>📊 Total Refill vs DAC</h3>
+                    <p>Refill quantity and DAC compliance across key periods</p>
+                  </div>
+                  <RefillDacComparisonChart
+                    data={chartsData.periodRefillChart}
+                  />
+                </div>
+
+                <div className="sales-chart-card">
+                  <div className="sales-chart-card-header">
+                    <h3>📈 Daily Refill Sales ({chartsData.dailyChartLabel})</h3>
+                    <p>Current or selected month refill quantity by delivery day</p>
                   </div>
                   <SimpleBarChart
                     data={chartsData.dailyChart}
@@ -2511,7 +2720,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     <h3>📦 Package Code / Product Breakdown</h3>
                     <p>Share of domestic vs commercial cylinders</p>
                   </div>
-                  <DonutChart
+                  <ProductBreakdownChart
                     data={chartsData.packageChart}
                     labelKey="label"
                     valueKey="value"
@@ -2523,7 +2732,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     <h3>👥 Nature of Consumer</h3>
                     <p>Ujjwala vs Domestic vs BPL proportion</p>
                   </div>
-                  <DonutChart
+                  <ProductBreakdownChart
                     data={chartsData.natureChart}
                     labelKey="label"
                     valueKey="value"
@@ -2535,7 +2744,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     <h3>📱 Order Source Distribution</h3>
                     <p>IVRS, HP Pay, Distributor, Vitran</p>
                   </div>
-                  <DonutChart
+                  <ProductBreakdownChart
                     data={chartsData.sourceChart}
                     labelKey="label"
                     valueKey="value"
@@ -2545,6 +2754,188 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             </div>
           </>
         )}
+
+          {/* ========================================== */}
+          {/* TAB: CONSUMER SEARCH & DELIVERY HISTORY   */}
+          {/* ========================================== */}
+          {activeTab === 'consumerSearch' && (
+            <div className="sales-card consumer-search-page">
+              <div className="sales-card-header consumer-search-header">
+                <div>
+                  <h2>🔎 Search Consumer</h2>
+                  <p>Find a consumer by Consumer Number or Mobile Number and review complete delivery history.</p>
+                </div>
+              </div>
+
+              <div className="consumer-search-panel">
+                <div className="consumer-search-modes" role="group" aria-label="Consumer search type">
+                  <button
+                    type="button"
+                    className={consumerSearchMode === 'consumerNo' ? 'active' : ''}
+                    onClick={() => { setConsumerSearchMode('consumerNo'); setConsumerSearchQuery(''); }}
+                  >
+                    🪪 Consumer Number
+                  </button>
+                  <button
+                    type="button"
+                    className={consumerSearchMode === 'mobileNo' ? 'active' : ''}
+                    onClick={() => { setConsumerSearchMode('mobileNo'); setConsumerSearchQuery(''); }}
+                  >
+                    📱 Mobile Number
+                  </button>
+                  <button
+                    type="button"
+                    className={consumerSearchMode === 'orderNo' ? 'active' : ''}
+                    onClick={() => { setConsumerSearchMode('orderNo'); setConsumerSearchQuery(''); }}
+                  >
+                    🧾 Order No
+                  </button>
+                  <button
+                    type="button"
+                    className={consumerSearchMode === 'cashMemoNo' ? 'active' : ''}
+                    onClick={() => { setConsumerSearchMode('cashMemoNo'); setConsumerSearchQuery(''); }}
+                  >
+                    🧮 CashMemo No
+                  </button>
+                  <button
+                    type="button"
+                    className={consumerSearchMode === 'consumerName' ? 'active' : ''}
+                    onClick={() => { setConsumerSearchMode('consumerName'); setConsumerSearchQuery(''); }}
+                  >
+                    👤 Consumer Name
+                  </button>
+                </div>
+                <label className="consumer-search-input-wrap">
+                  <span>{({
+                    consumerNo: 'Consumer Number', mobileNo: 'Mobile Number', orderNo: 'Order Number',
+                    cashMemoNo: 'CashMemo Number', consumerName: 'Consumer Name',
+                  })[consumerSearchMode]}</span>
+                  <div>
+                    <span>🔍</span>
+                    <input
+                      type="search"
+                      inputMode={consumerSearchMode === 'mobileNo' ? 'tel' : 'text'}
+                      value={consumerSearchQuery}
+                      onChange={(event) => {
+                        setConsumerSearchQuery(event.target.value);
+                        setConsumerSearchFocused(true);
+                      }}
+                      onFocus={() => setConsumerSearchFocused(true)}
+                      onBlur={() => setConsumerSearchFocused(false)}
+                      placeholder={`Enter ${{
+                        consumerNo: 'consumer number', mobileNo: 'registered mobile number', orderNo: 'order number',
+                        cashMemoNo: 'cash memo number', consumerName: 'consumer name',
+                      }[consumerSearchMode]}`}
+                      autoComplete="off"
+                    />
+                    {consumerSearchQuery && (
+                      <button type="button" onClick={() => setConsumerSearchQuery('')} aria-label="Clear search">✕</button>
+                    )}
+                  </div>
+                  {consumerSearchFocused && activeConsumerSearchSuggestions.length > 0 && (
+                    <div className="consumer-mobile-suggestions">
+                      {activeConsumerSearchSuggestions.map((suggestion) => (
+                        <button
+                          type="button"
+                          key={suggestion.normalized}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setConsumerSearchQuery(suggestion.value);
+                            setConsumerSearchFocused(false);
+                          }}
+                        >
+                          <span>
+                            {{ consumerNo: '🪪', mobileNo: '📱', orderNo: '🧾', cashMemoNo: '🧮', consumerName: '👤' }[consumerSearchMode]}
+                            {' '}<strong>{suggestion.value}</strong>
+                          </span>
+                          <small>
+                            {suggestion.consumerName} • Consumer No: {suggestion.consumerNo} • Mobile: {suggestion.mobile}
+                          </small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </label>
+              </div>
+
+              {consumerSearchQuery.trim() && consumerSearchResults.length > 0 && (
+                <>
+                  <div className="consumer-profile-summary">
+                    <div><span>Consumer Number</span><strong>{consumerSearchResults[0].consumerNo || '—'}</strong></div>
+                    <div><span>Consumer Name</span><strong>{consumerSearchResults[0].consumerName || '—'}</strong></div>
+                    <div><span>Mobile Number</span><strong>{consumerSearchResults[0].mobileNo || '—'}</strong></div>
+                    <div className="consumer-profile-summary__address"><span>Address</span><strong>{consumerSearchResults[0].consumerAddress || '—'}</strong></div>
+                    <div><span>Delivery Area</span><strong>{consumerSearchResults[0].deliveryArea || '—'}</strong></div>
+                    <div><span>Nature of Consumer</span><strong>{consumerSearchResults[0].natureOfConsumer || '—'}</strong></div>
+                    <div><span>Last Delivery Date</span><strong>{consumerSearchResults[0].actualDeliveryDate || '—'}</strong></div>
+                    <div><span>Last DAC Mode</span><strong>{consumerSearchResults[0].dacType || '—'}</strong></div>
+                    <div><span>Total Deliveries</span><strong>{consumerSearchResults.length}</strong></div>
+                  </div>
+
+                  <div className="consumer-history-heading">
+                    <div><h3>📜 Consumer History</h3><p>{consumerSearchResults.length} booking record{consumerSearchResults.length === 1 ? '' : 's'} found</p></div>
+                  </div>
+                  <div className="sales-data-table-wrap consumer-history-table-wrap">
+                    <table className="sales-table">
+                      <thead>
+                        <tr>
+                          <th>Consumer No</th>
+                          <th>Consumer Name</th>
+                          <th>Address</th>
+                          <th>Mobile</th>
+                          <th>Delivery Area</th>
+                          <th>Nature of Consumer</th>
+                          <th>Booking Date</th>
+                          <th>Delivery Date</th>
+                          <th>DAC Type</th>
+                          <th style={{ textAlign: 'right' }}>Sales Value (₹)</th>
+                          <th>Payment Mode</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {consumerSearchResults.map((row, index) => (
+                          <tr key={row.id || row.uniqueKey || `${row.consumerNo}-${index}`}>
+                            <td>{row.consumerNo || '—'}</td>
+                            <td><strong>{row.consumerName || '—'}</strong></td>
+                            <td className="consumer-history-address">{row.consumerAddress || '—'}</td>
+                            <td>{row.mobileNo || '—'}</td>
+                            <td>{row.deliveryArea || '—'}</td>
+                            <td>{row.natureOfConsumer || '—'}</td>
+                            <td>{row.orderDateKey || row.orderDate || '—'}</td>
+                            <td>{row.actualDeliveryDate || '—'}</td>
+                            <td><span className="consumer-mode-badge">{row.dacType || '—'}</span></td>
+                            <td style={{ textAlign: 'right', fontWeight: '700' }}>
+                              ₹{(Number(row.salesValue) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td>{row.paymentMode || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {consumerSearchQuery.trim() && consumerSearchResults.length === 0 && (
+                <div className="consumer-search-empty">
+                  <span>🔍</span>
+                  <strong>No consumer found</strong>
+                  <p>Check the {{
+                    consumerNo: 'consumer number', mobileNo: 'mobile number', orderNo: 'order number',
+                    cashMemoNo: 'cash memo number', consumerName: 'consumer name',
+                  }[consumerSearchMode]} and try again.</p>
+                </div>
+              )}
+
+              {!consumerSearchQuery.trim() && (
+                <div className="consumer-search-empty consumer-search-empty--idle">
+                  <span>👤</span>
+                  <strong>Search consumer records</strong>
+                  <p>Select a search option and enter the exact number above.</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ========================================== */}
           {/* TAB: CURRENT MONTH DAY WISE DAC (Request 6 & 7) */}
@@ -2792,29 +3183,41 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                 )}
               </div>
 
-              {/* Quick DAC KPIs */}
-              <div className="daywise-dac-kpi-grid">
-                <div className="sales-kpi-summary-card sales-kpi-summary-card--primary">
-                  <span>Month DAC %</span>
-                  <strong>{dayWiseDacTableData.summary.dacPercent}</strong>
-                  <small>Overall Month Authenticated</small>
-                </div>
-                <div className="sales-kpi-summary-card sales-kpi-summary-card--green">
-                  <span>OTP / DAC Refills</span>
-                  <strong>{dayWiseDacTableData.summary.otpDac.toLocaleString()}</strong>
-                  <small>OTP authenticated deliveries</small>
-                </div>
-                <div className="sales-kpi-summary-card sales-kpi-summary-card--amber">
-                  <span>CDCMS Deliveries</span>
-                  <strong>{dayWiseDacTableData.summary.cdcms.toLocaleString()}</strong>
-                  <small>Emergency / Offline mode</small>
-                </div>
-                <div className="sales-kpi-summary-card sales-kpi-summary-card--purple">
-                  <span>Total Cylinders</span>
-                  <strong>{dayWiseDacTableData.summary.total.toLocaleString()}</strong>
-                  <small>CDCMS + OTP/DAC + MasterDAC</small>
-                </div>
-              </div>
+              {/* Month, yesterday and today DAC KPIs */}
+              {[
+                { title: 'Current Month', subtitle: `${MONTH_NAMES[parseInt(dacReportMonth, 10) - 1]} ${dacReportYear}`, data: dayWiseDacTableData.summary },
+                { title: 'Yesterday', subtitle: dayWiseDacTableData.yesterday.label, data: dayWiseDacTableData.yesterday },
+                { title: 'Today', subtitle: dayWiseDacTableData.today.label, data: dayWiseDacTableData.today },
+              ].map((period) => (
+                <section className="daywise-dac-kpi-section" key={period.title}>
+                  <div className="daywise-dac-kpi-heading">
+                    <strong>{period.title} DAC Summary</strong>
+                    <span>{period.subtitle}</span>
+                  </div>
+                  <div className="daywise-dac-kpi-grid">
+                    <div className="sales-kpi-summary-card sales-kpi-summary-card--primary">
+                      <span>{period.title} DAC %</span>
+                      <strong>{period.data.dacPercent}</strong>
+                      <small>Authenticated deliveries</small>
+                    </div>
+                    <div className="sales-kpi-summary-card sales-kpi-summary-card--green">
+                      <span>OTP / DAC Refills</span>
+                      <strong>{period.data.otpDac.toLocaleString()}</strong>
+                      <small>OTP authenticated deliveries</small>
+                    </div>
+                    <div className="sales-kpi-summary-card sales-kpi-summary-card--amber">
+                      <span>CDCMS Deliveries</span>
+                      <strong>{period.data.cdcms.toLocaleString()}</strong>
+                      <small>Emergency / Offline mode</small>
+                    </div>
+                    <div className="sales-kpi-summary-card sales-kpi-summary-card--purple">
+                      <span>Total Cylinders</span>
+                      <strong>{period.data.total.toLocaleString()}</strong>
+                      <small>CDCMS + OTP/DAC + MasterDAC</small>
+                    </div>
+                  </div>
+                </section>
+              ))}
 
               {/* Exact Day-wise DAC Table from Screenshot */}
               <div className="daywise-dac-sheet">
@@ -2990,11 +3393,13 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                         className="sales-report-btn"
                         style={{ background: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: '700', border: '1px solid #cbd5e1', padding: '8px 14px' }}
                         onClick={() => {
-                          setAdvanceDacMonth('09');
-                          setAdvanceDacYear(2026);
+                          const defaults = getAdvanceDefaultDates();
+                          const now = new Date();
+                          setAdvanceDacMonth(String(now.getMonth() + 1).padStart(2, '0'));
+                          setAdvanceDacYear(now.getFullYear());
                           setAdvanceDacMode('otpDac');
-                          setAdvanceDacDay1('2026-09-22');
-                          setAdvanceDacDay2('2026-09-21');
+                          setAdvanceDacDay1(defaults.today);
+                          setAdvanceDacDay2(defaults.yesterday);
                         }}
                         title="Reset all filters to default"
                       >
@@ -3043,6 +3448,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   <div className="dac-advance-matrix-grid">
                     {/* Column 1: Month Delivery */}
                     <div className="dac-matrix-col">
+                      <div className="dac-matrix-footer">
+                        <span className="dac-matrix-footer-btn">Month 👆</span>
+                        <span className="dac-matrix-date-badge">{MONTH_NAMES[parseInt(advanceDacMonth, 10) - 1]} {advanceDacYear}</span>
+                      </div>
                       <table className="dac-advance-table">
                         <thead>
                           <tr>
@@ -3063,13 +3472,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           </tr>
                         </tbody>
                       </table>
-                      <div className="dac-matrix-footer">
-                        <span className="dac-matrix-footer-btn">Month 👆</span>
-                      </div>
                     </div>
 
                     {/* Column 2: Selected Day Delivery */}
                     <div className="dac-matrix-col">
+                      <div className="dac-matrix-footer">
+                        <span className="dac-matrix-footer-btn">Day 👆</span>
+                        <span className="dac-matrix-date-badge">{dacAdvanceReportData.deliveryMatrix.day1Label}</span>
+                      </div>
                       <table className="dac-advance-table">
                         <thead>
                           <tr>
@@ -3090,14 +3500,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           </tr>
                         </tbody>
                       </table>
-                      <div className="dac-matrix-footer">
-                        <span className="dac-matrix-footer-btn">Day 👆</span>
-                        <span className="dac-matrix-date-badge">{dacAdvanceReportData.deliveryMatrix.day1Label}</span>
-                      </div>
                     </div>
 
                     {/* Column 3: Date wise Delivery */}
                     <div className="dac-matrix-col">
+                      <div className="dac-matrix-footer">
+                        <span className="dac-matrix-footer-btn">Date wise 👆</span>
+                        <span className="dac-matrix-date-badge">{dacAdvanceReportData.deliveryMatrix.day2Label}</span>
+                      </div>
                       <table className="dac-advance-table">
                         <thead>
                           <tr>
@@ -3118,9 +3528,6 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           </tr>
                         </tbody>
                       </table>
-                      <div className="dac-matrix-footer">
-                        <span className="dac-matrix-footer-btn">Date wise 👆</span>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -3311,6 +3718,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     data={chartsData.packageChart}
                     labelKey="label"
                     valueKey="value"
+                    maxLegendItems={Number.POSITIVE_INFINITY}
                   />
                 </div>
 
@@ -3320,9 +3728,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     <p>Ranked delivery volumes</p>
                   </div>
                   <HorizontalBarChart
-                    data={dimensionalReports.packages.map((p) => ({ label: p.packageCode.slice(0, 24), value: p.refillQuantity }))}
+                    data={dimensionalReports.packages.map((p) => ({ label: p.packageCode, value: p.refillQuantity }))}
                     labelKey="label"
                     valueKey="value"
+                    maxItems={dimensionalReports.packages.length}
                   />
                 </div>
               </div>
@@ -3339,7 +3748,12 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                       <th style={{ textAlign: 'center' }}>Refill Quantity (Cyl)</th>
                       <th style={{ textAlign: 'right' }}>Sales Value (₹)</th>
                       <th style={{ textAlign: 'center' }}>Volume Share %</th>
-                      <th style={{ textAlign: 'right' }}>Avg Rate / Cyl (₹)</th>
+                      <th style={{ textAlign: 'right' }} title="Sales Value divided by Refill Quantity">
+                        Avg Rate / Cyl (₹)
+                        <small style={{ display: 'block', fontSize: '9px', fontWeight: '600', opacity: 0.75 }}>
+                          Sales Value ÷ Refill Qty
+                        </small>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3386,7 +3800,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                         <td style={{ textAlign: 'center' }}>{dimensionalReports.packages.reduce((s, p) => s + p.refillQuantity, 0)}</td>
                         <td style={{ textAlign: 'right' }}>₹{dimensionalReports.packages.reduce((s, p) => s + p.salesValue, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td style={{ textAlign: 'center' }}>100%</td>
-                        <td style={{ textAlign: 'right' }}>—</td>
+                        <td style={{ textAlign: 'right' }}>₹{(
+                          dimensionalReports.packages.reduce((s, p) => s + p.salesValue, 0)
+                          / Math.max(dimensionalReports.packages.reduce((s, p) => s + p.refillQuantity, 0), 1)
+                        ).toFixed(2)}</td>
                       </tr>
                     </tfoot>
                   )}
@@ -3399,7 +3816,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           {/* TAB: MONTHLY DAC % (Manthy DAC %)          */}
           {/* ========================================== */}
           {activeTab === 'monthlyDac' && (
-            <div className="sales-card">
+            <div className="sales-card modern-report-card modern-report-card--dac">
               <div className="sales-card-header">
                 <div>
                   <h2>🎯 Monthly DAC % (Manthy DAC %) Report</h2>
@@ -3429,7 +3846,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               </div>
 
               {/* Monthly DAC Bar Chart */}
-              <div style={{ marginBottom: '24px' }}>
+              <div className="modern-report-chart-panel">
                 <h3 style={{ fontSize: '15px', color: '#0f3756', margin: '0 0 10px' }}>
                   📊 12-Month DAC % Performance (Benchmark: 95.0%)
                 </h3>
@@ -3523,7 +3940,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           {/* TAB: DAY WISE SALES REPORT                 */}
           {/* ========================================== */}
           {activeTab === 'dayWise' && (
-            <div className="sales-card">
+            <div className="sales-card modern-report-card modern-report-card--day">
               <div className="sales-card-header">
                 <div>
                   <h2>📈 Day Wise Refill Orders &amp; Revenue Ledger</h2>
@@ -3559,7 +3976,12 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                 availableProducts={allAvailableProducts}
                 onMonthChange={(m) => setFilters((prev) => ({ ...prev, monthNo: m }))}
                 onProductsChange={(prods) => setFilters((prev) => ({ ...prev, selectedProducts: prods }))}
-                onReset={() => setFilters((prev) => ({ ...prev, monthNo: 'ALL', packageCode: 'ALL', selectedProducts: [] }))}
+                onReset={() => setFilters((prev) => ({
+                  ...prev,
+                  monthNo: String(new Date().getMonth() + 1).padStart(2, '0'),
+                  packageCode: 'ALL',
+                  selectedProducts: [...DEFAULT_DAC_PRODUCTS],
+                }))}
               />
 
               <div className="sales-data-table-wrap">
@@ -3599,7 +4021,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           {/* TAB 3: MONTH WISE SALES REPORT             */}
           {/* ========================================== */}
           {activeTab === 'monthWise' && (
-            <div className="sales-card">
+            <div className="sales-card modern-report-card modern-report-card--month">
               <div className="sales-card-header">
                 <div>
                   <h2>📅 Month Wise Sales Report</h2>
@@ -3657,7 +4079,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               </div>
 
               {/* Month-vs-Month Comparison Card (Section 39.D) */}
-              <div style={{ marginTop: '24px', background: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div className="modern-comparison-panel">
                 <h3 style={{ margin: '0 0 10px', fontSize: '15px', color: '#0f3756' }}>
                   ⚖️ Month Comparison (Growth &amp; Trend)
                 </h3>
@@ -3711,7 +4133,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           {/* TAB 4: FY WISE SALES REPORT                */}
           {/* ========================================== */}
           {activeTab === 'fyWise' && (
-            <div className="sales-card">
+            <div className="sales-card modern-report-card modern-report-card--fy">
               <div className="sales-card-header">
                 <div>
                   <h2>🗓️ Financial Year (FY) Wise Sales Report</h2>
@@ -3791,7 +4213,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           {/* TAB: BREAKDOWN REPORTS (Section 39.F - 39.R) */}
           {/* ========================================== */}
           {activeTab === 'breakdowns' && (
-            <div className="sales-card">
+            <div className="sales-card modern-report-card modern-report-card--breakdown modern-breakdown-card">
               <div className="sales-card-header">
                 <div>
                   <h2>📑 Dimensional Breakdown Reports</h2>
@@ -4547,7 +4969,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           {/* TAB 7: DETAILED SALES DATA                 */}
           {/* ========================================== */}
           {activeTab === 'detailed' && (
-            <div className="sales-card">
+            <div className="sales-card modern-report-card modern-report-card--detailed detailed-sales-card">
               <div className="sales-card-header">
                 <div>
                   <h2>📋 Detailed Sales Data ({detailedFiltered.length} records)</h2>
@@ -4592,7 +5014,12 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   setDetailPage(1);
                 }}
                 onReset={() => {
-                  setFilters((prev) => ({ ...prev, monthNo: 'ALL', packageCode: 'ALL', selectedProducts: [] }));
+                  setFilters((prev) => ({
+                    ...prev,
+                    monthNo: String(new Date().getMonth() + 1).padStart(2, '0'),
+                    packageCode: 'ALL',
+                    selectedProducts: [],
+                  }));
                   setDetailSearch('');
                   setDetailPage(1);
                 }}
@@ -4600,7 +5027,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               />
 
               {/* Live Search Input */}
-              <div style={{ margin: '10px 0 16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <div className="detailed-sales-search">
                 <input
                   type="text"
                   placeholder="🔍 Search by Consumer Name, Consumer No, CashMemo No, Order No, Mobile, Staff, Area..."
@@ -4608,13 +5035,6 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   onChange={(e) => {
                     setDetailSearch(e.target.value);
                     setDetailPage(1);
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '9px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '13px',
                   }}
                 />
               </div>
@@ -4818,7 +5238,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   <div>
                     <h3 style={{ margin: 0 }}>📦 Package &amp; Product Type Enable / Disable</h3>
                     <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>
-                      Product Name aur Default Rate (₹) uploaded current month data se dynamically fetch hote hain (<strong>Default Rate = RSP / Order Quantity</strong>). Kisi bhi cylinder type ko enable/disable karein ya default rate customize karein.
+                      Product Name aur Default Rate (₹) uploaded current month data se dynamically fetch hote hain (<strong>Default Rate = Sales Value / Refill Quantity</strong>). Kisi bhi cylinder type ko enable/disable karein ya default rate customize karein.
                     </p>
                   </div>
 
@@ -4864,11 +5284,11 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   <span>
                     Showing <strong>{fetchedMonthProducts.length} Products</strong> auto-fetched from <strong>{
                       productSettingYm === 'CURRENT'
-                        ? `Current Month (${MONTH_NAMES[parseInt(advanceDacMonth, 10) - 1]} ${advanceDacYear})`
+                        ? `Current Month (${new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' })})`
                         : productSettingYm === 'ALL'
                           ? 'All Uploaded Months'
                           : availableUploadedMonths.find((m) => m.ym === productSettingYm)?.label || 'Uploaded Data'
-                    }</strong>. Default Selling Rate (₹) har product ke liye <strong>RSP / Order Quantity</strong> se calculate ho raha hai.
+                    }</strong>. Default Selling Rate (₹) har product ke liye <strong>Sales Value / Refill Quantity</strong> se calculate ho raha hai.
                   </span>
                 </div>
 
@@ -4878,9 +5298,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                       <tr>
                         <th>Package Code / Product Name</th>
                         <th>Category</th>
-                        <th style={{ textAlign: 'right' }} title="Default Rate = RSP / Order Quantity">
+                        <th style={{ textAlign: 'right' }} title="Default Rate = Sales Value / Refill Quantity">
                           Default Rate (₹)<br/>
-                          <span style={{ fontSize: '10.5px', fontWeight: '600', color: '#0369a1', textTransform: 'none' }}>(RSP / Qty)</span>
+                          <span style={{ fontSize: '10.5px', fontWeight: '600', color: '#0369a1', textTransform: 'none' }}>(Sales Value / Qty)</span>
                         </th>
                         <th style={{ textAlign: 'center' }}>Month Cylinders</th>
                         <th style={{ textAlign: 'center' }}>Status</th>
@@ -4898,7 +5318,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                                 <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
                                   {prod.isAutoFetched ? (
                                     <span style={{ fontSize: '10.5px', color: '#15803d', fontWeight: '600' }}>
-                                      ⚡ Auto-fetched: RSP / Qty ({prod.txCount} orders)
+                                      ⚡ Auto-fetched: Sales Value / Qty ({prod.txCount} orders)
                                     </span>
                                   ) : (
                                     <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: '600' }}>

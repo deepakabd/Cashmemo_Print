@@ -145,10 +145,89 @@ export function HorizontalBarChart({ data = [], labelKey = 'label', valueKey = '
   );
 }
 
+/** Dual-metric comparison: refill volume and DAC percentage by period. */
+export function RefillDacComparisonChart({ data = [] }) {
+  if (!data.length) return <div className="chart-empty-state">No comparison data available.</div>;
+  const maxRefill = Math.max(...data.map((item) => Number(item.refill) || 0), 1);
+
+  return (
+    <div className="refill-dac-chart">
+      <div className="refill-dac-chart__legend">
+        <span><i className="refill-dac-dot refill-dac-dot--refill" /> Total Refill</span>
+        <span><i className="refill-dac-dot refill-dac-dot--dac" /> DAC %</span>
+      </div>
+      {data.map((item) => {
+        const refill = Number(item.refill) || 0;
+        const dacCount = Number(item.dacCount) || 0;
+        const dac = Math.max(0, Math.min(Number(item.dac) || 0, 100));
+        return (
+          <div className="refill-dac-chart__row" key={item.label}>
+            <strong className="refill-dac-chart__label">{item.label}</strong>
+            <div className="refill-dac-chart__metrics">
+              <div className="refill-dac-chart__metric">
+                <span className="refill-dac-chart__value">{refill.toLocaleString()} Cyl</span>
+                <div className="refill-dac-chart__track">
+                  <div className="refill-dac-chart__fill refill-dac-chart__fill--refill" style={{ width: `${(refill / maxRefill) * 100}%` }} />
+                </div>
+              </div>
+              <div className="refill-dac-chart__metric">
+                <span className="refill-dac-chart__value">{dacCount.toLocaleString()} DAC ({dac.toFixed(1)}%)</span>
+                <div className="refill-dac-chart__track">
+                  <div className="refill-dac-chart__fill refill-dac-chart__fill--dac" style={{ width: `${dac}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Full-name package distribution with a stacked share bar and ranked rows. */
+export function ProductBreakdownChart({ data = [], labelKey = 'label', valueKey = 'value' }) {
+  const total = data.reduce((sum, item) => sum + (Number(item[valueKey]) || 0), 0);
+  if (!data.length || total === 0) return <div className="chart-empty-state">No product data available.</div>;
+  const ranked = [...data].sort((a, b) => (Number(b[valueKey]) || 0) - (Number(a[valueKey]) || 0));
+
+  return (
+    <div className="product-breakdown-chart">
+      <div className="product-breakdown-chart__stack" aria-label="Product refill share distribution">
+        {ranked.map((item, index) => {
+          const value = Number(item[valueKey]) || 0;
+          const share = (value / total) * 100;
+          return (
+            <span
+              key={item[labelKey]}
+              title={`${item[labelKey]}: ${value.toLocaleString()} (${share.toFixed(1)}%)`}
+              style={{ width: `${share}%`, background: item.color || PALETTE[index % PALETTE.length] }}
+            />
+          );
+        })}
+      </div>
+      <div className="product-breakdown-chart__list">
+        {ranked.map((item, index) => {
+          const value = Number(item[valueKey]) || 0;
+          const share = (value / total) * 100;
+          return (
+            <div className="product-breakdown-chart__item" key={item[labelKey]}>
+              <span className="product-breakdown-chart__rank">{index + 1}</span>
+              <i style={{ background: item.color || PALETTE[index % PALETTE.length] }} />
+              <span className="product-breakdown-chart__name">{item[labelKey]}</span>
+              <strong>{value.toLocaleString()} Cyl</strong>
+              <b>{share.toFixed(1)}%</b>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Responsive SVG Donut / Pie Chart (For Nature of Consumer, Package Code, Order Source)
  */
-export function DonutChart({ data = [], labelKey = 'label', valueKey = 'value', size = 180 }) {
+export function DonutChart({ data = [], labelKey = 'label', valueKey = 'value', size = 180, maxLegendItems = 6 }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const total = data.reduce((sum, d) => sum + (d[valueKey] || 0), 0);
 
@@ -216,7 +295,7 @@ export function DonutChart({ data = [], labelKey = 'label', valueKey = 'value', 
 
       {/* Legend */}
       <div className="donut-legend">
-        {slices.slice(0, 6).map((slice, idx) => (
+        {slices.slice(0, maxLegendItems).map((slice, idx) => (
           <div
             key={idx}
             className={`donut-legend-item ${hoveredIdx === idx ? 'active' : ''}`}
@@ -323,4 +402,3 @@ export function TrendLineChart({ data = [], xKey = 'label', yKey = 'value', heig
     </div>
   );
 }
-

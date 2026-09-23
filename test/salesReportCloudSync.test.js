@@ -256,6 +256,37 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(salesReportDb.saveSalesReportToIndexedDB).toHaveBeenCalled();
   });
 
+  it('recovers a missing R2 month from IndexedDB and repairs the cloud manifest', async () => {
+    const user = { id: 'dealer_123', dealerCode: 'D123' };
+    const august = { id: 'aug', uniqueKey: 'aug', year: 2026, monthNo: 8, orderNo: 'AUG' };
+    const september = { id: 'sep', uniqueKey: 'sep', year: 2026, monthNo: 9, orderNo: 'SEP' };
+    vi.mocked(salesReportDb.loadSalesReportFromIndexedDB).mockResolvedValueOnce({
+      storageVersion: 3,
+      batches: [{ batchId: 'real', fileName: 'sales.xlsx' }],
+      monthlyUploads: {},
+      transactions: [august, september],
+    });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true, status: 200, json: async () => ({
+          salesReportData: { storageVersion: 3, monthKeys: ['2026-08', '2026-09'], batches: [{ batchId: 'real' }] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true, status: 200, json: async () => ({ compressedData: compressTransactions([august]) }),
+      })
+      .mockResolvedValueOnce({
+        ok: false, status: 404, json: async () => ({ error: 'missing', code: 'r2-object-missing' }),
+      })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+
+    const result = await loadSalesReportFromFirebase(user);
+
+    expect(result.transactions.map((row) => row.orderNo).sort()).toEqual(['AUG', 'SEP']);
+    const requestModes = globalThis.fetch.mock.calls.map((call) => JSON.parse(call[1].body).mode);
+    expect(requestModes).toEqual(['load', 'loadMonth', 'loadMonth', 'saveMonth', 'saveMonth', 'saveManifest']);
+  });
+
   it('loadSalesReportFromFirebase on a new machine restores all transactions from Firestore fallback', async () => {
     const user = { id: 'dealer_123', dealerCode: 'D123' };
 
@@ -408,11 +439,13 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(onProgress).toHaveBeenLastCalledWith(100);
   });
 
-  it('month reset unlocks immediately and uses metadata-only cloud sync', async () => {
+  it('month reset unlocks immediately and uses metadata-only sync for an existing R2 manifest', async () => {
     const user = { id: 'dealer_123', dealerCode: 'D123' };
     const august = { id: 'aug', uniqueKey: 'aug', year: 2026, monthNo: 8 };
     const september = { id: 'sep', uniqueKey: 'sep', year: 2026, monthNo: 9 };
     const store = {
+      storageVersion: 3,
+      monthKeys: ['2026-08', '2026-09'],
       settings: { lockedMonths: { '2026-08': { confirmed: true } } },
       batches: [], transactions: [august, september],
       monthlyUploads: {
