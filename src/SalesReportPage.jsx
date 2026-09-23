@@ -457,6 +457,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   // Cloud sync state
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
+  const [hasCompletedInitialSync, setHasCompletedInitialSync] = useState(false);
   const [cloudOperation, setCloudOperation] = useState(null);
   const progressOptions = (label) => ({
     onProgress: (percent) => setCloudOperation({ label, percent }),
@@ -465,6 +466,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   // Load from Firebase on mount
   useEffect(() => {
     let active = true;
+    setHasCompletedInitialSync(false);
     setIsSyncing(true);
     setSyncProgress(0);
     loadSalesReportFromFirebase(loggedInUser, {
@@ -474,7 +476,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         setStoreData(remote);
       }
     }).finally(() => {
-      if (active) setIsSyncing(false);
+      if (active) {
+        setIsSyncing(false);
+        setHasCompletedInitialSync(true);
+      }
     });
     return () => { active = false; };
   }, [loggedInUser]);
@@ -2593,7 +2598,18 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         </aside>
 
         {/* Right Content Area */}
-        <section className="sales-report-content">
+        <section className={`sales-report-content${!hasCompletedInitialSync ? ' sales-report-content--initial-sync' : ''}`}>
+          {!hasCompletedInitialSync && (
+            <div className="sales-initial-sync-screen" role="status" aria-live="polite">
+              <div className="sales-initial-sync-screen__icon">☁️</div>
+              <h2>Loading Sales Report</h2>
+              <p>Cloud data synchronize ho raha hai. Report sync complete hone ke baad dikhega.</p>
+              <div className="sales-initial-sync-screen__progress">
+                <span style={{ width: `${syncProgress}%` }} />
+              </div>
+              <strong>{syncProgress}% Synced</strong>
+            </div>
+          )}
           {/* ========================================== */}
           {/* TAB 1: OVERVIEW / SALES DASHBOARD          */}
           {/* ========================================== */}
