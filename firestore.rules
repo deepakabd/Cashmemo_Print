@@ -84,8 +84,6 @@ service cloud.firestore {
     match /users/{userId} {
 
       // A dealer may read only their own profile. Admins read all.
-      // Anonymous reads are denied: this collection used to hold plaintext PINs
-      // and must never be enumerable from the public registration form again.
       allow read: if isAdmin() || isSelf(userId) || isOwnDealerDoc();
 
       // Dealers cannot create their own user document; registration goes
@@ -93,16 +91,19 @@ service cloud.firestore {
       // Creation and dealer-code changes go through the trusted transaction
       // endpoint, which enforces uniqueness against legacy and new users.
       allow create: if false;
-      allow delete: if false;
+      allow delete: if isAdmin();
 
-      // Admin mutations use the authenticated server endpoint. Direct writes
-      // remain available only for a dealer's permitted self-service fields.
-      allow update: if !isAdmin() && configCopiesMatch(userId) && (
-          (isSelf(userId) || isOwnDealerDoc())
-          && isActiveAccount()
-          && pinFieldsSafe()
-          && !request.resource.data.diff(resource.data).affectedKeys()
-               .hasAny(['dealerCode', 'role', 'status', 'package', 'packageDays', 'validFrom', 'validTill', 'pinHash', 'pin', 'authUid', 'approvalStatus'])
+      // Admin mutations use the authenticated server endpoint. Dealers may
+      // directly sync only their own Sales Report or permitted profile fields.
+      allow update: if (isSelf(userId) || isOwnDealerDoc())
+        && isActiveAccount()
+        && pinFieldsSafe()
+        && (
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['salesReportData', 'updatedAt'])
+          || (configCopiesMatch(userId)
+            && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['dealerCode', 'role', 'status', 'package', 'packageDays', 'validFrom', 'validTill', 'pinHash', 'pin', 'authUid', 'approvalStatus']))
         );
 
       match /{group}/{item} {
@@ -138,6 +139,13 @@ service cloud.firestore {
       match /billingAdjustments/{entryId} {
         allow read: if isAdmin() || (isSignedIn() && request.auth.token.dealerCode == get(/databases/$(database)/documents/users/$(userId)).data.dealerCode);
         allow write: if false;
+      }
+      match /salesReportChunks/{chunkId} {
+        allow read: if isAdmin() || (isSignedIn()
+          && request.auth.token.dealerCode == get(/databases/$(database)/documents/users/$(userId)).data.dealerCode);
+        allow write: if (isSelf(userId) || (isSignedIn()
+          && request.auth.token.dealerCode == get(/databases/$(database)/documents/users/$(userId)).data.dealerCode))
+          && isActiveAccount();
       }
     }
 

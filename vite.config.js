@@ -9,6 +9,7 @@ import { buildPinHashPatch } from './server/pinAdmin.js'
 import { checkLoginServiceConfig } from './server/loginConfigCheck.js'
 import adminUsersHandler from './api/admin-users.js'
 import invoiceWorkspaceHandler from './api/invoice-workspace.js'
+import salesReportHandler from './api/sales-report.js'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -87,6 +88,7 @@ export default defineConfig(({ mode }) => {
         configureServer(server) {
           server.middlewares.use('/api/admin-users', adminUsersHandler);
           server.middlewares.use('/api/invoice-workspace', invoiceWorkspaceHandler);
+          server.middlewares.use('/api/sales-report', salesReportHandler);
           // Warn at boot, not just at the first failed login.
           checkLoginServiceConfig();
 
