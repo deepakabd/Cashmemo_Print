@@ -456,6 +456,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Cloud sync state
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
   const [cloudOperation, setCloudOperation] = useState(null);
   const progressOptions = (label) => ({
     onProgress: (percent) => setCloudOperation({ label, percent }),
@@ -465,7 +466,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   useEffect(() => {
     let active = true;
     setIsSyncing(true);
-    loadSalesReportFromFirebase(loggedInUser).then((remote) => {
+    setSyncProgress(0);
+    loadSalesReportFromFirebase(loggedInUser, {
+      onProgress: (percent) => { if (active) setSyncProgress(percent); },
+    }).then((remote) => {
       if (active && remote) {
         setStoreData(remote);
       }
@@ -477,8 +481,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   const handleManualCloudSync = async () => {
     setIsSyncing(true);
+    setSyncProgress(0);
     try {
-      const remote = await loadSalesReportFromFirebase(loggedInUser);
+      const remote = await loadSalesReportFromFirebase(loggedInUser, { onProgress: setSyncProgress });
       if (remote) {
         setStoreData(remote);
         showNotification(`Cloud sync complete! ${remote.transactions?.length || 0} transactions synchronized.`, 'success');
@@ -2432,9 +2437,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               fontSize: '12px',
               cursor: isSyncing ? 'wait' : 'pointer',
               transition: 'all 0.2s ease',
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
-            {isSyncing ? '🔄 Syncing...' : '☁️ Cloud Sync'}
+            {isSyncing ? `🔄 Syncing... ${syncProgress}%` : '☁️ Cloud Sync'}
+            {isSyncing && (
+              <span className="cloud-sync-button-progress" style={{ width: `${syncProgress}%` }} />
+            )}
           </button>
           {/* Full Screen Viewport Toggle */}
           <button
