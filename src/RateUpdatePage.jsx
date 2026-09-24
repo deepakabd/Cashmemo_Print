@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { resolveRatesForDate } from './utils/rateUtils';
+import { loadRatesFromCloudflare } from './services/rateRepository';
 
 const initialRates = [
   { Code: 36, HSNCode: '27111900', Item: '14.2 KG NON-SUBSIDIZED CYLINDER', BasicPrice: 904.76, SGST: 2.5, CGST: 2.5, RSP: 950 },
@@ -17,7 +18,30 @@ const initialRates = [
   { Code: 43, HSNCode: '27111900', Item: '47.5KG FILLED HP GAS FLAME PLUS', BasicPrice: 4290.25, SGST: 9, CGST: 9, RSP: 5062.5 },
 ];
 
-function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updatedBy = 'Dealer', requestState = null }) {
+const rateProductKey = (row) => `${String(row?.Code ?? '').trim()}|${String(row?.Item ?? '').trim().toLowerCase()}`;
+const withDefaultProductsForDate = (rows, effectiveDate) => {
+  const existing = Array.isArray(rows) ? rows : [];
+  const selectedKeys = new Set(existing.filter((row) => row.RateEffectiveFrom === effectiveDate).map(rateProductKey));
+  const templates = new Map(initialRates.map((row) => [rateProductKey(row), row]));
+  [...existing]
+    .sort((a, b) => String(a.RateEffectiveFrom || '').localeCompare(String(b.RateEffectiveFrom || '')))
+    .forEach((row) => { if (row?.Item) templates.set(rateProductKey(row), row); });
+  const missing = [...templates.entries()]
+    .filter(([key]) => !selectedKeys.has(key))
+    .map(([, row]) => {
+      const cleanRow = Object.fromEntries(Object.entries(row).filter(([key, value]) => value !== undefined && !['RateUpdatedAt', 'RateUpdatedBy', 'RateApprovedAt'].includes(key)));
+      return {
+        ...cleanRow,
+        RateMonth: effectiveDate.slice(0, 7),
+        RateEffectiveFrom: effectiveDate,
+        RateStatus: 'Draft',
+        HSNCode: String(row.HSNCode ?? '27111900') || '27111900',
+      };
+    });
+  return missing.length ? [...existing, ...missing] : existing;
+};
+
+function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updatedBy = 'Dealer', requestState = null, userId = '' }) {
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [selectedEffectiveDate, setSelectedEffectiveDate] = useState(`${currentMonth}-01`);
@@ -26,6 +50,10 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
   const [category, setCategory] = useState('all');
   const [previewDate, setPreviewDate] = useState(new Date().toISOString().slice(0, 10));
   const [showHistory, setShowHistory] = useState(false);
+  const [quickFilter, setQuickFilter] = useState('all');
+  const [excludedProducts, setExcludedProducts] = useState(() => new Set());
+  const [manualBasicPrice, setManualBasicPrice] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [rates, setRates] = useState(() => initialRates.map((row) => ({ ...row, RateMonth: currentMonth, RateEffectiveFrom: `${currentMonth}-01` })));
 
   useEffect(() => {
@@ -58,10 +86,39 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
     }
   }, [initialRatesData, currentMonth, requestState]);
 
+  useEffect(() => {
+    let active = true;
+    void loadRatesFromCloudflare(userId).then((cloudRates) => {
+      if (!active || !cloudRates.length) return;
+      setRates((previous) => {
+        const merged = new Map(previous.map((row) => [`${row.RateEffectiveFrom}|${rateProductKey(row)}`, row]));
+        cloudRates.forEach((row) => merged.set(`${row.RateEffectiveFrom}|${rateProductKey(row)}`, row));
+        return [...merged.values()];
+      });
+    }).catch(() => { /* Firebase rates remain available if D1 history cannot load. */ });
+    return () => { active = false; };
+  }, [userId]);
+
+  useEffect(() => {
+    setRates((previous) => withDefaultProductsForDate(previous, selectedEffectiveDate));
+    setExcludedProducts(new Set());
+    setHasUnsavedChanges(false);
+  }, [selectedEffectiveDate, initialRatesData, requestState]);
+
+  useEffect(() => {
+    const warn = (event) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [hasUnsavedChanges]);
+
   const revisionRates = rates.filter((row) => row.RateEffectiveFrom === selectedEffectiveDate);
   const matchesCategory = (row) => category === 'all'
     || (category === 'cylinder' ? /cylinder/i.test(row.Item || '') : !/cylinder/i.test(row.Item || ''));
-  const monthRates = revisionRates.filter((row) => {
+  const filteredRevisionRates = revisionRates.filter((row) => {
     const needle = search.trim().toLowerCase();
     return matchesCategory(row) && (!needle || [row.Item, row.Code, row.HSNCode].join(' ').toLowerCase().includes(needle));
   });
@@ -82,6 +139,17 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
     const amount = Number(rate.RSP || 0) - Number(previous.RSP || 0);
     return { amount, percent: Number(previous.RSP) ? (amount / Number(previous.RSP)) * 100 : 0, oldRate: Number(previous.RSP || 0) };
   };
+  const monthRates = filteredRevisionRates.filter((row) => {
+    const change = rateChange(row);
+    if (quickFilter === 'changed') return Boolean(change?.amount);
+    if (quickFilter === 'unchanged') return !change?.amount && Number(row.RSP) > 0;
+    if (quickFilter === 'increased') return change?.amount > 0;
+    if (quickFilter === 'decreased') return change?.amount < 0;
+    if (quickFilter === 'missing') return !Number(row.RSP);
+    return true;
+  });
+  const completedProducts = revisionRates.filter((row) => Number(row.RSP) > 0 && Number.isFinite(Number(row.SGST)) && Number.isFinite(Number(row.CGST))).length;
+  const selectedProducts = revisionRates.filter((row) => !excludedProducts.has(rateProductKey(row)));
 
   const recalculateBasicPrice = (row) => {
     const rspNum = parseFloat(row.RSP);
@@ -96,6 +164,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
   };
 //hi
   const handleFieldChange = (rowIndex, field, value) => {
+    setHasUnsavedChanges(true);
     setRates((prev) =>
       prev.map((row, i) => {
         if (i !== rowIndex) return row;
@@ -109,6 +178,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
   };
 
   const handleAddProduct = () => {
+    setHasUnsavedChanges(true);
     setRates((prev) => [
       ...prev,
       { Code: '', HSNCode: '27111900', Item: '', BasicPrice: 0, SGST: 0, CGST: 0, RSP: '', RateMonth: selectedMonth, RateEffectiveFrom: selectedEffectiveDate, RateStatus: 'Draft' },
@@ -119,6 +189,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
     const sourceDates = [...new Set(rates.map((row) => row.RateEffectiveFrom).filter((date) => date < selectedEffectiveDate))].sort();
     const sourceDate = sourceDates.at(-1);
     if (!sourceDate) return;
+    setHasUnsavedChanges(true);
     const copiedRates = rates
       .filter((row) => row.RateEffectiveFrom === sourceDate)
       .map((row) => ({ ...row, RateMonth: selectedMonth, RateEffectiveFrom: selectedEffectiveDate, RateStatus: 'Draft' }));
@@ -126,22 +197,38 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
   };
 
   const handleSave = async () => {
+    if (!selectedProducts.length) {
+      alert('Select at least one product to update.');
+      return;
+    }
     const now = new Date().toISOString();
-    const payload = rates.map((row) => row.RateEffectiveFrom === selectedEffectiveDate
+    const selectedKeys = new Set(selectedProducts.map(rateProductKey));
+    const payload = rates.map((row) => row.RateEffectiveFrom === selectedEffectiveDate && selectedKeys.has(rateProductKey(row))
       ? { ...row, RateStatus: 'Pending', RateUpdatedAt: now, RateUpdatedBy: updatedBy }
-      : row);
+      : row).map((row) => Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined)));
     localStorage.setItem('ratesData', JSON.stringify(payload));
     if (typeof onSaveRates === 'function') {
-      const saved = await onSaveRates(payload);
-      if (saved === false) return;
+      try {
+        const saved = await onSaveRates(payload);
+        if (saved === false) return;
+      } catch (error) {
+        alert(error?.message || 'Cloud rate save failed. Please retry.');
+        return;
+      }
     }
     setRates(payload);
+    setHasUnsavedChanges(false);
     alert('Rates request submitted successfully.');
     onClose();
   };
 
+  const handleClose = () => {
+    if (hasUnsavedChanges && !window.confirm('Rate changes अभी save नहीं हुए हैं। क्या आप बिना save किए page बंद करना चाहते हैं?')) return;
+    onClose();
+  };
+
   return (
-    <div className="placeholder-container">
+    <div className="placeholder-container rate-update-page">
       <h2>Rate Update</h2>
       <div className="rate-month-toolbar">
         <label>
@@ -189,10 +276,17 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
         {revisionRates[0]?.RateUpdatedAt && <span>Updated by {revisionRates[0].RateUpdatedBy || 'Dealer'} · {new Date(revisionRates[0].RateUpdatedAt).toLocaleString('en-IN')}</span>}
         {revisionRates[0]?.RateApprovedAt && <span>Approved {new Date(revisionRates[0].RateApprovedAt).toLocaleString('en-IN')}</span>}
       </div>
+      <section className="rate-validation-summary is-valid" aria-label="Monthly rate completion">
+        <div><strong>Monthly Completion</strong><span>{completedProducts}/{revisionRates.length} products updated</span></div>
+        <progress max={Math.max(1, revisionRates.length)} value={completedProducts} />
+        <div className="rate-validation-counts"><span>Selected: <b>{selectedProducts.length}</b></span></div>
+      </section>
       <div className="rate-management-tools">
         <label>Search products<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, product code or HSN" /></label>
         <label>Category<select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">All products</option><option value="cylinder">Cylinders</option><option value="accessory">Accessories</option></select></label>
         <label>Rate preview date<input type="date" value={previewDate} onChange={(event) => setPreviewDate(event.target.value)} /></label>
+        <label>Quick filter<select value={quickFilter} onChange={(event) => setQuickFilter(event.target.value)}><option value="all">All products</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option><option value="increased">Increased rates</option><option value="decreased">Decreased rates</option><option value="missing">Missing rates</option></select></label>
+        <label className="rate-manual-toggle"><input type="checkbox" checked={manualBasicPrice} onChange={(event) => setManualBasicPrice(event.target.checked)} />Manual Basic Price</label>
         <button type="button" onClick={() => setShowHistory((visible) => !visible)}>{showHistory ? 'Hide History' : 'Rate-change History'}</button>
       </div>
       <div className="rate-preview-panel">
@@ -204,6 +298,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
         <table className={`rate-table${showTaxColumns ? '' : ' rate-table--tax-hidden'}`}>
           <thead>
             <tr>
+              <th className="rate-select-column"><input type="checkbox" aria-label="Select all visible products" checked={monthRates.length > 0 && monthRates.every((row) => !excludedProducts.has(rateProductKey(row)))} onChange={(event) => setExcludedProducts((previous) => { const next = new Set(previous); monthRates.forEach((row) => { const key = rateProductKey(row); if (event.target.checked) next.delete(key); else next.add(key); }); return next; })} /></th>
               <th>Product Code</th>
               <th>HSN Code</th>
               <th>Item</th>
@@ -219,6 +314,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
               const index = rates.indexOf(rate);
               return (
               <tr key={`${rate.Code || 'new'}-${index}`}>
+                <td className="rate-select-column"><input type="checkbox" aria-label={`Select ${rate.Item || 'product'}`} checked={!excludedProducts.has(rateProductKey(rate))} onChange={(event) => setExcludedProducts((previous) => { const next = new Set(previous); const key = rateProductKey(rate); if (event.target.checked) next.delete(key); else next.add(key); return next; })} /></td>
                 <td>
                   <input
                     className="rate-input"
@@ -246,7 +342,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
                   <small className={`rate-row-status rate-row-status--${String(rate.RateStatus || 'draft').toLowerCase()}`}>{rate.RateStatus || 'Draft'}</small>
                 </td>
                 <td>
-                  <input className="rate-input read-only" type="number" value={rate.BasicPrice} readOnly />
+                  <input className={`rate-input${manualBasicPrice ? '' : ' read-only'}`} type="number" step="0.01" min="0" value={rate.BasicPrice} readOnly={!manualBasicPrice} onChange={(event) => handleFieldChange(index, 'BasicPrice', event.target.value)} />
                 </td>
                 <td>
                   <input
@@ -286,7 +382,7 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
                   <button
                     type="button"
                     className="rate-row-remove"
-                    onClick={() => setRates((prev) => prev.filter((_, i) => i !== index))}
+                    onClick={() => { setHasUnsavedChanges(true); setRates((prev) => prev.filter((_, i) => i !== index)); }}
                     disabled={monthRates.length <= 1}
                     aria-label={`Remove ${rate.Item || 'product'}`}
                     title="Remove product"
@@ -318,8 +414,8 @@ function RateUpdatePage({ onClose, initialRatesData = null, onSaveRates, updated
       )}
       <div className="rate-update-actions">
         <button onClick={handleAddProduct}>Add Product</button>
-        <button onClick={handleSave}>Save Rates</button>
-        <button onClick={onClose}>Close</button>
+        <button onClick={handleSave}>Save Selected Rates</button>
+        <button onClick={handleClose}>Close</button>
       </div>
     </div>
   );

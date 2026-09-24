@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { loadPendingBookingsFromCloudflare, savePendingBookingsToCloudflare } from '../services/pendingBookingRepository';
 
 export const useParsedDataFilters = ({
   normalizeData,
@@ -6,6 +7,7 @@ export const useParsedDataFilters = ({
   defaultVisibleHeaders,
   hideAllViews,
   onNotify,
+  cloudUserId,
 }) => {
   const [parsedData, setParsedData] = useState([]);
   const [headers, setHeaders] = useState([]);
@@ -58,17 +60,13 @@ export const useParsedDataFilters = ({
   const [uniqueDeliveryMen, setUniqueDeliveryMen] = useState([]);
   const [uniqueIsRegMobileStatuses, setUniqueIsRegMobileStatuses] = useState([]);
 
-  const handleFileUpload = async (file) => {
-    if (!file) return;
-    setUploadInProgress(true);
-
-    const processAndSetData = (data) => {
-      const normalizedData = normalizeData(data);
+  const applyRows = (data, metadata, openWorkspace = false) => {
+      const normalizedData = normalizeData(Array.isArray(data) ? data : []);
       setParsedData(normalizedData);
       const validConsumerRows = normalizedData.filter((row) => /^\d{6}$/.test(String(row?.['Consumer No.'] || ''))).length;
       setUploadMetadata({
-        fileName: file?.name || 'Uploaded file',
-        uploadedAt: new Date().toISOString(),
+        fileName: metadata?.fileName || 'Pending booking data',
+        uploadedAt: metadata?.uploadedAt || new Date().toISOString(),
         totalRows: normalizedData.length,
         validConsumerRows,
       });
@@ -93,22 +91,61 @@ export const useParsedDataFilters = ({
         setUniqueIsRegMobileStatuses(sortedUniqueValues(['Yes', 'No']));
       }
 
-      setShowDataButton(true);
-      hideAllViews();
-      setShowParsedData(true);
-      setFileUploadMessage('File uploaded successfully!');
-      if (typeof onNotify === 'function') {
-        onNotify(`Uploaded ${file?.name || 'file'} with ${normalizedData.length} rows.`, 'success');
+      setShowDataButton(normalizedData.length > 0);
+      if (openWorkspace) {
+        hideAllViews();
+        setShowParsedData(true);
       }
-      setTimeout(() => setFileUploadMessage(''), 5000);
-      setUploadInProgress(false);
+      return { normalizedData, validConsumerRows };
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setParsedData([]);
+    setHeaders([]);
+    setShowDataButton(false);
+    setUploadMetadata(null);
+    if (!cloudUserId) return () => { cancelled = true; };
+    void loadPendingBookingsFromCloudflare(cloudUserId).then((snapshot) => {
+      if (cancelled || !snapshot?.rows?.length) return;
+      applyRows(snapshot.rows, snapshot.metadata, false);
+      if (typeof onNotify === 'function') onNotify(`Cloud se ${snapshot.rows.length} pending bookings loaded.`, 'success');
+    }).catch((error) => {
+      if (!cancelled && typeof onNotify === 'function') onNotify(error.message || 'Cloud pending bookings load nahi hui.', 'error');
+    });
+    return () => { cancelled = true; };
+    // Reload only when the signed-in dealer changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudUserId]);
+
+  const handleFileUpload = async (file) => {
+    if (!file) return;
+    setUploadInProgress(true);
+
+    const processAndSetData = async (data) => {
+      const metadata = { fileName: file?.name || 'Uploaded file', uploadedAt: new Date().toISOString() };
+      const { normalizedData } = applyRows(data, metadata, true);
+      setFileUploadMessage('File uploaded successfully!');
+      try {
+        if (cloudUserId) {
+          await savePendingBookingsToCloudflare(cloudUserId, normalizedData, metadata);
+          if (typeof onNotify === 'function') onNotify(`Uploaded and cloud-synced ${normalizedData.length} pending bookings.`, 'success');
+        } else if (typeof onNotify === 'function') {
+          onNotify(`Uploaded ${file?.name || 'file'} with ${normalizedData.length} rows.`, 'success');
+        }
+      } catch (error) {
+        if (typeof onNotify === 'function') onNotify(`${error.message || 'Cloud sync failed.'} Data is available on this PC.`, 'error');
+      } finally {
+        setTimeout(() => setFileUploadMessage(''), 5000);
+        setUploadInProgress(false);
+      }
     };
 
     if (file.name.endsWith('.csv')) {
       const { default: Papa } = await import('papaparse');
       Papa.parse(file, {
         header: true,
-        complete: (result) => processAndSetData(result.data),
+        complete: (result) => { void processAndSetData(result.data); },
         error: (error) => {
           console.error('Error parsing CSV file:', error);
           if (typeof onNotify === 'function') {
@@ -126,7 +163,7 @@ export const useParsedDataFilters = ({
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(worksheet);
-        processAndSetData(json);
+        void processAndSetData(json);
       };
       reader.onerror = () => {
         if (typeof onNotify === 'function') {

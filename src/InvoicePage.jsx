@@ -12,6 +12,26 @@ import { invoiceRequest } from './services/invoiceRepository';
 import { invoicePaid, invoiceDue, indiaDate, buildInvoiceLedger, consumerStatement } from './utils/invoiceAccounting';
 import { resolveRatesForDate } from './utils/rateUtils';
 
+const INVOICE_NAV_ITEMS = [
+  { label: 'Dashboard', target: 'Dashboard', views: ['Dashboard'], icon: '⌂' },
+  { label: 'Consumers', target: 'List of Consumer', views: ['List of Consumer', 'Add Consumer'], icon: '♙' },
+  { label: 'Create Invoice', target: 'Billing', views: ['Billing'], icon: '＋' },
+  { label: 'Invoices', target: 'Generated Invoice', views: ['Generated Invoice'], icon: '▤' },
+  { label: 'Ledger', target: 'Ledger', views: ['Ledger'], icon: '⇄' },
+  { label: 'Accounts', target: 'Adjustments', views: ['Adjustments', 'Credit / Debit', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing'], icon: '₹' },
+  { label: 'Inventory', target: 'Inventory & Cash Register', views: ['Inventory & Cash Register', 'Inventory & Cash Register Report'], icon: '▦' },
+  { label: 'Products', target: 'Product', views: ['Product'], icon: '◇' },
+  { label: 'Import', target: 'Bulk Consumer Import', views: ['Bulk Consumer Import'], icon: '⇩' },
+  { label: 'Settings', target: 'Setting', views: ['Setting', 'Bin'], icon: '⚙' },
+];
+
+const INVOICE_SUBNAV = {
+  Consumers: [['List of Consumer', 'Consumer List'], ['Add Consumer', 'Add Consumer']],
+  Accounts: [['Adjustments', 'Adjustments'], ['Credit / Debit', 'Credit / Debit'], ['Consumer Statement', 'Statement'], ['Notes / Refunds', 'Notes / Refunds'], ['Outstanding Ageing', 'Outstanding']],
+  Inventory: [['Inventory & Cash Register', 'Register Entry'], ['Inventory & Cash Register Report', 'Register Report']],
+  Settings: [['Setting', 'Settings'], ['Bin', 'Bin']],
+};
+
 const BULK_IMPORT_TEMPLATE_HEADERS = [
   'Consumer Name',
   'Consumer No.',
@@ -191,6 +211,20 @@ function InvoiceWorkspace({ loggedInUser }) {
     contact: invoiceProfileData.contact || '-',
     gstn: invoiceProfileData.gst || '-',
   };
+  const d1DealerCode = String(loggedInUser?.dealerCode || '').replaceAll("'", "''");
+  const d1ConsoleQueries = [
+    { title: 'Generated Invoice List', sql: `SELECT s.dealer_code, json_extract(i.value, '$.invoiceNumber') AS invoice_number, json_extract(i.value, '$.header.name') AS consumer_name, json_extract(i.value, '$.header.date') AS invoice_date, json_extract(i.value, '$.header.amount') AS amount, json_extract(i.value, '$.status') AS status FROM invoice_workspace_snapshots AS s, json_each(s.payload, '$.invoices') AS i WHERE s.dealer_code = '${d1DealerCode}' ORDER BY invoice_date DESC;` },
+    { title: 'Consumer List', sql: `SELECT s.dealer_code, json_extract(c.value, '$.consumerNo') AS consumer_no, json_extract(c.value, '$.consumerName') AS consumer_name, json_extract(c.value, '$.mobileNo') AS mobile_no, json_extract(c.value, '$.address') AS address, json_extract(c.value, '$.gstin') AS gstin FROM invoice_workspace_snapshots AS s, json_each(s.payload, '$.consumers') AS c WHERE s.dealer_code = '${d1DealerCode}' AND COALESCE(json_extract(c.value, '$.trashed'), 0) = 0 ORDER BY consumer_name;` },
+    { title: 'Inventory Register Report', sql: `SELECT s.dealer_code, json_extract(r.value, '$.date') AS entry_date, json_extract(r.value, '$.name') AS name, json_extract(r.value, '$.village') AS village, json_extract(r.value, '$.contact') AS contact, json_extract(r.value, '$.filledGoes14') AS filled_14kg, json_extract(r.value, '$.emptyIn14') AS empty_14kg, json_extract(r.value, '$.filledGoes19') AS filled_19kg, json_extract(r.value, '$.emptyIn19') AS empty_19kg, json_extract(r.value, '$.totalAmount') AS total_amount, json_extract(r.value, '$.paidAmount') AS paid_amount, json_extract(r.value, '$.duesAmount') AS dues_amount FROM invoice_workspace_snapshots AS s, json_each(s.payload, '$.inventoryEntries') AS r WHERE s.dealer_code = '${d1DealerCode}' AND COALESCE(json_extract(r.value, '$.deleted'), 0) = 0 ORDER BY entry_date DESC;` },
+  ];
+  const copyD1Query = async (sql) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(sql);
+    } catch {
+      setBillingError('Query copy नहीं हुई। SQL को manually select करके copy करें।');
+    }
+  };
   const defaultBankDetails = {
     bankName: '',
     branch: '',
@@ -264,15 +298,8 @@ function InvoiceWorkspace({ loggedInUser }) {
     const generation = ++syncGeneration.current;
     setCloudStatus('syncing'); setBillingError('');
     try {
-      // One request at a time. Existing document IDs make interrupted migration retry-safe.
-      for (const record of invoiceRecords) {
-        if (!record.invoiceNumber) await invoiceRequest(loggedInUser?.id, { mode: 'migrateInvoice', id: record.id, record });
-        if (generation !== syncGeneration.current) return;
-      }
-      for (const consumer of consumerRecords) {
-        await invoiceRequest(loggedInUser?.id, { mode: 'consumer', consumer, migrate: true });
-        if (generation !== syncGeneration.current) return;
-      }
+      // D1 is authoritative. A single load keeps startup fast even when the
+      // browser contains a large legacy cache.
       const result = await invoiceRequest(loggedInUser?.id, { mode: 'load' });
       if (generation !== syncGeneration.current) return;
       cacheRecords(result.invoices.map(normalizeSavedInvoiceRecord)); setBulkCustomers(result.consumers);
@@ -1083,7 +1110,7 @@ function InvoiceWorkspace({ loggedInUser }) {
   const topOutstanding = [...groupedSavedInvoices].filter((group) => !deletedConsumerKeys.has(String(group.key).toLowerCase()) && group.dueAmount > 0).sort((a, b) => b.dueAmount - a.dueAmount).slice(0, 5);
   const overdueInvoices = savedInvoices.filter((record) => record.draft?.billDueDate && record.draft.billDueDate < todayKey && invoiceDue(record) > 0);
 
-  const handleSaveInvoiceRecord = async () => {
+  const handleSaveInvoiceRecord = async ({ openGenerated = true } = {}) => {
     const draft = buildInvoiceDraft();
     const signature = JSON.stringify(draft);
     if (savedDraftSignatureRef.current && savedDraftSignatureRef.current !== signature) {
@@ -1096,13 +1123,14 @@ function InvoiceWorkspace({ loggedInUser }) {
       status: 'Unpaid',
       draft,
     });
-    if (!draft.billToName?.trim()) { setBillingError('Consumer name is required before saving an invoice.'); return; }
+    if (!draft.billToName?.trim()) { setBillingError('Consumer name is required before saving an invoice.'); return null; }
     const record = await cloudMutation({ mode: editingInvoiceId ? 'edit' : 'create', id: editingInvoiceId || invoiceRecord.id, record: invoiceRecord });
-    if (!record) return;
+    if (!record) return null;
     savedDraftSignatureRef.current = signature; setCurrentInvoiceNumber(record.invoiceNumber);
     cacheRecords([normalizeSavedInvoiceRecord(record), ...invoiceRecords.filter((item) => item.id !== record.id)]);
     try { localStorage.setItem(invoiceDraftStorageKey, JSON.stringify(draft)); } catch { /* Optional draft cache. */ }
-    setActiveView('Generated Invoice');
+    if (openGenerated) setActiveView('Generated Invoice');
+    return record;
   };
 
   const handleDuplicateSavedInvoice = (invoiceRecord) => {
@@ -1165,6 +1193,39 @@ function InvoiceWorkspace({ loggedInUser }) {
       }
       fieldEl.replaceWith(valueNode);
     });
+    const billToForm = printClone.querySelector('.billto-form');
+    if (billToForm) {
+      const layout = document.createElement('div');
+      layout.className = 'print-billto-layout';
+      const details = document.createElement('div');
+      details.className = 'print-billto-details';
+      const addDetail = (label, value) => {
+        if (!String(value || '').trim()) return;
+        const row = document.createElement('div');
+        row.className = 'print-billto-row';
+        const labelNode = document.createElement('strong');
+        labelNode.textContent = `${label}:`;
+        const valueNode = document.createElement('span');
+        valueNode.textContent = String(value).trim();
+        row.append(labelNode, valueNode);
+        details.append(row);
+      };
+      addDetail('Consumer Name', billToName);
+      addDetail('Consumer No', billToConsumerNo);
+      addDetail('Mobile No', billToMobileNo);
+      addDetail('Address', billToAddress);
+      addDetail('GSTIN', billToGstin);
+      const dateNode = document.createElement('div');
+      dateNode.className = 'print-billto-date';
+      const parsedDate = billToDate ? new Date(`${billToDate}T00:00:00`) : null;
+      const formattedDate = parsedDate && !Number.isNaN(parsedDate.getTime())
+        ? `${String(parsedDate.getDate()).padStart(2, '0')}-${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][parsedDate.getMonth()]}-${parsedDate.getFullYear()}`
+        : '';
+      dateNode.innerHTML = '<strong>Date:</strong>';
+      dateNode.append(document.createTextNode(` ${formattedDate || '-'}`));
+      layout.append(details, dateNode);
+      billToForm.replaceWith(layout);
+    }
     // A print popup starts as about:blank. Set a base URL explicitly so assets
     // and the Vite-generated stylesheet keep resolving after deployment too.
     // Do not copy the app's complete stylesheet into the popup. The live app
@@ -1219,14 +1280,12 @@ function InvoiceWorkspace({ loggedInUser }) {
         .invoice-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 10px !important; margin-top: 10px !important; padding-bottom: 10px !important; }
         .section-box { position: relative !important; padding: 8px !important; border: 1px solid #aeb8c7 !important; border-radius: 4px !important; background: #f9fbff !important; }
         .section-label { display: inline-block !important; margin: -18px 0 6px !important; padding: 2px 6px !important; border: 1px solid #aeb8c7 !important; border-radius: 4px !important; color: #1f4fb2 !important; background: #eaf4ff !important; font-size: 11px !important; }
-        .billto-form { display: grid !important; grid-template-columns: 1.5fr .9fr !important; gap: 6px !important; }
-        .billto-field label { display: block !important; margin: 2px 0 !important; color: #1f2937 !important; font-size: 11px !important; font-weight: 700 !important; }
-        .billto-inline-row { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6px !important; }
-        .billto-address, .billto-gstin, .billto-date-row { grid-column: 1 / -1 !important; }
-        .billto-date-row { display: flex !important; justify-content: flex-end !important; }
-        .billto-name-date-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto !important; gap: 12px !important; grid-column: 1 / -1 !important; align-items: start !important; }
-        .billto-name-date-row .billto-date-row { grid-column: 2 !important; }
-        .billto-form > .billto-consumerno { grid-column: 1 !important; justify-self: start !important; width: 100% !important; max-width: none !important; }
+        .print-billto-layout { display: grid !important; grid-template-columns: minmax(0, 1fr) auto !important; align-items: start !important; gap: 22px !important; }
+        .print-billto-details { display: grid !important; gap: 3px !important; min-width: 0 !important; }
+        .print-billto-row { display: grid !important; grid-template-columns: 100px minmax(0, 1fr) !important; gap: 7px !important; align-items: baseline !important; line-height: 1.35 !important; }
+        .print-billto-row strong, .print-billto-date strong { color: #1f2937 !important; font-size: 11px !important; white-space: nowrap !important; }
+        .print-billto-row span { min-width: 0 !important; color: #000 !important; font-size: 11px !important; overflow-wrap: anywhere !important; }
+        .print-billto-date { padding-top: 1px !important; color: #000 !important; font-size: 11px !important; white-space: nowrap !important; text-align: right !important; }
         .invoice-table, .summary-table { width: 100% !important; border-collapse: collapse !important; }
         .invoice-table { margin-top: 10px !important; font-size: 9px !important; }
         .invoice-table th, .invoice-table td, .summary-table td { border: 1px solid #9ea9ba !important; padding: 4px 5px !important; text-align: left !important; color: #000 !important; }
@@ -1533,6 +1592,8 @@ function InvoiceWorkspace({ loggedInUser }) {
     downloadCsvFile(rows.map((row) => row.map(quote).join(',')).join('\n'), 'consumer-statement.csv');
   };
   const selectedInvoice = savedInvoices.find((record) => record.id === editingInvoiceId);
+  const activeNavItem = INVOICE_NAV_ITEMS.find((item) => item.views.includes(activeView)) || INVOICE_NAV_ITEMS[0];
+  const activeSubnav = INVOICE_SUBNAV[activeNavItem.label] || [];
   const lockedInvoice = Boolean(editingInvoiceId && (selectedInvoice?.status === 'Cancelled' || invoicePaid(selectedInvoice || {}) > 0 || selectedInvoice?.notes?.length || selectedInvoice?.refunds?.length));
   const startConsumerInvoice = (customer) => {
     draftIdRef.current = crypto.randomUUID(); savedDraftSignatureRef.current = ''; setCurrentInvoiceNumber(''); setEditingInvoiceId('');
@@ -1561,10 +1622,10 @@ function InvoiceWorkspace({ loggedInUser }) {
         <div className="invoice-workspace__brand"><img src="/branding.png" alt="LPG CashMemo" /><span>Invoice Workspace</span></div>
         <span className="invoice-workspace__nav-label">WORKSPACE</span>
         <nav aria-label="Invoice navigation">
-          {['Dashboard', 'Add Consumer', 'Bulk Consumer Import', 'List of Consumer', 'Product', 'Billing', 'Generated Invoice', 'Ledger', 'Credit / Debit', 'Adjustments', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing', 'Bin', 'Setting', 'Inventory & Cash Register', 'Inventory & Cash Register Report'].map((view, index) => (
-            <button key={view} type="button" className={activeView === view ? 'is-active' : ''}
-              aria-current={activeView === view ? 'page' : undefined} onClick={() => setActiveView(view)}>
-              <span aria-hidden="true">{['◫', '＋', '♙', '◇', '▤', '▧', '≡', '⇄', '±', '▣', '⚙'][index]}</span>{view}
+          {INVOICE_NAV_ITEMS.map((item) => (
+            <button key={item.label} type="button" className={item.views.includes(activeView) ? 'is-active' : ''}
+              aria-current={item.views.includes(activeView) ? 'page' : undefined} onClick={() => setActiveView(item.target)}>
+              <span aria-hidden="true">{item.icon}</span>{item.label}
             </button>
           ))}
         </nav>
@@ -1575,11 +1636,12 @@ function InvoiceWorkspace({ loggedInUser }) {
           <span>Consumer & Billing</span>
           <div className="invoice-workspace__account"><span className="invoice-workspace__avatar">{String(loggedInUser?.dealerName || 'D').slice(0, 1)}</span><div><strong>{loggedInUser?.dealerName || 'Dealer'}</strong><small>{loggedInUser?.dealerCode || 'Invoice workspace'}</small></div></div>
         </header>
-        <div className="invoice-workspace__heading"><div><span className="invoice-workspace__eyebrow">INVOICE WORKSPACE</span><h2>{activeView === 'Billing' ? 'Create Invoice' : activeView}</h2></div>
+        <div className="invoice-workspace__heading"><div><span className="invoice-workspace__eyebrow">INVOICE WORKSPACE</span><h2>{activeNavItem.label}</h2></div>
           {activeView === 'Dashboard' && <button type="button" className="invoice-workspace__primary" onClick={() => { handleResetInvoice(); setActiveView('Billing'); }}>＋ New Invoice</button>}
         </div>
+        {activeSubnav.length > 0 && <nav className="invoice-workspace__subnav" aria-label={`${activeNavItem.label} sections`}>{activeSubnav.map(([view, label]) => <button key={view} type="button" className={activeView === view ? 'is-active' : ''} onClick={() => setActiveView(view)}>{label}</button>)}</nav>}
         <div className={`invoice-workspace__content${['Add Consumer', 'Bulk Consumer Import', 'List of Consumer', 'Product', 'Generated Invoice', 'Ledger', 'Credit / Debit', 'Adjustments', 'Consumer Statement', 'Notes / Refunds', 'Outstanding Ageing', 'Bin', 'Setting'].includes(activeView) ? ' invoice-management' : ''}`} data-view={activeView}>
-        <div className={`invoice-cloud-status invoice-cloud-status--${cloudStatus}`} role="status"><strong>{cloudStatus === 'live' ? 'Cloud billing connected' : cloudStatus === 'syncing' ? 'Syncing cloud billing…' : 'Offline — displaying cached data'}</strong><span>{cloudStatus !== 'live' ? 'Saving and payments are disabled until sync succeeds.' : 'Invoices and consumers are saved to your dealer account.'}</span><button type="button" disabled={cloudStatus === 'syncing' || billingBusy} onClick={() => void syncCloud()}>Sync Data</button></div>
+        <div className={`invoice-cloud-status invoice-cloud-status--${cloudStatus}`} role="status"><strong>{cloudStatus === 'live' ? 'Cloud billing connected' : cloudStatus === 'syncing' ? 'Syncing cloud billing…' : 'Offline — displaying cached data'}</strong><span>{cloudStatus !== 'live' ? 'Saving and payments are disabled until sync succeeds.' : 'Invoices and consumers are saved to your dealer account.'}</span><button type="button" disabled={billingBusy} onClick={() => void syncCloud()}>{cloudStatus === 'syncing' ? 'Retry Sync' : 'Sync Data'}</button></div>
         {billingError && <div className="invoice-billing-error" role="alert">{billingError}</div>}
         {activeView === 'Setting' && <WorkspaceCommandSettings commands={commands} onChange={changeCommand} />}
         {['Inventory & Cash Register', 'Inventory & Cash Register Report'].includes(activeView) && <InventoryCashRegister commands={commands} bank={bankDetails} dealer={dealer} rates={allInvoiceRates} view={activeView === 'Inventory & Cash Register Report' ? 'report' : 'entry'} records={inventoryEntries} disabled={billingBusy || cloudStatus !== 'live'} mutate={cloudMutation} onSaved={(entry) => cacheInventory([...inventoryEntries.filter((row) => row.id !== entry.id), entry])} />}
@@ -1674,6 +1736,7 @@ function InvoiceWorkspace({ loggedInUser }) {
         </section>}
         {activeView === 'Product' && <section className="invoice-workspace__card"><h3>Product Catalogue</h3><p>Products and approved rates available for billing.</p><div className="invoice-workspace__table-scroll"><table className="data-table"><thead><tr><th>Product</th>{commands.productCode && <th>Code</th>}{commands.productHSN && <th>HSN</th>}{commands.productBasicPrice && <th className="product-numeric">Basic Price</th>}{commands.productSGST && <th className="product-numeric">SGST</th>}{commands.productCGST && <th className="product-numeric">CGST</th>}<th className="product-numeric">RSP</th></tr></thead><tbody>{invoiceRates.map((rate, index) => <tr key={`${rate.Code}-${index}`}><td>{rate.Item}</td>{commands.productCode && <td>{rate.Code || '—'}</td>}{commands.productHSN && <td>{rate.HSNCode}</td>}{commands.productBasicPrice && <td className="product-numeric">₹{rate.BasicPrice.toFixed(2)}</td>}{commands.productSGST && <td className="product-numeric">{rate.SGST}%</td>}{commands.productCGST && <td className="product-numeric">{rate.CGST}%</td>}<td className="product-numeric">₹{rate.RSP.toFixed(2)}</td></tr>)}</tbody></table></div>{!invoiceRates.length && <p>No approved products available. Add rates through Rate Update.</p>}</section>}
         {activeView === 'Setting' && <section className="invoice-workspace__card"><h3>Invoice Settings</h3><p>Your dealer profile and bank details are used on every invoice.</p><div className="invoice-workspace__form-grid"><div><h4>Business Details</h4><p>{dealer.name}</p><p>{dealer.address}</p><p>Contact: {dealer.contact}</p><p>GSTIN: {dealer.gstn}</p></div><div><h4>Bank Details</h4><p>Bank: {bankDetails.bankName || '—'}</p><p>Branch: {bankDetails.branch || '—'}</p><p>Account: {bankDetails.accountNo || '—'}</p><p>IFSC: {bankDetails.ifsc || '—'}</p></div></div><p>Update these details through Profile Update and Bank Details.</p></section>}
+        {activeView === 'Setting' && <section className="invoice-workspace__card invoice-d1-query-notes"><details><summary><span><strong>Cloudflare D1 Console Queries</strong><small>Generated invoices, consumers और inventory reports की SQL commands</small></span><span className="invoice-d1-query-chevron" aria-hidden="true">⌄</span></summary><div className="invoice-d1-query-content"><p>Cloudflare dashboard में <strong>D1 SQLite Database → cashmemo-invoice-workspace → Console</strong> खोलें। नीचे आवश्यक report की command copy करके Run करें। Dealer code query में automatically लगाया गया है।</p><div className="invoice-d1-query-list">{d1ConsoleQueries.map((query) => <article key={query.title}><div><h4>{query.title}</h4><button type="button" onClick={() => void copyD1Query(query.sql)}>Copy Query</button></div><pre><code>{query.sql}</code></pre></article>)}</div><p className="invoice-d1-query-warning"><strong>Note:</strong> ये commands केवल records देखने के लिए SELECT queries हैं; इनसे data delete या update नहीं होगा।</p></div></details></section>}
       <div className="invoice-workspace__billing" hidden={activeView !== 'Billing'}>
       <div className="invoice-workspace__billing-heading"><span>Invoice Preview & Editor</span><button type="button" onClick={handlePrintInvoice}>Print / Download PDF</button></div>
       <div className="invoice-container" ref={invoicePrintRef}>
@@ -1848,11 +1911,12 @@ function InvoiceWorkspace({ loggedInUser }) {
         </fieldset>
         <div className="invoice-actions">
           <button type="button" className="btn-add-product" onClick={handleAddProduct}>Add Product</button>
-          <button type="button" className="btn-print-invoice" onClick={() => void handleSaveInvoiceRecord()} disabled={billingBusy || cloudStatus !== 'live' || lockedInvoice}>{billingBusy ? 'Saving…' : 'Save Invoice Record'}</button>
+          <button type="button" className="btn-save-invoice" onClick={() => void handleSaveInvoiceRecord()} disabled={billingBusy || cloudStatus !== 'live' || lockedInvoice} title={cloudStatus !== 'live' ? 'Sync Data before saving the invoice' : lockedInvoice ? 'This invoice cannot be modified' : 'Save this invoice against the selected consumer'}>{billingBusy ? 'Saving…' : 'Save Invoice Record'}</button>
           <button type="button" className="btn-print-invoice" onClick={handlePrintInvoice}>Print Invoice</button>
           <button type="button" className="btn-clear-invoice" onClick={handleClearInvoice}>Clear</button>
           <button type="button" className="btn-reset-invoice" onClick={handleResetInvoice}>Reset</button>
         </div>
+        {cloudStatus !== 'live' && <p className="invoice-actions__notice">Invoice saving is unavailable until Cloud billing is connected. Click <strong>Sync Data</strong> above.</p>}
         <div className="invoice-summary">
           <div className="summary-box">
             <div className="summary-header">SUMMARY</div>

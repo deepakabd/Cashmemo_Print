@@ -4,6 +4,7 @@ import AdminDataStatus from './components/AdminDataStatus';
 import LoginDeviceDetails from './components/LoginDeviceDetails';
 import { clearLegacyRegistrationStorage } from './utils/registrationStorage';
 import { resolveRatesForDate } from './utils/rateUtils';
+import { saveRatesToCloudflare } from './services/rateRepository';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Suspense, useCallback } from 'react';
@@ -5242,6 +5243,7 @@ function App() {
     defaultVisibleHeaders,
     hideAllViews,
     onNotify: pushToast,
+    cloudUserId: loggedInUser?.id || '',
   });
 
   const handleSearchChange = (event) => {
@@ -7613,12 +7615,23 @@ function App() {
   const handleSaveRatesForUser = async (rates) => {
     if (!loggedInUser?.id) return;
     const normalizedRates = Array.isArray(rates) ? rates : [];
-    return submitUpdateApprovalRequest({
-      type: 'rates',
-      payload: normalizedRates,
-      localKey: 'ratesData',
-      successMessage: 'Rate update request submitted. Your request is pending with admin for approval.',
-    });
+    await saveRatesToCloudflare(loggedInUser.id, normalizedRates);
+    localStorage.setItem('ratesData', JSON.stringify(normalizedRates));
+    const requestedAt = new Date().toISOString();
+    updateUserInStore(
+      loggedInUser.id,
+      (user) => ({
+        ...user,
+        approvalStatus: { ...(user.approvalStatus || {}), rates: 'pending' },
+        pendingUpdates: {
+          ...(user.pendingUpdates || {}),
+          rates: { status: 'pending', payload: normalizedRates, requestedAt, adminReply: '', adminReplyAt: '' },
+        },
+      }),
+      loggedInUser.dealerCode
+    );
+    pushToast('Rates saved to Cloudflare. Approval request is pending with admin.', 'success');
+    return true;
   };
 
   const persistCashMemoLabelSettings = (settings) => {
@@ -8782,6 +8795,7 @@ function App() {
                 onSaveRates={handleSaveRatesForUser}
                 updatedBy={loggedInUser?.dealerName || loggedInUser?.dealerCode || 'Dealer'}
                 requestState={loggedInUser?.pendingUpdates?.rates || null}
+                userId={loggedInUser?.id || ''}
               />
             </Suspense>
           )}
