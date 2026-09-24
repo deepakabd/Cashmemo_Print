@@ -10,6 +10,8 @@ import { checkLoginServiceConfig } from './server/loginConfigCheck.js'
 import adminUsersHandler from './api/admin-users.js'
 import invoiceWorkspaceHandler from './api/invoice-workspace.js'
 import salesReportHandler from './api/sales-report.js'
+import ratesHandler from './api/rates.js'
+import pendingBookingsHandler from './api/pending-bookings.js'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -27,6 +29,9 @@ export default defineConfig(({ mode }) => {
     'CLOUDFLARE_R2_ACCESS_KEY_ID',
     'CLOUDFLARE_R2_SECRET_ACCESS_KEY',
     'CLOUDFLARE_R2_BUCKET',
+    'CLOUDFLARE_D1_ACCOUNT_ID',
+    'CLOUDFLARE_D1_DATABASE_ID',
+    'CLOUDFLARE_D1_API_TOKEN',
   ]) {
     if (process.env[key] === undefined && env[key] !== undefined) {
       process.env[key] = env[key]
@@ -93,6 +98,8 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use('/api/admin-users', adminUsersHandler);
           server.middlewares.use('/api/invoice-workspace', invoiceWorkspaceHandler);
           server.middlewares.use('/api/sales-report', salesReportHandler);
+          server.middlewares.use('/api/rates', ratesHandler);
+          server.middlewares.use('/api/pending-bookings', pendingBookingsHandler);
           // Warn at boot, not just at the first failed login.
           checkLoginServiceConfig();
 

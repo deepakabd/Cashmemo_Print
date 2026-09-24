@@ -30,6 +30,18 @@ const ensureSchema = () => queryD1(`CREATE TABLE IF NOT EXISTS invoice_workspace
   schema_version INTEGER NOT NULL DEFAULT 1
 )`);
 
+export const loadInvoiceWorkspaceSnapshot = async (userId) => {
+  if (!isD1InvoiceStoreConfigured()) return null;
+  await ensureSchema();
+  const result = await queryD1(
+    'SELECT payload FROM invoice_workspace_snapshots WHERE user_id = ? LIMIT 1',
+    [userId],
+  );
+  const payload = result?.[0]?.results?.[0]?.payload;
+  if (!payload) return null;
+  try { return JSON.parse(payload); } catch { throw new Error('Cloudflare D1 Invoice Workspace data is invalid.'); }
+};
+
 export const saveInvoiceWorkspaceSnapshot = async (userId, dealerCode, snapshot) => {
   if (!isD1InvoiceStoreConfigured()) return false;
   await ensureSchema();

@@ -8261,16 +8261,16 @@
 .rate-history-table td { padding: 7px 8px; border: 1px solid #d8dee8; text-align: left; }
 .rate-history-table th { background: #eef3fa; }
 
-.rate-table--tax-hidden th:nth-child(1),
 .rate-table--tax-hidden th:nth-child(2),
-.rate-table--tax-hidden th:nth-child(4),
+.rate-table--tax-hidden th:nth-child(3),
 .rate-table--tax-hidden th:nth-child(5),
 .rate-table--tax-hidden th:nth-child(6),
-.rate-table--tax-hidden td:nth-child(1),
+.rate-table--tax-hidden th:nth-child(7),
 .rate-table--tax-hidden td:nth-child(2),
-.rate-table--tax-hidden td:nth-child(4),
+.rate-table--tax-hidden td:nth-child(3),
 .rate-table--tax-hidden td:nth-child(5),
-.rate-table--tax-hidden td:nth-child(6) {
+.rate-table--tax-hidden td:nth-child(6),
+.rate-table--tax-hidden td:nth-child(7) {
   display: none;
 }
 
@@ -8279,18 +8279,18 @@
   min-width: 0;
 }
 
-.rate-table--tax-hidden th:nth-child(3),
-.rate-table--tax-hidden td:nth-child(3) {
+.rate-table--tax-hidden th:nth-child(4),
+.rate-table--tax-hidden td:nth-child(4) {
   width: auto;
-}
-
-.rate-table--tax-hidden th:nth-child(7),
-.rate-table--tax-hidden td:nth-child(7) {
-  width: 170px;
 }
 
 .rate-table--tax-hidden th:nth-child(8),
 .rate-table--tax-hidden td:nth-child(8) {
+  width: 170px;
+}
+
+.rate-table--tax-hidden th:nth-child(9),
+.rate-table--tax-hidden td:nth-child(9) {
   width: 48px;
 }
 
@@ -8299,6 +8299,125 @@
   border-collapse: collapse;
   min-width: 1120px;
   table-layout: auto;
+}
+
+.rate-select-column { width: 38px; min-width: 38px; text-align: center !important; }
+.rate-select-column input { width: 16px; height: 16px; accent-color: #2563eb; cursor: pointer; }
+.rate-validation-summary { display: grid; gap: 9px; margin-bottom: 10px; padding: 12px; border: 1px solid #b9dfc6; border-radius: 8px; background: #f0faf3; color: #285b39; font-size: 11px; }
+.rate-validation-summary.has-errors { border-color: #efc5c5; background: #fff4f4; color: #8e3030; }
+.rate-validation-summary > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rate-validation-summary progress { width: 100%; height: 8px; accent-color: #25824a; }
+.rate-validation-counts { display: flex; flex-wrap: wrap; gap: 7px; }
+.rate-validation-counts span { padding: 4px 7px; border: 1px solid currentColor; border-radius: 999px; background: rgb(255 255 255 / 65%); }
+.rate-management-tools .rate-manual-toggle { display: flex; flex: 0 1 auto; align-items: center; align-self: end; gap: 7px; min-height: 34px; padding: 6px 9px; border: 1px solid #cfd4da; border-radius: 6px; background: #fff; white-space: nowrap; }
+.rate-management-tools .rate-manual-toggle input { width: 16px; height: 16px; padding: 0; accent-color: #2563eb; }
+.rate-update-actions button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Rate Update — scoped workspace styling */
+.rate-update-page {
+  --rate-blue: #2563eb;
+  --rate-blue-dark: #1d4ed8;
+  --rate-ink: #172033;
+  --rate-muted: #667085;
+  --rate-line: #dfe5ee;
+  width: calc(100% - 32px);
+  max-width: 1420px;
+  margin: 16px auto 28px;
+  padding: 24px;
+  border: 1px solid var(--rate-line);
+  border-radius: 14px;
+  background: #f6f8fc;
+  box-shadow: 0 8px 28px rgb(15 23 42 / 7%);
+  color: var(--rate-ink);
+  text-align: left;
+}
+.rate-update-page > h2 { margin: 0 0 20px; padding-bottom: 15px; border-bottom: 1px solid var(--rate-line); color: var(--rate-ink); font-size: clamp(22px, 2vw, 28px); letter-spacing: -.4px; }
+.rate-update-page .rate-month-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--rate-line);
+  border-radius: 10px;
+  background: #fff;
+}
+.rate-update-page .rate-month-toolbar label { display: grid; gap: 6px; min-width: 0; color: #344054; font-size: 12px; font-weight: 700; }
+.rate-update-page .rate-month-toolbar small { min-height: 28px; color: #7b8495; font-size: 10px; font-weight: 400; line-height: 1.35; }
+.rate-update-page .rate-month-toolbar input,
+.rate-update-page .rate-month-toolbar select,
+.rate-update-page .rate-management-tools input,
+.rate-update-page .rate-management-tools select {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d2dae6;
+  border-radius: 7px;
+  background: #fff;
+  color: #253047;
+  font: inherit;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
+}
+.rate-update-page input:focus, .rate-update-page select:focus { border-color: #6b95e8; outline: 3px solid rgb(37 99 235 / 12%); }
+.rate-update-page button { min-height: 38px; margin: 0; padding: 8px 13px; border: 1px solid #cbd6e6; border-radius: 7px; background: #fff; color: #285aa8; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .16s, border-color .16s, transform .16s; }
+.rate-update-page button:hover:not(:disabled) { border-color: #9eb6de; background: #eef4ff; }
+.rate-update-page button:active:not(:disabled) { transform: translateY(1px); }
+.rate-update-page .rate-column-toggle { background: #eef4ff; border-color: #c4d5ef; }
+.rate-update-page .rate-effective-note { margin-bottom: 12px; padding: 11px 13px; border-left-color: #d9941c; border-radius: 7px; background: #fff8e8; }
+.rate-update-page .rate-revision-summary,
+.rate-update-page .rate-management-tools,
+.rate-update-page .rate-preview-panel { gap: 10px 14px; margin-bottom: 12px; padding: 13px 14px; border-color: var(--rate-line); border-radius: 9px; box-shadow: 0 1px 3px rgb(15 23 42 / 3%); }
+.rate-update-page .rate-revision-summary { color: #4d5b70; }
+.rate-update-page .rate-management-tools { display: grid; grid-template-columns: minmax(210px, 1.5fr) repeat(3, minmax(150px, 1fr)) auto auto; align-items: end; }
+.rate-update-page .rate-management-tools label { min-width: 0; color: #344054; }
+.rate-update-page .rate-management-tools button { align-self: end; margin: 0; }
+.rate-update-page .rate-management-tools .rate-manual-toggle { min-height: 40px; margin: 0; border-color: #d2dae6; }
+.rate-update-page .rate-validation-summary { margin-bottom: 12px; padding: 14px; border-radius: 9px; box-shadow: 0 1px 3px rgb(15 23 42 / 3%); }
+.rate-update-page .rate-validation-summary progress { height: 9px; border-radius: 999px; overflow: hidden; }
+.rate-update-page .rate-validation-counts { gap: 8px; }
+.rate-update-page .rate-validation-counts span { padding: 5px 9px; font-weight: 600; }
+.rate-update-page .rate-preview-panel { align-items: flex-start; background: #eef4ff; color: #3d5579; }
+.rate-update-page .rate-preview-panel > strong { color: #264d88; }
+.rate-update-page .rate-preview-panel > div span { border: 1px solid #d3dff2; background: #fff; }
+.rate-update-page .rate-table-container { width: 100%; margin-top: 12px; overflow: auto; border: 1px solid var(--rate-line); border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgb(15 23 42 / 4%); scrollbar-color: #b8c4d5 transparent; }
+.rate-update-page .rate-table { margin: 0; min-width: 1160px; color: #354158; font-size: 11px; }
+.rate-update-page .rate-table thead th { position: sticky; top: 0; z-index: 2; padding: 11px 9px; border-color: #dce3ed; background: #edf2f8; color: #4a5870; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+.rate-update-page .rate-table tbody td { padding: 8px; border-color: #e7ebf1; vertical-align: top; }
+.rate-update-page .rate-table tbody tr:nth-child(even) { background: #fafbfd; }
+.rate-update-page .rate-table tbody tr:hover { background: #f3f7ff; }
+.rate-update-page .rate-input { min-height: 36px; border: 1px solid #d5dce7; border-radius: 6px; background: #fff; color: #273349; }
+.rate-update-page .rate-input:focus { border-color: #6b95e8; outline: 2px solid rgb(37 99 235 / 12%); }
+.rate-update-page .rate-input.read-only { background: #f0f3f7; color: #647087; }
+.rate-update-page .rate-item-input { font-weight: 650; }
+.rate-update-page .rate-table th:nth-child(4),
+.rate-update-page .rate-table td:nth-child(4) { min-width: 360px; text-align: left; }
+.rate-update-page .rate-item-input { width: 100%; min-width: 330px; text-align: left !important; padding-left: 10px; }
+.rate-update-page .rate-row-status { margin-left: 2px; }
+.rate-update-page .rate-row-remove { display: grid; place-items: center; width: 34px; min-height: 34px; padding: 0; border-color: #efc8c8; background: #fff1f1; color: #ad3d3d; }
+.rate-update-page .rate-row-remove svg { width: 17px; height: 17px; fill: currentColor; }
+.rate-update-page .rate-history-panel { margin-top: 18px; padding: 16px; border-color: var(--rate-line); border-radius: 10px; background: #fff; }
+.rate-update-page .rate-history-panel h3 { color: #27344a; }
+.rate-update-page .rate-history-table th { background: #edf2f8; color: #4a5870; }
+.rate-update-page .rate-update-actions { position: sticky; bottom: 0; z-index: 4; display: flex; justify-content: flex-end; gap: 10px; margin: 18px -8px -8px; padding: 13px; border: 1px solid var(--rate-line); border-radius: 10px; background: rgb(255 255 255 / 94%); box-shadow: 0 -5px 18px rgb(15 23 42 / 7%); backdrop-filter: blur(8px); }
+.rate-update-page .rate-update-actions button { min-width: 110px; }
+.rate-update-page .rate-update-actions button:nth-child(2) { border-color: var(--rate-blue); background: var(--rate-blue); color: #fff; }
+.rate-update-page .rate-update-actions button:nth-child(2):hover:not(:disabled) { background: var(--rate-blue-dark); }
+.rate-update-page .rate-update-actions button:last-child { border-color: #d6dce6; background: #fff; color: #596579; }
+
+@media (max-width: 1100px) {
+  .rate-update-page .rate-month-toolbar { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+  .rate-update-page .rate-management-tools { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+}
+@media (max-width: 650px) {
+  .rate-update-page { width: 100%; margin: 0; padding: 14px 10px 24px; border-left: 0; border-right: 0; border-radius: 0; }
+  .rate-update-page .rate-month-toolbar, .rate-update-page .rate-management-tools { grid-template-columns: 1fr; padding: 12px; }
+  .rate-update-page .rate-month-toolbar small { min-height: 0; }
+  .rate-update-page .rate-management-tools .rate-manual-toggle { width: 100%; }
+  .rate-update-page .rate-validation-summary > div:first-child { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .rate-update-page .rate-update-actions { flex-wrap: wrap; }
+  .rate-update-page .rate-update-actions button { flex: 1 1 calc(50% - 5px); min-width: 0; }
 }
 
 .rate-table thead th {

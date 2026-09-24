@@ -2,13 +2,28 @@ import { createHash } from 'node:crypto';
 import { getAdmin, LoginError } from './loginService.js';
 import { getUserAccountStatus } from '../src/utils/userAccountStatus.js';
 import { invoicePaid, invoiceDue, invoiceNetTotal, invoiceRefunded, paymentStatus, indiaDate, financialYear } from '../src/utils/invoiceAccounting.js';
-import { isD1InvoiceStoreConfigured, saveInvoiceWorkspaceSnapshot } from './d1InvoiceStore.js';
+import { isD1InvoiceStoreConfigured, loadInvoiceWorkspaceSnapshot, saveInvoiceWorkspaceSnapshot } from './d1InvoiceStore.js';
+import { createD1WorkspaceAdapter } from './d1WorkspaceAdapter.js';
 
 const fail = (message, status = 400) => { throw new LoginError('billing-error', message, status); };
 const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
 const hashId = (value) => createHash('sha256').update(value).digest('hex');
 const validDate = (date) => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
   && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date;
+
+const readLegacyFirestoreWorkspace = async (firestore, userId) => {
+  const root = firestore.collection('users').doc(userId);
+  const [invoices, consumers, adjustments, inventory] = await Promise.all([
+    root.collection('invoices').get(), root.collection('consumers').get(),
+    root.collection('billingAdjustments').get(), root.collection('inventoryRegister').get(),
+  ]);
+  return {
+    invoices: invoices.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((record) => !record.archived),
+    consumers: consumers.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+    adjustments: adjustments.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+    inventoryEntries: inventory.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+  };
+};
 
 export const mutateInvoice = async (firestore, userId, body, actor = userId) => {
   const root = firestore.collection('users').doc(userId);
@@ -145,12 +160,23 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
     || claims.accountActive !== true || claims.planActive !== true
     || getUserAccountStatus(user.data()) !== 'active') fail('Billing access is not allowed for this account.', 403);
   if ((claims.role === 'viewer' || user.data().role === 'viewer') && body.mode !== 'load') fail('This account has read-only billing access.', 403);
-  const root = firestore.collection('users').doc(body.userId);
+  // Unit tests use an in-memory Firestore double and must never call the live
+  // Cloudflare database even when Vite loaded local development credentials.
+  const d1Configured = process.env.NODE_ENV !== 'test' && isD1InvoiceStoreConfigured();
+  if (!d1Configured && process.env.NODE_ENV !== 'test') fail('Cloudflare D1 billing storage is not configured.', 503);
+  let storedWorkspace = d1Configured ? await loadInvoiceWorkspaceSnapshot(body.userId) : null;
+  // One-time, read-only migration: an existing Firebase billing workspace is
+  // copied into D1 only when that dealer has no D1 snapshot yet.
+  if (d1Configured && !storedWorkspace) storedWorkspace = await readLegacyFirestoreWorkspace(firestore, body.userId);
+  const adapter = d1Configured ? createD1WorkspaceAdapter(body.userId, user.data(), storedWorkspace) : null;
+  const workspaceFirestore = adapter?.firestore || firestore;
+  const runOperation = async () => {
+  const root = workspaceFirestore.collection('users').doc(body.userId);
   if (body.mode === 'permanentDeleteBin') {
     const collections = { Consumer: 'consumers', Invoice: 'invoices', 'Register Entry': 'inventoryRegister' };
     if (!validId(body.id) || !Object.hasOwn(collections, body.kind)) fail('Valid Bin record required.');
     const ref = root.collection(collections[body.kind]).doc(body.id);
-    return firestore.runTransaction(async (tx) => {
+    return workspaceFirestore.runTransaction(async (tx) => {
       const existing = await tx.get(ref);
       if (!existing.exists) return { id: body.id, permanentlyDeleted: true };
       const record = existing.data();
@@ -167,7 +193,7 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
   if (['inventoryDelete', 'inventoryRestore', 'inventoryPaid', 'inventoryUnpaid'].includes(body.mode)) {
     if (!validId(body.id)) fail('Valid register ID required.');
     const ref = root.collection('inventoryRegister').doc(body.id);
-    return firestore.runTransaction(async (tx) => {
+    return workspaceFirestore.runTransaction(async (tx) => {
       const existing = await tx.get(ref);
       if (!existing.exists || (existing.data().deleted && body.mode !== 'inventoryRestore')) fail('Register entry not found.', 404);
       const record = existing.data();
@@ -198,7 +224,7 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
     if (next.paidAmount > next.totalAmount) fail('Paid amount cannot exceed total amount.');
     next.duesAmount = Math.round((next.totalAmount - next.paidAmount) * 100) / 100;
     const ref = root.collection('inventoryRegister').doc(next.id);
-    return firestore.runTransaction(async (tx) => {
+    return workspaceFirestore.runTransaction(async (tx) => {
       const existing = await tx.get(ref);
       if (body.mode === 'inventoryEdit') {
         if (!existing.exists || existing.data().deleted) fail('Register entry not found.', 404);
@@ -218,7 +244,7 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
   if (body.mode === 'trashConsumer' || body.mode === 'restoreConsumer') {
     if (!validId(body.id)) fail('Valid consumer ID required.');
     const ref = root.collection('consumers').doc(body.id);
-    return firestore.runTransaction(async (tx) => {
+    return workspaceFirestore.runTransaction(async (tx) => {
       const snapshot = await tx.get(ref);
       if (!snapshot.exists) fail('Consumer not found.', 404);
       const record = snapshot.data();
@@ -235,7 +261,7 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
       || Math.abs(entry.amount * 100 - Math.round(entry.amount * 100)) > 0.00001
       || !String(entry.reason || '').trim() || !validId(entry.consumerId)) fail('Valid consumer, type, amount, date and reason required.');
     const ref = root.collection('billingAdjustments').doc(entry.id);
-    return firestore.runTransaction(async (tx) => {
+    return workspaceFirestore.runTransaction(async (tx) => {
       const existing = await tx.get(ref);
       if (existing.exists) return { ...existing.data(), id: ref.id };
       const consumer = await tx.get(root.collection('consumers').doc(entry.consumerId));
@@ -261,7 +287,7 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
       if (seen.has(id)) fail(`Duplicate consumer number ${next.consumerNo}.`, 409);
       seen.add(id); return { ...next, id };
     });
-    return firestore.runTransaction(async (tx) => {
+    return workspaceFirestore.runTransaction(async (tx) => {
       const refs = consumers.map((consumer) => root.collection('consumers').doc(consumer.id));
       const snapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
       const same = (record, input) => ['consumerName', 'consumerNo', 'mobileNo', 'address', 'gstin'].every((key) => String(record[key] || '') === input[key]);
@@ -278,7 +304,7 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
       || !/^\d{10}$/.test(String(input.mobileNo || ''))) fail('Consumer name, number and valid mobile required.');
     const id = hashId(String(input.consumerNo || input.mobileNo).trim().toUpperCase());
     const ref = root.collection('consumers').doc(id);
-    return firestore.runTransaction(async (tx) => {
+    return workspaceFirestore.runTransaction(async (tx) => {
       const existing = await tx.get(ref);
       if (existing.exists) {
         if (body.migrate === true) return { ...existing.data(), id };
@@ -294,38 +320,12 @@ const invoiceWorkspaceFirestore = async (authorization, body) => {
       tx.set(ref, next); return { ...next, id };
     });
   }
-  return mutateInvoice(firestore, body.userId, body, claims.email || claims.uid);
-};
-
-const readInvoiceWorkspaceSnapshot = async (firestore, userId) => {
-  const root = firestore.collection('users').doc(userId);
-  const [invoices, consumers, adjustments, inventory] = await Promise.all([
-    root.collection('invoices').get(),
-    root.collection('consumers').get(),
-    root.collection('billingAdjustments').get(),
-    root.collection('inventoryRegister').get(),
-  ]);
-  return {
-    invoices: invoices.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((record) => !record.archived),
-    consumers: consumers.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
-    adjustments: adjustments.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
-    inventoryEntries: inventory.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+  return mutateInvoice(workspaceFirestore, body.userId, body, claims.email || claims.uid);
   };
-};
-
-export const invoiceWorkspace = async (authorization, body) => {
-  const result = await invoiceWorkspaceFirestore(authorization, body);
-  if (!isD1InvoiceStoreConfigured()) return result;
-  try {
-    const { firestore } = await getAdmin();
-    const user = await firestore.collection('users').doc(body.userId).get();
-    const snapshot = body.mode === 'load' ? result : await readInvoiceWorkspaceSnapshot(firestore, body.userId);
-    await saveInvoiceWorkspaceSnapshot(body.userId, user.data()?.dealerCode, snapshot);
-  } catch (error) {
-    // D1 is a migration mirror. A temporary Cloudflare outage must not block
-    // validated billing transactions already committed to Firestore.
-    console.warn('Invoice Workspace D1 mirror unavailable:', error?.message || error);
-  }
+  const result = await runOperation();
+  if (adapter) await saveInvoiceWorkspaceSnapshot(body.userId, user.data()?.dealerCode, adapter.snapshot());
   return result;
 };
+
+export const invoiceWorkspace = invoiceWorkspaceFirestore;
 
