@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { getAdmin, LoginError } from './loginService.js';
 import { getUserAccountStatus } from '../src/utils/userAccountStatus.js';
 import { invoicePaid, invoiceDue, invoiceNetTotal, invoiceRefunded, paymentStatus, indiaDate, financialYear } from '../src/utils/invoiceAccounting.js';
+import { isD1InvoiceStoreConfigured, saveInvoiceWorkspaceSnapshot } from './d1InvoiceStore.js';
 
 const fail = (message, status = 400) => { throw new LoginError('billing-error', message, status); };
 const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -132,7 +133,7 @@ export const mutateInvoice = async (firestore, userId, body, actor = userId) => 
   });
 };
 
-export const invoiceWorkspace = async (authorization, body) => {
+const invoiceWorkspaceFirestore = async (authorization, body) => {
   const token = /^Bearer (.+)$/i.exec(String(authorization || ''))?.[1];
   if (!token) fail('Sign in to access billing.', 401);
   const { auth, firestore } = await getAdmin();
@@ -294,5 +295,37 @@ export const invoiceWorkspace = async (authorization, body) => {
     });
   }
   return mutateInvoice(firestore, body.userId, body, claims.email || claims.uid);
+};
+
+const readInvoiceWorkspaceSnapshot = async (firestore, userId) => {
+  const root = firestore.collection('users').doc(userId);
+  const [invoices, consumers, adjustments, inventory] = await Promise.all([
+    root.collection('invoices').get(),
+    root.collection('consumers').get(),
+    root.collection('billingAdjustments').get(),
+    root.collection('inventoryRegister').get(),
+  ]);
+  return {
+    invoices: invoices.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((record) => !record.archived),
+    consumers: consumers.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+    adjustments: adjustments.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+    inventoryEntries: inventory.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+  };
+};
+
+export const invoiceWorkspace = async (authorization, body) => {
+  const result = await invoiceWorkspaceFirestore(authorization, body);
+  if (!isD1InvoiceStoreConfigured()) return result;
+  try {
+    const { firestore } = await getAdmin();
+    const user = await firestore.collection('users').doc(body.userId).get();
+    const snapshot = body.mode === 'load' ? result : await readInvoiceWorkspaceSnapshot(firestore, body.userId);
+    await saveInvoiceWorkspaceSnapshot(body.userId, user.data()?.dealerCode, snapshot);
+  } catch (error) {
+    // D1 is a migration mirror. A temporary Cloudflare outage must not block
+    // validated billing transactions already committed to Firestore.
+    console.warn('Invoice Workspace D1 mirror unavailable:', error?.message || error);
+  }
+  return result;
 };
 

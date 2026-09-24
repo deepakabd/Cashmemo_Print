@@ -4349,6 +4349,25 @@
   overflow-y: auto;
 }
 
+.book-view--invoice {
+  width: 100vw;
+  max-width: none;
+  margin-right: calc(50% - 50vw);
+  margin-left: calc(50% - 50vw);
+  padding: 0;
+  overflow: visible;
+}
+
+.book-view--invoice > .invoice-workspace {
+  width: 100%;
+  max-width: none;
+  min-height: calc(100vh - 90px);
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .book-view .placeholder-container {
   position: relative;
   max-width: 1600px;
