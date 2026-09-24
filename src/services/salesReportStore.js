@@ -974,7 +974,8 @@ export const toggleUploadStatus = async (user, currentStore, uploadEnabled) => {
       uploadEnabled,
     },
   };
-  await saveSalesReportData(user, nextStore);
+  // This is a settings-only change. Avoid re-uploading every monthly data file.
+  await saveSalesReportData(user, nextStore, { monthKeys: [] });
   return nextStore;
 };
 
@@ -989,7 +990,8 @@ export const toggleAllowDataReset = async (user, currentStore, allowDataReset) =
       allowDataReset: Boolean(allowDataReset),
     },
   };
-  await saveSalesReportData(user, nextStore);
+  // This is a settings-only change. Avoid re-uploading every monthly data file.
+  await saveSalesReportData(user, nextStore, { monthKeys: [] });
   return nextStore;
 };
 
