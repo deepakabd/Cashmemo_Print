@@ -8581,7 +8581,7 @@ function App() {
       )}
       {isLoggedIn && isPlanExpired && !showUpgradePlan && !showAboutInfo && !showUserProfile && !unauthorizedAccessState && <ExpiredPlanGuide onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
       {(Boolean(unauthorizedAccessState) || showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
-        <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}`}>
+        <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}${showInvoicePage ? ' book-view--invoice' : ''}`}>
           {unauthorizedAccessState && (
             <UnauthorizedAccessPage
               menuTitle={unauthorizedAccessState.menuTitle}
