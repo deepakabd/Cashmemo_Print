@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import * as XLSX from 'xlsx';
 import {
   loadSalesReportData,
@@ -31,6 +31,24 @@ import {
   ProductBreakdownChart,
 } from './components/SalesReport/SalesReportCharts';
 import './SalesReportPage.css';
+
+const DETAIL_SEARCH_FIELDS = [
+  'consumerName', 'consumerNo', 'orderNo', 'cashMemoNo', 'mobileNo',
+  'deliveryStaff', 'deliveryArea', 'packageCode', 'natureOfConsumer',
+  'paymentMode', 'dacType', 'salesDate', 'actualDeliveryDate',
+];
+
+const normalizeDetailSearch = (value) => String(value ?? '')
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const buildDetailSearchText = (row) => DETAIL_SEARCH_FIELDS
+  .map((field) => normalizeDetailSearch(row?.[field]))
+  .filter(Boolean)
+  .join(' ');
 
 const SAMPLE_SEPTEMBER_2026_DAYWISE_DAC = [
   { day: 1, date: '01,09,2026', cdcms: 15, otpDac: 235, masterDac: 0, total: 250, dacPercent: '94%' },
@@ -372,6 +390,8 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Breakdown sub-navigation
   const [breakdownTab, setBreakdownTab] = useState('area'); // 'area' | 'staff' | 'package' | 'nature' | 'source' | 'ekyc' | 'cancellation'
+  const [areaPage, setAreaPage] = useState(1);
+  const [areasPerPage, setAreasPerPage] = useState(10);
 
   // Sales Date Basis (Section 36)
   const [salesDateBasis, setSalesDateBasis] = useState(storeData?.settings?.salesDateBasis || 'actualDeliveryDate');
@@ -402,8 +422,11 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Search & Pagination in Detailed View
   const [detailSearch, setDetailSearch] = useState('');
+  const deferredDetailSearch = useDeferredValue(detailSearch);
   const [detailPage, setDetailPage] = useState(1);
   const [detailRowsPerPage, setDetailRowsPerPage] = useState(25);
+  const [savingUploadToggle, setSavingUploadToggle] = useState(false);
+  const [savingResetToggle, setSavingResetToggle] = useState(false);
 
   // Month-vs-Month Comparison Pickers
   const [compMonthA, setCompMonthA] = useState('08');
@@ -421,6 +444,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const [advanceDacDay1, setAdvanceDacDay1] = useState(() => getAdvanceDefaultDates().today);
   const [advanceDacDay2, setAdvanceDacDay2] = useState(() => getAdvanceDefaultDates().yesterday);
   const [advanceDacMode, setAdvanceDacMode] = useState('otpDac'); // 'otpDac' | 'all'
+  const [deliveryDrilldown, setDeliveryDrilldown] = useState(null);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -651,12 +675,23 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Toggle allowDataReset setting (Enable / Disable reset protection)
   const handleToggleAllowDataReset = async (enabled) => {
+    if (savingResetToggle) return;
+    const previousStore = storeData;
+    const optimisticStore = {
+      ...previousStore,
+      settings: { ...previousStore.settings, allowDataReset: enabled },
+    };
+    setStoreData(optimisticStore);
+    setSavingResetToggle(true);
     try {
-      const nextStore = await toggleAllowDataReset(loggedInUser, storeData, enabled);
+      const nextStore = await toggleAllowDataReset(loggedInUser, optimisticStore, enabled);
       setStoreData(nextStore);
       showNotification(`Uploaded Data Reset is now ${enabled ? 'ENABLED' : 'DISABLED'}.`);
     } catch (err) {
+      setStoreData(previousStore);
       showNotification('Failed to update reset permission setting.', 'error');
+    } finally {
+      setSavingResetToggle(false);
     }
   };
 
@@ -710,12 +745,23 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Toggle upload enabled in settings
   const handleToggleUpload = async (enabled) => {
+    if (savingUploadToggle) return;
+    const previousStore = storeData;
+    const optimisticStore = {
+      ...previousStore,
+      settings: { ...previousStore.settings, uploadEnabled: enabled },
+    };
+    setStoreData(optimisticStore);
+    setSavingUploadToggle(true);
     try {
-      const nextStore = await toggleUploadStatus(loggedInUser, storeData, enabled);
+      const nextStore = await toggleUploadStatus(loggedInUser, optimisticStore, enabled);
       setStoreData(nextStore);
       showNotification(`Uploads ${enabled ? 'enabled' : 'disabled'}.`);
     } catch (err) {
+      setStoreData(previousStore);
       showNotification('Failed to update upload setting.', 'error');
+    } finally {
+      setSavingUploadToggle(false);
     }
   };
 
@@ -1482,6 +1528,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         masterDac: 0,
         total: 0,
         dacPercent: '0%',
+        details: { cdcms: [] },
       };
     }
 
@@ -1522,6 +1569,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           const dacTypeUpper = String(r.dacType || '').toUpperCase();
           if (dacTypeUpper.includes('CDCMS')) {
             dayMap[dKey].cdcms += q;
+            dayMap[dKey].details.cdcms.push(r);
           } else if (dacTypeUpper.includes('MASTER')) {
             dayMap[dKey].masterDac += q;
           } else {
@@ -1803,11 +1851,11 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
       const staffStats = {};
       DEFAULT_ADVANCE_DELIVERY_STAFF.forEach((st) => {
-        staffStats[st] = { name: st, month: 0, day1: 0, day2: 0 };
+        staffStats[st] = { name: st, month: 0, day1: 0, day2: 0, details: { month: [], day1: [], day2: [] } };
       });
       staffSet.forEach((st) => {
         if (!staffStats[st]) {
-          staffStats[st] = { name: st, month: 0, day1: 0, day2: 0 };
+          staffStats[st] = { name: st, month: 0, day1: 0, day2: 0, details: { month: [], day1: [], day2: [] } };
         }
       });
 
@@ -1826,19 +1874,22 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         ) || (st && st !== 'General Staff' ? st : 'DM Dharmendra');
 
         if (!staffStats[matchedStaff]) {
-          staffStats[matchedStaff] = { name: matchedStaff, month: 0, day1: 0, day2: 0 };
+          staffStats[matchedStaff] = { name: matchedStaff, month: 0, day1: 0, day2: 0, details: { month: [], day1: [], day2: [] } };
         }
 
         const q = r.orderQuantity || 1;
         staffStats[matchedStaff].month += q;
+        staffStats[matchedStaff].details.month.push(r);
         monthTotal += q;
 
         if (dateKey === advanceDacDay1) {
           staffStats[matchedStaff].day1 += q;
+          staffStats[matchedStaff].details.day1.push(r);
           day1Total += q;
         }
         if (dateKey === advanceDacDay2) {
           staffStats[matchedStaff].day2 += q;
+          staffStats[matchedStaff].details.day2.push(r);
           day2Total += q;
         }
       });
@@ -1954,6 +2005,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         otpDac: 0,
         masterDac: 0,
         total: 0,
+        details: { cdcms: [], masterDac: [] },
       };
     });
 
@@ -1969,14 +2021,17 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             otpDac: 0,
             masterDac: 0,
             total: 0,
+            details: { cdcms: [], masterDac: [] },
           };
         }
         const q = Number(r.orderQuantity) || 1;
         const dacTypeUpper = String(r.dacType || '').toUpperCase();
         if (dacTypeUpper.includes('CDCMS')) {
           mGroups[code].cdcms += q;
+          mGroups[code].details.cdcms.push(r);
         } else if (dacTypeUpper.includes('MASTER')) {
           mGroups[code].masterDac += q;
+          mGroups[code].details.masterDac.push(r);
         } else {
           mGroups[code].otpDac += q;
         }
@@ -2081,19 +2136,24 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
       // Source & Mode
       const src = r.orderSource || 'IVRS';
-      if (!srcMap[src]) srcMap[src] = { source: src, homeOrders: 0, instantOrders: 0, orders: 0, refillQuantity: 0, salesValue: 0 };
+      if (!srcMap[src]) srcMap[src] = { source: src, homeOrders: 0, instantOrders: 0, orders: 0, refillQuantity: 0, salesValue: 0, instantDetails: [] };
       srcMap[src].orders += qty;
       srcMap[src].refillQuantity += qty;
       srcMap[src].salesValue += val;
-      if (r.deliveryMode === 'Home') srcMap[src].homeOrders += qty;
-      else if (r.deliveryMode === 'Instant') srcMap[src].instantOrders += qty;
+      const deliveryMode = String(r.deliveryMode || '').trim().toLowerCase();
+      if (deliveryMode === 'home' || deliveryMode.includes('home delivery')) srcMap[src].homeOrders += qty;
+      else if (deliveryMode.includes('instant') || deliveryMode.includes('counter')) {
+        srcMap[src].instantOrders += qty;
+        srcMap[src].instantDetails.push(r);
+      }
 
       // eKYC & Mobile
       const ekyc = r.ekycStatus || 'Not Seeded / Pending';
-      if (!ekycMap[ekyc]) ekycMap[ekyc] = { ekycStatus: ekyc, regMobile: 0, nonRegMobile: 0, orders: 0, refillQuantity: 0 };
+      if (!ekycMap[ekyc]) ekycMap[ekyc] = { ekycStatus: ekyc, regMobile: 0, nonRegMobile: 0, orders: 0, refillQuantity: 0, details: [] };
       ekycMap[ekyc].orders += qty;
       ekycMap[ekyc].refillQuantity += qty;
-      if (r.isRegMobile === 'Y') ekycMap[ekyc].regMobile += qty;
+      ekycMap[ekyc].details.push(r);
+      if (String(r.isRegMobile || '').trim().toUpperCase() === 'Y') ekycMap[ekyc].regMobile += qty;
       else ekycMap[ekyc].nonRegMobile += qty;
 
       // Cancellations
@@ -2135,24 +2195,30 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     };
   }, [filteredTransactions, dashboardKpis.totalRefillQuantity]);
 
+  const areaTotalPages = Math.max(1, Math.ceil(dimensionalReports.areas.length / areasPerPage));
+  const safeAreaPage = Math.min(areaPage, areaTotalPages);
+  const paginatedAreas = dimensionalReports.areas.slice(
+    (safeAreaPage - 1) * areasPerPage,
+    safeAreaPage * areasPerPage,
+  );
+
   // ==========================================
   // DETAILED SALES DATA (SEARCH & PAGINATION)
   // ==========================================
+  const detailedSearchIndex = useMemo(() => filteredTransactions.map((row) => ({
+    row,
+    searchText: buildDetailSearchText(row),
+  })), [filteredTransactions]);
+
   const detailedFiltered = useMemo(() => {
-    if (!detailSearch.trim()) return filteredTransactions;
-    const q = detailSearch.toLowerCase().trim();
-    return filteredTransactions.filter((r) => {
-      return (
-        String(r.consumerName || '').toLowerCase().includes(q) ||
-        String(r.consumerNo || '').toLowerCase().includes(q) ||
-        String(r.orderNo || '').toLowerCase().includes(q) ||
-        String(r.cashMemoNo || '').toLowerCase().includes(q) ||
-        String(r.mobileNo || '').includes(q) ||
-        String(r.deliveryStaff || '').toLowerCase().includes(q) ||
-        String(r.deliveryArea || '').toLowerCase().includes(q)
-      );
-    });
-  }, [filteredTransactions, detailSearch]);
+    const query = normalizeDetailSearch(deferredDetailSearch);
+    if (!query) return filteredTransactions;
+
+    const tokens = query.split(/\s+/).filter(Boolean);
+    return detailedSearchIndex
+      .filter(({ searchText }) => tokens.every((token) => searchText.includes(token)))
+      .map(({ row }) => row);
+  }, [filteredTransactions, detailedSearchIndex, deferredDetailSearch]);
 
   const totalDetailPages = detailRowsPerPage > 0
     ? Math.ceil(detailedFiltered.length / detailRowsPerPage) || 1
@@ -3308,7 +3374,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                         return (
                           <tr key={row.date}>
                             <td className="daywise-date-cell" style={{ textAlign: 'center' }}>{row.date}</td>
-                            <td style={{ textAlign: 'right' }}>{row.cdcms.toLocaleString()}</td>
+                            <td style={{ textAlign: 'right' }}><button type="button" className="dac-delivery-count-btn" disabled={!row.cdcms} onClick={() => setDeliveryDrilldown({ deliveryman: 'CDCMS Deliveries', scope: 'Daily Authentication Log', label: row.date, count: row.cdcms, rows: row.details?.cdcms || [] })}>{row.cdcms.toLocaleString()}</button></td>
                             <td style={{ textAlign: 'right', fontWeight: '700', color: '#0284c7' }}>{row.otpDac.toLocaleString()}</td>
                             <td style={{ textAlign: 'right', color: '#94a3b8' }}>{row.masterDac.toLocaleString()}</td>
                             <td style={{ textAlign: 'right', fontWeight: '700' }}>{row.total.toLocaleString()}</td>
@@ -3511,7 +3577,15 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           {dacAdvanceReportData.deliveryMatrix.rows.map((dm, idx) => (
                             <tr key={idx}>
                               <td>{dm.name}</td>
-                              <td style={{ textAlign: 'right' }}>{dm.month.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                <button
+                                  type="button"
+                                  className="dac-delivery-count-btn"
+                                  disabled={!dm.month}
+                                  onClick={() => setDeliveryDrilldown({ deliveryman: dm.name, scope: 'Month', label: `${MONTH_NAMES[parseInt(advanceDacMonth, 10) - 1]} ${advanceDacYear}`, count: dm.month, rows: dm.details?.month || [] })}
+                                  title={`View ${dm.name} consumer deliveries`}
+                                >{dm.month.toLocaleString()}</button>
+                              </td>
                             </tr>
                           ))}
                           <tr className="dac-advance-yellow-row">
@@ -3539,7 +3613,15 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           {dacAdvanceReportData.deliveryMatrix.rows.map((dm, idx) => (
                             <tr key={idx}>
                               <td>{dm.name}</td>
-                              <td style={{ textAlign: 'right' }}>{dm.day1.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                <button
+                                  type="button"
+                                  className="dac-delivery-count-btn"
+                                  disabled={!dm.day1}
+                                  onClick={() => setDeliveryDrilldown({ deliveryman: dm.name, scope: 'Selected Day', label: dacAdvanceReportData.deliveryMatrix.day1Label, count: dm.day1, rows: dm.details?.day1 || [] })}
+                                  title={`View ${dm.name} consumer deliveries`}
+                                >{dm.day1.toLocaleString()}</button>
+                              </td>
                             </tr>
                           ))}
                           <tr className="dac-advance-yellow-row">
@@ -3567,7 +3649,15 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           {dacAdvanceReportData.deliveryMatrix.rows.map((dm, idx) => (
                             <tr key={idx}>
                               <td>{dm.name}</td>
-                              <td style={{ textAlign: 'right' }}>{dm.day2.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                <button
+                                  type="button"
+                                  className="dac-delivery-count-btn"
+                                  disabled={!dm.day2}
+                                  onClick={() => setDeliveryDrilldown({ deliveryman: dm.name, scope: 'Date-wise', label: dacAdvanceReportData.deliveryMatrix.day2Label, count: dm.day2, rows: dm.details?.day2 || [] })}
+                                  title={`View ${dm.name} consumer deliveries`}
+                                >{dm.day2.toLocaleString()}</button>
+                              </td>
                             </tr>
                           ))}
                           <tr className="dac-advance-yellow-row">
@@ -3928,9 +4018,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                       return (
                         <tr key={m.monthCode}>
                           <td><strong>{m.monthName}</strong></td>
-                          <td style={{ textAlign: 'center' }}>{m.cdcms || '—'}</td>
+                          <td style={{ textAlign: 'center' }}><button type="button" className="dac-delivery-count-btn" disabled={!m.cdcms} onClick={() => setDeliveryDrilldown({ deliveryman: 'CDCMS Deliveries', scope: 'Monthly DAC Report', label: m.monthName, count: m.cdcms, rows: m.details?.cdcms || [] })}>{m.cdcms || '—'}</button></td>
                           <td style={{ textAlign: 'center', fontWeight: '700' }}>{m.otpDac || '—'}</td>
-                          <td style={{ textAlign: 'center' }}>{m.masterDac || 0}</td>
+                          <td style={{ textAlign: 'center' }}><button type="button" className="dac-delivery-count-btn" disabled={!m.masterDac} onClick={() => setDeliveryDrilldown({ deliveryman: 'MasterDAC Deliveries', scope: 'Monthly DAC Report', label: m.monthName, count: m.masterDac, rows: m.details?.masterDac || [] })}>{m.masterDac || 0}</button></td>
                           <td style={{ textAlign: 'center' }}><strong>{m.total || '—'}</strong></td>
                           <td style={{ textAlign: 'center' }}>
                             <span style={{
@@ -4206,9 +4296,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                 monthNo={filters.monthNo}
                 selectedProducts={filters.selectedProducts || []}
                 availableProducts={allAvailableProducts}
-                onMonthChange={(m) => setFilters((prev) => ({ ...prev, monthNo: m }))}
-                onProductsChange={(prods) => setFilters((prev) => ({ ...prev, selectedProducts: prods }))}
-                onReset={() => setFilters((prev) => ({ ...prev, monthNo: 'ALL', packageCode: 'ALL', selectedProducts: [] }))}
+                onMonthChange={(m) => { setFilters((prev) => ({ ...prev, monthNo: m })); setAreaPage(1); }}
+                onProductsChange={(prods) => { setFilters((prev) => ({ ...prev, selectedProducts: prods })); setAreaPage(1); }}
+                onReset={() => { setFilters((prev) => ({ ...prev, monthNo: 'ALL', packageCode: 'ALL', selectedProducts: [] })); setAreaPage(1); }}
               />
 
               <div className="sales-data-table-wrap">
@@ -4365,9 +4455,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                         </tr>
                       </thead>
                       <tbody>
-                        {dimensionalReports.areas.map((a, i) => (
+                        {paginatedAreas.map((a, i) => (
                           <tr key={a.area}>
-                            <td>{i + 1}</td>
+                            <td>{(safeAreaPage - 1) * areasPerPage + i + 1}</td>
                             <td><strong>{a.area}</strong></td>
                             <td style={{ textAlign: 'center' }}>{a.orders}</td>
                             <td style={{ textAlign: 'center' }}><strong>{a.refillQuantity}</strong></td>
@@ -4377,6 +4467,23 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="sales-pagination-wrap area-report-pagination">
+                    <div className="area-report-pagination__summary">
+                      <label>Areas per page:
+                        <select value={areasPerPage} onChange={(event) => { setAreasPerPage(Number(event.target.value)); setAreaPage(1); }}>
+                          <option value={10}>10</option><option value={20}>20</option><option value={50}>50</option>
+                        </select>
+                      </label>
+                      <span>Showing {dimensionalReports.areas.length ? (safeAreaPage - 1) * areasPerPage + 1 : 0}–{Math.min(safeAreaPage * areasPerPage, dimensionalReports.areas.length)} of {dimensionalReports.areas.length} areas</span>
+                    </div>
+                    {areaTotalPages > 1 && <div className="sales-pagination-controls">
+                      <button type="button" className="sales-page-btn" disabled={safeAreaPage === 1} onClick={() => setAreaPage(1)}>« First</button>
+                      <button type="button" className="sales-page-btn" disabled={safeAreaPage === 1} onClick={() => setAreaPage((page) => Math.max(1, page - 1))}>‹ Prev</button>
+                      <span>Page <strong>{safeAreaPage}</strong> of {areaTotalPages}</span>
+                      <button type="button" className="sales-page-btn" disabled={safeAreaPage === areaTotalPages} onClick={() => setAreaPage((page) => Math.min(areaTotalPages, page + 1))}>Next ›</button>
+                      <button type="button" className="sales-page-btn" disabled={safeAreaPage === areaTotalPages} onClick={() => setAreaPage(areaTotalPages)}>Last »</button>
+                    </div>}
                   </div>
                 </div>
               )}
@@ -4571,7 +4678,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           <tr key={s.source}>
                             <td><strong>{s.source}</strong></td>
                             <td style={{ textAlign: 'center' }}>{s.homeOrders}</td>
-                            <td style={{ textAlign: 'center' }}>{s.instantOrders}</td>
+                            <td style={{ textAlign: 'center' }}><button type="button" className="dac-delivery-count-btn" disabled={!s.instantOrders} onClick={() => setDeliveryDrilldown({ deliveryman: `${s.source} · Instant / Counter`, scope: 'Order Source & Delivery Mode', label: 'Instant / Counter', count: s.instantOrders, rows: s.instantDetails || [] })}>{s.instantOrders}</button></td>
                             <td style={{ textAlign: 'center' }}><strong>{s.orders}</strong></td>
                             <td style={{ textAlign: 'center' }}><strong>{s.refillQuantity}</strong></td>
                             <td style={{ textAlign: 'right' }}>₹{s.salesValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -4606,10 +4713,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                         {dimensionalReports.ekycs.map((k) => (
                           <tr key={k.ekycStatus}>
                             <td><strong>{k.ekycStatus}</strong></td>
-                            <td style={{ textAlign: 'center' }}>{k.regMobile}</td>
-                            <td style={{ textAlign: 'center' }}>{k.nonRegMobile}</td>
+                            <td style={{ textAlign: 'center' }}><button type="button" className="dac-delivery-count-btn" disabled={!k.regMobile} onClick={() => setDeliveryDrilldown({ deliveryman: `${k.ekycStatus} · Registered Mobile`, scope: 'eKYC Compliance', label: 'Registered Mobile (Y)', count: k.regMobile, rows: (k.details || []).filter((row) => String(row.isRegMobile || '').trim().toUpperCase() === 'Y') })}>{k.regMobile}</button></td>
+                            <td style={{ textAlign: 'center' }}><button type="button" className="dac-delivery-count-btn" disabled={!k.nonRegMobile} onClick={() => setDeliveryDrilldown({ deliveryman: `${k.ekycStatus} · Unregistered Mobile`, scope: 'eKYC Compliance', label: 'Unregistered Mobile (N)', count: k.nonRegMobile, rows: (k.details || []).filter((row) => String(row.isRegMobile || '').trim().toUpperCase() !== 'Y') })}>{k.nonRegMobile}</button></td>
                             <td style={{ textAlign: 'center' }}><strong>{k.orders}</strong></td>
-                            <td style={{ textAlign: 'center' }}><strong>{k.refillQuantity}</strong></td>
+                            <td style={{ textAlign: 'center' }}><button type="button" className="dac-delivery-count-btn" disabled={!k.refillQuantity} onClick={() => setDeliveryDrilldown({ deliveryman: k.ekycStatus, scope: 'eKYC Compliance', label: 'Refill Quantity (Cyl)', count: k.refillQuantity, rows: k.details || [] })}>{k.refillQuantity}</button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -5076,15 +5183,37 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
               {/* Live Search Input */}
               <div className="detailed-sales-search">
-                <input
-                  type="text"
-                  placeholder="🔍 Search by Consumer Name, Consumer No, CashMemo No, Order No, Mobile, Staff, Area..."
-                  value={detailSearch}
-                  onChange={(e) => {
-                    setDetailSearch(e.target.value);
-                    setDetailPage(1);
-                  }}
-                />
+                <span className="detailed-sales-search__icon" aria-hidden="true">⌕</span>
+                <div className="detailed-sales-search__field">
+                  <input
+                    type="search"
+                    aria-label="Search detailed sales data"
+                    autoComplete="off"
+                    placeholder="Name, consumer no, cash memo, mobile, staff, area..."
+                    value={detailSearch}
+                    onChange={(e) => {
+                      setDetailSearch(e.target.value);
+                      setDetailPage(1);
+                    }}
+                  />
+                  <small>Name, number aur area ko saath mein bhi search kar sakte hain</small>
+                </div>
+                {detailSearch && (
+                  <button
+                    type="button"
+                    className="detailed-sales-search__clear"
+                    onClick={() => {
+                      setDetailSearch('');
+                      setDetailPage(1);
+                    }}
+                    aria-label="Clear detailed sales search"
+                  >
+                    Clear
+                  </button>
+                )}
+                <span className="detailed-sales-search__count" role="status" aria-live="polite">
+                  {deferredDetailSearch !== detailSearch ? 'Searching…' : `${detailedFiltered.length} result${detailedFiltered.length === 1 ? '' : 's'}`}
+                </span>
               </div>
 
               {/* Data Table */}
@@ -5184,7 +5313,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     <option value={0}>All</option>
                   </select>
                   <span style={{ fontSize: '12px', color: '#64748b' }}>
-                    Showing {(detailPage - 1) * detailRowsPerPage + 1} to {Math.min(detailPage * detailRowsPerPage || detailedFiltered.length, detailedFiltered.length)} of {detailedFiltered.length} records
+                    Showing {detailedFiltered.length ? (detailPage - 1) * (detailRowsPerPage || detailedFiltered.length) + 1 : 0} to {Math.min(detailPage * detailRowsPerPage || detailedFiltered.length, detailedFiltered.length)} of {detailedFiltered.length} records
                   </span>
                 </div>
 
@@ -5257,6 +5386,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     <input
                       type="checkbox"
                       checked={uploadEnabled}
+                      disabled={savingUploadToggle}
                       onChange={(e) => handleToggleUpload(e.target.checked)}
                     />
                     <span className="toggle-slider"></span>
@@ -5573,12 +5703,13 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{ fontSize: '12px', fontWeight: '700', color: (storeData.settings?.allowDataReset ?? false) ? '#b91c1c' : '#64748b' }}>
-                      {(storeData.settings?.allowDataReset ?? false) ? 'Enabled' : 'Disabled'}
+                      {savingResetToggle ? 'Saving…' : ((storeData.settings?.allowDataReset ?? false) ? 'Enabled' : 'Disabled')}
                     </span>
                     <label className="toggle-switch">
                       <input
                         type="checkbox"
                         checked={storeData.settings?.allowDataReset ?? false}
+                        disabled={savingResetToggle}
                         onChange={(e) => handleToggleAllowDataReset(e.target.checked)}
                       />
                       <span className="toggle-slider"></span>
@@ -5717,6 +5848,38 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           )}
         </section>
       </div>
+
+      {deliveryDrilldown && (
+        <div className="dac-consumer-modal" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setDeliveryDrilldown(null);
+        }}>
+          <section className="dac-consumer-book" role="dialog" aria-modal="true" aria-labelledby="dac-consumer-title">
+            <header className="dac-consumer-book__header">
+              <div>
+                <span>📖 CONSUMER DELIVERY REGISTER</span>
+                <h3 id="dac-consumer-title">{deliveryDrilldown.deliveryman}</h3>
+                <p>{deliveryDrilldown.scope} · {deliveryDrilldown.label} · {deliveryDrilldown.count.toLocaleString()} deliveries</p>
+              </div>
+              <button type="button" onClick={() => setDeliveryDrilldown(null)} aria-label="Close consumer details">✕</button>
+            </header>
+            <div className="dac-consumer-book__body">
+              {deliveryDrilldown.rows.length ? (
+                <table>
+                  <thead><tr><th>#</th><th>Consumer No.</th><th>Consumer</th><th>Mobile</th><th>Area</th><th>Order / Cash Memo</th><th>Date</th><th>Qty</th><th>DAC</th></tr></thead>
+                  <tbody>{[...deliveryDrilldown.rows].sort((a, b) => String(a.consumerNo || '').localeCompare(String(b.consumerNo || ''), undefined, { numeric: true, sensitivity: 'base' })).map((row, index) => (
+                    <tr key={row.id || row.uniqueKey || `${row.consumerNo}-${index}`}>
+                      <td>{index + 1}</td><td><strong>{row.consumerNo || '—'}</strong></td><td>{row.consumerName || '—'}</td>
+                      <td>{row.mobileNo || '—'}</td><td>{row.deliveryArea || '—'}</td><td>{row.orderNo || '—'}<small>{row.cashMemoNo || ''}</small></td>
+                      <td>{row.actualDeliveryDate || row.salesDate || '—'}</td><td>{row.orderQuantity || 1}</td><td>{row.dacType || (row.dacVerified ? 'OTP/DAC' : '—')}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              ) : <div className="dac-consumer-book__empty">Consumer-level details reference/sample data mein available nahi hain.</div>}
+            </div>
+            <footer><span>{deliveryDrilldown.rows.length} consumer record{deliveryDrilldown.rows.length === 1 ? '' : 's'}</span><button type="button" onClick={() => window.print()}>🖨️ Print List</button></footer>
+          </section>
+        </div>
+      )}
 
       {/* Excel Upload & Schema Validation Modal */}
       <SalesImportModal
