@@ -387,11 +387,14 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const [consumerSearchMode, setConsumerSearchMode] = useState('consumerNo');
   const [consumerSearchQuery, setConsumerSearchQuery] = useState('');
   const [consumerSearchFocused, setConsumerSearchFocused] = useState(false);
+  const [selectedConsumerSearchNo, setSelectedConsumerSearchNo] = useState('');
 
   // Breakdown sub-navigation
   const [breakdownTab, setBreakdownTab] = useState('area'); // 'area' | 'staff' | 'package' | 'nature' | 'source' | 'ekyc' | 'cancellation'
   const [areaPage, setAreaPage] = useState(1);
   const [areasPerPage, setAreasPerPage] = useState(10);
+  const [selectedAdvancedReport, setSelectedAdvancedReport] = useState(null);
+  const [advancedDetailPage, setAdvancedDetailPage] = useState(1);
 
   // Sales Date Basis (Section 36)
   const [salesDateBasis, setSalesDateBasis] = useState(storeData?.settings?.salesDateBasis || 'actualDeliveryDate');
@@ -539,7 +542,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   const consumerSearchIndex = useMemo(() => {
     const fields = ['consumerNo', 'mobileNo', 'orderNo', 'cashMemoNo', 'consumerName'];
-    const index = Object.fromEntries(fields.map((field) => [field, { suggestions: [], rows: new Map() }]));
+    const index = Object.fromEntries(fields.map((field) => [field, { suggestions: [], suggestionKeys: new Set(), rows: new Map() }]));
     const normalize = (field, value) => field === 'mobileNo'
       ? String(value || '').replace(/\D/g, '')
       : String(value || '').trim().replace(/\s+/g, '').toLowerCase();
@@ -549,8 +552,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
         const displayValue = String(row[field] || '').trim();
         const normalized = normalize(field, displayValue);
         if (!normalized) return;
-        if (!index[field].rows.has(normalized)) {
-          index[field].rows.set(normalized, []);
+        if (!index[field].rows.has(normalized)) index[field].rows.set(normalized, []);
+        const suggestionKey = field === 'consumerName' ? `${normalized}|${row.consumerNo || ''}` : normalized;
+        if (!index[field].suggestionKeys.has(suggestionKey)) {
+          index[field].suggestionKeys.add(suggestionKey);
           index[field].suggestions.push({
             value: displayValue,
             normalized,
@@ -580,10 +585,15 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       cashMemoNo: 'cashMemoNo',
       consumerName: 'consumerName',
     }[consumerSearchMode] || 'consumerNo';
-    return [...(consumerSearchIndex[field]?.rows.get(queryValue) || [])]
+    if (consumerSearchMode === 'consumerName' && !selectedConsumerSearchNo) return [];
+    const matchedRows = [...(consumerSearchIndex[field]?.rows.get(queryValue) || [])];
+    const selectedRows = consumerSearchMode === 'consumerName' && selectedConsumerSearchNo
+      ? matchedRows.filter((row) => String(row.consumerNo || '') === selectedConsumerSearchNo)
+      : matchedRows;
+    return selectedRows
       .sort((a, b) => String(b.actualDeliveryDate || b.cashMemoDate || b.orderDateKey || b.orderDate || '')
         .localeCompare(String(a.actualDeliveryDate || a.cashMemoDate || a.orderDateKey || a.orderDate || '')));
-  }, [consumerSearchIndex, consumerSearchMode, consumerSearchQuery]);
+  }, [consumerSearchIndex, consumerSearchMode, consumerSearchQuery, selectedConsumerSearchNo]);
 
   const activeConsumerSearchSuggestions = useMemo(() => {
     const field = {
@@ -2202,6 +2212,164 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     safeAreaPage * areasPerPage,
   );
 
+  const advancedReports = useMemo(() => {
+    const rows = filteredTransactions;
+    const qtyOf = (row) => Number(row.orderQuantity) || 1;
+    const consumers = new Map();
+    const payments = new Map();
+    const staffWorkload = new Map();
+    const delays = { sameDay: 0, nextDay: 0, delayed: 0 };
+    let latestDeliveryMs = 0;
+    let delayDaysTotal = 0;
+    let delayRows = 0;
+    let onlineOrders = 0;
+
+    rows.forEach((row) => {
+      const consumerNo = String(row.consumerNo || 'Unknown');
+      const deliveryDate = new Date(row.actualDeliveryDate || row.salesDate || '');
+      const deliveryMs = Number.isNaN(deliveryDate.getTime()) ? 0 : deliveryDate.getTime();
+      latestDeliveryMs = Math.max(latestDeliveryMs, deliveryMs);
+      const current = consumers.get(consumerNo) || { name: row.consumerName || 'Unknown', consumerNo, qty: 0, sales: 0, lastMs: 0 };
+      current.qty += qtyOf(row); current.sales += Number(row.salesValue) || 0; current.lastMs = Math.max(current.lastMs, deliveryMs);
+      consumers.set(consumerNo, current);
+
+      const payment = row.paymentMode || 'Not Specified';
+      payments.set(payment, (payments.get(payment) || 0) + qtyOf(row));
+      if (/online|pay|upi|card/i.test(payment)) onlineOrders += qtyOf(row);
+
+      const staffName = String(row.deliveryStaff || 'General Staff').trim() || 'General Staff';
+      const staff = staffWorkload.get(staffName) || { name: staffName, qty: 0, areas: new Set(), days: new Set() };
+      staff.qty += qtyOf(row);
+      if (row.deliveryArea) staff.areas.add(String(row.deliveryArea).trim());
+      const workDate = String(row.actualDeliveryDate || row.salesDate || '').split('T')[0].split(' ')[0];
+      if (workDate) staff.days.add(workDate);
+      staffWorkload.set(staffName, staff);
+
+      const orderDate = new Date(row.orderDateKey || row.orderDate || '');
+      if (deliveryMs && !Number.isNaN(orderDate.getTime())) {
+        const days = Math.max(0, Math.round((deliveryMs - orderDate.getTime()) / 86400000));
+        delayDaysTotal += days; delayRows += 1;
+        if (days === 0) delays.sameDay += qtyOf(row); else if (days === 1) delays.nextDay += qtyOf(row); else delays.delayed += qtyOf(row);
+      }
+    });
+
+    const consumerList = [...consumers.values()].sort((a, b) => b.qty - a.qty);
+    const dormant = consumerList.filter((item) => latestDeliveryMs && item.lastMs && (latestDeliveryMs - item.lastMs) / 86400000 >= 60);
+    const missingMobile = rows.filter((row) => !String(row.mobileNo || '').trim()).length;
+    const missingArea = rows.filter((row) => !String(row.deliveryArea || '').trim()).length;
+    const totalQty = rows.reduce((sum, row) => sum + qtyOf(row), 0);
+    const totalSales = rows.reduce((sum, row) => sum + (Number(row.salesValue) || 0), 0);
+    const formatItems = (items) => items.map(([label, value]) => ({ label, value }));
+    const averageStaffQty = staffWorkload.size ? totalQty / staffWorkload.size : 0;
+    const workloadRows = [...staffWorkload.values()].map((staff) => {
+      const share = totalQty ? (staff.qty / totalQty) * 100 : 0;
+      const averageDaily = staff.qty / Math.max(staff.days.size, 1);
+      const status = staff.qty > averageStaffQty * 1.2
+        ? 'Overloaded'
+        : staff.qty < averageStaffQty * 0.6 ? 'Underutilized' : 'Balanced';
+      return { ...staff, share, averageDaily, status };
+    }).sort((a, b) => b.qty - a.qty);
+    const overloadedCount = workloadRows.filter((staff) => staff.status === 'Overloaded').length;
+    const underutilizedCount = workloadRows.filter((staff) => staff.status === 'Underutilized').length;
+    const pmuyConsumers = new Map();
+    const pmuyAreas = new Map();
+    const bookingDates = new Map();
+    const bookingWeekdays = new Map();
+    const bookingPeriods = new Map();
+    rows.forEach((row) => {
+      const qty = qtyOf(row);
+      const nature = String(row.natureOfConsumer || '').toUpperCase();
+      if (nature.includes('UJJWALA') || nature.includes('PMUY')) {
+        const consumerNo = String(row.consumerNo || 'Unknown');
+        const deliveryDate = new Date(row.actualDeliveryDate || row.salesDate || '');
+        const deliveryMs = Number.isNaN(deliveryDate.getTime()) ? 0 : deliveryDate.getTime();
+        const consumer = pmuyConsumers.get(consumerNo) || { consumerNo, name: row.consumerName || 'Unknown', area: row.deliveryArea || 'General Area', qty: 0, deliveries: 0, lastMs: 0 };
+        consumer.qty += qty; consumer.deliveries += 1; consumer.lastMs = Math.max(consumer.lastMs, deliveryMs);
+        pmuyConsumers.set(consumerNo, consumer);
+        const area = row.deliveryArea || 'General Area';
+        pmuyAreas.set(area, (pmuyAreas.get(area) || 0) + qty);
+      }
+
+      const orderDateValue = row.orderDateKey || row.orderDate || row.salesDate;
+      const orderDate = new Date(orderDateValue || '');
+      if (!Number.isNaN(orderDate.getTime())) {
+        const dateKey = String(orderDateValue).split('T')[0].split(' ')[0];
+        const weekday = orderDate.toLocaleDateString('en-IN', { weekday: 'long' });
+        bookingDates.set(dateKey, (bookingDates.get(dateKey) || 0) + qty);
+        bookingWeekdays.set(weekday, (bookingWeekdays.get(weekday) || 0) + qty);
+      }
+      const hour = Number.parseInt(String(row.orderTime || '').split(':')[0], 10);
+      if (!Number.isNaN(hour)) {
+        const period = hour < 6 ? 'Night (12 AM–6 AM)' : hour < 12 ? 'Morning (6 AM–12 PM)' : hour < 17 ? 'Afternoon (12 PM–5 PM)' : hour < 21 ? 'Evening (5 PM–9 PM)' : 'Night (9 PM–12 AM)';
+        bookingPeriods.set(period, (bookingPeriods.get(period) || 0) + qty);
+      }
+    });
+    const pmuyList = [...pmuyConsumers.values()].sort((a, b) => b.qty - a.qty);
+    const dormantPmuy = pmuyList.filter((consumer) => latestDeliveryMs && consumer.lastMs && (latestDeliveryMs - consumer.lastMs) / 86400000 >= 60);
+    const pmuyItems = [
+      ...[...pmuyAreas.entries()].sort((a, b) => b[1] - a[1]).map(([area, qty]) => ({ label: `Area · ${area}`, value: `${qty} Cyl` })),
+      ...pmuyList.map((consumer) => ({ label: `${consumer.consumerNo} · ${consumer.name} · ${consumer.area}`, value: `${consumer.qty} Cyl · ${consumer.deliveries} Refills${dormantPmuy.includes(consumer) ? ' · Dormant' : ''}` })),
+    ];
+    const peakBookingItems = [
+      ...[...bookingDates.entries()].sort((a, b) => b[1] - a[1]).map(([date, qty]) => ({ label: `Booking Date · ${date}`, value: `${qty} Orders` })),
+      ...[...bookingWeekdays.entries()].sort((a, b) => b[1] - a[1]).map(([day, qty]) => ({ label: `Weekday · ${day}`, value: `${qty} Orders` })),
+      ...[...bookingPeriods.entries()].sort((a, b) => b[1] - a[1]).map(([period, qty]) => ({ label: `Time Period · ${period}`, value: `${qty} Orders` })),
+    ];
+
+    return [
+      { icon: '🔁', title: 'Repeat Booking / Refill Frequency', metric: `${consumers.size} Consumers`, note: `${consumerList.filter((c) => c.qty > 1).length} repeat consumers`, items: consumerList.map((c) => ({ label: `${c.consumerNo} · ${c.name}`, value: `${c.qty} Cyl` })) },
+      { icon: '💤', title: 'Dormant Consumer Report', metric: `${dormant.length} Dormant`, note: '60+ days without delivery', items: dormant.map((c) => ({ label: `${c.consumerNo} · ${c.name}`, value: `${Math.floor((latestDeliveryMs - c.lastMs) / 86400000)} days` })) },
+      { icon: '💳', title: 'Payment Collection Report', metric: `₹${totalSales.toLocaleString('en-IN')}`, note: `${payments.size} payment modes`, items: formatItems([...payments.entries()].sort((a, b) => b[1] - a[1])).map((x) => ({ ...x, value: `${x.value} Cyl` })) },
+      { icon: '⏱️', title: 'Delivery Delay / Turnaround', metric: `${delayRows ? (delayDaysTotal / delayRows).toFixed(1) : '0.0'} Days Avg`, note: `${delays.delayed} delayed deliveries`, items: [{ label: 'Same Day', value: delays.sameDay }, { label: 'Next Day', value: delays.nextDay }, { label: '2+ Days', value: delays.delayed }] },
+      { icon: '👤', title: 'Consumer 360° Report', metric: `${consumers.size} Profiles`, note: 'Consumers by refill quantity', items: consumerList.map((c) => ({ label: `${c.consumerNo} · ${c.name}`, value: `₹${c.sales.toLocaleString('en-IN')}` })) },
+      { icon: '🧹', title: 'Exception & Data Quality', metric: `${missingMobile + missingArea} Exceptions`, note: 'Records requiring attention', items: [{ label: 'Missing Mobile', value: missingMobile }, { label: 'Missing Delivery Area', value: missingArea }] },
+      { icon: '🛵', title: 'Deliveryman Productivity', metric: `${dimensionalReports.staffList.length} Staff`, note: 'Ranked by delivered cylinders', items: dimensionalReports.staffList.map((s) => ({ label: s.staff, value: `${s.refillQuantity} Cyl` })) },
+      { icon: '⚖️', title: 'Deliveryman Workload Balance', metric: `${overloadedCount} Overloaded`, note: `${underutilizedCount} underutilized · ${workloadRows.length} total staff`, items: workloadRows.map((staff) => ({ label: `${staff.name} · ${staff.status}`, value: `${staff.qty} Cyl · ${staff.share.toFixed(1)}% · ${staff.areas.size} Areas · ${staff.averageDaily.toFixed(1)}/Day` })) },
+      { icon: '🪷', title: 'Ujjwala / PMUY Consumer Report', metric: `${pmuyList.length} PMUY Consumers`, note: `${pmuyList.reduce((sum, consumer) => sum + consumer.qty, 0)} deliveries · ${dormantPmuy.length} dormant`, items: pmuyItems },
+      { icon: '⏰', title: 'Peak Booking Hour / Day Report', metric: `${bookingDates.size} Booking Days`, note: 'Highest dates, weekdays and operational periods', items: peakBookingItems },
+      { icon: '📍', title: 'Area Demand & Growth', metric: `${dimensionalReports.areas.length} Areas`, note: 'Areas ranked by demand', items: dimensionalReports.areas.map((a) => ({ label: a.area, value: `${a.refillQuantity} Cyl` })) },
+      { icon: '🔮', title: 'Product Demand Forecast', metric: `${dimensionalReports.packages.length} Products`, note: 'Current demand baseline', items: dimensionalReports.packages.map((p) => ({ label: p.packageCode, value: `${p.refillQuantity} Cyl` })) },
+      { icon: '❌', title: 'Cancellation & Failed Delivery', metric: `${dimensionalReports.cancellations.length} Cancelled`, note: 'Cancelled or failed records', items: dimensionalReports.cancellations.map((c) => ({ label: c.consumerName || c.consumerNo || 'Unknown', value: c.cancellationReason || c.orderStatus || 'Cancelled' })) },
+      { icon: '📲', title: 'Online Adoption Report', metric: `${totalQty ? Math.round((onlineOrders / totalQty) * 100) : 0}% Online`, note: `${onlineOrders} online-paid cylinders`, items: formatItems([...payments.entries()].sort((a, b) => b[1] - a[1])).map((x) => ({ ...x, value: `${x.value}` })) },
+      { icon: '📋', title: 'Management Daily MIS', metric: `${totalQty.toLocaleString()} Cylinders`, note: `₹${totalSales.toLocaleString('en-IN')} total sales`, items: [{ label: 'Transactions', value: rows.length }, { label: 'Consumers', value: consumers.size }, { label: 'DAC Verified', value: rows.filter((r) => r.dacVerified).length }] },
+    ];
+  }, [filteredTransactions, dimensionalReports]);
+
+  const salesTrendData = useMemo(() => {
+    const dates = new Map();
+    filteredTransactions.forEach((row) => {
+      const qty = Number(row.orderQuantity) || 1;
+      const deliveryKey = String(row.actualDeliveryDate || row.salesDate || '').split('T')[0].split(' ')[0];
+      const bookingKey = String(row.orderDateKey || row.orderDate || '').split('T')[0].split(' ')[0];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryKey)) return;
+      if (filters.monthNo !== 'ALL' && deliveryKey.slice(5, 7) !== String(filters.monthNo).padStart(2, '0')) return;
+      const item = dates.get(deliveryKey) || { date: deliveryKey, deliveries: 0, sameDay: 0, oneDay: 0, twoDays: 0, threeToSix: 0, sevenPlus: 0, fifteenPlus: 0, twentyOnePlus: 0, unknown: 0, details: { all: [], sameDay: [], oneDay: [], twoDays: [], threeToSix: [], sevenPlus: [], fifteenPlus: [], twentyOnePlus: [], unknown: [] } };
+      item.deliveries += qty;
+      item.details.all.push(row);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(bookingKey)) { item.unknown += qty; item.details.unknown.push(row); }
+      else {
+        const age = Math.floor((new Date(`${deliveryKey}T00:00:00`).getTime() - new Date(`${bookingKey}T00:00:00`).getTime()) / 86400000);
+        if (age <= 0) { item.sameDay += qty; item.details.sameDay.push(row); }
+        else if (age === 1) { item.oneDay += qty; item.details.oneDay.push(row); }
+        else if (age === 2) { item.twoDays += qty; item.details.twoDays.push(row); }
+        else if (age <= 6) { item.threeToSix += qty; item.details.threeToSix.push(row); }
+        else if (age <= 14) { item.sevenPlus += qty; item.details.sevenPlus.push(row); }
+        else if (age <= 20) { item.fifteenPlus += qty; item.details.fifteenPlus.push(row); }
+        else { item.twentyOnePlus += qty; item.details.twentyOnePlus.push(row); }
+      }
+      dates.set(deliveryKey, item);
+    });
+    const rows = [...dates.values()].sort((a, b) => a.date.localeCompare(b.date));
+    return {
+      rows,
+      totalDeliveries: rows.reduce((sum, row) => sum + row.deliveries, 0),
+      sameDay: rows.reduce((sum, row) => sum + row.sameDay, 0),
+      oneToTwoDays: rows.reduce((sum, row) => sum + row.oneDay + row.twoDays, 0),
+      sevenPlus: rows.reduce((sum, row) => sum + row.sevenPlus + row.fifteenPlus + row.twentyOnePlus, 0),
+      maxValue: Math.max(1, ...rows.map((row) => row.deliveries)),
+    };
+  }, [filteredTransactions, filters.monthNo]);
+
   // ==========================================
   // DETAILED SALES DATA (SEARCH & PAGINATION)
   // ==========================================
@@ -2551,6 +2719,21 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             </button>
             <button
               type="button"
+              className={`sales-report-tab-btn ${activeTab === 'salesTrend' ? 'active' : ''}`}
+              onClick={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  monthNo: String(new Date().getMonth() + 1).padStart(2, '0'),
+                  packageCode: 'ALL',
+                  selectedProducts: [...DEFAULT_DAC_PRODUCTS],
+                }));
+                setActiveTab('salesTrend');
+              }}
+            >
+              <span>📈</span>Sales Trend
+            </button>
+            <button
+              type="button"
               className={`sales-report-tab-btn ${activeTab === 'consumerSearch' ? 'active' : ''}`}
               onClick={() => setActiveTab('consumerSearch')}
             >
@@ -2622,6 +2805,23 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               onClick={() => setActiveTab('breakdowns')}
             >
               <span>📑</span>Breakdown Reports
+            </button>
+            <button
+              type="button"
+              className={`sales-report-tab-btn ${activeTab === 'advanceReports' ? 'active' : ''}`}
+              onClick={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  monthNo: String(new Date().getMonth() + 1).padStart(2, '0'),
+                  packageCode: 'ALL',
+                  selectedProducts: [...DEFAULT_DAC_PRODUCTS],
+                }));
+                setSelectedAdvancedReport(null);
+                setAdvancedDetailPage(1);
+                setActiveTab('advanceReports');
+              }}
+            >
+              <span>🚀</span>Advance Report
             </button>
 
             <div className="sales-sidebar-group-title">DATA &amp; SETTINGS</div>
@@ -2872,6 +3072,50 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           {/* ========================================== */}
           {/* TAB: CONSUMER SEARCH & DELIVERY HISTORY   */}
           {/* ========================================== */}
+          {activeTab === 'salesTrend' && (
+            <div className="sales-card sales-trend-page">
+              <div className="sales-card-header">
+                <div><h2>📈 Sales Trend</h2><p>Delivery Date-wise booking age trend for selected month</p></div>
+              </div>
+              <SectionFilterToolbar
+                monthNo={filters.monthNo}
+                selectedProducts={filters.selectedProducts || []}
+                availableProducts={allAvailableProducts}
+                onMonthChange={(monthNo) => setFilters((prev) => ({ ...prev, monthNo }))}
+                onProductsChange={(selectedProducts) => setFilters((prev) => ({ ...prev, selectedProducts }))}
+                onReset={() => setFilters((prev) => ({ ...prev, monthNo: String(new Date().getMonth() + 1).padStart(2, '0'), packageCode: 'ALL', selectedProducts: [...DEFAULT_DAC_PRODUCTS] }))}
+              />
+              <div className="sales-trend-kpis">
+                <article><span>Delivery Date Total</span><strong>{salesTrendData.totalDeliveries.toLocaleString()}</strong><small>Delivered cylinders</small></article>
+                <article><span>Same-day Booking</span><strong>{salesTrendData.sameDay.toLocaleString()}</strong><small>Booked and delivered same day</small></article>
+                <article><span>1–2 Day Old Booking</span><strong>{salesTrendData.oneToTwoDays.toLocaleString()}</strong><small>Delivered after 1–2 days</small></article>
+                <article><span>7+ Day Old Booking</span><strong>{salesTrendData.sevenPlus.toLocaleString()}</strong><small>Older backlog delivered</small></article>
+              </div>
+              <div className="sales-trend-chart-card">
+                <header><div><h3>Daily Delivery vs Booking-Age Trend</h3><p>Each delivery date split by original booking date</p></div><div className="sales-trend-legend"><span><i className="age-0" />Same day</span><span><i className="age-1" />1 day</span><span><i className="age-2" />2 days</span><span><i className="age-3" />3–6 days</span><span><i className="age-7" />7–14 days</span><span><i className="age-15" />15+ days</span><span><i className="age-21" />21+ days</span></div></header>
+                {salesTrendData.rows.length ? <div className="sales-age-chart">{salesTrendData.rows.map((row) => {
+                  return <div className="sales-age-column" key={row.date}>
+                    <strong className="sales-age-total">{row.deliveries}</strong>
+                    <div className="sales-age-bar" style={{ height: `${Math.max(28, (row.deliveries / salesTrendData.maxValue) * 230)}px` }} title={`${row.date}: ${row.deliveries} deliveries`}>
+                      {row.twentyOnePlus > 0 && <i className="age-21" style={{ flex: row.twentyOnePlus }} title={`21+ days: ${row.twentyOnePlus}`}>{row.twentyOnePlus}</i>}
+                      {row.fifteenPlus > 0 && <i className="age-15" style={{ flex: row.fifteenPlus }} title={`15–20 days: ${row.fifteenPlus}`}>{row.fifteenPlus}</i>}
+                      {row.sevenPlus > 0 && <i className="age-7" style={{ flex: row.sevenPlus }} title={`7–14 days: ${row.sevenPlus}`}>{row.sevenPlus}</i>}
+                      {row.threeToSix > 0 && <i className="age-3" style={{ flex: row.threeToSix }} title={`3–6 days: ${row.threeToSix}`}>{row.threeToSix}</i>}
+                      {row.twoDays > 0 && <i className="age-2" style={{ flex: row.twoDays }} title={`2 days: ${row.twoDays}`}>{row.twoDays}</i>}
+                      {row.oneDay > 0 && <i className="age-1" style={{ flex: row.oneDay }} title={`1 day: ${row.oneDay}`}>{row.oneDay}</i>}
+                      {row.sameDay > 0 && <i className="age-0" style={{ flex: row.sameDay }} title={`Same day: ${row.sameDay}`}>{row.sameDay}</i>}
+                    </div><span>{row.date.slice(8, 10)}</span>
+                  </div>;
+                })}</div> : <div className="sales-trend-empty">Selected filters ke liye delivery data available nahi hai.</div>}
+              </div>
+              <div className="sales-trend-table-wrap"><table><thead><tr><th>Delivery Date</th><th>Total Delivery</th><th>Same-day Booking</th><th>Same Day Delivery %</th><th>1 Day Old</th><th>2 Days Old</th><th>3–6 Days Old</th><th>7–14 Days Old</th><th>15+ Days Old</th><th>21+ Days Old</th></tr></thead><tbody>{salesTrendData.rows.map((row) => {
+                const countButton = (label, count, detailRows) => <button type="button" className="sales-trend-count" disabled={!count} onClick={() => setDeliveryDrilldown({ deliveryman: label, scope: 'Delivery vs Booking-Age Trend', label: row.date, count, rows: detailRows })}>{count}</button>;
+                const sameDayPercent = row.deliveries ? (row.sameDay / row.deliveries) * 100 : 0;
+                return <tr key={row.date}><td><strong>{row.date}</strong></td><td>{countButton('Total Deliveries', row.deliveries, row.details.all)}</td><td>{countButton('Same-day Booking', row.sameDay, row.details.sameDay)}</td><td><span className={`same-day-percent ${sameDayPercent >= 80 ? 'high' : sameDayPercent >= 50 ? 'medium' : 'low'}`}>{sameDayPercent.toFixed(1)}%</span></td><td>{countButton('1 Day Old Booking', row.oneDay, row.details.oneDay)}</td><td>{countButton('2 Days Old Booking', row.twoDays, row.details.twoDays)}</td><td>{countButton('3–6 Days Old Booking', row.threeToSix, row.details.threeToSix)}</td><td>{countButton('7–14 Days Old Booking', row.sevenPlus, row.details.sevenPlus)}</td><td>{countButton('15+ Days Old Booking', row.fifteenPlus, row.details.fifteenPlus)}</td><td>{countButton('21+ Days Old Booking', row.twentyOnePlus, row.details.twentyOnePlus)}</td></tr>;
+              })}</tbody></table></div>
+            </div>
+          )}
+
           {activeTab === 'consumerSearch' && (
             <div className="sales-card consumer-search-page">
               <div className="sales-card-header consumer-search-header">
@@ -2886,35 +3130,35 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   <button
                     type="button"
                     className={consumerSearchMode === 'consumerNo' ? 'active' : ''}
-                    onClick={() => { setConsumerSearchMode('consumerNo'); setConsumerSearchQuery(''); }}
+                    onClick={() => { setConsumerSearchMode('consumerNo'); setConsumerSearchQuery(''); setSelectedConsumerSearchNo(''); }}
                   >
                     🪪 Consumer Number
                   </button>
                   <button
                     type="button"
                     className={consumerSearchMode === 'mobileNo' ? 'active' : ''}
-                    onClick={() => { setConsumerSearchMode('mobileNo'); setConsumerSearchQuery(''); }}
+                    onClick={() => { setConsumerSearchMode('mobileNo'); setConsumerSearchQuery(''); setSelectedConsumerSearchNo(''); }}
                   >
                     📱 Mobile Number
                   </button>
                   <button
                     type="button"
                     className={consumerSearchMode === 'orderNo' ? 'active' : ''}
-                    onClick={() => { setConsumerSearchMode('orderNo'); setConsumerSearchQuery(''); }}
+                    onClick={() => { setConsumerSearchMode('orderNo'); setConsumerSearchQuery(''); setSelectedConsumerSearchNo(''); }}
                   >
                     🧾 Order No
                   </button>
                   <button
                     type="button"
                     className={consumerSearchMode === 'cashMemoNo' ? 'active' : ''}
-                    onClick={() => { setConsumerSearchMode('cashMemoNo'); setConsumerSearchQuery(''); }}
+                    onClick={() => { setConsumerSearchMode('cashMemoNo'); setConsumerSearchQuery(''); setSelectedConsumerSearchNo(''); }}
                   >
                     🧮 CashMemo No
                   </button>
                   <button
                     type="button"
                     className={consumerSearchMode === 'consumerName' ? 'active' : ''}
-                    onClick={() => { setConsumerSearchMode('consumerName'); setConsumerSearchQuery(''); }}
+                    onClick={() => { setConsumerSearchMode('consumerName'); setConsumerSearchQuery(''); setSelectedConsumerSearchNo(''); }}
                   >
                     👤 Consumer Name
                   </button>
@@ -2932,6 +3176,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                       value={consumerSearchQuery}
                       onChange={(event) => {
                         setConsumerSearchQuery(event.target.value);
+                        setSelectedConsumerSearchNo('');
                         setConsumerSearchFocused(true);
                       }}
                       onFocus={() => setConsumerSearchFocused(true)}
@@ -2943,7 +3188,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                       autoComplete="off"
                     />
                     {consumerSearchQuery && (
-                      <button type="button" onClick={() => setConsumerSearchQuery('')} aria-label="Clear search">✕</button>
+                      <button type="button" onClick={() => { setConsumerSearchQuery(''); setSelectedConsumerSearchNo(''); }} aria-label="Clear search">✕</button>
                     )}
                   </div>
                   {consumerSearchFocused && activeConsumerSearchSuggestions.length > 0 && (
@@ -2951,10 +3196,11 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                       {activeConsumerSearchSuggestions.map((suggestion) => (
                         <button
                           type="button"
-                          key={suggestion.normalized}
+                          key={`${suggestion.normalized}-${suggestion.consumerNo}`}
                           onMouseDown={(event) => {
                             event.preventDefault();
                             setConsumerSearchQuery(suggestion.value);
+                            setSelectedConsumerSearchNo(consumerSearchMode === 'consumerName' ? String(suggestion.consumerNo || '') : '');
                             setConsumerSearchFocused(false);
                           }}
                         >
@@ -3033,11 +3279,11 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
               {consumerSearchQuery.trim() && consumerSearchResults.length === 0 && (
                 <div className="consumer-search-empty">
                   <span>🔍</span>
-                  <strong>No consumer found</strong>
-                  <p>Check the {{
+                  <strong>{consumerSearchMode === 'consumerName' && !selectedConsumerSearchNo ? 'Select the consumer' : 'No consumer found'}</strong>
+                  <p>{consumerSearchMode === 'consumerName' && !selectedConsumerSearchNo ? 'Suggestion list se Consumer Number ke saath correct consumer select karein.' : <>Check the {{
                     consumerNo: 'consumer number', mobileNo: 'mobile number', orderNo: 'order number',
                     cashMemoNo: 'cash memo number', consumerName: 'consumer name',
-                  }[consumerSearchMode]} and try again.</p>
+                  }[consumerSearchMode]} and try again.</>}</p>
                 </div>
               )}
 
@@ -4344,6 +4590,74 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   )}
                 </table>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'advanceReports' && (
+            <div className="sales-card advanced-report-page">
+              <div className="sales-card-header">
+                <div>
+                  <h2>🚀 Advance Reports</h2>
+                  <p>15 actionable operational, consumer, payment, delivery and management reports</p>
+                </div>
+              </div>
+              <SectionFilterToolbar
+                monthNo={filters.monthNo}
+                selectedProducts={filters.selectedProducts || []}
+                availableProducts={allAvailableProducts}
+                onMonthChange={(monthNo) => setFilters((prev) => ({ ...prev, monthNo }))}
+                onProductsChange={(selectedProducts) => setFilters((prev) => ({ ...prev, selectedProducts }))}
+                onReset={() => setFilters((prev) => ({
+                  ...prev,
+                  monthNo: String(new Date().getMonth() + 1).padStart(2, '0'),
+                  packageCode: 'ALL',
+                  selectedProducts: [...DEFAULT_DAC_PRODUCTS],
+                }))}
+              />
+              <div className="advanced-report-intro">
+                <strong>{filteredTransactions.length.toLocaleString()} transactions analyzed</strong>
+                <span>Reports selected month aur product filters ke according automatically update hote hain.</span>
+              </div>
+              <div className="advanced-report-grid">
+                {advancedReports.map((report, index) => (
+                  <article className="advanced-report-card" key={report.title}>
+                    <header><span>{report.icon}</span><b>REPORT {String(index + 1).padStart(2, '0')}</b></header>
+                    <h3>{report.title}</h3>
+                    <strong className="advanced-report-card__metric">{report.metric}</strong>
+                    <p>{report.note}</p>
+                    <div className="advanced-report-card__list">
+                      {report.items.length ? report.items.slice(0, 3).map((item, itemIndex) => (
+                        <div key={`${item.label}-${itemIndex}`}><span>{item.label}</span><strong>{item.value}</strong></div>
+                      )) : <small>No matching records available.</small>}
+                    </div>
+                    <button type="button" className="advanced-report-card__open" onClick={() => { setSelectedAdvancedReport(index); setAdvancedDetailPage(1); }}>
+                      View Detailed Report →
+                    </button>
+                  </article>
+                ))}
+              </div>
+              {selectedAdvancedReport !== null && advancedReports[selectedAdvancedReport] && (() => {
+                const report = advancedReports[selectedAdvancedReport];
+                const pageSize = 25;
+                const pageCount = Math.max(1, Math.ceil(report.items.length / pageSize));
+                const page = Math.min(advancedDetailPage, pageCount);
+                const visibleItems = report.items.slice((page - 1) * pageSize, page * pageSize);
+                return <div className="advanced-detail-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedAdvancedReport(null); }}>
+                  <section className="advanced-detail-panel" role="dialog" aria-modal="true" aria-labelledby="advanced-detail-title">
+                    <header>
+                      <div><span>{report.icon} DETAILED ADVANCE REPORT</span><h3 id="advanced-detail-title">{report.title}</h3><p>{report.metric} · {report.note}</p></div>
+                      <button type="button" onClick={() => setSelectedAdvancedReport(null)} aria-label="Close detailed report">✕</button>
+                    </header>
+                    <div className="advanced-detail-summary"><strong>{report.items.length.toLocaleString()} detailed rows</strong><span>Current month/product filters applied</span></div>
+                    <div className="advanced-detail-table-wrap">
+                      <table><thead><tr><th>Rank</th><th>Details / Category</th><th>Result</th></tr></thead>
+                        <tbody>{visibleItems.length ? visibleItems.map((item, itemIndex) => <tr key={`${item.label}-${itemIndex}`}><td>{(page - 1) * pageSize + itemIndex + 1}</td><td><strong>{item.label}</strong></td><td>{item.value}</td></tr>) : <tr><td colSpan={3}>No matching detailed records available.</td></tr>}</tbody>
+                      </table>
+                    </div>
+                    <footer><span>Page {page} of {pageCount}</span><div><button type="button" disabled={page === 1} onClick={() => setAdvancedDetailPage((value) => Math.max(1, value - 1))}>‹ Previous</button><button type="button" disabled={page === pageCount} onClick={() => setAdvancedDetailPage((value) => Math.min(pageCount, value + 1))}>Next ›</button></div></footer>
+                  </section>
+                </div>;
+              })()}
             </div>
           )}
 
@@ -5865,12 +6179,12 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
             <div className="dac-consumer-book__body">
               {deliveryDrilldown.rows.length ? (
                 <table>
-                  <thead><tr><th>#</th><th>Consumer No.</th><th>Consumer</th><th>Mobile</th><th>Area</th><th>Order / Cash Memo</th><th>Date</th><th>Qty</th><th>DAC</th></tr></thead>
+                  <thead><tr><th>#</th><th>Consumer No.</th><th>Consumer</th><th>Mobile</th><th>Area</th><th>Order / Cash Memo</th><th>Booking Date</th><th>Delivery Date</th><th>Qty</th><th>DAC</th></tr></thead>
                   <tbody>{[...deliveryDrilldown.rows].sort((a, b) => String(a.consumerNo || '').localeCompare(String(b.consumerNo || ''), undefined, { numeric: true, sensitivity: 'base' })).map((row, index) => (
                     <tr key={row.id || row.uniqueKey || `${row.consumerNo}-${index}`}>
                       <td>{index + 1}</td><td><strong>{row.consumerNo || '—'}</strong></td><td>{row.consumerName || '—'}</td>
                       <td>{row.mobileNo || '—'}</td><td>{row.deliveryArea || '—'}</td><td>{row.orderNo || '—'}<small>{row.cashMemoNo || ''}</small></td>
-                      <td>{row.actualDeliveryDate || row.salesDate || '—'}</td><td>{row.orderQuantity || 1}</td><td>{row.dacType || (row.dacVerified ? 'OTP/DAC' : '—')}</td>
+                      <td>{row.orderDateKey || row.orderDate || '—'}</td><td>{row.actualDeliveryDate || row.salesDate || '—'}</td><td>{row.orderQuantity || 1}</td><td>{row.dacType || (row.dacVerified ? 'OTP/DAC' : '—')}</td>
                     </tr>
                   ))}</tbody>
                 </table>
