@@ -196,6 +196,7 @@ import {
   LazyEmployeeReportPage,
   LazyStockRegisterPage,
   LazySalesReportPage,
+  LazyConsumerDatabasePage,
 } from './app/routes';
 import { UnauthorizedAccessPage } from './components/UnauthorizedAccessPage';
 import { AdminUserAccessPanel } from './components/AdminUserAccessPanel';
@@ -3814,6 +3815,7 @@ function App() {
   const [showEmployeeReportPage, setShowEmployeeReportPage] = useState(false);
   const [showStockRegister, setShowStockRegister] = useState(false);
   const [showSalesReport, setShowSalesReport] = useState(false);
+  const [showConsumerDatabase, setShowConsumerDatabase] = useState(false);
 
   useEffect(() => {
     if (showSalesReport) {
@@ -4619,6 +4621,7 @@ function App() {
     setShowEmployeeReportPage(false);
     setShowStockRegister(false);
     setShowSalesReport(false);
+    setShowConsumerDatabase(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -4711,6 +4714,15 @@ function App() {
     }
     hideAllViews();
     setShowSalesReport(true);
+    setShowUserMenu(false);
+  };
+  const handleConsumerDatabaseOpen = () => {
+    if (!isMenuAccessAllowed('salesReport')) {
+      handleUnauthorizedMenu('👥 Consumer Database');
+      return;
+    }
+    hideAllViews();
+    setShowConsumerDatabase(true);
     setShowUserMenu(false);
   };
   const handleIdCardOpen = () => {
@@ -7753,6 +7765,7 @@ function App() {
       : showEmployeeReportPage ? 'employeeReport'
       : showStockRegister ? 'stockRegister'
       : showSalesReport ? 'salesReport'
+      : showConsumerDatabase ? 'consumerDatabase'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -8414,6 +8427,7 @@ function App() {
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleAttendanceOpen(); setShowMainMenu(false); }} disabled={isPlanExpired && isMenuAccessAllowed('hrWorkforce')} role="menuitem">👥 HR &amp; WORKFORCE</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired && isMenuAccessAllowed('inventoryReports')} role="menuitem">📦 Inventory Reports</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleSalesReportOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('salesReport') ? false : !canAccessMenuFeature('salesReport')} role="menuitem">📊 Sales Report</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleConsumerDatabaseOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('salesReport') ? false : !canAccessMenuFeature('salesReport')} role="menuitem">👥 Consumer Database</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('cashmemoLayout') ? false : !canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
                   {isLoggedIn && hasHindiPackageAccess && <button type="button" className="navbar-submenu-item" onClick={() => { handleDictionaryOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('dictionaryUpdate')} role="menuitem">📖 Dictionary</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('invoiceWorkspace') ? false : !canAccessMenuFeature('invoice')} role="menuitem">🧾 INVOICE WORKSPACE</button>}
@@ -8593,8 +8607,8 @@ function App() {
         </div>
       )}
       {isLoggedIn && isPlanExpired && !showUpgradePlan && !showAboutInfo && !showUserProfile && !unauthorizedAccessState && <ExpiredPlanGuide onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
-      {(Boolean(unauthorizedAccessState) || showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
-        <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}${showInvoicePage ? ' book-view--invoice' : ''}`}>
+      {(Boolean(unauthorizedAccessState) || showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showConsumerDatabase || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+        <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}${showConsumerDatabase ? ' book-view--consumer-database' : ''}${showInvoicePage ? ' book-view--invoice' : ''}`}>
           {unauthorizedAccessState && (
             <UnauthorizedAccessPage
               menuTitle={unauthorizedAccessState.menuTitle}
@@ -8698,6 +8712,11 @@ function App() {
           {showSalesReport && (
             <Suspense fallback={<div className="placeholder-container">Loading sales report...</div>}>
               <LazySalesReportPage loggedInUser={loggedInUser} parsedData={parsedData} onClose={navigateToHome} />
+            </Suspense>
+          )}
+          {showConsumerDatabase && (
+            <Suspense fallback={<div className="placeholder-container">Loading Consumer Database...</div>}>
+              <LazyConsumerDatabasePage loggedInUser={loggedInUser} onClose={navigateToHome} />
             </Suspense>
           )}
           {showLabelUpdate && (

@@ -113,15 +113,21 @@ export const handleSalesReportRequest = async (authorization, body = {}) => {
   if (mode === 'saveManifest') {
     const manifest = body.salesReportData;
     const monthKeys = Array.isArray(manifest?.monthKeys) ? manifest.monthKeys : [];
-    if (!manifest || monthKeys.some((monthKey) => !validMonthKey(monthKey))) {
+    const deletedMonthKeys = Array.isArray(body.deletedMonthKeys) ? body.deletedMonthKeys : [];
+    if (!manifest || [...monthKeys, ...deletedMonthKeys].some((monthKey) => !validMonthKey(monthKey))) {
       throw new LoginError('invalid-data', 'A valid Sales Report manifest is required.', 400);
     }
     const previousKeys = Array.isArray(target?.salesReportData?.monthKeys) ? target.salesReportData.monthKeys : [];
+    // A client can legitimately have only part of the annual dataset cached.
+    // Never interpret an omitted month as a deletion; deletion must be explicit.
+    const deletedSet = new Set(deletedMonthKeys);
+    const safeMonthKeys = [...new Set([...previousKeys, ...monthKeys])]
+      .filter((monthKey) => !deletedSet.has(monthKey));
     const payload = { ...manifest, storageVersion: 3,
-      monthKeys: [...new Set(monthKeys)].sort(), updatedAt: new Date().toISOString() };
+      monthKeys: safeMonthKeys.sort(), updatedAt: new Date().toISOString() };
     delete payload.compressedData;
     await targetDocRef.set({ salesReportData: payload }, { merge: true });
-    await Promise.all(previousKeys.filter((monthKey) => !payload.monthKeys.includes(monthKey))
+    await Promise.all(previousKeys.filter((monthKey) => deletedSet.has(monthKey))
       .map((monthKey) => deleteR2SalesMonth(targetDocRef.id, monthKey)));
     return { success: true, docId: targetDocRef.id, monthKeys: payload.monthKeys };
   }

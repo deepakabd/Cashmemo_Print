@@ -45,3 +45,25 @@ CREATE TABLE IF NOT EXISTS pending_booking_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_pending_booking_dealer
   ON pending_booking_snapshots (dealer_code);
+
+CREATE TABLE IF NOT EXISTS consumer_database_snapshots (
+  user_id TEXT PRIMARY KEY NOT NULL,
+  dealer_code TEXT NOT NULL,
+  upload_id TEXT NOT NULL,
+  file_name TEXT,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  chunk_count INTEGER NOT NULL DEFAULT 0,
+  uploaded_at TEXT NOT NULL,
+  schema_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS consumer_database_chunks (
+  user_id TEXT NOT NULL,
+  upload_id TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (user_id, upload_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_consumer_database_dealer
+  ON consumer_database_snapshots (dealer_code);

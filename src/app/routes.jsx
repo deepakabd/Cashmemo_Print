@@ -62,3 +62,4 @@ export const LazyEmployeeReportPage = lazy(
 );
 export const LazyStockRegisterPage = lazy(() => import("../StockRegisterPage"));
 export const LazySalesReportPage = lazy(() => import("../SalesReportPage"));
+export const LazyConsumerDatabasePage = lazy(() => import("../ConsumerDatabasePage"));

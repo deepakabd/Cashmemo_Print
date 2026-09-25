@@ -217,6 +217,27 @@ describe('SalesReport Server API & Service', () => {
     expect(mockUsers.get('user_1').salesReportData.compressedData).toBeUndefined();
   });
 
+  it('preserves existing cloud months unless deletion is explicitly requested', async () => {
+    mockUsers.set('user_1', { dealerCode: 'D100', salesReportData: {
+      storageVersion: 3, monthKeys: ['2026-04', '2026-05'],
+    } });
+
+    await handleSalesReportRequest('Bearer token', {
+      mode: 'saveManifest', userId: 'user_1',
+      salesReportData: { monthKeys: ['2026-09'], batches: [] },
+    });
+    expect(mockUsers.get('user_1').salesReportData.monthKeys)
+      .toEqual(['2026-04', '2026-05', '2026-09']);
+    expect(r2.remove).not.toHaveBeenCalled();
+
+    await handleSalesReportRequest('Bearer token', {
+      mode: 'saveManifest', userId: 'user_1', deletedMonthKeys: ['2026-05'],
+      salesReportData: { monthKeys: ['2026-04', '2026-09'], batches: [] },
+    });
+    expect(mockUsers.get('user_1').salesReportData.monthKeys).toEqual(['2026-04', '2026-09']);
+    expect(r2.remove).toHaveBeenCalledWith('user_1', '2026-05');
+  });
+
   it('loads a monthly report from R2', async () => {
     mockUsers.set('user_1', { dealerCode: 'D100', salesReportData: { storageVersion: 3, monthKeys: ['2026-09'] } });
     r2.load.mockResolvedValueOnce('MONTH_DATA');

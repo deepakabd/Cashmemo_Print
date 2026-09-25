@@ -5,6 +5,8 @@ import {
   loadSalesReportFromFirebase,
   saveSalesReportData,
   importSalesBatch,
+  confirmMonthData,
+  unlockMonthData,
   resetMonthSalesData,
   COMPACT_TX_FIELDS,
 } from '../src/services/salesReportStore';
@@ -287,6 +289,33 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(requestModes).toEqual(['load', 'loadMonth', 'loadMonth', 'saveMonth', 'saveMonth', 'saveManifest']);
   });
 
+  it('recovers local financial-year months omitted by a partial cloud manifest', async () => {
+    const user = { id: 'dealer_123', dealerCode: 'D123' };
+    const april = { id: 'apr', uniqueKey: 'apr', year: 2026, monthNo: 4, orderNo: 'APR' };
+    const august = { id: 'aug', uniqueKey: 'aug', year: 2026, monthNo: 8, orderNo: 'AUG' };
+    const september = { id: 'sep', uniqueKey: 'sep', year: 2026, monthNo: 9, orderNo: 'SEP' };
+    vi.mocked(salesReportDb.loadSalesReportFromIndexedDB).mockResolvedValueOnce({
+      storageVersion: 3,
+      batches: [{ batchId: 'apr-batch' }, { batchId: 'aug-batch' }],
+      monthlyUploads: { '2026-04': { rows: [april] }, '2026-08': { rows: [august] } },
+      transactions: [april, august],
+    });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+        salesReportData: { storageVersion: 3, monthKeys: ['2026-09'], batches: [{ batchId: 'sep-batch' }], monthlyUploads: { '2026-09': { rows: [] } } },
+      }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ compressedData: compressTransactions([september]) }) })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+
+    const result = await loadSalesReportFromFirebase(user);
+
+    expect(result.transactions.map((row) => row.orderNo).sort()).toEqual(['APR', 'AUG', 'SEP']);
+    expect(result.monthKeys).toEqual(['2026-04', '2026-08', '2026-09']);
+    const manifestCall = globalThis.fetch.mock.calls.map((call) => JSON.parse(call[1].body))
+      .find((body) => body.mode === 'saveManifest');
+    expect(manifestCall.salesReportData.monthKeys).toEqual(['2026-04', '2026-08', '2026-09']);
+  });
+
   it('loadSalesReportFromFirebase on a new machine restores all transactions from Firestore fallback', async () => {
     const user = { id: 'dealer_123', dealerCode: 'D123' };
 
@@ -412,7 +441,7 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(lastSetDocCall[1].salesReportData.batches[0].fileName).toBe('Real_Sales_File.xlsx');
   });
 
-  it('re-upload unlocks the month, uploads only that month, and reports progress', async () => {
+  it('blocks re-upload for a confirmed month even for an admin until it is unlocked', async () => {
     const user = { id: 'dealer_123', dealerCode: 'D123', role: 'admin' };
     const oldRow = { id: 'old', uniqueKey: 'old', year: 2026, monthNo: 8, orderQuantity: 1, salesValue: 100 };
     const newRow = { id: 'new', uniqueKey: 'new', year: 2026, monthNo: 8, orderQuantity: 2, salesValue: 200 };
@@ -421,22 +450,68 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
       batches: [], transactions: [oldRow],
       monthlyUploads: { '2026-08': { confirmed: true, rows: [oldRow], summary: { totalRows: 1 } } },
     };
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ success: true }) })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ success: true }) });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ success: true }),
+    });
     const onProgress = vi.fn();
 
-    const result = await importSalesBatch(user, store, {
+    await expect(importSalesBatch(user, store, {
       batchId: 'replacement', fileName: 'august.xlsx', overwriteMonth: true,
-    }, [newRow], { onProgress });
+    }, [newRow], { onProgress })).rejects.toThrow('confirmed and locked');
 
-    expect(result.monthlyUploads['2026-08'].confirmed).toBe(false);
-    expect(result.settings.lockedMonths['2026-08']).toBeUndefined();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(store.monthlyUploads['2026-08'].confirmed).toBe(true);
+  });
+
+  it('enables re-upload after Settings unlock clears the month lock', async () => {
+    const user = { id: 'dealer_123', dealerCode: 'D123', role: 'admin' };
+    const oldRow = { id: 'old', uniqueKey: 'old', year: 2026, monthNo: 8, orderQuantity: 1, salesValue: 100 };
+    const newRow = { id: 'new', uniqueKey: 'new', year: 2026, monthNo: 8, orderQuantity: 2, salesValue: 200 };
+    const store = {
+      storageVersion: 3,
+      monthKeys: ['2026-08'],
+      settings: { lockedMonths: { '2026-08': { confirmed: true } } },
+      batches: [], transactions: [oldRow],
+      monthlyUploads: { '2026-08': { confirmed: true, rows: [oldRow], summary: { totalRows: 1 } } },
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ success: true }),
+    });
+
+    const unlocked = await unlockMonthData(user, store, '2026-08');
+    expect(unlocked.settings.lockedMonths['2026-08']).toBeUndefined();
+    expect(unlocked.monthlyUploads['2026-08'].confirmed).toBe(false);
+
+    const result = await importSalesBatch(user, unlocked, {
+      batchId: 'replacement', fileName: 'august.xlsx', overwriteMonth: true,
+    }, [newRow]);
     expect(result.transactions).toEqual([expect.objectContaining({ id: 'new' })]);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body).mode).toBe('saveMonth');
-    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).mode).toBe('saveManifest');
-    expect(onProgress).toHaveBeenLastCalledWith(100);
+    expect(result.monthlyUploads['2026-08'].confirmed).toBe(false);
+  });
+
+  it('never locks the current month and ignores stale current-month lock metadata on upload', async () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const monthNo = now.getMonth() + 1;
+    const ym = `${year}-${String(monthNo).padStart(2, '0')}`;
+    const user = { id: 'dealer_123', dealerCode: 'D123', role: 'admin' };
+    const oldRow = { id: 'old-current', uniqueKey: 'old-current', year, monthNo };
+    const newRow = { id: 'new-current', uniqueKey: 'new-current', year, monthNo };
+    const store = {
+      settings: { lockedMonths: { [ym]: { confirmed: true } } },
+      batches: [], transactions: [oldRow],
+      monthlyUploads: { [ym]: { confirmed: true, rows: [oldRow] } },
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ success: true }),
+    });
+
+    await expect(confirmMonthData(user, store, ym)).rejects.toThrow('always unlocked');
+    const result = await importSalesBatch(user, store, {
+      batchId: 'current-replacement', fileName: 'current.xlsx', overwriteMonth: true,
+    }, [newRow]);
+    expect(result.transactions).toEqual([expect.objectContaining({ id: 'new-current' })]);
+    expect(result.monthlyUploads[ym].confirmed).toBe(false);
   });
 
   it('month reset unlocks immediately and uses metadata-only sync for an existing R2 manifest', async () => {

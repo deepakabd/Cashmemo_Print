@@ -12,6 +12,7 @@ import invoiceWorkspaceHandler from './api/invoice-workspace.js'
 import salesReportHandler from './api/sales-report.js'
 import ratesHandler from './api/rates.js'
 import pendingBookingsHandler from './api/pending-bookings.js'
+import consumerDatabaseHandler from './api/consumer-database.js'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -100,6 +101,7 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use('/api/sales-report', salesReportHandler);
           server.middlewares.use('/api/rates', ratesHandler);
           server.middlewares.use('/api/pending-bookings', pendingBookingsHandler);
+          server.middlewares.use('/api/consumer-database', consumerDatabaseHandler);
           // Warn at boot, not just at the first failed login.
           checkLoginServiceConfig();
 

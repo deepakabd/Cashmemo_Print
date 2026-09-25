@@ -454,6 +454,44 @@ export const loadSalesReportFromFirebase = async (user, options = {}) => {
     const remoteTxCount = remoteTransactions.length;
     const missingMonthKeys = Array.isArray(remote.missingMonthKeys) ? remote.missingMonthKeys : [];
 
+    // Older/partial syncs could publish a manifest containing only the latest
+    // uploaded month. Recover real months still present in this device's full
+    // IndexedDB copy instead of allowing September (or any latest month) to
+    // replace the rest of the financial year.
+    if (!remote.isReset && localTxCount > 0 && Array.isArray(remote.monthKeys)) {
+      const remoteMonthKeys = new Set(remote.monthKeys);
+      const localUploadKeys = new Set(Object.keys(localData.monthlyUploads || {}));
+      const recoverableKeys = [...localUploadKeys].filter((monthKey) => !remoteMonthKeys.has(monthKey));
+      if (recoverableKeys.length > 0) {
+        const recoverableSet = new Set(recoverableKeys);
+        const recoveryRows = localData.transactions.filter((row) => (
+          recoverableSet.has(`${row.year}-${String(row.monthNo).padStart(2, '0')}`)
+        ));
+        const recoveredKeys = new Set(recoveryRows.map((row) => (
+          `${row.year}-${String(row.monthNo).padStart(2, '0')}`
+        )));
+        if (recoverableKeys.every((monthKey) => recoveredKeys.has(monthKey))) {
+          const repaired = normalizeSalesReportData({
+            ...localData,
+            ...remote,
+            monthlyUploads: { ...localData.monthlyUploads, ...(remote.monthlyUploads || {}) },
+            batches: [...(remote.batches || []), ...(localData.batches || []).filter((batch) => (
+              !(remote.batches || []).some((remoteBatch) => remoteBatch.batchId === batch.batchId)
+            ))],
+            transactions: [...remoteTransactions, ...recoveryRows],
+            monthKeys: [...remoteMonthKeys, ...recoverableKeys].sort(),
+          });
+          try {
+            await saveSalesReportData(user, repaired);
+          } catch (repairError) {
+            console.warn('SalesReport partial manifest could not be repaired.', repairError);
+          }
+          onProgress(100);
+          return repaired;
+        }
+      }
+    }
+
     // Repair manifests created by the old partial-upload flow. Keep healthy R2
     // months and fill only missing months from this device's IndexedDB copy.
     if (missingMonthKeys.length > 0 && localTxCount > 0) {
@@ -645,6 +683,7 @@ export const saveSalesReportData = async (user, data, options = {}) => {
       mode: 'saveManifest',
       userId: user?.id,
       dealerCode: user?.dealerCode,
+      deletedMonthKeys: Array.isArray(options.deletedMonthKeys) ? options.deletedMonthKeys : [],
       salesReportData: {
         isReset: normalized.isReset || false,
         settings: normalized.settings,
@@ -711,9 +750,6 @@ export const saveSalesReportData = async (user, data, options = {}) => {
 export const importSalesBatch = async (user, currentStore, batchRecord, validRows = [], options = {}) => {
   // Check if any month in the imported rows is locked
   const lockedMonths = currentStore.settings?.lockedMonths || {};
-  const userRole = String(user?.role || user?.userType || '').toLowerCase();
-  const isAdmin = !userRole || userRole.includes('admin') || userRole.includes('dealer') || userRole.includes('owner');
-
   const affectedMonths = new Set();
   validRows.forEach((r) => {
     if (r.year && r.monthNo) {
@@ -722,14 +758,11 @@ export const importSalesBatch = async (user, currentStore, batchRecord, validRow
   });
 
   const now = new Date();
-  const realCurrentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const allowSalesReupload = user?.userAccess?.allowSalesReupload === true;
-
+  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   for (const ym of affectedMonths) {
-    // Current month sales data upload MUST NEVER be locked
-    const isLocked = ym !== realCurrentYm && (lockedMonths[ym]?.confirmed || currentStore.monthlyUploads?.[ym]?.confirmed);
-    if (isLocked && !isAdmin && !allowSalesReupload) {
-      throw new Error(`Month ${ym} is confirmed and locked. Admin approval is required to re-upload.`);
+    const isLocked = ym !== currentYm && (lockedMonths[ym]?.confirmed || currentStore.monthlyUploads?.[ym]?.confirmed);
+    if (isLocked) {
+      throw new Error(`Month ${ym} is confirmed and locked. Unlock the month before re-uploading.`);
     }
   }
 
@@ -876,7 +909,10 @@ export const rollbackSalesBatch = async (user, currentStore, batchId) => {
     monthlyUploads: updatedMonthlyUploads,
   };
 
-  await saveSalesReportData(user, nextStore);
+  const remainingKeys = new Set(updatedTransactions.map((row) => `${row.year}-${String(row.monthNo).padStart(2, '0')}`));
+  const deletedMonthKeys = (currentStore.monthKeys || Object.keys(currentStore.monthlyUploads || {}))
+    .filter((monthKey) => !remainingKeys.has(monthKey));
+  await saveSalesReportData(user, nextStore, { deletedMonthKeys });
   return nextStore;
 };
 
@@ -884,6 +920,11 @@ export const rollbackSalesBatch = async (user, currentStore, batchId) => {
  * Confirm a month's data to lock it against accidental re-uploads without admin approval
  */
 export const confirmMonthData = async (user, currentStore, ym, confirmedBy = 'User', options = {}) => {
+  const now = new Date();
+  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if (ym === currentYm) {
+    throw new Error('Current month is always unlocked and cannot be confirmed.');
+  }
   const updatedMonthly = { ...(currentStore.monthlyUploads || {}) };
   if (updatedMonthly[ym]) {
     updatedMonthly[ym] = {
@@ -1029,7 +1070,7 @@ export const resetMonthSalesData = async (user, currentStore, ym, options = {}) 
     },
   };
 
-  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [] });
+  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [], deletedMonthKeys: [ym] });
   return nextStore;
 };
 
@@ -1049,6 +1090,7 @@ export const resetAllSalesData = async (user, currentStore, options = {}) => {
     },
   };
 
-  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [] });
+  const deletedMonthKeys = currentStore.monthKeys || Object.keys(currentStore.monthlyUploads || {});
+  await saveSalesReportData(user, nextStore, { ...options, monthKeys: [], deletedMonthKeys });
   return nextStore;
 };
