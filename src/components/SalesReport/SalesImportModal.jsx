@@ -51,11 +51,9 @@ export default function SalesImportModal({
   const currentYmKey = `${selectedYear}-${selectedMonthCode}`;
   const now = new Date();
   const realCurrentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  // Current month sales data upload MUST NEVER be locked
-  const isRealCurrentMonth = currentYmKey === realCurrentYm;
-  const isCurrentMonthLocked = !isRealCurrentMonth && !!lockedMonths[currentYmKey]?.confirmed;
-  const canReupload = isAdmin || allowSalesReupload;
-  const isUploadBlocked = uploadType === 'monthWise' && isCurrentMonthLocked && !canReupload;
+  const isCurrentMonthLocked = currentYmKey !== realCurrentYm && !!lockedMonths[currentYmKey]?.confirmed;
+  const canUnlockForReupload = isAdmin || allowSalesReupload;
+  const isUploadBlocked = uploadType === 'monthWise' && isCurrentMonthLocked;
 
   const handleFileSelect = async (event) => {
     const file = event.target.files?.[0];
@@ -135,7 +133,7 @@ export default function SalesImportModal({
   };
 
   const handleConfirm = async () => {
-    if (!normalizedResult) return;
+    if (!normalizedResult || isUploadBlocked) return;
     const targetRows = selectedImportTarget === 'allRows'
       ? (normalizedResult.allValidRows || [])
       : (normalizedResult.validRows || []);
@@ -248,19 +246,19 @@ export default function SalesImportModal({
               margin: '10px 0 14px',
               padding: '10px 14px',
               borderRadius: '8px',
-              background: isAdmin ? '#fef3c7' : '#fee2e2',
-              border: `1px solid ${isAdmin ? '#f59e0b' : '#ef4444'}`,
-              color: isAdmin ? '#92400e' : '#991b1b',
+              background: canUnlockForReupload ? '#fef3c7' : '#fee2e2',
+              border: `1px solid ${canUnlockForReupload ? '#f59e0b' : '#ef4444'}`,
+              color: canUnlockForReupload ? '#92400e' : '#991b1b',
               fontSize: '12.5px',
               fontWeight: '600',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
             }}>
-              <span>{isAdmin ? '🔑' : '🔒'}</span>
+              <span>{canUnlockForReupload ? '🔑' : '🔒'}</span>
               <span>
-                {canReupload
-                  ? `Month ${currentYmKey} is confirmed & locked. Re-uploading is permitted for your account.`
+                {canUnlockForReupload
+                  ? `Month ${currentYmKey} is confirmed & locked. Unlock it from Month-wise Sales Data Uploads before re-uploading.`
                   : `Month ${currentYmKey} is confirmed and locked. Re-uploading is blocked without Admin approval.`}
               </span>
             </div>
@@ -269,14 +267,14 @@ export default function SalesImportModal({
           {/* 3. Drag & Drop File Upload */}
           <div
             className={`sales-import-dropzone ${reading ? 'loading' : ''}`}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => { if (!isUploadBlocked) fileInputRef.current?.click(); }}
           >
             <input
               type="file"
               ref={fileInputRef}
               accept=".xlsx,.xls,.csv"
               style={{ display: 'none' }}
-              disabled={reading}
+              disabled={reading || isUploadBlocked}
               onChange={handleFileSelect}
             />
             <div style={{ fontSize: '32px' }}>📊</div>
@@ -606,7 +604,7 @@ export default function SalesImportModal({
               <button
                 type="button"
                 className="sales-report-btn sales-report-btn--primary"
-                disabled={!normalizedResult || !activeTargetRows.length || reading || uploading}
+                disabled={!normalizedResult || !activeTargetRows.length || reading || uploading || isUploadBlocked}
                 onClick={handleConfirm}
               >
                 {uploading

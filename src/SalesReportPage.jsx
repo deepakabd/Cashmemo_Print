@@ -381,6 +381,11 @@ function SectionFilterToolbar({
 
 export default function SalesReportPage({ loggedInUser, parsedData = [], onClose }) {
   const [storeData, setStoreData] = useState(() => loadSalesReportData(loggedInUser));
+  const loggedInUserRef = useRef(loggedInUser);
+  loggedInUserRef.current = loggedInUser;
+  const salesReportAccountKey = String(
+    loggedInUser?.id || loggedInUser?.dealerCode || loggedInUser?.dealerName || 'default',
+  );
   // Tabs: 'overview' | 'consumerSearch' | 'currentMonthDac' | 'productWise' | 'monthWise' | 'monthlyDac' | 'dayWise' | 'fyWise' | 'breakdowns' | 'upload' | 'history' | 'detailed' | 'settings'
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -493,10 +498,11 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   // Load from Firebase on mount
   useEffect(() => {
     let active = true;
+    const syncUser = loggedInUserRef.current;
     setHasCompletedInitialSync(false);
     setIsSyncing(true);
     setSyncProgress(0);
-    loadSalesReportFromFirebase(loggedInUser, {
+    loadSalesReportFromFirebase(syncUser, {
       onProgress: (percent) => { if (active) setSyncProgress(percent); },
     }).then((remote) => {
       if (active && remote) {
@@ -509,7 +515,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       }
     });
     return () => { active = false; };
-  }, [loggedInUser]);
+  }, [salesReportAccountKey]);
 
   const handleManualCloudSync = async () => {
     setIsSyncing(true);
@@ -651,6 +657,12 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Confirm month data lock
   const handleConfirmMonth = async (ym) => {
+    const now = new Date();
+    const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (ym === currentYm) {
+      showNotification('Current month is always unlocked and cannot be confirmed.', 'error');
+      return;
+    }
     try {
       setCloudOperation({ label: `Locking ${ym}`, percent: 0 });
       const confirmedBy = loggedInUser?.dealerName || loggedInUser?.username || 'User';
@@ -666,8 +678,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Admin unlock month
   const handleUnlockMonth = async (ym) => {
-    if (!isAdmin) {
-      showNotification('Admin privileges required to unlock months.', 'error');
+    const canUnlockForReupload = isAdmin || loggedInUser?.userAccess?.allowSalesReupload === true;
+    if (!canUnlockForReupload) {
+      showNotification('Re-upload permission is required to unlock months.', 'error');
       return;
     }
     try {
@@ -5206,11 +5219,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   const ymKey = `${uploadYear}-${mCode}`;
                   const monthData = storeData.monthlyUploads?.[ymKey];
                   const now = new Date();
-                  const realCurrentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                  const isRealCurrentMonth = ymKey === realCurrentYm;
-                  const isLocked = !isRealCurrentMonth && !!(lockedMonths[ymKey]?.confirmed || monthData?.confirmed);
-                  const allowSalesReupload = loggedInUser?.userAccess?.allowSalesReupload === true;
-                  const canReupload = !isLocked || isAdmin || allowSalesReupload;
+                  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  const isCurrentMonth = ymKey === currentYm;
+                  const isLocked = !isCurrentMonth && !!(lockedMonths[ymKey]?.confirmed || monthData?.confirmed);
+                  const canReupload = !isLocked;
                   const hasData = !!(monthData && (monthData.summary?.totalRows > 0 || (monthData.rows && monthData.rows.length > 0)));
 
                   return (
@@ -5283,7 +5295,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           📤 {hasData ? 'Re-upload' : 'Upload'}
                         </button>
 
-                        {hasData && !isLocked && (
+                        {hasData && !isLocked && !isCurrentMonth && (
                           <button
                             type="button"
                             className="sales-report-btn"
@@ -5292,18 +5304,6 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                             title="Confirm and lock month against accidental overwrites"
                           >
                             🔒 Confirm
-                          </button>
-                        )}
-
-                        {hasData && isLocked && isAdmin && (
-                          <button
-                            type="button"
-                            className="sales-report-btn"
-                            style={{ fontSize: '11px', padding: '6px 8px', background: '#f59e0b', color: '#1e1b4b' }}
-                            onClick={() => handleUnlockMonth(ymKey)}
-                            title="Admin override: Unlock month to permit re-upload"
-                          >
-                            🔓 Unlock
                           </button>
                         )}
 
@@ -6047,7 +6047,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     <tbody>
                       {Object.keys(storeData.monthlyUploads || {}).length > 0 ? (
                         Object.entries(storeData.monthlyUploads).map(([ym, mData]) => {
-                          const isLocked = !!(lockedMonths[ym]?.confirmed || mData.confirmed);
+                          const now = new Date();
+                          const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                          const isCurrentMonth = ym === currentYm;
+                          const isLocked = !isCurrentMonth && !!(lockedMonths[ym]?.confirmed || mData.confirmed);
                           const isResetAllowed = storeData.settings?.allowDataReset ?? false;
                           return (
                             <tr key={ym}>
@@ -6061,7 +6064,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                                   </span>
                                 ) : (
                                   <span className="month-badge month-badge--uploaded">
-                                    🔓 Open (Unconfirmed)
+                                    🔓 Unlocked
                                   </span>
                                 )}
                               </td>
@@ -6073,23 +6076,27 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                                 </small>
                               </td>
                               <td style={{ textAlign: 'center' }}>
-                                {!isLocked ? (
+                                {isCurrentMonth ? (
+                                  <span style={{ fontSize: '11px', color: '#0284c7', fontWeight: '700' }}>
+                                    Current Month — Always Unlocked
+                                  </span>
+                                ) : !isLocked ? (
                                   <button
                                     type="button"
                                     className="sales-report-btn sales-report-btn--primary"
                                     style={{ padding: '4px 10px', fontSize: '11px' }}
                                     onClick={() => handleConfirmMonth(ym)}
                                   >
-                                    🔒 Confirm Month
+                                    🔒 Confirmed &amp; Locked
                                   </button>
-                                ) : isAdmin ? (
+                                ) : (isAdmin || loggedInUser?.userAccess?.allowSalesReupload === true) ? (
                                   <button
                                     type="button"
                                     className="sales-report-btn sales-report-btn--danger"
                                     style={{ padding: '4px 10px', fontSize: '11px', background: '#d97706', borderColor: '#d97706' }}
                                     onClick={() => handleUnlockMonth(ym)}
                                   >
-                                    🔓 Unlock (Admin)
+                                    🔓 Unlock for Re-upload
                                   </button>
                                 ) : (
                                   <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '700' }}>
