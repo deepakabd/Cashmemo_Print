@@ -181,14 +181,42 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(success).toBe(true);
     expect(salesReportDb.saveSalesReportToIndexedDB).toHaveBeenCalled();
     expect(globalThis.fetch).toHaveBeenCalled();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toMatchObject({
-      mode: 'saveMonth', monthKey: '2026-09',
-    });
-    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toMatchObject({
-      mode: 'saveManifest',
+      mode: 'saveMonthAndManifest', monthKey: '2026-09',
+      salesReportData: { monthKeys: ['2026-09'] },
     });
     // Since API succeeded, direct client setDoc was not needed
     expect(firestore.setDoc).not.toHaveBeenCalled();
+  });
+
+  it('uploads independent R2 months concurrently before saving the manifest', async () => {
+    const pendingMonthUploads = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, request) => {
+      const body = JSON.parse(request.body);
+      if (body.mode === 'saveMonth') {
+        return new Promise((resolve) => pendingMonthUploads.push({ monthKey: body.monthKey, resolve }));
+      }
+      return { ok: true, json: async () => ({ success: true }) };
+    });
+
+    const rows = [
+      { id: 'apr', uniqueKey: 'apr', year: 2026, monthNo: 4 },
+      { id: 'sep', uniqueKey: 'sep', year: 2026, monthNo: 9 },
+    ];
+    const savePromise = saveSalesReportData(
+      { id: 'dealer_123', dealerCode: 'D123' },
+      { isReset: true, settings: {}, batches: [{ batchId: 'b1' }], monthlyUploads: {}, transactions: rows },
+    );
+
+    await vi.waitFor(() => expect(pendingMonthUploads).toHaveLength(2));
+    expect(pendingMonthUploads.map((upload) => upload.monthKey).sort()).toEqual(['2026-04', '2026-09']);
+    pendingMonthUploads.forEach(({ resolve }) => resolve({ ok: true, json: async () => ({ success: true }) }));
+
+    await expect(savePromise).resolves.toBe(true);
+    const modes = globalThis.fetch.mock.calls.map((call) => JSON.parse(call[1].body).mode);
+    expect(modes.filter((mode) => mode === 'saveMonth')).toHaveLength(2);
+    expect(modes.at(-1)).toBe('saveManifest');
   });
 
   it('saveSalesReportData falls back to direct Firestore users/{userId} when API fails', async () => {

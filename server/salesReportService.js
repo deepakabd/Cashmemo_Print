@@ -97,7 +97,7 @@ export const handleSalesReportRequest = async (authorization, body = {}) => {
   }
 
   const validMonthKey = (value) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(value || ''));
-  if (mode === 'saveMonth' || mode === 'loadMonth') {
+  if (mode === 'saveMonth' || mode === 'loadMonth' || mode === 'saveMonthAndManifest') {
     if (!validMonthKey(body.monthKey)) throw new LoginError('invalid-month', 'A valid Sales Report month is required.', 400);
     if (mode === 'loadMonth') {
       return { success: true, monthKey: body.monthKey,
@@ -106,7 +106,29 @@ export const handleSalesReportRequest = async (authorization, body = {}) => {
     if (typeof body.compressedData !== 'string' || !body.compressedData) {
       throw new LoginError('invalid-data', 'Compressed monthly Sales Report data is required.', 400);
     }
+    let combinedManifest = null;
+    if (mode === 'saveMonthAndManifest') {
+      combinedManifest = body.salesReportData;
+      const combinedMonthKeys = Array.isArray(combinedManifest?.monthKeys) ? combinedManifest.monthKeys : [];
+      if (!combinedManifest || combinedMonthKeys.some((monthKey) => !validMonthKey(monthKey))) {
+        throw new LoginError('invalid-data', 'A valid Sales Report manifest is required.', 400);
+      }
+    }
     await saveR2SalesMonth(targetDocRef.id, body.monthKey, body.compressedData);
+    if (combinedManifest) {
+      const monthKeys = combinedManifest.monthKeys;
+      const previousKeys = Array.isArray(target?.salesReportData?.monthKeys) ? target.salesReportData.monthKeys : [];
+      const safeMonthKeys = [...new Set([...previousKeys, ...monthKeys, body.monthKey])].sort();
+      const payload = {
+        ...combinedManifest,
+        storageVersion: 3,
+        monthKeys: safeMonthKeys,
+        updatedAt: new Date().toISOString(),
+      };
+      delete payload.compressedData;
+      await targetDocRef.set({ salesReportData: payload }, { merge: true });
+      return { success: true, docId: targetDocRef.id, monthKey: body.monthKey, monthKeys: safeMonthKeys };
+    }
     return { success: true, monthKey: body.monthKey };
   }
 
