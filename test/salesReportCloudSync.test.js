@@ -44,6 +44,30 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('API offline'));
     });
 
+  it('blocks a month-wise import when any row belongs to another month', async () => {
+    const currentStore = {
+      isReset: true,
+      settings: { lockedMonths: {} },
+      monthlyUploads: {},
+      batches: [],
+      transactions: [],
+    };
+    const batch = {
+      uploadType: 'monthWise',
+      fy: '2026-27',
+      month: '09',
+      fileName: 'September.xlsx',
+    };
+    const mixedRows = [
+      { id: 'sep', uniqueKey: 'sep', year: 2026, monthNo: 9 },
+      { id: 'apr', uniqueKey: 'apr', year: 2026, monthNo: 4 },
+    ];
+
+    await expect(importSalesBatch(null, currentStore, batch, mixedRows))
+      .rejects.toThrow('Month-wise upload must contain only 2026-09 sales data. Detected: 2026-04.');
+    expect(salesReportDb.saveSalesReportToIndexedDB).not.toHaveBeenCalled();
+  });
+
   it('compressTransactions and decompressTransactions preserve 100% of transaction data and types', () => {
     const originalRows = [
       {

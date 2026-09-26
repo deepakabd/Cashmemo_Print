@@ -748,6 +748,24 @@ export const saveSalesReportData = async (user, data, options = {}) => {
  * Import a new validated batch into the store
  */
 export const importSalesBatch = async (user, currentStore, batchRecord, validRows = [], options = {}) => {
+  // A month-wise upload must never mutate another R2 month. Keep this guard in
+  // the persistence layer as well as the modal so alternate callers cannot
+  // accidentally publish mixed-month data.
+  if (batchRecord.uploadType === 'monthWise') {
+    const targetYear = Number.parseInt(String(batchRecord.fy || '').slice(0, 4), 10);
+    const targetMonth = String(batchRecord.month || '').padStart(2, '0');
+    const targetYm = `${targetYear}-${targetMonth}`;
+    const hasValidTarget = Number.isInteger(targetYear) && /^\d{4}-(0[1-9]|1[0-2])$/.test(targetYm);
+    const mismatchedMonths = new Set(validRows
+      .map((row) => `${row.year}-${String(row.monthNo).padStart(2, '0')}`)
+      .filter((monthKey) => monthKey !== targetYm));
+
+    if (!hasValidTarget || mismatchedMonths.size > 0) {
+      const detected = mismatchedMonths.size > 0 ? ` Detected: ${[...mismatchedMonths].sort().join(', ')}.` : '';
+      throw new Error(`Month-wise upload must contain only ${targetYm} sales data.${detected}`);
+    }
+  }
+
   // Check if any month in the imported rows is locked
   const lockedMonths = currentStore.settings?.lockedMonths || {};
   const affectedMonths = new Set();
