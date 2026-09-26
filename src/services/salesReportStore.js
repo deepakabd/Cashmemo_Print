@@ -637,17 +637,6 @@ export const saveSalesReportData = async (user, data, options = {}) => {
     });
   }
 
-  const compressed = compressTransactions(normalized.transactions);
-
-  const cloudPayload = {
-    isReset: normalized.isReset || false,
-    settings: normalized.settings,
-    batches: normalized.batches,
-    monthlyUploads: lightMonthly,
-    compressedData: compressed,
-    updatedAt: nowIso,
-  };
-
   // R2 stores each month independently so annual data is never sent as one
   // oversized object and a changed month does not depend on Firestore limits.
   try {
@@ -667,33 +656,44 @@ export const saveSalesReportData = async (user, data, options = {}) => {
     const uploadMonthKeys = requestedMonths && normalized.storageVersion === 3
       ? monthKeys.filter((monthKey) => requestedMonths.has(monthKey))
       : monthKeys;
-    for (let index = 0; index < uploadMonthKeys.length; index += 1) {
-      const monthKey = uploadMonthKeys[index];
+    const deletedMonthKeys = Array.isArray(options.deletedMonthKeys) ? options.deletedMonthKeys : [];
+    const manifestData = {
+      isReset: normalized.isReset || false,
+      settings: normalized.settings,
+      batches: normalized.batches,
+      monthlyUploads: lightMonthly,
+      storageVersion: 3,
+      monthKeys,
+      updatedAt: nowIso,
+    };
+    const canUseSingleRequest = uploadMonthKeys.length === 1 && deletedMonthKeys.length === 0;
+    // Monthly objects are independent. Upload them concurrently so an initial
+    // migration or FY import takes one network round-trip window instead of
+    // waiting for every month sequentially.
+    let completedUploads = 0;
+    await Promise.all(uploadMonthKeys.map(async (monthKey) => {
+      const compressedData = compressTransactions(rowsByMonth[monthKey]);
       await postSalesReportApi({
-        mode: 'saveMonth',
+        mode: canUseSingleRequest ? 'saveMonthAndManifest' : 'saveMonth',
         userId: user?.id,
         dealerCode: user?.dealerCode,
         monthKey,
-        compressedData: compressTransactions(rowsByMonth[monthKey]),
+        compressedData,
+        ...(canUseSingleRequest ? { salesReportData: manifestData } : {}),
       });
-      onProgress(Math.round(10 + ((index + 1) / Math.max(uploadMonthKeys.length, 1)) * 75));
-    }
+      completedUploads += 1;
+      onProgress(Math.round(10 + (completedUploads / Math.max(uploadMonthKeys.length, 1)) * 75));
+    }));
     onProgress(90);
-    await postSalesReportApi({
-      mode: 'saveManifest',
-      userId: user?.id,
-      dealerCode: user?.dealerCode,
-      deletedMonthKeys: Array.isArray(options.deletedMonthKeys) ? options.deletedMonthKeys : [],
-      salesReportData: {
-        isReset: normalized.isReset || false,
-        settings: normalized.settings,
-        batches: normalized.batches,
-        monthlyUploads: lightMonthly,
-        storageVersion: 3,
-        monthKeys,
-        updatedAt: nowIso,
-      },
-    });
+    if (!canUseSingleRequest) {
+      await postSalesReportApi({
+        mode: 'saveManifest',
+        userId: user?.id,
+        dealerCode: user?.dealerCode,
+        deletedMonthKeys,
+        salesReportData: manifestData,
+      });
+    }
     // Keep the in-memory store migration-aware so later changes in this session
     // immediately use the fast incremental path.
     if (data && typeof data === 'object') {
@@ -705,6 +705,18 @@ export const saveSalesReportData = async (user, data, options = {}) => {
   } catch (r2Error) {
     console.warn('SalesReport R2 sync unavailable; trying Firestore cloud storage.', r2Error);
   }
+
+  // Legacy fallback only: full-dataset compression is CPU-heavy for large FY
+  // reports, so do it lazily after the faster monthly R2 path has failed.
+  const compressed = compressTransactions(normalized.transactions);
+  const cloudPayload = {
+    isReset: normalized.isReset || false,
+    settings: normalized.settings,
+    batches: normalized.batches,
+    monthlyUploads: lightMonthly,
+    compressedData: compressed,
+    updatedAt: nowIso,
+  };
 
   // Primary Cloud Path: Trusted Server API (uses Firebase Admin SDK, bypasses security rules, works for Admin & Dealers)
   try {

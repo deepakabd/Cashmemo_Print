@@ -217,6 +217,26 @@ describe('SalesReport Server API & Service', () => {
     expect(mockUsers.get('user_1').salesReportData.compressedData).toBeUndefined();
   });
 
+  it('stores one changed month and its manifest in a single request', async () => {
+    mockUsers.set('user_1', { dealerCode: 'D100', salesReportData: {
+      storageVersion: 3, monthKeys: ['2026-04'],
+    } });
+
+    const result = await handleSalesReportRequest('Bearer token', {
+      mode: 'saveMonthAndManifest',
+      userId: 'user_1',
+      monthKey: '2026-09',
+      compressedData: 'SEPTEMBER_DATA',
+      salesReportData: { monthKeys: ['2026-04', '2026-09'], batches: [] },
+    });
+
+    expect(r2.save).toHaveBeenCalledWith('user_1', '2026-09', 'SEPTEMBER_DATA');
+    expect(result.monthKeys).toEqual(['2026-04', '2026-09']);
+    expect(mockUsers.get('user_1').salesReportData).toMatchObject({
+      storageVersion: 3, monthKeys: ['2026-04', '2026-09'],
+    });
+  });
+
   it('preserves existing cloud months unless deletion is explicitly requested', async () => {
     mockUsers.set('user_1', { dealerCode: 'D100', salesReportData: {
       storageVersion: 3, monthKeys: ['2026-04', '2026-05'],
