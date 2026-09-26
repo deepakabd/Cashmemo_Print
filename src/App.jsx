@@ -197,6 +197,7 @@ import {
   LazyStockRegisterPage,
   LazySalesReportPage,
   LazyConsumerDatabasePage,
+  LazyPendingOperationsPage,
 } from './app/routes';
 import { UnauthorizedAccessPage } from './components/UnauthorizedAccessPage';
 import { AdminUserAccessPanel } from './components/AdminUserAccessPanel';
@@ -3816,6 +3817,8 @@ function App() {
   const [showStockRegister, setShowStockRegister] = useState(false);
   const [showSalesReport, setShowSalesReport] = useState(false);
   const [showConsumerDatabase, setShowConsumerDatabase] = useState(false);
+  const [showPendingEkyc, setShowPendingEkyc] = useState(false);
+  const [showPendingMi, setShowPendingMi] = useState(false);
 
   useEffect(() => {
     if (showSalesReport) {
@@ -4622,6 +4625,8 @@ function App() {
     setShowStockRegister(false);
     setShowSalesReport(false);
     setShowConsumerDatabase(false);
+    setShowPendingEkyc(false);
+    setShowPendingMi(false);
     setShowUpgradePlan(false);
     setShowDictionaryForm(false);
     setShowContactForm(false);
@@ -4723,6 +4728,16 @@ function App() {
     }
     hideAllViews();
     setShowConsumerDatabase(true);
+    setShowUserMenu(false);
+  };
+  const handlePendingOperationsOpen = (dataType) => {
+    if (!isMenuAccessAllowed('salesReport')) {
+      handleUnauthorizedMenu(dataType === 'pendingEkyc' ? 'Pending eKYC' : 'Pending MI');
+      return;
+    }
+    hideAllViews();
+    if (dataType === 'pendingEkyc') setShowPendingEkyc(true);
+    else setShowPendingMi(true);
     setShowUserMenu(false);
   };
   const handleIdCardOpen = () => {
@@ -7766,6 +7781,8 @@ function App() {
       : showStockRegister ? 'stockRegister'
       : showSalesReport ? 'salesReport'
       : showConsumerDatabase ? 'consumerDatabase'
+      : showPendingEkyc ? 'pendingEkyc'
+      : showPendingMi ? 'pendingMi'
       : showLabelUpdate ? 'labelUpdate'
       : showHeaderUpdate ? 'headerUpdate'
       : showInvoicePage ? 'invoice'
@@ -8428,6 +8445,8 @@ function App() {
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleStockRegisterOpen(); setShowMainMenu(false); }} disabled={isPlanExpired && isMenuAccessAllowed('inventoryReports')} role="menuitem">📦 Inventory Reports</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleSalesReportOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('salesReport') ? false : !canAccessMenuFeature('salesReport')} role="menuitem">📊 Sales Report</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleConsumerDatabaseOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('salesReport') ? false : !canAccessMenuFeature('salesReport')} role="menuitem">👥 Consumer Database</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handlePendingOperationsOpen('pendingEkyc'); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('salesReport') ? false : !canAccessMenuFeature('salesReport')} role="menuitem">✅ Pending eKYC</button>}
+                  {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handlePendingOperationsOpen('pendingMi'); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('salesReport') ? false : !canAccessMenuFeature('salesReport')} role="menuitem">🛠 Pending MI</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleCashmemoLayoutOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('cashmemoLayout') ? false : !canAccessMenuFeature('labelUpdate')} role="menuitem">📋 Cashmemo Layout</button>}
                   {isLoggedIn && hasHindiPackageAccess && <button type="button" className="navbar-submenu-item" onClick={() => { handleDictionaryOpen(); setShowMainMenu(false); }} disabled={!canAccessMenuFeature('dictionaryUpdate')} role="menuitem">📖 Dictionary</button>}
                   {isLoggedIn && <button type="button" className="navbar-submenu-item" onClick={() => { handleInvoiceOpen(); setShowMainMenu(false); }} disabled={!isMenuAccessAllowed('invoiceWorkspace') ? false : !canAccessMenuFeature('invoice')} role="menuitem">🧾 INVOICE WORKSPACE</button>}
@@ -8607,8 +8626,8 @@ function App() {
         </div>
       )}
       {isLoggedIn && isPlanExpired && !showUpgradePlan && !showAboutInfo && !showUserProfile && !unauthorizedAccessState && <ExpiredPlanGuide onUpgrade={handleUpgradePlanOpen} adminContacts={ADMIN_CONTACTS} />}
-      {(Boolean(unauthorizedAccessState) || showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showConsumerDatabase || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
-        <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}${showConsumerDatabase ? ' book-view--consumer-database' : ''}${showInvoicePage ? ' book-view--invoice' : ''}`}>
+      {(Boolean(unauthorizedAccessState) || showUpgradePlan || showUserProfile || showContactForm || showAboutInfo || (!isPlanExpired && (showProfileUpdate || showRateUpdate || showBankDetails || showRegisterForm || showDictionaryForm || showHomeInfo || showInvoicePage || showCashmemoLayout || showCashmemoPrintGuide || showAttendance || showIdCard || showEmployeeProfile || showSalarySlipPage || showAttendanceReportPage || showEmployeeReportPage || showStockRegister || showSalesReport || showConsumerDatabase || showPendingEkyc || showPendingMi || showLabelUpdate || showHeaderUpdate || showAdminPanel || showAdminLogin || showUserLogin))) && (
+        <div className={`book-view${showSalesReport ? ' book-view--sales-report' : ''}${showConsumerDatabase || showPendingEkyc || showPendingMi ? ' book-view--consumer-database' : ''}${showInvoicePage ? ' book-view--invoice' : ''}`}>
           {unauthorizedAccessState && (
             <UnauthorizedAccessPage
               menuTitle={unauthorizedAccessState.menuTitle}
@@ -8717,6 +8736,16 @@ function App() {
           {showConsumerDatabase && (
             <Suspense fallback={<div className="placeholder-container">Loading Consumer Database...</div>}>
               <LazyConsumerDatabasePage loggedInUser={loggedInUser} onClose={navigateToHome} />
+            </Suspense>
+          )}
+          {showPendingEkyc && (
+            <Suspense fallback={<div className="placeholder-container">Loading pending operations...</div>}>
+              <LazyPendingOperationsPage key="pending-ekyc-workspace" loggedInUser={loggedInUser} onClose={navigateToHome} dataType="pendingEkyc" />
+            </Suspense>
+          )}
+          {showPendingMi && (
+            <Suspense fallback={<div className="placeholder-container">Loading Pending MI...</div>}>
+              <LazyPendingOperationsPage key="pending-mi-workspace" loggedInUser={loggedInUser} onClose={navigateToHome} dataType="pendingMi" />
             </Suspense>
           )}
           {showLabelUpdate && (

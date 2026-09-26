@@ -29,6 +29,7 @@ const request = async (body) => {
 };
 
 export const loadConsumerDatabase = async (userId) => (await request({ mode: 'load', userId })).snapshot || null;
+export const loadConsumerDatabaseMetadata = async (userId) => (await request({ mode: 'head', userId })).metadata || null;
 const chunkRows = (rows, targetSize = 250000) => {
   const chunks = [];
   let current = [];
@@ -46,9 +47,17 @@ const chunkRows = (rows, targetSize = 250000) => {
 export const saveConsumerDatabase = async (userId, rows, metadata, onProgress) => {
   const { uploadId } = await request({ mode: 'save-start', userId });
   const chunks = chunkRows(rows);
-  for (let index = 0; index < chunks.length; index += 1) {
-    await request({ mode: 'save-chunk', userId, uploadId, chunkIndex: index, rows: chunks[index] });
-    if (typeof onProgress === 'function') onProgress(index + 1, chunks.length);
-  }
+  let completed = 0;
+  let nextIndex = 0;
+  const uploadWorker = async () => {
+    while (nextIndex < chunks.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await request({ mode: 'save-chunk', userId, uploadId, chunkIndex: index, rows: chunks[index] });
+      completed += 1;
+      if (typeof onProgress === 'function') onProgress(completed, chunks.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, chunks.length) }, uploadWorker));
   return request({ mode: 'save-commit', userId, uploadId, chunkCount: chunks.length, rowCount: rows.length, metadata });
 };

@@ -21,6 +21,7 @@ export const DEFAULT_PRODUCT_TYPES = [
 export const DEFAULT_SALES_SETTINGS = {
   uploadEnabled: true,
   allowDataReset: false, // Protected by default
+  monthActionsEnabled: true,
   salesDateBasis: 'actualDeliveryDate', // 'actualDeliveryDate' | 'cashMemoDate' | 'orderDate'
   products: DEFAULT_PRODUCT_TYPES,
   disabledProducts: [],
@@ -237,6 +238,7 @@ export const normalizeSalesReportData = (raw = {}) => {
     settings: {
       uploadEnabled: settings.uploadEnabled !== false,
       allowDataReset: settings.allowDataReset === true,
+      monthActionsEnabled: settings.monthActionsEnabled !== false,
       salesDateBasis: settings.salesDateBasis || 'actualDeliveryDate',
       products,
       lockedMonths: settings.lockedMonths && typeof settings.lockedMonths === 'object' ? settings.lockedMonths : {},
@@ -366,6 +368,14 @@ export const loadSalesReportData = (user) => {
   }
 };
 
+const monthCacheSignature = (upload = {}) => JSON.stringify({
+  uploadedAt: upload.uploadedAt || null,
+  fileName: upload.fileName || null,
+  fileSize: Number(upload.fileSize) || 0,
+  totalRows: Number(upload.summary?.totalRows) || 0,
+  totalCylinders: Number(upload.summary?.totalCylinders) || 0,
+});
+
 /**
  * Load complete dataset from high-capacity IndexedDB, with Firestore cloud synchronization
  * Supports full multi-device synchronization by decompressing cloud transactions.
@@ -410,10 +420,31 @@ export const loadSalesReportFromFirebase = async (user, options = {}) => {
         // monthKeys is the authoritative R2 manifest. Accept it even if an
         // older concurrent fallback temporarily rewrote storageVersion.
         if (Array.isArray(remote.monthKeys) && remote.monthKeys.length > 0) {
+          const localTransactions = Array.isArray(localData.transactions) ? localData.transactions : [];
+          const localRowsByMonth = {};
+          if (!localData.cachePartial) {
+            localTransactions.forEach((row) => {
+              const monthKey = `${row.year}-${String(row.monthNo).padStart(2, '0')}`;
+              if (!localRowsByMonth[monthKey]) localRowsByMonth[monthKey] = [];
+              localRowsByMonth[monthKey].push(row);
+            });
+          }
+          const reusableMonthKeys = new Set(remote.monthKeys.filter((monthKey) => {
+            const remoteUpload = remote.monthlyUploads?.[monthKey];
+            const localUpload = localData.monthlyUploads?.[monthKey];
+            const localRows = localRowsByMonth[monthKey] || [];
+            return Boolean(remoteUpload && localUpload)
+              && localRows.length > 0
+              && monthCacheSignature(remoteUpload) === monthCacheSignature(localUpload)
+              && (Number(remoteUpload?.summary?.totalRows) || localRows.length) === localRows.length;
+          }));
+          const downloadMonthKeys = remote.monthKeys.filter((monthKey) => !reusableMonthKeys.has(monthKey));
+
           // Monthly R2 objects are independent. Load them concurrently instead
-          // of waiting for every network round trip one-by-one.
+          // of waiting for every network round trip one-by-one. Months whose
+          // manifest signature is unchanged are reused directly from IndexedDB.
           let completedMonths = 0;
-          const monthLoads = await Promise.all(remote.monthKeys.map(async (monthKey) => {
+          const monthLoads = await Promise.all(downloadMonthKeys.map(async (monthKey) => {
             try {
               const monthResponse = await postSalesReportApi({
                 mode: 'loadMonth',
@@ -428,12 +459,16 @@ export const loadSalesReportFromFirebase = async (user, options = {}) => {
               return { monthKey, rows: [], missing: true };
             } finally {
               completedMonths += 1;
-              onProgress(Math.round(20 + (completedMonths / remote.monthKeys.length) * 70));
+              onProgress(Math.round(20 + (completedMonths / Math.max(downloadMonthKeys.length, 1)) * 70));
             }
           }));
-          const monthlyRows = monthLoads.flatMap((month) => month.rows);
+          const reusedRows = remote.monthKeys.flatMap((monthKey) => (
+            reusableMonthKeys.has(monthKey) ? (localRowsByMonth[monthKey] || []) : []
+          ));
+          const monthlyRows = [...reusedRows, ...monthLoads.flatMap((month) => month.rows)];
           const missingMonthKeys = monthLoads.filter((month) => month.missing).map((month) => month.monthKey);
           remote = { ...remote, transactions: monthlyRows, missingMonthKeys };
+          if (downloadMonthKeys.length === 0) onProgress(90);
         }
       }
     }
@@ -1082,6 +1117,19 @@ export const toggleAllowDataReset = async (user, currentStore, allowDataReset) =
     },
   };
   // This is a settings-only change. Avoid re-uploading every monthly data file.
+  await saveSalesReportData(user, nextStore, { monthKeys: [] });
+  return nextStore;
+};
+
+/** Enable/disable month confirmation and unlock actions. */
+export const toggleMonthActions = async (user, currentStore, enabled) => {
+  const nextStore = {
+    ...currentStore,
+    settings: {
+      ...currentStore.settings,
+      monthActionsEnabled: Boolean(enabled),
+    },
+  };
   await saveSalesReportData(user, nextStore, { monthKeys: [] });
   return nextStore;
 };

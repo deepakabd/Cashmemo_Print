@@ -6,6 +6,8 @@ const config = () => ({
   apiToken: String(process.env.CLOUDFLARE_D1_API_TOKEN || '').trim(),
 });
 
+let schemaReadyPromise = null;
+
 const query = async (sql, params = []) => {
   const { accountId, databaseId, apiToken } = config();
   if (!accountId || !databaseId || !apiToken) throw new Error('Cloudflare D1 consumer database is not configured.');
@@ -19,6 +21,8 @@ const query = async (sql, params = []) => {
 };
 
 const ensureSchema = async () => {
+  if (schemaReadyPromise) return schemaReadyPromise;
+  schemaReadyPromise = (async () => {
   await query(`CREATE TABLE IF NOT EXISTS consumer_database_snapshots (
     user_id TEXT PRIMARY KEY NOT NULL, dealer_code TEXT NOT NULL, upload_id TEXT NOT NULL,
     file_name TEXT, row_count INTEGER NOT NULL DEFAULT 0, chunk_count INTEGER NOT NULL DEFAULT 0,
@@ -29,6 +33,26 @@ const ensureSchema = async () => {
     PRIMARY KEY (user_id, upload_id, chunk_index)
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_consumer_database_dealer ON consumer_database_snapshots (dealer_code)');
+  })().catch((error) => {
+    schemaReadyPromise = null;
+    throw error;
+  });
+  return schemaReadyPromise;
+};
+
+export const loadConsumerDatabaseMetadata = async (userId) => {
+  await ensureSchema();
+  const snapshots = await query(`SELECT upload_id, file_name, row_count, chunk_count, uploaded_at
+    FROM consumer_database_snapshots WHERE user_id = ? LIMIT 1`, [userId]);
+  const snapshot = snapshots[0];
+  if (!snapshot) return null;
+  return {
+    uploadId: snapshot.upload_id,
+    fileName: snapshot.file_name || 'Consumer database',
+    totalRows: Number(snapshot.row_count || 0),
+    chunkCount: Number(snapshot.chunk_count || 0),
+    uploadedAt: snapshot.uploaded_at,
+  };
 };
 
 const chunkRows = (rows, targetSize = 350000) => {
@@ -96,17 +120,62 @@ export const commitConsumerDatabaseUpload = async (userId, dealerCode, uploadId,
     uploaded_at=excluded.uploaded_at, schema_version=excluded.schema_version`,
   [userId, dealerCode, uploadId, String(metadata.fileName || ''), rowCount, chunkCount, uploadedAt]);
   await query('DELETE FROM consumer_database_chunks WHERE user_id = ? AND upload_id <> ?', [userId, uploadId]);
-  return { uploadedAt, chunkCount };
+  return { uploadId, uploadedAt, chunkCount };
 };
 
 export const loadConsumerDatabase = async (userId) => {
-  await ensureSchema();
-  const snapshots = await query(`SELECT upload_id, file_name, row_count, chunk_count, uploaded_at
-    FROM consumer_database_snapshots WHERE user_id = ? LIMIT 1`, [userId]);
-  const snapshot = snapshots[0];
-  if (!snapshot) return null;
+  const metadata = await loadConsumerDatabaseMetadata(userId);
+  if (!metadata) return null;
   const chunks = await query(`SELECT payload FROM consumer_database_chunks
-    WHERE user_id = ? AND upload_id = ? ORDER BY chunk_index`, [userId, snapshot.upload_id]);
+    WHERE user_id = ? AND upload_id = ? ORDER BY chunk_index`, [userId, metadata.uploadId]);
   const rows = chunks.flatMap((chunk) => { try { const value = JSON.parse(chunk.payload); return Array.isArray(value) ? value : []; } catch { return []; } });
-  return { rows, metadata: { fileName: snapshot.file_name || 'Consumer database', totalRows: Number(snapshot.row_count || 0), uploadedAt: snapshot.uploaded_at } };
+  return { rows, metadata };
+};
+
+let operationalSchemaReadyPromise = null;
+const ensureOperationalSchema = async () => {
+  if (operationalSchemaReadyPromise) return operationalSchemaReadyPromise;
+  operationalSchemaReadyPromise = (async () => {
+    await ensureSchema();
+    await query(`CREATE TABLE IF NOT EXISTS operational_data_snapshots (
+    user_id TEXT NOT NULL, data_type TEXT NOT NULL, upload_id TEXT NOT NULL, file_name TEXT,
+    row_count INTEGER NOT NULL DEFAULT 0, chunk_count INTEGER NOT NULL DEFAULT 0, uploaded_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, data_type)
+  )`);
+    await query(`CREATE TABLE IF NOT EXISTS operational_data_chunks (
+    user_id TEXT NOT NULL, data_type TEXT NOT NULL, upload_id TEXT NOT NULL, chunk_index INTEGER NOT NULL, payload TEXT NOT NULL,
+    PRIMARY KEY (user_id, data_type, upload_id, chunk_index)
+  )`);
+  })().catch((error) => {
+    operationalSchemaReadyPromise = null;
+    throw error;
+  });
+  return operationalSchemaReadyPromise;
+};
+
+export const loadOperationalMetadata = async (userId, dataType) => {
+  await ensureOperationalSchema();
+  const rows = await query(`SELECT upload_id, file_name, row_count, chunk_count, uploaded_at FROM operational_data_snapshots
+    WHERE user_id = ? AND data_type = ? LIMIT 1`, [userId, dataType]);
+  const row = rows[0];
+  return row ? { uploadId: row.upload_id, fileName: row.file_name, totalRows: Number(row.row_count), chunkCount: Number(row.chunk_count), uploadedAt: row.uploaded_at } : null;
+};
+export const appendOperationalChunk = async (userId, dataType, uploadId, chunkIndex, rows) => {
+  await ensureOperationalSchema();
+  await query(`INSERT INTO operational_data_chunks (user_id,data_type,upload_id,chunk_index,payload) VALUES (?,?,?,?,?)`, [userId, dataType, uploadId, chunkIndex, JSON.stringify(rows)]);
+};
+export const commitOperationalUpload = async (userId, dataType, uploadId, metadata, rowCount, chunkCount) => {
+  await ensureOperationalSchema();
+  const uploadedAt = String(metadata?.uploadedAt || new Date().toISOString());
+  await query(`INSERT INTO operational_data_snapshots (user_id,data_type,upload_id,file_name,row_count,chunk_count,uploaded_at)
+    VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id,data_type) DO UPDATE SET upload_id=excluded.upload_id,file_name=excluded.file_name,row_count=excluded.row_count,chunk_count=excluded.chunk_count,uploaded_at=excluded.uploaded_at`,
+  [userId, dataType, uploadId, String(metadata?.fileName || ''), rowCount, chunkCount, uploadedAt]);
+  await query(`DELETE FROM operational_data_chunks WHERE user_id=? AND data_type=? AND upload_id<>?`, [userId, dataType, uploadId]);
+  return { uploadId, uploadedAt, chunkCount };
+};
+export const loadOperationalData = async (userId, dataType) => {
+  const metadata = await loadOperationalMetadata(userId, dataType);
+  if (!metadata) return null;
+  const chunks = await query(`SELECT payload FROM operational_data_chunks WHERE user_id=? AND data_type=? AND upload_id=? ORDER BY chunk_index`, [userId, dataType, metadata.uploadId]);
+  return { metadata, rows: chunks.flatMap((chunk) => { try { const value = JSON.parse(chunk.payload); return Array.isArray(value) ? value : []; } catch { return []; } }) };
 };

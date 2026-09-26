@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { loadConsumerDatabase, saveConsumerDatabase } from './services/consumerDatabaseRepository';
+import { loadConsumerDatabase, loadConsumerDatabaseMetadata, saveConsumerDatabase } from './services/consumerDatabaseRepository';
 import './ConsumerDatabasePage.css';
 
 const CONSUMER_COLUMNS = ['SL No.', 'Consumer No', 'LPG ID', 'Consumer Name', 'Consumer Status', 'Mobile No', 'IVRS No.2', 'IVRS No.3', 'IVRS No.4', 'Is KYC Completed', 'Eligible For Subsidy', 'CTC Flag', 'CTC Date', 'PFMSBeneficiaryId', 'PFMSBeneficiaryType', 'BankAccountNo', 'BankIFSCCode', 'EKYC Date', 'EKYC Status', 'EKYC Mode', 'EKYC From', 'Safety Inspection Status', 'Safety Inspection Date', 'Hose Validity Date', 'MI Date', 'MaskedAadhar', 'Connection Type', 'Consumer Nature', 'SubNature Code', 'Delivery Area', 'SV Date', 'Consumer Address', 'LastRefillDate', 'Last Refill BookingSource'];
@@ -314,23 +314,24 @@ const ConsumerDatabasePage = ({ loggedInUser, onClose }) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    setSaving(true); setMessage('Excel process ho raha hai…');
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setMessage('Excel (.xlsx/.xls) ya CSV (.csv) file select karein.'); return; }
+    setSaving(true); setMessage('Excel / CSV process ho raha hai…');
     setUploadProgress({ done: 0, total: 0, percent: 5 });
     try {
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
       const source = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '', raw: false });
       const normalized = normalizeRows(source);
-      if (!normalized.length) throw new Error('Excel me valid consumer records nahi mile. Column headers check karein.');
+      if (!normalized.length) throw new Error('Excel / CSV me valid consumer records nahi mile. Column headers check karein.');
       const nextMetadata = { fileName: file.name, uploadedAt: new Date().toISOString(), totalRows: normalized.length };
       setUploadProgress({ done: 0, total: 0, percent: 10 });
-      await saveConsumerDatabase(loggedInUser.id, normalized, nextMetadata, (done, total) => {
+      const saved = await saveConsumerDatabase(loggedInUser.id, normalized, nextMetadata, (done, total) => {
         setUploadProgress({ done, total, percent: Math.min(95, 10 + Math.round((done / total) * 85)) });
         setMessage(`Cloudflare upload: ${done}/${total} parts…`);
       });
       setUploadProgress((current) => ({ ...current, percent: 100 }));
-      setRows(normalizeConsumerDateValues(normalized)); setMetadata(nextMetadata); setActiveMenu('all'); setColumnFilters(DEFAULT_COLUMN_FILTERS); setMessage(`${normalized.length} consumers Cloudflare me save ho gaye.`);
-    } catch (error) { setUploadProgress((current) => ({ ...current, percent: 0 })); setMessage(error.message || 'Consumer Excel upload failed.'); }
+      setRows(normalizeConsumerDateValues(normalized)); setMetadata({ ...nextMetadata, ...saved }); setActiveMenu('all'); setColumnFilters(DEFAULT_COLUMN_FILTERS); setMessage(`${normalized.length} consumers Cloudflare me save ho gaye.`);
+    } catch (error) { setUploadProgress((current) => ({ ...current, percent: 0 })); setMessage(error.message || 'Consumer Excel / CSV upload failed.'); }
     finally { setSaving(false); }
   };
 
@@ -340,6 +341,13 @@ const ConsumerDatabasePage = ({ loggedInUser, onClose }) => {
     setMessage('Cloudflare se consumer data sync ho raha hai…');
     setUploadProgress({ done: 0, total: 3, percent: 10 });
     try {
+      const latestMetadata = await loadConsumerDatabaseMetadata(loggedInUser?.id);
+      if (latestMetadata?.uploadId && latestMetadata.uploadId === metadata?.uploadId) {
+        setMetadata(latestMetadata);
+        setUploadProgress({ done: 1, total: 1, percent: 100 });
+        setMessage(`${rows.length} consumers quick sync ho gaye — cloud data unchanged hai.`);
+        return;
+      }
       const snapshot = await loadConsumerDatabase(loggedInUser?.id);
       setUploadProgress({ done: 2, total: 3, percent: 75 });
       const syncedRows = normalizeConsumerDateValues(snapshot?.rows || []);
@@ -486,14 +494,14 @@ const ConsumerDatabasePage = ({ loggedInUser, onClose }) => {
         </section>;
       })}</nav>
       <button type="button" className={`consumer-db__settings-link${activeMenu === 'settings' ? ' active' : ''}`} onClick={() => { setActiveMenu('settings'); setSearch(''); }}>⚙ Settings</button>
-      <input ref={fileRef} type="file" accept=".xlsx,.xls" hidden onChange={handleUpload} />
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={handleUpload} />
       <button className="consumer-db__close" onClick={onClose}>← Close</button>
     </aside>
     <main className="consumer-db__main">
       {!isDashboardView && <header><div><span>{activeMenu === 'all' ? 'TOTAL CONSUMER MASTER' : 'FILTERED CONSUMER DATA'}</span><h1>{activeMenuItem?.label || 'Consumer Database'}</h1><p>{`${filteredRows.length} consumer record${filteredRows.length === 1 ? '' : 's'}`}</p></div></header>}
       {message && <div className="consumer-db__message">{message}</div>}
       {(saving || syncing || uploadProgress.percent === 100) && <section className={`consumer-db__progress${uploadProgress.percent === 100 ? ' consumer-db__progress--complete' : ''}`} aria-live="polite">
-        <div><strong>{uploadProgress.percent === 100 ? 'Cloud Sync complete — 100% synced successfully' : `Cloud Sync ${uploadProgress.percent}% complete`}</strong><span>{syncing ? 'Cloudflare data fetch ho raha hai' : uploadProgress.total > 0 ? `${uploadProgress.done}/${uploadProgress.total} parts synced` : 'Excel prepare ho raha hai'}</span></div>
+        <div><strong>{uploadProgress.percent === 100 ? 'Cloud Sync complete — 100% synced successfully' : `Cloud Sync ${uploadProgress.percent}% complete`}</strong><span>{syncing ? 'Cloudflare quick check ho raha hai' : uploadProgress.total > 0 ? `${uploadProgress.done}/${uploadProgress.total} parts synced` : 'Excel / CSV prepare ho raha hai'}</span></div>
         <div className="consumer-db__progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={uploadProgress.percent}><i style={{ width: `${uploadProgress.percent}%` }} /></div>
       </section>}
       {!isDashboardView && <><section className="consumer-db__stats">{[['Total', stats.total], ['Active', stats.active], ['Registered Mobile', stats.registeredMobile], ['eKYC Completed', stats.ekycCompleted], ['Ujjwala', stats.ujjwala]].map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>
@@ -532,7 +540,7 @@ const ConsumerDatabasePage = ({ loggedInUser, onClose }) => {
           {rows.length ? <div className="consumer-db__upload-actions">
             <button className="consumer-db__upload consumer-db__upload--reupload" onClick={() => fileRef.current?.click()} disabled={saving || syncing}>↻ {saving ? 'Uploading…' : 'Re-Upload Data'}</button>
             <button className="consumer-db__upload consumer-db__upload--sync" onClick={handleSync} disabled={saving || syncing}>⟳ {syncing ? `Syncing ${uploadProgress.percent}%` : 'Sync Data'}</button>
-          </div> : <button className="consumer-db__upload" onClick={() => fileRef.current?.click()} disabled={saving || syncing}>＋ {saving ? 'Uploading…' : 'Upload Total Consumer Excel'}</button>}
+          </div> : <button className="consumer-db__upload" onClick={() => fileRef.current?.click()} disabled={saving || syncing}>＋ {saving ? 'Uploading…' : 'Upload Consumer Excel / CSV'}</button>}
           {(saving || syncing) && <div className="consumer-db__sidebar-progress"><div><i style={{ width: `${uploadProgress.percent}%` }} /></div><span>{uploadProgress.percent}%</span></div>}
         </div>
         <div className="consumer-db__settings-groups">{SETTINGS_MENU_GROUPS.map((group) => {

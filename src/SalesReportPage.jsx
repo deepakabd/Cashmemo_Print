@@ -11,6 +11,7 @@ import {
   resetMonthSalesData,
   resetAllSalesData,
   toggleAllowDataReset,
+  toggleMonthActions,
   updateProductSettings,
   toggleUploadStatus,
   DEFAULT_PRODUCT_TYPES,
@@ -439,6 +440,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const [detailRowsPerPage, setDetailRowsPerPage] = useState(25);
   const [savingUploadToggle, setSavingUploadToggle] = useState(false);
   const [savingResetToggle, setSavingResetToggle] = useState(false);
+  const [savingMonthActionsToggle, setSavingMonthActionsToggle] = useState(false);
 
   // Month-vs-Month Comparison Pickers
   const [compMonthA, setCompMonthA] = useState('08');
@@ -473,6 +475,49 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
     } catch {
       setIsFullscreen((prev) => !prev);
     }
+  };
+
+  const printDeliveryRegister = () => {
+    const register = document.querySelector('.dac-consumer-book');
+    if (!register) return;
+    const printable = register.cloneNode(true);
+    printable.querySelectorAll('button, footer').forEach((element) => element.remove());
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showNotification('Print window blocked hai. Browser me pop-ups allow karke dobara try karein.', 'error');
+      return;
+    }
+    printWindow.opener = null;
+    printWindow.document.write(`<!doctype html><html><head><title>Consumer Delivery Register</title><style>
+      @page { size: A4 landscape; margin: 9mm; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; color: #111827; background: #fff; font-family: Arial, sans-serif; }
+      .dac-consumer-book { width: 100%; }
+      .dac-consumer-book__header { padding: 0 0 8px; border-bottom: 2px solid #0f3756; }
+      .dac-consumer-book__header span { font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+      .dac-consumer-book__header h3 { margin: 3px 0; font-size: 17px; }
+      .dac-consumer-book__header p { margin: 0; font-size: 9px; }
+      .dac-consumer-book__body { padding-top: 8px; overflow: visible; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      th, td { padding: 5px 4px; border: 1px solid #cbd5e1; text-align: left; overflow-wrap: anywhere; }
+      th { color: #0f3756; background: #eaf4fb; font-size: 7.5px; text-transform: uppercase; }
+      td { font-size: 8px; line-height: 1.25; }
+      td small { display: block; margin-top: 1px; color: #475569; font-size: 7px; }
+      th:nth-child(1), td:nth-child(1) { width: 3%; }
+      th:nth-child(2), td:nth-child(2) { width: 8%; }
+      th:nth-child(3), td:nth-child(3) { width: 13%; }
+      th:nth-child(4), td:nth-child(4) { width: 9%; }
+      th:nth-child(5), td:nth-child(5) { width: 17%; }
+      th:nth-child(6), td:nth-child(6) { width: 12%; }
+      th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8) { width: 10%; }
+      th:nth-child(9), td:nth-child(9) { width: 4%; text-align: center; }
+      th:nth-child(10), td:nth-child(10) { width: 8%; }
+    </style></head><body>${printable.outerHTML}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.setTimeout(() => printWindow.print(), 100);
   };
 
   useEffect(() => {
@@ -661,6 +706,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Confirm month data lock
   const handleConfirmMonth = async (ym) => {
+    if (storeData.settings?.monthActionsEnabled === false) {
+      showNotification('Month Action is DISABLED. Enable it in Settings first.', 'error');
+      return;
+    }
     const now = new Date();
     const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     if (ym === currentYm) {
@@ -682,6 +731,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
 
   // Admin unlock month
   const handleUnlockMonth = async (ym) => {
+    if (storeData.settings?.monthActionsEnabled === false) {
+      showNotification('Month Action is DISABLED. Enable it in Settings first.', 'error');
+      return;
+    }
     const canUnlockForReupload = isAdmin || loggedInUser?.userAccess?.allowSalesReupload === true;
     if (!canUnlockForReupload) {
       showNotification('Re-upload permission is required to unlock months.', 'error');
@@ -719,6 +772,27 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
       showNotification('Failed to update reset permission setting.', 'error');
     } finally {
       setSavingResetToggle(false);
+    }
+  };
+
+  const handleToggleMonthActions = async (enabled) => {
+    if (savingMonthActionsToggle) return;
+    const previousStore = storeData;
+    const optimisticStore = {
+      ...previousStore,
+      settings: { ...previousStore.settings, monthActionsEnabled: enabled },
+    };
+    setStoreData(optimisticStore);
+    setSavingMonthActionsToggle(true);
+    try {
+      const nextStore = await toggleMonthActions(loggedInUser, optimisticStore, enabled);
+      setStoreData(nextStore);
+      showNotification(`Month confirmation / unlock Action is now ${enabled ? 'ENABLED' : 'DISABLED'}.`);
+    } catch {
+      setStoreData(previousStore);
+      showNotification('Failed to update Month Action setting.', 'error');
+    } finally {
+      setSavingMonthActionsToggle(false);
     }
   };
 
@@ -5307,9 +5381,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           <button
                             type="button"
                             className="sales-report-btn"
-                            style={{ fontSize: '11px', padding: '6px 8px', background: '#10b981', color: '#fff' }}
+                            style={{ fontSize: '11px', padding: '6px 8px', background: storeData.settings?.monthActionsEnabled !== false ? '#10b981' : '#e2e8f0', color: storeData.settings?.monthActionsEnabled !== false ? '#fff' : '#94a3b8' }}
+                            disabled={storeData.settings?.monthActionsEnabled === false}
                             onClick={() => handleConfirmMonth(ymKey)}
-                            title="Confirm and lock month against accidental overwrites"
+                            title={storeData.settings?.monthActionsEnabled !== false ? 'Confirm and lock month against accidental overwrites' : 'Enable Month Action in Settings first'}
                           >
                             🔒 Confirm
                           </button>
@@ -6039,6 +6114,41 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   </div>
                 </div>
 
+                {/* Month confirmation / unlock Action - Enable/Disable */}
+                <div
+                  style={{
+                    margin: '0 0 16px',
+                    background: storeData.settings?.monthActionsEnabled !== false ? '#f0fdf4' : '#f8fafc',
+                    padding: '14px 18px',
+                    borderRadius: '10px',
+                    border: storeData.settings?.monthActionsEnabled !== false ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px',
+                  }}
+                >
+                  <div>
+                    <strong style={{ fontSize: '13.5px', color: storeData.settings?.monthActionsEnabled !== false ? '#15803d' : '#0f3756' }}>
+                      {storeData.settings?.monthActionsEnabled !== false ? '⚡ Month Action: ENABLED' : '🛡️ Month Action: DISABLED'}
+                    </strong>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                      Confirm &amp; Lock तथा Unlock for Re-upload actions को enable या disable करें.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: storeData.settings?.monthActionsEnabled !== false ? '#15803d' : '#64748b' }}>
+                      {savingMonthActionsToggle ? 'Saving…' : (storeData.settings?.monthActionsEnabled !== false ? 'Enabled' : 'Disabled')}
+                    </span>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={storeData.settings?.monthActionsEnabled !== false}
+                        disabled={savingMonthActionsToggle}
+                        onChange={(e) => handleToggleMonthActions(e.target.checked)}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
                 <div className="sales-data-table-wrap">
                   <table className="sales-table">
                     <thead>
@@ -6060,6 +6170,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                           const isCurrentMonth = ym === currentYm;
                           const isLocked = !isCurrentMonth && !!(lockedMonths[ym]?.confirmed || mData.confirmed);
                           const isResetAllowed = storeData.settings?.allowDataReset ?? false;
+                          const monthActionsEnabled = storeData.settings?.monthActionsEnabled !== false;
                           return (
                             <tr key={ym}>
                               <td><strong>{ym}</strong></td>
@@ -6084,7 +6195,11 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                                 </small>
                               </td>
                               <td style={{ textAlign: 'center' }}>
-                                {isCurrentMonth ? (
+                                {!monthActionsEnabled ? (
+                                  <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '700' }}>
+                                    Action Disabled
+                                  </span>
+                                ) : isCurrentMonth ? (
                                   <span style={{ fontSize: '11px', color: '#0284c7', fontWeight: '700' }}>
                                     Current Month — Always Unlocked
                                   </span>
@@ -6205,7 +6320,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                 </table>
               ) : <div className="dac-consumer-book__empty">Consumer-level details reference/sample data mein available nahi hain.</div>}
             </div>
-            <footer><span>{deliveryDrilldown.rows.length} consumer record{deliveryDrilldown.rows.length === 1 ? '' : 's'}</span><button type="button" onClick={() => window.print()}>🖨️ Print List</button></footer>
+            <footer><span>{deliveryDrilldown.rows.length} consumer record{deliveryDrilldown.rows.length === 1 ? '' : 's'}</span><button type="button" onClick={printDeliveryRegister}>🖨️ Print List</button></footer>
           </section>
         </div>
       )}

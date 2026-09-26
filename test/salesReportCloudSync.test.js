@@ -10,6 +10,7 @@ import {
   resetMonthSalesData,
   COMPACT_TX_FIELDS,
   createLightweightCacheCopy,
+  toggleMonthActions,
 } from '../src/services/salesReportStore';
 import * as salesReportDb from '../src/services/salesReportDb';
 import * as firestore from 'firebase/firestore';
@@ -82,6 +83,13 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(cache.cachePartial).toBe(true);
     expect(cache.transactions).toEqual([]);
     expect(cache.monthKeys).toEqual(['2026-04', '2026-09']);
+  });
+
+  it('persists the month confirmation/unlock Action enable-disable setting', async () => {
+    const store = { isReset: true, settings: { monthActionsEnabled: true }, transactions: [], batches: [], monthlyUploads: {} };
+    const disabled = await toggleMonthActions(null, store, false);
+    expect(disabled.settings.monthActionsEnabled).toBe(false);
+    expect(salesReportDb.saveSalesReportToIndexedDB).toHaveBeenCalled();
   });
 
   it('compressTransactions and decompressTransactions preserve 100% of transaction data and types', () => {
@@ -324,6 +332,31 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     expect(result.monthlyUploads['2026-09'].rows).toHaveLength(1);
     expect(result.monthlyUploads['2026-09'].rows[0].orderNo).toBe('1001');
     expect(salesReportDb.saveSalesReportToIndexedDB).toHaveBeenCalled();
+  });
+
+  it('quick-sync reuses unchanged months from IndexedDB with only one network request', async () => {
+    const user = { id: 'dealer_123', dealerCode: 'D123' };
+    const rows = [{ id: 'apr', uniqueKey: 'apr', orderNo: 'APR', year: 2026, monthNo: 4 }];
+    const upload = {
+      fileName: 'April.xlsx', fileSize: 1234, uploadedAt: '2026-05-01T10:00:00.000Z',
+      summary: { totalRows: 1, totalCylinders: 1 }, rows,
+    };
+    vi.mocked(salesReportDb.loadSalesReportFromIndexedDB).mockResolvedValueOnce({
+      storageVersion: 3, updatedAt: '2026-05-01T10:00:00.000Z',
+      batches: [{ batchId: 'real' }], monthlyUploads: { '2026-04': upload }, transactions: rows,
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true, status: 200, json: async () => ({ salesReportData: {
+        storageVersion: 3, updatedAt: '2026-05-01T10:01:00.000Z', monthKeys: ['2026-04'],
+        batches: [{ batchId: 'real' }], monthlyUploads: { '2026-04': { ...upload, rows: [] } },
+      } }),
+    });
+
+    const result = await loadSalesReportFromFirebase(user);
+
+    expect(result.transactions).toEqual(rows);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body).mode).toBe('load');
   });
 
   it('recovers a missing R2 month from IndexedDB and repairs the cloud manifest', async () => {

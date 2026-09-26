@@ -73,9 +73,49 @@ export default function EmployeeReportPage({ loggedInUser, onClose, onSalarySlip
   const totalAttendancePercentage = totalScheduledDays ? Math.round(((totals.present + totals.halfDay * .5) / totalScheduledDays) * 100) : 0;
   const businessName = loggedInUser?.dealerName || loggedInUser?.profileData?.distributorName || 'MAHADEV HP GAS GRAMIN VITRAK';
   const printReport = () => {
-    document.body.classList.add('employee-report-page-printing');
-    window.addEventListener('afterprint', () => document.body.classList.remove('employee-report-page-printing'), { once: true });
-    window.print();
+    const report = document.querySelector('.employee-report-page');
+    if (!report) return;
+    const printable = report.cloneNode(true);
+    printable.querySelectorAll('.attendance-hero, .employee-report-toolbar, .employee-report-detail-row, .employee-report-slip-button').forEach((element) => element.remove());
+    printable.querySelectorAll('table tr').forEach((row) => row.lastElementChild?.remove());
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      window.alert('Print window blocked hai. Browser me pop-ups allow karke dobara try karein.');
+      return;
+    }
+    printWindow.opener = null;
+    printWindow.document.write(`<!doctype html><html><head><title>Employee Report</title><style>
+      @page { size: A4 landscape; margin: 7mm; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; color: #203b55; background: #fff; font-family: Arial, sans-serif; }
+      .employee-report-page { width: 100%; }
+      .employee-report-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2mm; margin: 0 0 3mm; }
+      .employee-report-summary > div { min-height: 13mm; padding: 2mm; border: .25mm solid #dbe6ef; border-radius: 1.5mm; background: #f8fbfd; }
+      .employee-report-summary span { display: block; color: #60758d; font-size: 6pt; font-weight: 700; text-transform: uppercase; }
+      .employee-report-summary strong { display: block; margin-top: 1mm; color: #203b55; font-size: 9pt; }
+      .employee-report-card { overflow: visible; border: .25mm solid #dbe5ef; border-radius: 0; }
+      .employee-report-card__header { display: flex; align-items: center; justify-content: space-between; padding: 2.5mm 3mm; border-bottom: .25mm solid #dbe5ef; }
+      .section-label { color: #60758d; font-size: 6pt; font-weight: 700; letter-spacing: .08em; }
+      .employee-report-card__header h2 { margin: .8mm 0 0; font-size: 12pt; }
+      .employee-report-card__header small { color: #60758d; font-size: 6.5pt; }
+      .employee-report-table-wrap { overflow: visible; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      th, td { padding: 1.3mm .7mm; border: .2mm solid #dfe7ed; overflow: hidden; font-size: 5.5pt; line-height: 1.15; text-align: left; overflow-wrap: anywhere; }
+      th { color: #365069; background: #eef4f7; font-size: 5.2pt; text-transform: uppercase; }
+      th:nth-child(2), td:nth-child(2) { width: 25mm; }
+      td strong, td small { display: block; }
+      td small { margin-top: .5mm; color: #718397; font-size: 4.8pt; }
+      .employee-report-wage { color: #087449; font-weight: 800; }
+      .employee-report-signature { display: flex; width: 48mm; margin: 5mm 2mm 0 auto; flex-direction: column; align-items: center; gap: 1mm; break-inside: avoid; text-align: center; }
+      .employee-report-signature span { width: 100%; padding-top: 1.5mm; border-top: .3mm solid #203b55; font-size: 7pt; }
+      .employee-report-signature strong { font-size: 7pt; text-transform: uppercase; }
+      .attendance-empty { padding: 15mm; text-align: center; }
+    </style></head><body>${printable.outerHTML}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.setTimeout(() => printWindow.print(), 100);
   };
 
   return <section className="attendance-page employee-report-page">

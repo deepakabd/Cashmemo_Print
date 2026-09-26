@@ -51,9 +51,44 @@ export default function SalarySlipPage({ loggedInUser, onClose, initialEmployeeI
   }, [data.records, employee, reportMonth, daysInMonth, shiftSettings]);
 
   const printSlip = () => {
-    document.body.classList.add('salary-slip-page-printing');
-    window.addEventListener('afterprint', () => document.body.classList.remove('salary-slip-page-printing'), { once: true });
-    window.print();
+    const slip = document.querySelector('.salary-slip-page-card');
+    if (!slip) return;
+    const printable = slip.cloneNode(true);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      window.alert('Print window blocked hai. Browser me pop-ups allow karke dobara try karein.');
+      return;
+    }
+    printWindow.opener = null;
+    printWindow.document.write(`<!doctype html><html><head><title></title><style>
+      @page { size: A4 portrait; margin: 12mm; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; color: #263e58; background: #fff; font-family: Arial, sans-serif; }
+      .salary-slip { width: 100%; overflow: hidden; border: 1px solid #cbd9e5; border-radius: 0; background: #fff; }
+      .salary-slip > header { display: flex; align-items: flex-start; justify-content: space-between; padding: 18px 20px; color: #fff; background: #10365e; }
+      .salary-slip header .section-label { color: #cceaff; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+      .salary-slip header h2 { margin: 4px 0 0; font-size: 20px; }
+      .salary-slip header p { margin: 4px 0 0; color: #cceaff; font-size: 11px; }
+      .slip-employee { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: #dce6ed; }
+      .slip-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 1px; background: #dce6ed; }
+      .slip-employee > div, .slip-grid > div { min-height: 52px; padding: 11px 14px; background: #fff; }
+      .slip-employee span, .slip-grid span, .slip-earnings span { display: block; color: #75879a; font-size: 8px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+      .slip-employee b, .slip-grid b { display: block; margin-top: 4px; color: #263e58; font-size: 11px; }
+      .slip-earnings { margin: 14px 18px 0; border: 1px solid #dce6ed; }
+      .slip-earnings > div { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid #e6edf2; }
+      .slip-earnings > div:last-child { border-bottom: 0; }
+      .slip-earnings b { color: #263e58; font-size: 11px; }
+      .slip-total { display: flex; align-items: center; justify-content: space-between; margin: 14px 18px; padding: 13px 15px; color: #135e40; background: #eaf9f0; }
+      .slip-total span { font-size: 11px; font-weight: 700; }
+      .slip-total strong { font-size: 20px; }
+      .salary-slip footer { display: flex; justify-content: flex-end; padding: 22px 20px 15px; border-top: 1px solid #e2eaf1; }
+      .slip-signature { width: 210px; padding-top: 7px; border-top: 1px solid #526779; text-align: center; }
+      .slip-signature span { display: block; color: #75879a; font-size: 9px; }
+      .slip-signature b { display: block; margin-top: 4px; color: #263e58; font-size: 10px; text-transform: uppercase; }
+    </style></head><body>${printable.outerHTML}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.setTimeout(() => printWindow.print(), 100);
   };
   const profile = employee?.profile || {};
   return <section className="attendance-page salary-slip-page">
