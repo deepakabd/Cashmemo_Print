@@ -104,9 +104,13 @@ export default function SalesImportModal({
       let warning = null;
       if (uploadType === 'monthWise') {
         const expectedYm = `${selectedYear}-${selectedMonthCode}`;
-        const hasExpected = res.detectedMonths.includes(expectedYm);
-        if (!hasExpected && res.detectedMonths.length > 0) {
-          warning = `Note: Selected month is ${MONTH_NAMES[parseInt(selectedMonthCode, 10) - 1]} ${selectedYear}, but Excel predominantly contains dates for: ${res.detectedMonths.join(', ')}.`;
+        const mismatchedMonths = res.detectedMonths.filter((monthKey) => monthKey !== expectedYm);
+        if (mismatchedMonths.length > 0) {
+          throw new Error(
+            `Upload blocked: ${MONTH_NAMES[parseInt(selectedMonthCode, 10) - 1]} ${selectedYear} was selected, `
+            + `but the file contains sales rows for ${mismatchedMonths.join(', ')}. `
+            + 'Please upload each month separately.'
+          );
         }
       } else {
         if (!res.detectedFYs.includes(selectedFy) && res.detectedFYs.length > 0) {
@@ -139,6 +143,17 @@ export default function SalesImportModal({
       : (normalizedResult.validRows || []);
 
     if (!targetRows.length) return;
+
+    if (uploadType === 'monthWise') {
+      const expectedYm = `${selectedYear}-${selectedMonthCode}`;
+      const mismatchedRow = targetRows.find((row) => (
+        `${row.year}-${String(row.monthNo).padStart(2, '0')}` !== expectedYm
+      ));
+      if (mismatchedRow) {
+        setErrorMsg(`Upload blocked: this file has data outside ${expectedYm}. Please upload each month separately.`);
+        return;
+      }
+    }
 
     const batchRecord = {
       batchId: normalizedResult.batchId,
