@@ -380,6 +380,10 @@ function SectionFilterToolbar({
 }
 
 export default function SalesReportPage({ loggedInUser, parsedData = [], onClose }) {
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonthCode = String(currentDate.getMonth() + 1).padStart(2, '0');
+  const currentMonthName = MONTH_NAMES[currentDate.getMonth()];
   const [storeData, setStoreData] = useState(() => loadSalesReportData(loggedInUser));
   const loggedInUserRef = useRef(loggedInUser);
   loggedInUserRef.current = loggedInUser;
@@ -411,12 +415,12 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   const [importModalConfig, setImportModalConfig] = useState({
     isOpen: false,
     uploadType: 'monthWise',
-    year: 2026,
-    monthCode: '09',
+    year: currentYear,
+    monthCode: currentMonthCode,
   });
 
   // Uploads view state
-  const [uploadYear, setUploadYear] = useState(2026);
+  const [uploadYear, setUploadYear] = useState(currentYear);
 
   // Settings custom product addition state
   const [newProductName, setNewProductName] = useState('');
@@ -626,7 +630,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   }, [consumerSearchIndex, consumerSearchMode, consumerSearchQuery]);
 
   // Open Import Modal helper
-  const openImportModal = (uploadType = 'monthWise', year = 2026, monthCode = '09') => {
+  const openImportModal = (uploadType = 'monthWise', year = currentYear, monthCode = currentMonthCode) => {
     if (!uploadEnabled && !isAdmin) {
       showNotification('Sales data uploads are currently disabled in Settings.', 'error');
       return;
@@ -2415,6 +2419,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
   // IMPORT & ROLLBACK HANDLERS
   // ==========================================
   const handleConfirmImport = async (batchRecord, validRows) => {
+    if (!hasCompletedInitialSync || storeData?.cachePartial) {
+      showNotification('Full sales data is not synchronized yet. Please run Cloud Sync before uploading.', 'error');
+      return false;
+    }
     try {
       setCloudOperation({ label: `Uploading ${batchRecord.fileName}`, percent: 0 });
       const nextStore = await importSalesBatch(
@@ -2664,10 +2672,10 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
           <button
             type="button"
             className="sales-report-btn sales-report-btn--quick-upload"
-            onClick={() => openImportModal('monthWise', 2026, '09')}
-            title="Upload Current Month (September 2026) Sales Data"
+            onClick={() => openImportModal('monthWise', currentYear, currentMonthCode)}
+            title={`Upload Current Month (${currentMonthName} ${currentYear}) Sales Data`}
           >
-            ⚡ Upload Current Month (Sept 2026)
+            ⚡ Upload Current Month ({currentMonthName.slice(0, 3)} {currentYear})
           </button>
           {/* Cloud Sync Action */}
           <button
@@ -3791,9 +3799,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     type="button"
                     className="sales-report-btn sales-report-btn--quick-upload"
                     style={{ padding: '4px 10px', fontSize: '12px' }}
-                    onClick={() => openImportModal('monthWise', 2026, '09')}
+                    onClick={() => openImportModal('monthWise', currentYear, currentMonthCode)}
                   >
-                    ⚡ Upload Sept 2026 File
+                    ⚡ Upload {currentMonthName.slice(0, 3)} {currentYear} File
                   </button>
                 </div>
               )}
@@ -5192,7 +5200,7 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                     ⚡ Current Month Fast Track
                   </div>
                   <strong style={{ fontSize: '17px', display: 'block', marginTop: '2px' }}>
-                    Upload September 2026 Sales Data
+                    Upload {currentMonthName} {currentYear} Sales Data
                   </strong>
                   <span style={{ fontSize: '12px', opacity: 0.9 }}>
                     Import today's or month-end refill dump directly with instant duplicate validation.
@@ -5202,9 +5210,9 @@ export default function SalesReportPage({ loggedInUser, parsedData = [], onClose
                   type="button"
                   className="sales-report-btn"
                   style={{ background: '#fbbf24', color: '#1e1b4b', fontWeight: '800', padding: '10px 18px' }}
-                  onClick={() => openImportModal('monthWise', 2026, '09')}
+                  onClick={() => openImportModal('monthWise', currentYear, currentMonthCode)}
                 >
-                  🚀 Upload September 2026 Now
+                  🚀 Upload {currentMonthName} {currentYear} Now
                 </button>
               </div>
 

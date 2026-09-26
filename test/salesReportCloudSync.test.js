@@ -9,6 +9,7 @@ import {
   unlockMonthData,
   resetMonthSalesData,
   COMPACT_TX_FIELDS,
+  createLightweightCacheCopy,
 } from '../src/services/salesReportStore';
 import * as salesReportDb from '../src/services/salesReportDb';
 import * as firestore from 'firebase/firestore';
@@ -66,6 +67,21 @@ describe('SalesReport Multi-Device Cloud Sync', () => {
     await expect(importSalesBatch(null, currentStore, batch, mixedRows))
       .rejects.toThrow('Month-wise upload must contain only 2026-09 sales data. Detected: 2026-04.');
     expect(salesReportDb.saveSalesReportToIndexedDB).not.toHaveBeenCalled();
+  });
+
+  it('never exposes a truncated transaction prefix as a complete localStorage cache', () => {
+    const transactions = Array.from({ length: 500 }, (_, index) => ({
+      orderNo: String(index), year: 2026, monthNo: index < 300 ? 9 : 4,
+    }));
+    const cache = createLightweightCacheCopy({
+      updatedAt: '2026-09-26T10:00:00.000Z', storageVersion: 3,
+      monthKeys: ['2026-04', '2026-09'], settings: {},
+      batches: [{ batchId: 'real' }], monthlyUploads: {}, transactions,
+    });
+
+    expect(cache.cachePartial).toBe(true);
+    expect(cache.transactions).toEqual([]);
+    expect(cache.monthKeys).toEqual(['2026-04', '2026-09']);
   });
 
   it('compressTransactions and decompressTransactions preserve 100% of transaction data and types', () => {

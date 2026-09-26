@@ -230,6 +230,7 @@ export const normalizeSalesReportData = (raw = {}) => {
 
   return {
     isReset,
+    cachePartial: raw.cachePartial === true,
     updatedAt: raw.updatedAt || null,
     storageVersion: raw.storageVersion === 3 ? 3 : undefined,
     monthKeys: Array.isArray(raw.monthKeys) ? [...raw.monthKeys] : undefined,
@@ -329,13 +330,17 @@ export const createLightweightCacheCopy = (normalized) => {
 
   return {
     isReset: normalized.isReset || false,
+    // Metadata-only fallback. It must never masquerade as a complete dataset.
+    cachePartial: true,
+    updatedAt: normalized.updatedAt || null,
+    storageVersion: normalized.storageVersion === 3 ? 3 : undefined,
+    monthKeys: Array.isArray(normalized.monthKeys) ? [...normalized.monthKeys] : undefined,
     settings: normalized.settings,
     batches: normalized.batches,
     monthlyUploads: lightMonthly,
-    // Store only small sample in localStorage cache; full transactions are safely stored in IndexedDB and compressed in cloud
-    transactions: normalized.transactions && normalized.transactions.length > 300
-      ? normalized.transactions.slice(0, 300)
-      : (normalized.transactions || []),
+    // A truncated prefix can overwrite other months if it is later used as the
+    // base for an upload. Full rows live in IndexedDB and cloud storage only.
+    transactions: [],
   };
 };
 
@@ -345,6 +350,16 @@ export const createLightweightCacheCopy = (normalized) => {
 export const loadSalesReportData = (user) => {
   try {
     const cached = JSON.parse(localStorage.getItem(getStorageKey(user)) || '{}');
+    const cachedRows = Array.isArray(cached.transactions) ? cached.transactions : [];
+    const summarizedRows = Object.values(cached.monthlyUploads || {}).reduce(
+      (total, upload) => total + (Number(upload?.summary?.totalRows) || 0),
+      0,
+    );
+    // Migrate old caches which stored only transactions.slice(0, 300).
+    if (summarizedRows > cachedRows.length) {
+      cached.cachePartial = true;
+      cached.transactions = [];
+    }
     return normalizeSalesReportData(cached);
   } catch {
     return normalizeSalesReportData({});
@@ -603,7 +618,12 @@ export const saveSalesReportData = async (user, data, options = {}) => {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const normalized = normalizeSalesReportData(data);
   const nowIso = new Date().toISOString();
-  normalized.updatedAt = normalized.updatedAt || nowIso;
+  normalized.updatedAt = nowIso;
+  normalized.cachePartial = false;
+  if (data && typeof data === 'object') {
+    data.updatedAt = nowIso;
+    data.cachePartial = false;
+  }
   const key = getStorageKey(user);
 
   // 1. Primary Storage: Save FULL dataset (all 5,000+ rows) into high-capacity IndexedDB
